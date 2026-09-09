@@ -76,11 +76,11 @@ pose_sender_kimm.py: 4×4 포즈 행렬 송신
     ↓ UDP
 udp_pose_bridge.py: PoseStamped 변환 및 발행
 
+실행을 종료하려면 각 터미널에서 `Ctrl+C`를 누릅니다.
+```
 ## Demo
 
 https://github.com/user-attachments/assets/https://github.com/NVlabs/FoundationPose/issues/415#issue-5394696207
     ↓
 /foundationpose/pose
-```
 
-실행을 종료하려면 각 터미널에서 `Ctrl+C`를 누릅니다.
