@@ -1,0 +1,1 @@
+Lost: pose depth disagrees with camera depth

@@ -160,3 +160,9 @@ run_used.yml
 
 /Stanley Quencher Tumbler_3d model_kathzerrato.obj
 /Stanley Quencher Tumbler_3d model_kathzerrato.usd
+/debug_live_kimm
+/debug_maskrcnn_kimm
+/docker/bhand
+/yoloe-v8l-seg.pt
+/real_time_project/weights
+/yolov8s-world.pt

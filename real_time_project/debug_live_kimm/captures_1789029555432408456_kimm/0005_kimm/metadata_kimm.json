@@ -1,0 +1,26 @@
+{
+  "mesh_file": "/home/panhong/pan/FoundationPose/demo_data/077_rubiks_cube/google_16k/textured.obj",
+  "mesh_scale": 1.0,
+  "sam_checkpoint": "/home/panhong/pan/FoundationPose/weights/sam2.1_hiera_tiny_kimm.pt",
+  "sam2_model": "facebook/sam2.1-hiera-tiny",
+  "dino_model": "IDEA-Research/grounding-dino-tiny",
+  "prompt": "rubik's cube",
+  "box_threshold": 0.3,
+  "text_threshold": 0.25,
+  "frame_id": "camera_color_optical_frame",
+  "est_refine_iter": 5,
+  "track_refine_iter": 2,
+  "accepted": true,
+  "box_xyxy": [
+    194.0147247314453,
+    258.5867919921875,
+    279.13232421875,
+    333.3193664550781
+  ],
+  "frame_identifier": "2268",
+  "timestamp_ns": 1789029631992081811,
+  "depth_unit": "meter",
+  "timestamp_kind": "host_receipt",
+  "mask_pixels": 4645,
+  "valid_mask_depth_pixels": 3916
+}

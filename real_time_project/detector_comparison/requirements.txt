@@ -1,0 +1,13 @@
+# Python >=3.10. Install torch/torchvision together for your CPU/CUDA platform first.
+# These are lower bounds, not a lockfile; run_config.json records actual versions.
+numpy>=1.24.4
+pillow>=9.4.0
+opencv-python>=4.8.0
+torch>=2.5.1
+torchvision>=0.20.1
+ultralytics>=8.3.100
+transformers>=4.46.0
+huggingface-hub>=0.24.0
+
+# Meta SAM2 is installed separately with: bash install_sam2.sh
+# YOLOE's CLIP tokenizer: python -m pip install git+https://github.com/ultralytics/CLIP.git
