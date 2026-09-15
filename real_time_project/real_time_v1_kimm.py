@@ -54,7 +54,8 @@ def parse_args(argv=None):
                         help='Automatically recover after a gap between tracked frames; excludes registration')
     parser.add_argument('--drift_score_ratio', type=float, default=0.3,
                         help='Minimum score fraction of rolling baseline; 0 disables score-based loss')
-    parser.add_argument('--debug_dir', type=Path, default=root / 'debug_live_kimm')
+    parser.add_argument('--debug_dir', type=Path, default=None,
+                        help='Optional debug output directory; disabled by default')
     parser.add_argument('--verbose_pose', action='store_true', help='Print every 4x4 pose')
     parser.add_argument('--publish_pose', action='store_true', default=True,
                         help='UDP pose output for ROS2 udp_pose_bridge (always enabled)')

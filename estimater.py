@@ -21,7 +21,10 @@ class FoundationPose:
     self.ignore_normal_flip = True
     self.debug = debug
     self.debug_dir = debug_dir
-    os.makedirs(debug_dir, exist_ok=True)
+    # Debug output is optional.  Real-time pipelines run with debug=0 and
+    # should not create demo/debug folders just by starting the estimator.
+    if debug_dir is not None:
+      os.makedirs(debug_dir, exist_ok=True)
 
     self.reset_object(model_pts, model_normals, symmetry_tfs=symmetry_tfs, mesh=mesh)
     self.make_rotation_grid(min_n_views=40, inplane_step=60)
@@ -266,5 +269,4 @@ class FoundationPose:
       extra['vis'] = vis
     self.pose_last = pose
     return (pose@self.get_tf_to_centered_mesh()).data.cpu().numpy().reshape(4,4)
-
 

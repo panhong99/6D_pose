@@ -198,6 +198,11 @@ Grounding DINO의 transformers API는 [공식 모델 문서](https://huggingface
 
 ## D455 실시간 실행
 
+| | 성공 | 실패 |
+|---|---|---|
+| Grounding DINO + SAM2 | ![DINO+SAM2 성공](../../assets/videos/dino_success.gif) | ![DINO+SAM2 실패](../../assets/videos/dino_failure.gif) |
+| YOLOE | ![YOLOE 성공](../../assets/videos/yolo_success.gif) | ![YOLOE 실패](../../assets/videos/yolo_failure.gif) |
+
 검출 구현은 `pipelines/pipeline_yoloe.py`와
 `pipelines/pipeline_grounding_dino_sam2.py`로 분리되어 있습니다.
 `live_realsense.py`는 D455 RGB 입력과 화면 표시를 공통으로 처리하고,

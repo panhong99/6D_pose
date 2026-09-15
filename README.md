@@ -23,7 +23,7 @@ python -c "import pyrealsense2 as rs; print(rs.context().query_devices().size())
 ## 2. ROS2 bridge 빌드
 
 ```bash
-cd /home/panhong/pan/ros2_ws
+cd /home/panhong/pan/FoundationPose/ros2_ws
 source /opt/ros/jazzy/setup.bash
 colcon build --packages-select foundationpose_bridge
 ```
@@ -34,7 +34,7 @@ colcon build --packages-select foundationpose_bridge
 
 ```bash
 source /opt/ros/jazzy/setup.bash
-source /home/panhong/pan/ros2_ws/install/setup.bash
+source /home/panhong/pan/FoundationPose/ros2_ws/install/setup.bash
 ros2 run foundationpose_bridge udp_pose_bridge
 ```
 
@@ -42,7 +42,7 @@ ros2 run foundationpose_bridge udp_pose_bridge
 
 ```bash
 source /opt/ros/jazzy/setup.bash
-source /home/panhong/pan/ros2_ws/install/setup.bash
+source /home/panhong/pan/FoundationPose/ros2_ws/install/setup.bash
 ros2 topic echo /foundationpose/pose
 ```
 
@@ -105,7 +105,7 @@ FoundationPose/
 ROS2 bridge:
 
 ```text
-/home/panhong/pan/ros2_ws/src/foundationpose_bridge/
+/home/panhong/pan/FoundationPose/ros2_ws/src/foundationpose_bridge/
 ```
 
 발행 토픽은 `/foundationpose/pose`이며 타입은 `geometry_msgs/msg/PoseStamped`입니다. Pose는 카메라 좌표계 기준입니다.

@@ -20,11 +20,13 @@ class PoseTracker:
         print('CAD extent (meters):', mesh.extents, flush=True)
         self.to_origin, extents = trimesh.bounds.oriented_bounds(mesh)
         self.bbox = np.stack([-extents / 2, extents / 2])
-        Path(debug_dir).mkdir(parents=True, exist_ok=True)
+        if debug_dir is not None:
+            Path(debug_dir).mkdir(parents=True, exist_ok=True)
         self.est = FoundationPose(
             model_pts=mesh.vertices, model_normals=mesh.vertex_normals, mesh=mesh,
             scorer=ScorePredictor(), refiner=PoseRefinePredictor(),
-            glctx=dr.RasterizeCudaContext(), debug=0, debug_dir=str(debug_dir))
+            glctx=dr.RasterizeCudaContext(), debug=0,
+            debug_dir=str(debug_dir) if debug_dir is not None else None)
         self.register_iterations = register_iterations
         self.track_iterations = track_iterations
         self.drift_score_ratio = drift_score_ratio

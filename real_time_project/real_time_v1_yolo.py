@@ -32,7 +32,8 @@ def main():
     p.add_argument('--register_iter', type=int, default=5); p.add_argument('--track_iter', type=int, default=2)
     p.add_argument('--udp_host', default='127.0.0.1'); p.add_argument('--udp_port', type=int, default=5005)
     p.add_argument('--frame_id', default='camera_color_optical_frame')
-    p.add_argument('--debug_dir', default='real_time_project/debug_yolo')
+    p.add_argument('--debug_dir', default=None,
+                   help='Optional debug output directory; disabled by default')
     a = p.parse_args()
     if not torch.cuda.is_available():
         raise RuntimeError('CUDA is required for FoundationPose')
