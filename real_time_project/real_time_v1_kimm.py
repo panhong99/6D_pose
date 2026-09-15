@@ -105,8 +105,6 @@ def main():
     from FoundationPose.real_time_project.recovery_tracker_kimm import RecoveryTracker
     from FoundationPose.real_time_project.detector_comparison.pipelines.pipeline_grounding_dino_sam2 import GroundingDINOSAM2Pipeline
     from pose_sender_kimm import PoseSender
-    from FoundationPose.real_time_project.capture_writer_kimm import CaptureWriter
-    from FoundationPose.real_time_project.mask_viz_kimm import mask_overlay
 
     print('Loading Grounding DINO + SAM2 and FoundationPose ...', flush=True)
     detector = GroundingDINOSAM2Pipeline(
@@ -122,15 +120,6 @@ def main():
                                args.max_frame_gap, args.validation_interval, args.loss_patience)
     recovery.set_recovery_mode(args.auto_recovery)
 
-    captures = CaptureWriter(args.debug_dir, dict(
-        mesh_file=str(args.mesh_file), mesh_scale=args.mesh_scale,
-        model_cache_dir=str(args.model_cache_dir),
-        sam_checkpoint=str(args.sam_checkpoint) if args.sam_checkpoint else None,
-        sam2_model=args.sam2_model, dino_model=args.dino_model, prompt=args.prompt,
-        box_threshold=args.box_threshold, text_threshold=args.text_threshold,
-        frame_id=args.frame_id, est_refine_iter=args.est_refine_iter,
-        track_refine_iter=args.track_refine_iter))
-
     with ExitStack() as resources:
         camera = D455Source(args.width, args.height, args.fps, args.serial, args.max_depth)
         resources.callback(camera.close)
@@ -141,7 +130,7 @@ def main():
             resources.callback(sender.close)
         print(f'Pose UDP -> {args.udp_host}:{args.udp_port}', flush=True)
         cv2.namedWindow('FoundationPose live kimm', cv2.WINDOW_NORMAL)
-        cv2.resizeWindow('FoundationPose live kimm', 1280, 960)
+        cv2.resizeWindow('FoundationPose live kimm', 1600, 1200)
         mode_text = 'automatic recovery' if args.auto_recovery else 'manual recovery'
         print(f'Detection enabled ({mode_text}). S: search/re-detect | Q/ESC: quit', flush=True)
         previous_status = None
@@ -152,16 +141,6 @@ def main():
             pose, detection = outcome['pose'], outcome['detection']
             image = frame.rgb.copy()
             status = outcome['status']
-            if detection is not None:
-                status += f" | detect+mask={detection['latency_ms']:.0f}ms"
-                if detection['success']:
-                    # Capture exactly the frame/mask used by register, including failed registrations.
-                    capture = captures.save(frame, detection['mask'], detection['bbox'], True)
-                    if outcome['registered']:
-                        captures.result(capture, pose=pose)
-                    elif outcome['error']:
-                        captures.result(capture, error=outcome['error'])
-                    image = mask_overlay(image, detection['mask'])
             if pose is not None:
                 image = tracker.draw(image, frame.K, pose)
                 # A suspect pose is still drawn (so tracking looks continuous) but

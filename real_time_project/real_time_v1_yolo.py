@@ -42,6 +42,8 @@ def main():
                                max_frame_gap=1.0, validation_interval=0.0, loss_patience=10)
     camera = D455Source(a.width, a.height, a.fps, a.serial)
     sender = PoseSender(a.udp_host, a.udp_port, a.frame_id)
+    cv2.namedWindow('FoundationPose YOLOE D455', cv2.WINDOW_NORMAL)
+    cv2.resizeWindow('FoundationPose YOLOE D455', 1600, 1200)
     print('YOLOE + FoundationPose + Cutie/Kalman ready | S: re-detect | Q: quit', flush=True)
     try:
         while True:
