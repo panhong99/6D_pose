@@ -47,7 +47,6 @@ if __name__=='__main__':
 
   #TODO
   scorer = ScorePredictor()
-
   #TODO
   refiner = PoseRefinePredictor()
 

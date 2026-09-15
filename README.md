@@ -77,10 +77,86 @@ pose_sender_kimm.py: 4×4 포즈 행렬 송신
 udp_pose_bridge.py: PoseStamped 변환 및 발행
 
 실행을 종료하려면 각 터미널에서 `Ctrl+C`를 누릅니다.
+
+## D455 실시간 pose: DINO + SAM2
+
+초기 물체 탐색은 Grounding DINO-Tiny와 SAM2가 수행하고, 이후 프레임은
+FoundationPose가 추적합니다. 정상 추적 중에는 DINO/SAM2를 다시 호출하지 않으며,
+화면에서 `s`를 누르면 수동 재탐색합니다.
+
+터미널 1 — ROS2 브리지:
+
+```bash
+source /opt/ros/jazzy/setup.bash
+source /home/panhong/pan/ros2_ws/install/setup.bash
+ros2 run foundationpose_bridge udp_pose_bridge
+```
+
+터미널 2 — pose 확인:
+
+```bash
+source /opt/ros/jazzy/setup.bash
+source /home/panhong/pan/ros2_ws/install/setup.bash
+ros2 topic echo /foundationpose/pose
+```
+
+터미널 3 — D455 실행:
+
+```bash
+conda activate foundationpose
+cd /home/panhong/pan/FoundationPose
+python real_time_project/real_time_v1_kimm.py \
+  --mesh_file /home/panhong/pan/FoundationPose/demo_data/077_rubiks_cube/google_16k/textured_57mm.obj \
+  --mesh_scale 1.0 \
+  --prompt "rubik's cube" \
+  --validation_interval 0
+```
+
+`--auto_recovery`를 추가하면 추적 실패 시 DINO+SAM2 자동 재탐색을 켭니다.
+
+## D455 실시간 pose: YOLOE
+
+YOLOE-seg가 bbox와 mask를 한 번에 생성하고, 이후 FoundationPose가 추적합니다.
+기본 checkpoint는 `yoloe-11s-seg.pt`입니다.
+
+```bash
+conda activate foundationpose
+cd /home/panhong/pan/FoundationPose
+python real_time_project/real_time_v1_yolo.py \
+  --mesh_file /home/panhong/pan/FoundationPose/demo_data/077_rubiks_cube/google_16k/textured_57mm.obj \
+  --mesh_scale 1.0 \
+  --prompt "rubik's cube" \
+  --yoloe_checkpoint /home/panhong/pan/FoundationPose/real_time_project/detector_comparison/yoloe-11s-seg.pt
+```
+
+ROS2 브리지와 pose 확인 명령은 위 DINO 실행과 동일합니다. `s`는 YOLOE 재탐색,
+`q` 또는 `ESC`는 종료입니다.
+
+## 실시간 관련 폴더 트리
+
+```text
+real_time_project/
+├── real_time_v1_kimm.py                 # DINO + SAM2 + FoundationPose
+├── real_time_v1_yolo.py                 # YOLOE + FoundationPose
+├── d455_source_kimm.py                  # D455 RGB-D 입력/정렬
+├── camera_rectify_kimm.py               # 카메라 왜곡 보정
+├── pose_tracker_kimm.py                 # FoundationPose + Cutie/Kalman 연결
+├── recovery_tracker_kimm.py             # 초기화/재탐색 상태 관리
+├── detector_comparison/
+│   ├── pipelines/pipeline_yoloe.py      # YOLOE bbox + mask
+│   ├── pipelines/pipeline_grounding_dino_sam2.py
+│   └── detector checkpoint 파일
+└── README_real_time_v1_kimm.md
+
+pose_sender_kimm.py                      # UDP pose 송신
+```
+
+모델 weights, Hugging Face cache, debug 결과, Python cache는 `.gitignore`에 포함되어
+Git에 올리지 않습니다. ROS2 브리지는 별도 workspace의
+`foundationpose_bridge` 패키지입니다.
 ```
 ## Demo
 
 https://github.com/user-attachments/assets/https://github.com/NVlabs/FoundationPose/issues/415#issue-5394696207
     ↓
 /foundationpose/pose
-

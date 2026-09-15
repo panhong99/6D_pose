@@ -4,11 +4,12 @@ from pathlib import Path
 
 import numpy as np
 import trimesh
+from scipy.spatial.transform import Rotation
 
 
 class PoseTracker:
     def __init__(self, mesh_file, mesh_scale, debug_dir, register_iterations=5,
-                 track_iterations=2, drift_score_ratio=0.6):
+                 track_iterations=2, drift_score_ratio=0.3, detector_bbox_margin=0.5):
         from estimater import FoundationPose, ScorePredictor, PoseRefinePredictor, dr
         mesh = trimesh.load(str(mesh_file), force='mesh')
         if not isinstance(mesh, trimesh.Trimesh) or len(mesh.faces) == 0:
@@ -27,11 +28,31 @@ class PoseTracker:
         self.register_iterations = register_iterations
         self.track_iterations = track_iterations
         self.drift_score_ratio = drift_score_ratio
+        # Detector boxes can move substantially under blur/rotation.  Keep this
+        # guard loose; FoundationPose remains the primary pose signal.
+        self.detector_bbox_margin = detector_bbox_margin
+        self.two_d_tracker = None
+        self.kf = None
+        self.kf_mean = self.kf_cov = None
+        try:
+            import sys
+            plus_src = '/home/panhong/pan/FoundationPose-plus-plus/src'
+            if plus_src not in sys.path:
+                sys.path.insert(0, plus_src)
+            from VOT import Cutie
+            from utils.kalman_filter_6d import KalmanFilter6D
+            self.two_d_tracker = Cutie()
+            self.kf = KalmanFilter6D(0.05)
+            print('2D tracker + Kalman enabled', flush=True)
+        except Exception as exc:
+            print(f'2D tracker disabled: {exc}', flush=True)
         self.score_ema_alpha = 0.2
         self.score_ema = None
         self.last_score = None
         self.last_score_ok = True
         self.registration_score = None
+        self.kf_mean = self.kf_cov = None
+        self.kf_mean = self.kf_cov = None
 
     def reset(self):
         self.est.pose_last = None
@@ -66,11 +87,23 @@ class PoseTracker:
                 finally:
                     # register returns a CPU pose, synchronizing its GPU work.
                     register_ms = (time.perf_counter() - register_start) * 1000
+                if self.two_d_tracker is not None:
+                    self.two_d_tracker.initialize(frame.rgb, {'mask': mask.astype(np.uint8)})
+                if self.kf is not None:
+                    self.kf_mean, self.kf_cov = self.kf.initiate(self._pose6(pose))
             else:
                 if self.est.pose_last is None:
                     raise ValueError('Register a target before tracking')
+                if self.two_d_tracker is not None:
+                    box = self.two_d_tracker.track(frame.rgb)
+                    if box[2] > 0 and box[3] > 0:
+                        self._update_from_bbox(frame.K, box)
+                if self.kf is not None and self.kf_mean is not None:
+                    self.kf_mean, self.kf_cov = self.kf.predict(self.kf_mean, self.kf_cov)
                 pose = self.est.track_one(rgb=frame.rgb, depth=frame.depth, K=frame.K,
                                           iteration=self.track_iterations)
+                if self.kf is not None and self.kf_mean is not None:
+                    self.kf_mean, self.kf_cov = self.kf.update(self.kf_mean, self.kf_cov, self._pose6(pose))
             # Validate the pose before spending a scorer forward pass on it: a NaN/None
             # pose_last would otherwise crash inside _score() instead of raising cleanly.
             if self.est.pose_last is None or not np.isfinite(pose).all():
@@ -112,6 +145,22 @@ class PoseTracker:
                   f"decision={'PASS' if self.last_score_ok else 'SOFT_LOW'}", flush=True)
         return pose
 
+    @staticmethod
+    def _pose6(pose):
+        p = np.asarray(pose).reshape(4, 4)
+        return np.r_[p[:3, 3], Rotation.from_matrix(p[:3, :3]).as_euler('xyz')]
+
+    def _update_from_bbox(self, K, box):
+        p = self.est.pose_last.detach().cpu().numpy().reshape(4, 4)
+        z = float(p[2, 3])
+        u, v = box[0] + box[2] / 2, box[1] + box[3] / 2
+        xy = np.array([(u-K[0,2])*z/K[0,0], (v-K[1,2])*z/K[1,1]])
+        self.kf_mean, self.kf_cov = self.kf.update_from_xy(self.kf_mean, self.kf_cov, xy)
+        p[:3, 3] = self.kf_mean[:3]
+        p[:3, :3] = Rotation.from_euler('xyz', self.kf_mean[3:6]).as_matrix()
+        import torch
+        self.est.pose_last = torch.from_numpy(p.astype(np.float32)).to(self.est.pose_last.device).unsqueeze(0)
+
     def validate_geometry(self, frame, pose, box=None):
         """Reject off-image, depth-inconsistent, or detector-disagreeing centers.
 
@@ -127,7 +176,7 @@ class PoseTracker:
             raise ValueError('Lost: projected center outside image')
         if box is not None:
             x1, y1, x2, y2 = box
-            mx, my = 0.15 * (x2-x1), 0.15 * (y2-y1)
+            mx, my = self.detector_bbox_margin * (x2-x1), self.detector_bbox_margin * (y2-y1)
             if not (x1-mx <= u <= x2+mx and y1-my <= v <= y2+my):
                 raise ValueError('Lost: pose center disagrees with DINO bbox')
         radius = np.linalg.norm(self.bbox[1] - self.bbox[0]) * 0.5

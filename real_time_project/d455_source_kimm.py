@@ -5,7 +5,10 @@ import time
 import cv2
 import numpy as np
 import pyrealsense2 as rs
-from FoundationPose.real_time_project.camera_rectify_kimm import rectification_maps
+try:
+    from FoundationPose.real_time_project.camera_rectify_kimm import rectification_maps
+except ModuleNotFoundError:
+    from camera_rectify_kimm import rectification_maps
 
 
 @dataclass
@@ -44,7 +47,15 @@ class D455Source:
             raise
 
     def read(self):
-        frames = self.align.process(self.pipeline.wait_for_frames(timeout_ms=5000))
+        # Drain any frames queued while the caller was busy (e.g. a slow recovery
+        # cycle): always process the newest one, not a growing backlog.
+        frames = self.pipeline.wait_for_frames(timeout_ms=5000)
+        while True:
+            newer = self.pipeline.poll_for_frames()
+            if not newer:
+                break
+            frames = newer
+        frames = self.align.process(frames)
         color, depth_frame = frames.get_color_frame(), frames.get_depth_frame()
         if not color or not depth_frame:
             raise RuntimeError('Missing synchronized RGB-D frame')

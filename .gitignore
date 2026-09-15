@@ -166,3 +166,6 @@ run_used.yml
 /yoloe-v8l-seg.pt
 /real_time_project/weights
 /yolov8s-world.pt
+/mobileclip_blt.ts
+/real_time_project/debug_live_kimm/
+/real_time_project/debug_yolo/

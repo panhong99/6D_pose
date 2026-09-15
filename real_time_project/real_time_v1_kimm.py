@@ -1,6 +1,7 @@
 """D455 -> Grounding DINO + SAM2 auto recovery -> FoundationPose -> optional UDP."""
 import argparse
 from contextlib import ExitStack
+import os
 from pathlib import Path
 import sys
 import time
@@ -26,6 +27,8 @@ def parse_args(argv=None):
     parser.add_argument('--sam2_model', default='facebook/sam2.1-hiera-tiny')
     parser.add_argument('--sam2_config', default='configs/sam2.1/sam2.1_hiera_t.yaml')
     parser.add_argument('--dino_model', default='IDEA-Research/grounding-dino-tiny')
+    parser.add_argument('--model_cache_dir', type=Path, default=_ROOT / 'weights/huggingface_cache',
+                        help='Persistent Hugging Face cache; models download here only on first use')
     parser.add_argument('--prompt', default="rubik's cube")
     parser.add_argument('--box_threshold', type=float, default=0.3)
     parser.add_argument('--text_threshold', type=float, default=0.25)
@@ -36,6 +39,10 @@ def parse_args(argv=None):
     parser.add_argument('--loss_patience', type=int, default=5,
                         help='Consecutive soft validation failures tolerated before forcing '
                              'a full re-detect; a double DINO miss always forces one immediately')
+    parser.add_argument('--detector_bbox_margin', type=float, default=0.5,
+                        help='Extra fraction of DINO bbox allowed around the FoundationPose center')
+    parser.add_argument('--auto_recovery', action='store_true',
+                        help='Automatically re-detect after tracking is lost; default waits for S')
     parser.add_argument('--serial', default='')
     parser.add_argument('--width', type=int, default=640)
     parser.add_argument('--height', type=int, default=480)
@@ -45,8 +52,8 @@ def parse_args(argv=None):
     parser.add_argument('--track_refine_iter', type=int, default=2)
     parser.add_argument('--max_frame_gap', type=float, default=1.0,
                         help='Automatically recover after a gap between tracked frames; excludes registration')
-    parser.add_argument('--drift_score_ratio', type=float, default=0.6,
-                        help='Score drop threshold relative to rolling baseline; 0 disables score-based loss')
+    parser.add_argument('--drift_score_ratio', type=float, default=0.3,
+                        help='Minimum score fraction of rolling baseline; 0 disables score-based loss')
     parser.add_argument('--debug_dir', type=Path, default=root / 'debug_live_kimm')
     parser.add_argument('--verbose_pose', action='store_true', help='Print every 4x4 pose')
     parser.add_argument('--publish_pose', action='store_true', default=True,
@@ -83,6 +90,12 @@ def parse_args(argv=None):
 
 def main():
     args = parse_args()
+    # Keep HF/Transformers downloads inside the project so later launches reuse
+    # the exact same files instead of relying on a transient runtime cache.
+    args.model_cache_dir.mkdir(parents=True, exist_ok=True)
+    os.environ['HF_HOME'] = str(args.model_cache_dir)
+    os.environ['HF_HUB_CACHE'] = str(args.model_cache_dir / 'hub')
+    os.environ['TRANSFORMERS_CACHE'] = str(args.model_cache_dir / 'transformers')
     import cv2
     import torch
     if not torch.cuda.is_available():
@@ -100,12 +113,18 @@ def main():
         sam2_checkpoint=args.sam_checkpoint, sam2_model=args.sam2_model,
         sam2_config=args.sam2_config, dino_model=args.dino_model, device='cuda',
         box_threshold=args.box_threshold, text_threshold=args.text_threshold)
+
     tracker = PoseTracker(args.mesh_file, args.mesh_scale, args.debug_dir,
-                          args.est_refine_iter, args.track_refine_iter, args.drift_score_ratio)
+                          args.est_refine_iter, args.track_refine_iter, args.drift_score_ratio,
+                          args.detector_bbox_margin)
+
     recovery = RecoveryTracker(detector, tracker, args.prompt, args.retry_interval,
                                args.max_frame_gap, args.validation_interval, args.loss_patience)
+    recovery.set_recovery_mode(args.auto_recovery)
+
     captures = CaptureWriter(args.debug_dir, dict(
         mesh_file=str(args.mesh_file), mesh_scale=args.mesh_scale,
+        model_cache_dir=str(args.model_cache_dir),
         sam_checkpoint=str(args.sam_checkpoint) if args.sam_checkpoint else None,
         sam2_model=args.sam2_model, dino_model=args.dino_model, prompt=args.prompt,
         box_threshold=args.box_threshold, text_threshold=args.text_threshold,
@@ -120,8 +139,11 @@ def main():
         if args.publish_pose:
             sender = PoseSender(args.udp_host, args.udp_port, args.frame_id)
             resources.callback(sender.close)
-            print(f'Pose UDP -> {args.udp_host}:{args.udp_port}', flush=True)
-        print('Automatic detection enabled. S: force recovery | Q/ESC: quit', flush=True)
+        print(f'Pose UDP -> {args.udp_host}:{args.udp_port}', flush=True)
+        cv2.namedWindow('FoundationPose live kimm', cv2.WINDOW_NORMAL)
+        cv2.resizeWindow('FoundationPose live kimm', 1280, 960)
+        mode_text = 'automatic recovery' if args.auto_recovery else 'manual recovery'
+        print(f'Detection enabled ({mode_text}). S: search/re-detect | Q/ESC: quit', flush=True)
         previous_status = None
         while True:
             frame = camera.read()
@@ -157,14 +179,15 @@ def main():
                 previous_status = outcome['status']
             display = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
             cv2.putText(display, status, (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 255, 0), 1)
-            cv2.putText(display, 'Auto recovery | S: force redetect | Q/ESC: quit', (10, 47),
+            recovery_hint = ('Auto recovery' if args.auto_recovery else 'Manual recovery')
+            cv2.putText(display, f'{recovery_hint} | S: search | Q/ESC: quit', (10, 47),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 0), 1)
             cv2.imshow('FoundationPose live kimm', display)
             key = cv2.waitKey(1) & 0xff
             if key in (ord('q'), 27):
                 break
             if key == ord('s'):
-                recovery.reset()
+                recovery.request_search()
 
 
 if __name__ == '__main__':

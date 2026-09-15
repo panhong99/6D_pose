@@ -94,6 +94,7 @@ class TrackingContractTest(unittest.TestCase):
     def test_camera_depth_units_invalid_values_and_owned_rgb(self):
         camera = D455Source.__new__(D455Source)
         camera.pipeline, camera.align = Mock(), Mock()
+        camera.pipeline.poll_for_frames.return_value = None  # no queued backlog
         camera.scale, camera.max_depth = 0.001, 3.0
         camera.map1 = None
         camera.K = np.eye(3, dtype=np.float32)

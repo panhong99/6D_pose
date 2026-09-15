@@ -19,6 +19,16 @@ class RecoveryTracker:
         # Consecutive soft failures tolerated before forcing a full re-detect.
         self.loss_patience = loss_patience
         self.consecutive_failures = 0
+        self.auto_recovery = False
+        self.waiting_for_manual_search = False
+
+    def set_recovery_mode(self, auto_recovery=False):
+        self.auto_recovery = bool(auto_recovery)
+
+    def request_search(self):
+        """Clear a manual-recovery pause and start searching on the next frame."""
+        self.reset()
+        self.waiting_for_manual_search = False
 
     def reset(self, restart_search=True):
         self.tracker.reset()
@@ -35,15 +45,23 @@ class RecoveryTracker:
     def _lost(self, outcome, frame_id, reason):
         print(f"[LOST] frame={frame_id} reason={reason}", flush=True)
         self.reset()
-        outcome.update(pose=None, error=reason, status=f'LOST: {reason}; automatic recovery')
+        if self.auto_recovery:
+            status = f'LOST: {reason}; automatic recovery'
+        else:
+            self.waiting_for_manual_search = True
+            status = f'LOST: {reason}; press S to search'
+        outcome.update(pose=None, error=reason, status=status)
         return outcome
 
     def process(self, frame):
         outcome = dict(pose=None, detection=None, error=None, registered=False,
                        status='Searching for cube', suspect=False)
+        if self.waiting_for_manual_search:
+            outcome['status'] = 'LOST: press S to search'
+            return outcome
         if self.tracking and self.last_stamp is not None:
             gap = (frame.timestamp_ns - self.last_stamp) / 1e9
-            if gap <= 0 or gap > self.max_frame_gap:
+            if self.auto_recovery and (gap <= 0 or gap > self.max_frame_gap):
                 print(f"[LOST] reason=frame_gap gap_s={gap:.3f}", flush=True)
                 self.reset()
         if self.tracking:
@@ -53,9 +71,17 @@ class RecoveryTracker:
             except ValueError as exc:
                 return self._lost(outcome, frame_id, str(exc))
 
+            # Manual mode deliberately does not run the automatic loss
+            # watchdog. The operator decides when the pose should be
+            # reacquired by pressing S.
+            if not self.auto_recovery:
+                self.last_stamp = frame.timestamp_ns
+                outcome['status'] = 'TRACKING (manual recovery)'
+                return outcome
+
             # Soft signals below: pose exists, but confidence/geometry/DINO disagree.
-            # loss_patience consecutive soft failures force a re-detect; a double
-            # DINO miss (nothing found at all) is deliberate enough to skip that wait.
+            # Treat detector misses like other soft failures; brief blur should not
+            # immediately reset a valid FoundationPose track.
             reason = None if self.tracker.last_score_ok else 'score drift'
             hard_reason = None
             if self.validation_interval > 0:
@@ -67,8 +93,8 @@ class RecoveryTracker:
                     box = self.detector.detect_bbox(frame.rgb, self.prompt)['bbox']
                     self.next_validation = time.perf_counter() + self.validation_interval
                     self.detector_misses = self.detector_misses + 1 if box is None else 0
-                    if self.detector_misses >= 2:
-                        hard_reason = 'Lost: DINO missed target twice'
+                    if self.detector_misses >= self.loss_patience:
+                        hard_reason = f'Lost: DINO missed target {self.loss_patience} times'
                     elif box is not None:
                         try:
                             self.tracker.validate_geometry(frame, outcome['pose'], box)
