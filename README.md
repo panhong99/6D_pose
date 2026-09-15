@@ -1,5 +1,10 @@
 # FoundationPose 실시간 사용 가이드
 
+| | 성공 | 실패 |
+|---|---|---|
+| Grounding DINO + SAM2 | ![DINO+SAM2 성공](assets/videos/dino_success.gif) | ![DINO+SAM2 실패](assets/videos/dino_failure.gif) |
+| YOLOE | ![YOLOE 성공](assets/videos/yolo_success.gif) | ![YOLOE 실패](assets/videos/yolo_failure.gif) |
+
 이 저장소는 FoundationPose를 학습하지 않고, 준비된 모델과 CAD를 이용해 D455 RGB-D 카메라에서 6D pose를 추정하고 ROS2로 전달하기 위한 실행 코드입니다.
 
 ## 1. 환경 준비
