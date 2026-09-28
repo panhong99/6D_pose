@@ -1,0 +1,295 @@
+#usda 1.0
+(
+    customLayerData = {
+        string creator = "URDF USD Converter v0.1.3"
+    }
+    defaultPrim = "m1013"
+    kilogramsPerUnit = 1
+    metersPerUnit = 1
+    upAxis = "Z"
+)
+
+def Xform "m1013"
+{
+    def Scope "Geometry"
+    {
+        def Xform "base_link"
+        {
+            def Mesh "MF1013_0_0" (
+                prepend references = @./GeometryLibrary.usdc@</Geometry/MF1013_0_0>
+            )
+            {
+                quatf xformOp:orient = (1, 0, 0, 0)
+                float3 xformOp:scale = (0.001, 0.001, 0.001)
+                double3 xformOp:translate = (-6.855821132659912, -108.53179931640625, 19.95842933654785)
+                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+            }
+
+            def Mesh "MF1013_0_0_1" (
+                prepend references = @./GeometryLibrary.usdc@</Geometry/MF1013_0_0_1>
+            )
+            {
+                uniform token purpose = "guide"
+                quatf xformOp:orient = (1, 0, 0, 0)
+                float3 xformOp:scale = (0.001, 0.001, 0.001)
+                double3 xformOp:translate = (-6.855821132659912, -108.53179931640625, 19.95842933654785)
+                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+            }
+
+            def Xform "base"
+            {
+                quatf xformOp:orient = (1, 0, 0, 0)
+                float3 xformOp:scale = (1, 1, 1)
+                double3 xformOp:translate = (0, 0, 0.45)
+                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+            }
+
+            def Xform "link_1"
+            {
+                quatf xformOp:orient = (1, 0, 0, 0)
+                float3 xformOp:scale = (1, 1, 1)
+                double3 xformOp:translate = (0, 0, 0.1525)
+                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+
+                def Mesh "MF1013_1_0" (
+                    prepend references = @./GeometryLibrary.usdc@</Geometry/MF1013_1_0>
+                )
+                {
+                    quatf xformOp:orient = (1, 0, 0, 0)
+                    float3 xformOp:scale = (0.001, 0.001, 0.001)
+                    double3 xformOp:translate = (0.02183784916996956, 12.560310363769531, 42.35860824584961)
+                    uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+                }
+
+                def Mesh "MF1013_1_0_1" (
+                    prepend references = @./GeometryLibrary.usdc@</Geometry/MF1013_1_0_1>
+                )
+                {
+                    uniform token purpose = "guide"
+                    quatf xformOp:orient = (1, 0, 0, 0)
+                    float3 xformOp:scale = (0.001, 0.001, 0.001)
+                    double3 xformOp:translate = (0.02183784916996956, 12.560310363769531, 42.35860824584961)
+                    uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+                }
+
+                def Xform "link_2"
+                {
+                    quatf xformOp:orient = (-0.49989817, 0.50010186, 0.49999997, 0.49999997)
+                    float3 xformOp:scale = (1, 1, 1)
+                    double3 xformOp:translate = (0, 0.0345, 0)
+                    uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+
+                    def Mesh "MF1013_2_0" (
+                        prepend references = @./GeometryLibrary.usdc@</Geometry/MF1013_2_0>
+                    )
+                    {
+                        quatf xformOp:orient = (1, 0, 0, 0)
+                        float3 xformOp:scale = (0.001, 0.001, 0.001)
+                        double3 xformOp:translate = (30.09716033935547, 4.354561805725098, 199.29420471191406)
+                        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+                    }
+
+                    def Xform "MF1013_2_1" (
+                        prepend references = @./GeometryLibrary.usdc@</Geometry/MF1013_2_1>
+                    )
+                    {
+                        quatf xformOp:orient = (1, 0, 0, 0)
+                        float3 xformOp:scale = (0.001, 0.001, 0.001)
+                        double3 xformOp:translate = (0, 0, 0)
+                        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+                    }
+
+                    def Mesh "MF1013_2_2" (
+                        prepend references = @./GeometryLibrary.usdc@</Geometry/MF1013_2_2>
+                    )
+                    {
+                        quatf xformOp:orient = (1, 0, 0, 0)
+                        float3 xformOp:scale = (0.001, 0.001, 0.001)
+                        double3 xformOp:translate = (592.7788696289062, 0.6631733775138855, 190.01559448242188)
+                        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+                    }
+
+                    def Mesh "MF1013_2_0_1" (
+                        prepend references = @./GeometryLibrary.usdc@</Geometry/MF1013_2_0_1>
+                    )
+                    {
+                        uniform token purpose = "guide"
+                        quatf xformOp:orient = (1, 0, 0, 0)
+                        float3 xformOp:scale = (0.001, 0.001, 0.001)
+                        double3 xformOp:translate = (30.09716033935547, 4.354561805725098, 199.29420471191406)
+                        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+                    }
+
+                    def Xform "MF1013_2_1_1" (
+                        displayName = "MF1013_2_1"
+                        prepend references = @./GeometryLibrary.usdc@</Geometry/MF1013_2_1_1>
+                    )
+                    {
+                        uniform token purpose = "guide"
+                        quatf xformOp:orient = (1, 0, 0, 0)
+                        float3 xformOp:scale = (0.001, 0.001, 0.001)
+                        double3 xformOp:translate = (0, 0, 0)
+                        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+                    }
+
+                    def Mesh "MF1013_2_2_1" (
+                        prepend references = @./GeometryLibrary.usdc@</Geometry/MF1013_2_2_1>
+                    )
+                    {
+                        uniform token purpose = "guide"
+                        quatf xformOp:orient = (1, 0, 0, 0)
+                        float3 xformOp:scale = (0.001, 0.001, 0.001)
+                        double3 xformOp:translate = (592.7788696289062, 0.6631733775138855, 190.01559448242188)
+                        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+                    }
+
+                    def Xform "link_3"
+                    {
+                        quatf xformOp:orient = (0.70703477, 0, 0, 0.7071788)
+                        float3 xformOp:scale = (1, 1, 1)
+                        double3 xformOp:translate = (0.62, 0, 0)
+                        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+
+                        def Mesh "MF1013_3_0" (
+                            prepend references = @./GeometryLibrary.usdc@</Geometry/MF1013_3_0>
+                        )
+                        {
+                            quatf xformOp:orient = (1, 0, 0, 0)
+                            float3 xformOp:scale = (0.001, 0.001, 0.001)
+                            double3 xformOp:translate = (0.0823209136724472, 27.72492027282715, 6.714065074920654)
+                            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+                        }
+
+                        def Mesh "MF1013_3_0_1" (
+                            prepend references = @./GeometryLibrary.usdc@</Geometry/MF1013_3_0_1>
+                        )
+                        {
+                            uniform token purpose = "guide"
+                            quatf xformOp:orient = (1, 0, 0, 0)
+                            float3 xformOp:scale = (0.001, 0.001, 0.001)
+                            double3 xformOp:translate = (0.0823209136724472, 27.72492027282715, 6.714065074920654)
+                            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+                        }
+
+                        def Xform "link_4"
+                        {
+                            quatf xformOp:orient = (0.70703477, 0.7071788, 0, 0)
+                            float3 xformOp:scale = (1, 1, 1)
+                            double3 xformOp:translate = (0, -0.559, 0)
+                            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+
+                            def Mesh "MF1013_4_0" (
+                                prepend references = @./GeometryLibrary.usdc@</Geometry/MF1013_4_0>
+                            )
+                            {
+                                quatf xformOp:orient = (1, 0, 0, 0)
+                                float3 xformOp:scale = (0.001, 0.001, 0.001)
+                                double3 xformOp:translate = (0.00005099290137877688, 84.96161651611328, -217.6656951904297)
+                                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+                            }
+
+                            def Mesh "MF1013_4_1" (
+                                prepend references = @./GeometryLibrary.usdc@</Geometry/MF1013_4_1>
+                            )
+                            {
+                                quatf xformOp:orient = (1, 0, 0, 0)
+                                float3 xformOp:scale = (0.001, 0.001, 0.001)
+                                double3 xformOp:translate = (-0.01665627956390381, 175.5334014892578, -8.50381088256836)
+                                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+                            }
+
+                            def Mesh "MF1013_4_0_1" (
+                                prepend references = @./GeometryLibrary.usdc@</Geometry/MF1013_4_0_1>
+                            )
+                            {
+                                uniform token purpose = "guide"
+                                quatf xformOp:orient = (1, 0, 0, 0)
+                                float3 xformOp:scale = (0.001, 0.001, 0.001)
+                                double3 xformOp:translate = (0.00005099290137877688, 84.96161651611328, -217.6656951904297)
+                                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+                            }
+
+                            def Mesh "MF1013_4_1_1" (
+                                prepend references = @./GeometryLibrary.usdc@</Geometry/MF1013_4_1_1>
+                            )
+                            {
+                                uniform token purpose = "guide"
+                                quatf xformOp:orient = (1, 0, 0, 0)
+                                float3 xformOp:scale = (0.001, 0.001, 0.001)
+                                double3 xformOp:translate = (-0.01665627956390381, 175.5334014892578, -8.50381088256836)
+                                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+                            }
+
+                            def Xform "link_5"
+                            {
+                                quatf xformOp:orient = (-0.70703477, 0.7071788, 0, 0)
+                                float3 xformOp:scale = (1, 1, 1)
+                                double3 xformOp:translate = (0, 0, 0)
+                                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+
+                                def Mesh "MF1013_5_0" (
+                                    prepend references = @./GeometryLibrary.usdc@</Geometry/MF1013_5_0>
+                                )
+                                {
+                                    quatf xformOp:orient = (1, 0, 0, 0)
+                                    float3 xformOp:scale = (0.001, 0.001, 0.001)
+                                    double3 xformOp:translate = (-0.5806698203086853, 24.386249542236328, 9.291393280029297)
+                                    uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+                                }
+
+                                def Mesh "MF1013_5_0_1" (
+                                    prepend references = @./GeometryLibrary.usdc@</Geometry/MF1013_5_0_1>
+                                )
+                                {
+                                    uniform token purpose = "guide"
+                                    quatf xformOp:orient = (1, 0, 0, 0)
+                                    float3 xformOp:scale = (0.001, 0.001, 0.001)
+                                    double3 xformOp:translate = (-0.5806698203086853, 24.386249542236328, 9.291393280029297)
+                                    uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+                                }
+
+                                def Xform "link_6"
+                                {
+                                    quatf xformOp:orient = (0.70703477, 0.7071788, 0, 0)
+                                    float3 xformOp:scale = (1, 1, 1)
+                                    double3 xformOp:translate = (0, -0.121, 0)
+                                    uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+
+                                    def Mesh "MF1013_6_0" (
+                                        prepend references = @./GeometryLibrary.usdc@</Geometry/MF1013_6_0>
+                                    )
+                                    {
+                                        quatf xformOp:orient = (1, 0, 0, 0)
+                                        float3 xformOp:scale = (0.001, 0.001, 0.001)
+                                        double3 xformOp:translate = (-0.7121191024780273, -1.363427996635437, -26.185060501098633)
+                                        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+                                    }
+
+                                    def Mesh "MF1013_6_0_1" (
+                                        prepend references = @./GeometryLibrary.usdc@</Geometry/MF1013_6_0_1>
+                                    )
+                                    {
+                                        uniform token purpose = "guide"
+                                        quatf xformOp:orient = (1, 0, 0, 0)
+                                        float3 xformOp:scale = (0.001, 0.001, 0.001)
+                                        double3 xformOp:translate = (-0.7121191024780273, -1.363427996635437, -26.185060501098633)
+                                        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+                                    }
+
+                                    def Xform "tool0"
+                                    {
+                                        quatf xformOp:orient = (1, 0, 0, 0)
+                                        float3 xformOp:scale = (1, 1, 1)
+                                        double3 xformOp:translate = (0, 0, 0)
+                                        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+

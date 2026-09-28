@@ -1,10 +1,13 @@
 """Automatic detect/register/track state machine; camera and model independent."""
 import time
 
+import numpy as np
+
 
 class RecoveryTracker:
     def __init__(self, detector, tracker, prompt="rubik's cube", retry_interval=0.5,
-                 max_frame_gap=1.0, validation_interval=0.0, loss_patience=5):
+                 max_frame_gap=1.0, validation_interval=0.0, loss_patience=5,
+                 roi_margin=1.5, roi_patience=3):
         self.detector, self.tracker = detector, tracker
         self.prompt = prompt
         self.retry_interval, self.max_frame_gap = retry_interval, max_frame_gap
@@ -21,6 +24,12 @@ class RecoveryTracker:
         self.consecutive_failures = 0
         self.auto_recovery = False
         self.waiting_for_manual_search = False
+        # Last known image-space bbox (from a live track or a past detection),
+        # used to crop the detector search instead of scanning the full frame.
+        self.roi_margin = roi_margin
+        self.roi_patience = roi_patience
+        self._last_bbox = None
+        self._roi_misses = 0
 
     def set_recovery_mode(self, auto_recovery=False):
         self.auto_recovery = bool(auto_recovery)
@@ -31,7 +40,10 @@ class RecoveryTracker:
         self.waiting_for_manual_search = False
 
     def reset(self, restart_search=True):
-        self.tracker.reset()
+        # Keep the pre-loss orientation so the next search can try a cheap relock
+        # before falling back to a full re-registration; _last_bbox is kept too
+        # (not cleared here) since it stays a useful ROI hint across the loss.
+        self.tracker.reset(keep_prior=True)
         self.tracking = False
         self.last_stamp = None
         self.next_attempt = 0.0
@@ -41,6 +53,7 @@ class RecoveryTracker:
         if restart_search:
             self.search_attempt = 0
             self.search_started = time.perf_counter()
+            self._roi_misses = 0
 
     def _lost(self, outcome, frame_id, reason):
         print(f"[LOST] frame={frame_id} reason={reason}", flush=True)
@@ -70,6 +83,7 @@ class RecoveryTracker:
                 outcome['pose'] = self.tracker.estimate(frame)  # fatal on failure (NaN/no prior)
             except ValueError as exc:
                 return self._lost(outcome, frame_id, str(exc))
+            self._last_bbox = self.tracker.project_bbox(frame.K, outcome['pose']) or self._last_bbox
 
             # Manual mode deliberately does not run the automatic loss
             # watchdog. The operator decides when the pose should be
@@ -128,30 +142,59 @@ class RecoveryTracker:
         self.search_attempt += 1
         detection = None
         estimate_ms = None
+        source = None
         print(f"[SEARCH_BEGIN] frame={getattr(frame, 'identifier', '?')} "
               f"attempt={self.search_attempt} retry={self.search_attempt-1}", flush=True)
         try:
-            detection = self.detector.infer(frame.rgb, self.prompt)
-            outcome['detection'] = detection
-            if not detection['success']:
-                outcome['status'] = 'SEARCHING: no valid cube mask; retrying'
-                return outcome
-            estimate_start = time.perf_counter()
+            # Tier 0: Cutie may still have a rough lock through the loss -- relock
+            # straight from it and skip the detector entirely. A ValueError here
+            # (e.g. score check) just means Tier 0 didn't pan out, not a fatal
+            # detect error, so it's swallowed rather than left for the except
+            # block below to potentially misclassify as fatal.
             try:
-                outcome['pose'] = self.tracker.estimate(frame, detection['mask'])
-            finally:
-                estimate_ms = (time.perf_counter() - estimate_start) * 1000
-            if self.validation_interval > 0:
-                self.tracker.validate_geometry(frame, outcome['pose'], detection['bbox'])
+                box = self.tracker.cutie_probe(frame)
+                pose = self.tracker.relock_from_bbox(frame, box) if box is not None else None
+            except ValueError:
+                pose = None
+            if pose is not None:
+                source = 'cutie'
+            else:
+                # Tier 1/2: crop to a ROI around the last known location so the
+                # detector searches a small region instead of the full frame;
+                # escalate to full-frame after roi_patience consecutive misses.
+                roi = self._recovery_roi(frame)
+                crop, offset = self._crop_rgb(frame.rgb, roi)
+                detection = self.detector.infer(crop, self.prompt)
+                if roi is not None:
+                    detection = self._remap_detection(detection, offset, frame.rgb.shape[:2])
+                outcome['detection'] = detection
+                if not detection['success']:
+                    if roi is not None:
+                        self._roi_misses += 1
+                    outcome['status'] = 'SEARCHING: no valid cube mask; retrying'
+                    return outcome
+                # tracker.estimate() itself tries a prior-seeded relock before
+                # falling back to register()'s full multi-hypothesis search.
+                estimate_start = time.perf_counter()
+                try:
+                    pose = self.tracker.estimate(frame, detection['mask'])
+                finally:
+                    estimate_ms = (time.perf_counter() - estimate_start) * 1000
+                source = 'detector'
+            outcome['pose'] = pose
+            if self.validation_interval > 0 and detection is not None:
+                self.tracker.validate_geometry(frame, pose, detection.get('bbox'))
             self.tracking = True
             # Registration can take longer than max_frame_gap. Do not interpret
             # that expected startup delay as an immediate tracking loss.
             self.last_stamp = None
             self.next_validation = time.perf_counter() + self.validation_interval
             self.detector_misses = 0
-            outcome.update(registered=True, status='REGISTERED -> TRACKING')
+            self._last_bbox = self.tracker.project_bbox(frame.K, pose) or self._last_bbox
+            self._roi_misses = 0
+            outcome.update(registered=True, status=f'REGISTERED -> TRACKING ({source})')
         except ValueError as exc:
-            if detection is None:
+            if detection is None and source != 'cutie':
                 outcome['status'] = f'DETECT error: {exc}'
                 raise
             self.reset(restart_search=False)
@@ -163,7 +206,7 @@ class RecoveryTracker:
             ended = time.perf_counter()
             timings = detection or {}
             print(f"[SEARCH_END] frame={getattr(frame, 'identifier', '?')} "
-                  f"attempt={self.search_attempt} retry={self.search_attempt-1} "
+                  f"attempt={self.search_attempt} retry={self.search_attempt-1} source={source} "
                   f"dino_ms={timings.get('dino_ms')} sam_ms={timings.get('sam_ms')} "
                   f"detect_total_ms={timings.get('latency_ms')} estimate_total_ms={estimate_ms} "
                   f"cycle_ms={(ended-cycle_start)*1000:.1f} "
@@ -171,3 +214,38 @@ class RecoveryTracker:
                   f"status={outcome['status']}", flush=True)
             self.next_attempt = time.perf_counter() + self.retry_interval
         return outcome
+
+    def _recovery_roi(self, frame):
+        if self._last_bbox is None or self._roi_misses >= self.roi_patience:
+            return None
+        x1, y1, x2, y2 = self._last_bbox
+        w, h = x2 - x1, y2 - y1
+        mx, my = max(w, 30) * self.roi_margin, max(h, 30) * self.roi_margin
+        H, W = frame.rgb.shape[:2]
+        cx1, cy1 = int(max(0, x1 - mx)), int(max(0, y1 - my))
+        cx2, cy2 = int(min(W, x2 + mx)), int(min(H, y2 + my))
+        if cx2 - cx1 < 40 or cy2 - cy1 < 40:
+            return None
+        return cx1, cy1, cx2, cy2
+
+    @staticmethod
+    def _crop_rgb(rgb, roi):
+        if roi is None:
+            return rgb, (0, 0)
+        x1, y1, x2, y2 = roi
+        return np.ascontiguousarray(rgb[y1:y2, x1:x2]), (x1, y1)
+
+    @staticmethod
+    def _remap_detection(detection, offset, full_shape):
+        ox, oy = offset
+        if ox == 0 and oy == 0:
+            return detection
+        bbox = detection.get('bbox')
+        if bbox is not None:
+            detection['bbox'] = [bbox[0] + ox, bbox[1] + oy, bbox[2] + ox, bbox[3] + oy]
+        mask = detection.get('mask')
+        if mask is not None:
+            full_mask = np.zeros(full_shape, dtype=mask.dtype)
+            full_mask[oy:oy + mask.shape[0], ox:ox + mask.shape[1]] = mask
+            detection['mask'] = full_mask
+        return detection

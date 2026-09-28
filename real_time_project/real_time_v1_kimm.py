@@ -54,6 +54,14 @@ def parse_args(argv=None):
                         help='Automatically recover after a gap between tracked frames; excludes registration')
     parser.add_argument('--drift_score_ratio', type=float, default=0.3,
                         help='Minimum score fraction of rolling baseline; 0 disables score-based loss')
+    parser.add_argument('--relock_iterations', type=int, default=6,
+                        help='track_one()-style refine iterations for a prior-seeded recovery relock, '
+                             'tried before register()\'s full multi-hypothesis search')
+    parser.add_argument('--roi_margin', type=float, default=1.5,
+                        help='Recovery detector search crops to the last known bbox padded by this '
+                             'multiple of its size, instead of scanning the full frame')
+    parser.add_argument('--roi_patience', type=int, default=3,
+                        help='Consecutive ROI-crop misses before falling back to a full-frame search')
     parser.add_argument('--debug_dir', type=Path, default=None,
                         help='Optional debug output directory; disabled by default')
     parser.add_argument('--verbose_pose', action='store_true', help='Print every 4x4 pose')
@@ -72,7 +80,8 @@ def parse_args(argv=None):
             parser.error(f'{name} does not exist: {path}')
         setattr(args, name, path)
     for name in ('mesh_scale', 'max_depth', 'max_frame_gap', 'width', 'height', 'fps',
-                 'est_refine_iter', 'track_refine_iter'):
+                 'est_refine_iter', 'track_refine_iter', 'relock_iterations',
+                 'roi_margin', 'roi_patience'):
         if not math.isfinite(getattr(args, name)) or getattr(args, name) <= 0:
             parser.error(f'{name} must be positive and finite')
     for name in ('drift_score_ratio', 'box_threshold', 'text_threshold'):
@@ -115,10 +124,11 @@ def main():
 
     tracker = PoseTracker(args.mesh_file, args.mesh_scale, args.debug_dir,
                           args.est_refine_iter, args.track_refine_iter, args.drift_score_ratio,
-                          args.detector_bbox_margin)
+                          args.detector_bbox_margin, args.relock_iterations)
 
     recovery = RecoveryTracker(detector, tracker, args.prompt, args.retry_interval,
-                               args.max_frame_gap, args.validation_interval, args.loss_patience)
+                               args.max_frame_gap, args.validation_interval, args.loss_patience,
+                               args.roi_margin, args.roi_patience)
     recovery.set_recovery_mode(args.auto_recovery)
 
     with ExitStack() as resources:

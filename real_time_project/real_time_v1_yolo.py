@@ -30,6 +30,14 @@ def main():
     p.add_argument('--serial', default='')
     p.add_argument('--width', type=int, default=640); p.add_argument('--height', type=int, default=480); p.add_argument('--fps', type=int, default=30)
     p.add_argument('--register_iter', type=int, default=5); p.add_argument('--track_iter', type=int, default=2)
+    p.add_argument('--relock_iterations', type=int, default=6,
+                   help="track_one()-style refine iterations for a prior-seeded recovery relock, "
+                        "tried before register()'s full multi-hypothesis search")
+    p.add_argument('--roi_margin', type=float, default=1.5,
+                   help='Recovery detector search crops to the last known bbox padded by this '
+                        'multiple of its size, instead of scanning the full frame')
+    p.add_argument('--roi_patience', type=int, default=3,
+                   help='Consecutive ROI-crop misses before falling back to a full-frame search')
     p.add_argument('--udp_host', default='127.0.0.1'); p.add_argument('--udp_port', type=int, default=5005)
     p.add_argument('--frame_id', default='camera_color_optical_frame')
     p.add_argument('--debug_dir', default=None,
@@ -38,9 +46,11 @@ def main():
     if not torch.cuda.is_available():
         raise RuntimeError('CUDA is required for FoundationPose')
     detector = YOLOEPipeline(a.yoloe_checkpoint, device='cuda', conf=a.conf, imgsz=a.imgsz)
-    tracker = PoseTracker(a.mesh_file, a.mesh_scale, a.debug_dir, a.register_iter, a.track_iter, 0.0, 0.5)
+    tracker = PoseTracker(a.mesh_file, a.mesh_scale, a.debug_dir, a.register_iter, a.track_iter, 0.0, 0.5,
+                         a.relock_iterations)
     recovery = RecoveryTracker(detector, tracker, a.prompt, retry_interval=0.1,
-                               max_frame_gap=1.0, validation_interval=0.0, loss_patience=10)
+                               max_frame_gap=1.0, validation_interval=0.0, loss_patience=10,
+                               roi_margin=a.roi_margin, roi_patience=a.roi_patience)
     camera = D455Source(a.width, a.height, a.fps, a.serial)
     sender = PoseSender(a.udp_host, a.udp_port, a.frame_id)
     cv2.namedWindow('FoundationPose YOLOE D455', cv2.WINDOW_NORMAL)
