@@ -1,9 +1,0 @@
-__pycache__/
-*.py[cod]
-.venv/
-sam2_src/
-results*/
-checkpoints/
-*.pt
-*.ts
-*.onnx
