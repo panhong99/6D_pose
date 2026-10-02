@@ -36,9 +36,13 @@ def latest_t_base_cam():
     found = sorted((DATA / 'real_handeye').glob('*/T_base_cam.json'))
     if not found:
         raise SystemExit('no real hand-eye result in data/real_handeye/; pass --t_base_cam')
-    # Human decision 2026-10-01: the tape-height-corrected variant (camera z = measured lens height) is the default.
-    zfix = found[-1].with_name('T_base_cam_zfix.json')
-    return zfix if zfix.is_file() else found[-1]
+    # Human decision 2026-10-02: marker-scale + constant x/y offset fitted on 5 cube positions vs wrist-ArUco GT
+    # (horizontal error ~7 -> ~2 mm leave-one-out; zfix was ~19 mm).  Valid for the current camera placement only.
+    for name in ('T_base_cam_markerscale_xyoffset.json', 'T_base_cam_zfix.json'):
+        chosen = found[-1].with_name(name)
+        if chosen.is_file():
+            return chosen
+    return found[-1]
 
 
 def parse_args(argv=None):

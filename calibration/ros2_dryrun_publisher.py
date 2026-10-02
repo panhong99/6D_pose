@@ -11,26 +11,30 @@ Reads the JSON that calibration/real_pose_dryrun.py sends to 127.0.0.1:5010 and 
 These topics are NOT read by the Doosan driver; it never publishes a command, calls a motion service, or touches
 /dsr01.  A human reads the values and sets the pendant.
 """
+import argparse
 import json
 import socket
+from pathlib import Path
 
 import numpy as np
 import rclpy
 from geometry_msgs.msg import PoseStamped
 from rclpy.node import Node
+from rclpy.qos import QoSProfile, DurabilityPolicy
 from scipy.spatial.transform import Rotation
 from std_msgs.msg import Float64MultiArray, String
 
 
 class DryRunPublisher(Node):
-    def __init__(self, port=5010):
+    def __init__(self, port=5010, ack_file=None):
         super().__init__('sixd_dryrun_publisher')
-        self.pose = self.create_publisher(PoseStamped, '/sixd/dryrun/target_pose', 10)
-        self.joints = self.create_publisher(Float64MultiArray, '/sixd/dryrun/target_joints_deg', 10)
-        self.waypoints = self.create_publisher(Float64MultiArray, '/sixd/dryrun/waypoints_deg', 10)
-        self.status = self.create_publisher(String, '/sixd/dryrun/status', 10)
+        self.ack_file = ack_file
+        qos = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL)
+        self.pose = self.create_publisher(PoseStamped, '/sixd/dryrun/target_pose', qos)
+        self.joints = self.create_publisher(Float64MultiArray, '/sixd/dryrun/target_joints_deg', qos)
+        self.waypoints = self.create_publisher(Float64MultiArray, '/sixd/dryrun/waypoints_deg', qos)
+        self.status = self.create_publisher(String, '/sixd/dryrun/status', qos)
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.sock.bind(('127.0.0.1', port))
         self.sock.setblocking(False)
         self.create_timer(0.05, self.poll)
@@ -49,6 +53,8 @@ class DryRunPublisher(Node):
             return_min_clearance_m=legs.get('return', {}).get('min_clearance_straight_m'),
             dry_run=True))))
         if 'T_base_flange_pregrasp' not in res or not res.get('accepted'):
+            if self.ack_file:
+                self.ack_file.touch()
             return                                            # refused plans publish status only
         T = np.array(res['T_base_flange_pregrasp'])
         msg = PoseStamped()
@@ -61,11 +67,21 @@ class DryRunPublisher(Node):
         self.joints.publish(Float64MultiArray(data=[float(v) for v in res['q_pregrasp_deg']]))
         wp = np.array(legs['approach']['waypoints_deg'], dtype=float)
         self.waypoints.publish(Float64MultiArray(data=wp.ravel().tolist()))
+        if self.ack_file:
+            self.ack_file.touch()
 
 
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--port', type=int, default=5010)
+    parser.add_argument('--ready-file', type=Path)
+    parser.add_argument('--ack-file', type=Path)
+    args = parser.parse_args()
     rclpy.init()
-    node = DryRunPublisher()
+    node = DryRunPublisher(args.port, args.ack_file)
+    # Written only after the UDP listener and ROS publishers exist.
+    if args.ready_file:
+        args.ready_file.touch()
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:

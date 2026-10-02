@@ -253,3 +253,28 @@
 - 이동: Isaac scene/sim 파이프라인·FoundationPose sim·시험, 수기 입력 캡처(`capture_handeye.py`)와 **자동 이동 스크립트 `ros2_run_waypoints.py`**, sim 캘리브레이션/USD(약 360 MB), 실패 샘플/분석, 사진, 이전 계획.
 - 코드 변경: 순수 기구학을 `kinematics.py`로 분리(`Kinematics`, `cube_yaw_deg`, `grasp_frames`, `DEFAULT_URDF`), `workcell.py`에서 Isaac/카메라 배치 코드 제거(`frame_layout`은 박스 목록만 반환), `FRAME_CELL` 기본값을 실측값으로(여유 0.10 m). 시험 `test_core.py` 12개 통과(영점 FK=실기 flange, IK 왕복, top-down 자세, hand-eye 복원, 실측 프레임 배치, 계획 수락/거부, mover 거부 규칙·기본 속도 ≤2 deg/s, 궤적 한계). 각 스크립트 `--help`/구문 확인. 커밋/푸시는 하지 않음(Human 확인 후).
 - 작성자: Claude
+
+## 2026-10-01 정정: 높이 보정 변환(zfix)의 캘리브레이션 오차 (Claude)
+- Human 질문(캘리브레이션 오차)에 답하며 3개 변환을 같은 25샘플에 평가: 기본 `T_base_cam` pos 평균 **5.41 mm**(최대 8.41)/rot 1.28°(3.00), leave-one-out 5.88/9.27 mm; marker-scale `T_base_cam_markerscale` **3.12 mm**(5.62)/1.26°; **`T_base_cam_zfix`(현재 기본값) 23.30 mm**(27.20)/1.28° — 평균 dz +22.7 mm. 즉 zfix는 marker 데이터(로봇 flange 기준)와 z로 23 mm 불일치하는 변환이며, 이를 알리지 않고 기본값으로 권고·적용한 것은 내 누락. 근거가 서로 충돌: (a) marker 데이터는 기본/보정본(z 9.2/10.3 cm) 지지, (b) 줄자 렌즈 높이 11.5 cm와 큐브 z 예측 7 mm(예상 28.5)는 +12~23 mm 지지.
+- 조치: Human에게 보고하고 기본값 선택을 요청(기본 `T_base_cam` / marker-scale / zfix 유지). 선택 전까지 파일은 보존, 이동 계획에 쓰이는 값은 zfix(실행 시험 완료)임을 명시.
+- 작성자: Claude
+
+## 2026-10-02 두 터미널 통합 파이프라인 (Codex, Human 요청)
+- 요청: ROS 연결 1개 + 인식부터 경로·ROS 전달·이동까지 실행 1개로 단순화. 이번 구현 중 로봇 이동 금지.
+- 구현: `run_robot_connection.sh`(ROS 환경+bringup), `run_cube_pipeline.sh`(conda 통합 실행), `cube_pipeline.py`(인식/상태/발행 자식 관리 + 기존 계획 함수 + 감독형 mover). 기본은 이동 없는 계획/발행, Human의 `--execute` 실행에서만 기존 선언문·경유점별 `go`를 유지. 접근 후 `return` 선택 시 복귀 승인; 자동 복귀·연속 자동 이동은 만들지 않음.
+- 경계: 현재 관절 1초 이내 수신 필수, 영점 fallback 금지. 신선한 카메라 pose·기존 8개/3 mm/3° 안정성·양방향 충돌/관절 검사 후 계획 고정. 프로세스 실패는 중단·정지 요청. 오프라인 결과에는 실제 이동 금지 표시. `go` 입력 후 현재 관절과 plan 나이를 재검사.
+- 변환 선택/캘리브레이션 데이터는 기존 동작 유지. zfix의 마커 잔차 평균 23.3 mm·큐브 GT 미검증을 시작 화면/README에 명시. GT 확보는 이번 변경 범위 밖.
+- README 두 개를 실행 명령·출력·승인·복귀·종료·진단 순으로 재작성. 실제 로봇 이동/서비스 호출 없이 하드웨어 없는 검사만 수행.
+- 작성자: Codex
+
+## 2026-10-02 기본 T_base_cam을 markerscale + xy 상수 오프셋으로 변경 (Human 결정, Claude 구현)
+- 근거: 큐브 5곳(`calibration/data/gt_compare/20261002_112500/positions.json`)에서 wrist ArUco GT 대비 FoundationPose×T_base_cam 수평 오차 평균 — 기본/zfix 19.4 mm, markerscale 6.9 mm. 오차가 위치와 거의 무관한 상수 편향(산포 ~1 mm) → markerscale 변환에 base 기준 x +4.56, y +5.07 mm를 더한 `T_base_cam_markerscale_xyoffset.json` 생성(원본 파일 보존). leave-one-out 수평 오차 평균 2.1 mm(최대 2.8).
+- **z는 보정하지 않음**: GT 큐브 중심 z가 약 15 mm로 나옴(테이블 위면 28.5 mm여야 함). 마커 실측 길이·base z=0 위치 미확인이라 GT z가 신뢰 불가. 회전은 법선 1.5–4°, yaw ±3° 수준으로 비교만 했고 보정 안 함.
+- 코드: `real_pose_dryrun.latest_t_base_cam()`이 `T_base_cam_markerscale_xyoffset.json` → `T_base_cam_zfix.json` → `T_base_cam.json` 순으로 선택. 카메라를 옮기면 재캘리브레이션과 재보정 필요. 단위시험 20개 통과.
+- 작성자: Claude
+
+## 2026-10-02 작업 셀 테이블 높이: 베이스 플레이트 20 mm 반영 (Human 측정, Claude 구현)
+- Human 측정: 로봇 베이스와 테이블 사이에 철판(플레이트) 20 mm. base 좌표 z=0은 베이스 바닥면이므로 테이블 상면은 z=−0.020 m. 근거 일치: GT 마커 윗면 z로 역산한 테이블 면 −14~−18 mm, 줄자 렌즈 높이 11.5 cm − 2 cm ≈ 9.5 cm vs 기본 변환 카메라 z 9.2/10.3 cm. FoundationPose z 자체는 로봇 좌표계에서 일관(FP−GT dz +0.9 mm)이라 변환은 수정하지 않음.
+- 코드: `workcell.py`에 `base_plate_thickness`(기본 0.020) 추가. 테이블 상면과 그 위에 선 프레임(기둥·레일)을 모두 z=−0.020 기준으로 배치(기둥 아래 −0.02, 프레임 높이 1.20 m는 테이블 면 기준 가정). `data/real_cell_measured.json`에 같은 키 추가. 단위시험 20개 통과.
+- 영향: 충돌 모델이 이전(테이블 z=0)보다 20 mm 낮아 테이블 근처 여유가 커짐(실제에 맞춤). 프레임 높이가 테이블 면 기준인지는 가정. 큐브 중심 예상 z는 −0.020+0.0285 = 8.5 mm이고 FP(markerscale)는 약 15 mm로 남은 차이 약 6 mm는 GT/배율 불확실성 범위.
+- 작성자: Claude

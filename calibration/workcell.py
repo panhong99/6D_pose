@@ -1,6 +1,7 @@
 """Static work cell (table, aluminium frame, D455 body) and voxel collision checks of the M1013.
 
-All lengths are metres in the robot base frame (x toward the object, +y left, z up, table top at z = 0).
+All lengths are metres in the robot base frame (x toward the object, +y left, z up, robot base bottom at z = 0).
+The base stands on a 20 mm steel plate, so the table top is at z = -base_plate_thickness (Human, 2026-10-02).
 Boxes -> 1 cm occupancy grid -> distance field; samples on the robot's collision meshes are moved by the URDF
 kinematics and looked up in the field, so a joint path can be checked before anything is sent to the controller.
 """
@@ -23,7 +24,7 @@ LINK_MESHES = {
 }
 MESH_SCALE = 0.001
 # link_1 only spins about the vertical axis on top of the base plate: its gap to the
-# table (60 mm) never changes, and counting it would eat the keep-out margin.
+# table (80 mm with the 20 mm plate under the base) never changes, and counting it would eat the keep-out margin.
 # link_2 (the shoulder housing) is the same: a cylinder turning about its own axis 80 mm above the table at
 # every pose (measured at the zero and approach poses), and >0.7 m from the frame, so a keep-out margin above
 # 80 mm could never be met by the robot's own base.
@@ -41,6 +42,7 @@ POINT_CACHE = Path(__file__).resolve().parent / 'data' / 'm1013_collision_points
 FRAME_CELL = dict(
     table_size=(1.80, 1.20),
     table_thickness=0.10,
+    base_plate_thickness=0.020,      # steel plate between robot base and table: table top z = -0.020 (Human 2026-10-02)
     robot_from_table_edge=0.30,      # ASSUMED
     frame_centre_xy=(1.25, 0.0),     # centre of the four uprights
     frame_size=(0.84, 1.16),         # upright centre lines 0.80 x 1.12 m + one profile width
@@ -59,13 +61,14 @@ def frame_layout(cell=FRAME_CELL):
     cx, cy = cell['frame_centre_xy']
     fx, fy = cell['frame_size']
     h, p = cell['frame_height'], cell['profile']
-    boxes = [('table', [tx / 2 - edge, 0.0, -cell['table_thickness'] / 2], [tx, ty, cell['table_thickness']])]
+    z0 = -cell['base_plate_thickness']                     # table top in the base frame; the frame stands on the table
+    boxes = [('table', [tx / 2 - edge, 0.0, z0 - cell['table_thickness'] / 2], [tx, ty, cell['table_thickness']])]
     xs = (cx - fx / 2 + p / 2, cx + fx / 2 - p / 2)
     ys = (cy - fy / 2 + p / 2, cy + fy / 2 - p / 2)
     for i, x in enumerate(xs):
         for j, y in enumerate(ys):
-            boxes.append((f'upright_{i}{j}', [x, y, h / 2], [p, p, h]))
-    top = h - p / 2
+            boxes.append((f'upright_{i}{j}', [x, y, z0 + h / 2], [p, p, h]))
+    top = z0 + h - p / 2
     for i, x in enumerate(xs):
         boxes.append((f'rail_y_{i}', [x, cy, top], [p, fy - 2 * p, p]))
     for j, y in enumerate(ys):

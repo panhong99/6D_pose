@@ -8,7 +8,7 @@ single MoveJoint calls, SLOWEST speed, one waypoint per confirmation.  Default i
 
 Safety design (every item can only make it refuse / stop, never move more):
   * --execute is required; without it the script only validates and prints the table (works without ROS).
-  * Speed is capped: --vel_deg_s default 2, hard limit 5 deg/s; --acc_deg_s2 default 2, hard limit 5.  Higher is refused.
+  * Speed is capped: --vel_deg_s default/limit 2 deg/s; --acc_deg_s2 default/limit 2. Higher is refused.
   * The plan must be `accepted`, younger than --max_plan_age_min, and every move must turn a joint <= --max_step_deg.
   * Every waypoint must be inside the URDF joint limits (with a 2 deg margin).
   * The robot's CURRENT joints (read-only service) must match the leg's first waypoint within --max_start_error_deg,
@@ -29,7 +29,7 @@ from pathlib import Path
 import numpy as np
 
 URDF = Path('/home/pan/pan/doosan_ws/install/dsr_description2/share/dsr_description2/urdf/m1013.urdf')
-VEL_HARD_LIMIT, ACC_HARD_LIMIT = 5.0, 5.0
+VEL_HARD_LIMIT, ACC_HARD_LIMIT = 2.0, 2.0
 OPENING = 'area clear, e-stop in hand'
 
 
@@ -62,18 +62,20 @@ def joint_limits_deg():
 def validate(args, plan):
     """Return (waypoints Nx6 deg, list of problems).  Never raises on a bad plan."""
     problems = []
-    if args.vel_deg_s <= 0 or args.vel_deg_s > VEL_HARD_LIMIT:
+    if not np.isfinite(args.vel_deg_s) or args.vel_deg_s <= 0 or args.vel_deg_s > VEL_HARD_LIMIT:
         problems.append(f'--vel_deg_s {args.vel_deg_s} outside (0, {VEL_HARD_LIMIT}] (hard limit)')
-    if args.acc_deg_s2 <= 0 or args.acc_deg_s2 > ACC_HARD_LIMIT:
+    if not np.isfinite(args.acc_deg_s2) or args.acc_deg_s2 <= 0 or args.acc_deg_s2 > ACC_HARD_LIMIT:
         problems.append(f'--acc_deg_s2 {args.acc_deg_s2} outside (0, {ACC_HARD_LIMIT}] (hard limit)')
     if not plan.get('accepted'):
         problems.append('plan is not accepted: ' + '; '.join(plan.get('reasons', [])))
     if not plan.get('dry_run'):
         problems.append('file is not a dry-run plan')
+    if plan.get('offline_test') or plan.get('execution_allowed') is False:
+        problems.append('offline fixture cannot be used for real motion')
     try:
         created = time.mktime(time.strptime(plan['created'], '%Y-%m-%d %H:%M:%S'))
         age = (time.time() - created) / 60
-        if age > args.max_plan_age_min:
+        if age < -1 or age > args.max_plan_age_min:
             problems.append(f'plan is {age:.0f} min old (> {args.max_plan_age_min:.0f}): scene may have changed, re-plan')
     except (KeyError, ValueError):
         problems.append('plan has no creation time')
@@ -165,12 +167,23 @@ def main():
                   f'(largest turn {turn:.1f} deg, ~{turn / args.vel_deg_s:.0f} s at {args.vel_deg_s} deg/s)')
             if input('type "go" to move, anything else aborts: ').strip() != 'go':
                 sys.exit('aborted by user - robot left where it is')
+            # A human may wait at the prompt or jog the robot on the pendant.
+            now = current()
+            if np.abs(now - wp[k - 1]).max() > args.max_start_error_deg:
+                sys.exit('REFUSED: robot moved while waiting for go; make a new plan')
+            _, problems = validate(args, plan)
+            if problems:
+                sys.exit('REFUSED: ' + '; '.join(problems))
+            turn = np.abs(wp[k] - now).max()
+            if turn > args.max_step_deg:
+                sys.exit('REFUSED: actual joint turn exceeds the segment limit')
             req = MoveJoint.Request()
             req.pos = [float(v) for v in wp[k]]
             req.vel, req.acc, req.time, req.radius = float(args.vel_deg_s), float(args.acc_deg_s2), 0.0, 0.0
             req.mode, req.blend_type, req.sync_type = 0, 0, 0     # absolute, no blending, synchronous
             res = call(move_joint, req, turn / args.vel_deg_s * 2 + 20)
             if res is None or not res.success:
+                request_stop()
                 sys.exit('controller did not accept / complete the move (control authority on the pendant?) - '
                          'stopped, nothing retried')
             reached = np.abs(current() - wp[k]).max()

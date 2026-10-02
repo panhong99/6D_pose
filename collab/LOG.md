@@ -355,3 +355,61 @@
 ## 2026-10-01 (Claude: git용 README 갱신)
 - 루트 `README.md`에 7장(실기 로봇 연동 현재 진행 상황: 확인된 결과 표, 미해결/주의)과 8장(검증 명령어 1~7)을 추가, 폴더 구조에 `calibration/`·`collab/` 반영. 1~3번 명령(오프라인 시험 12개, 스크립트 `--help`, D455 인식 수)을 문서 그대로 실행해 확인. 기존 1~6장은 수정하지 않음.
 - 작성자: Claude
+
+## 2026-10-01 (Claude: 퇴근 정리)
+- `collab/NEXT_2026-10-02.md` 작성(현재 상태, 변환별 오차, 결정 필요 사항, 내일 2대 카메라 작업, 재시작 명령, 규칙). 내가 켠 프로세스(main.py 등) 종료, bringup은 이미 꺼져 있음 확인.
+- 작성자: Claude
+
+## 2026-10-02 (Claude: 큐브 위치 변경 후 재실행 + 도착 비교)
+- 큐브 위치를 바꾼 뒤 `main.py`(640x480) + `real_pose_dryrun.py`로 새 plan 생성(`calibration/data/real_dryrun/20261002_091915/plan_001.json`, 기본 변환 `T_base_cam_zfix`). FP 큐브 base `[1040.5, 47.6, 28.6] mm`, 접근 3구간, 2 deg/s, 점마다 `go`(감독형). 첫 시도는 ROS2 환경(`source /opt/ros/jazzy`, `doosan_ws`)을 source하지 않아 `No module named 'rclpy'`로 실패 → source 후 재실행해 이동 완료(Human).
+- 도착 후 ROS(`ros2_flange_udp.py`, UDP 5006) flange `[1040.60, 47.84, 128.60] mm` vs plan 목표 `[1040.55, 47.64, 128.62]`: 차이 0.21 mm / 0.03°, 관절 차이 ≤0.006°. **이것은 이동 정확도이지 캘리브레이션/GT 오차가 아님**: 목표가 FP×T_base_cam→IK 결과라 도착값과 일치는 당연하고 T_base_cam이 틀려도 같은 값이 나옴. GT 오차는 로봇 쪽과 독립적인 기준이 있어야 관측 가능.
+- 계획(미실행): GT 기준 확보 방법 3가지 — (1) 핀/포인터를 flange에 달고 큐브 중심을 직접 찍어 펜던트 좌표를 GT로 사용, (2) flange 아래 큐브 수평 어긋남을 자로 측정(오차 1–2 cm 포함), (3) `verify_handeye_marker.py`로 flange ArUco 두 경로(로봇 경로 vs 카메라 경로) 비교 — 마커가 카메라를 향하는 자세 필요, `main.py`는 끄고 D455 비우기, **640x480으로 실행**(1280x720은 FoundationPose OOM; 스크립트 기본값이 1280x720이므로 `--width 640 --height 480` 명시, 캘리브레이션 해상도와 intrinsics 일치 여부 확인 필요), `--t_base_cam`으로 기본/markerscale/zfix 비교 권장.
+- 실기 이동은 Human이 승인·실행(감독형·최저속). 나는 로봇에 이동 명령 0회, 읽기 전용 UDP 수신만 수행.
+- 작성자: Claude
+
+## 2026-10-02 (Codex: 두 터미널 통합 실행과 README 재작성)
+- 추가: `calibration/run_robot_connection.sh`, `run_cube_pipeline.sh`, `cube_pipeline.py`, `test_cube_pipeline.py`. 통합 실행에서 현재 관절 읽기 → YOLOE/FP 연속 인식 → 안정성/변환/IK/충돌/관절 검사 → JSON/CSV 저장 → ROS 관찰용 토픽 발행 → 선택적 기존 감독형 mover 호출. 인식 창 유지, plan 경로 자동 전달, 종료 시 소유 자식만 정리.
+- 보완: publisher의 준비/처리 확인 파일과 마지막 결과 QoS, 중복 UDP 포트 거부, mover의 오프라인 결과 거부·승인 후 현재 관절/plan 재검사·실패 시 정지 요청. 루트 및 calibration README를 실제 사용 순서로 교체.
+- 검증: 기존 12개+통합 7개 = 19/19 PASS(12.019 s), 승인 대기 중 자세 변경 회귀시험 추가 1/1 PASS(0.005 s). 전체 20개 모두 하드웨어 없는 시험이며 ROS/프로세스/소켓 동작은 모의. 쉘 구문·Python 구문·CLI 도움말 및 시스템 Python ROS 의존성 import 확인(노드 생성/서비스 호출 없음).
+- 통합 셸 명령 `bash calibration/run_cube_pipeline.sh --offline-test` PASS. 합성 큐브 `[1.04, 0.05, 0.0285]` m, 접근/복귀 각 2 moves, 직선 최소 clearance 각각 약 120 mm(기준 100 mm). 결과 `calibration/data/pipeline_offline/20261002_102913_vekiuelr/plan_001.{json,csv}`; 실제 이동에 사용 금지 표시.
+- 이번 작업에서는 카메라/GPU 인식/bringup/실제 ROS 노드를 실행하지 않았고 로봇 서비스 호출·이동 명령 0회. 실제 하드웨어 통합 실행은 Human 실행 전 미검증 상태. GT 작업은 보류, 기존 calibration 결과 보존.
+- 작성자: Codex
+
+## 2026-10-02 (Claude: wrist 카메라 hand-eye 캡처 스크립트)
+- Human 제안: 큐브 중앙에 ArUco(DICT_4X4_50, id 1, 45 mm) 부착, wrist D455(시리얼 338122303684, 고정 카메라는 338122300585)로 마커를 가까이서 읽어 base 기준 GT로 사용 → FoundationPose×T_base_cam과 비교.
+- 전제: wrist 카메라 `T_flange_cam`이 없음 → `calibration/wrist_handeye.py` 추가(eye-in-hand, 고정 마커, Human이 펜던트로 이동·스크립트는 읽기 전용; 로봇 pose는 ros2_flange_udp UDP 5006). 식 `T_base_flange @ T_flange_cam @ T_cam_marker = T_base_marker(상수)`, Park-Martin + 정제. 합성 데이터 자체 시험: X 위치 오차 ~1e-13 mm. 실기 캡처는 아직 안 함. 결과 `data/wrist_handeye/<시간>/{samples.json,result.json}`.
+- 남은 일: 캡처 20+자세 → LOO 오차 확인 → 큐브 위 마커의 `T_cube_marker`(큐브 크기·면 중심) 입력 → FoundationPose×T_base_cam 과 비교 스크립트.
+- 작성자: Claude
+- (추가) `wrist_handeye.py`: 첫 세션 `data/wrist_handeye/20261002_105957/` 20샘플 전체 fit 5.5 mm(최대 22) / LOO 6.1 mm. 마커 거리 0.9–1.0 m 샘플(16,18,19)이 15–22 mm로 튐(45 mm 마커는 먼 거리에서 부정확) → 0.7 m 이하 16샘플만 오프라인 재계산 fit 2.4 mm(최대 5.9) / LOO 2.9 mm, T_base_marker ≈ [989.1, 45.1, 34.0] mm. `--max_dist`(기본 0.7)/`--min_dist`(기본 0.3) 옵션과 `--session` 이어찍기 추가. 큐브는 마커 부착 때문에 위치가 바뀐 상태(카메라는 그대로) → 이전 plan의 큐브 위치는 무효. 작성자: Claude
+
+## 2026-10-02 (Claude: Codex 두 터미널 통합 파이프라인 검토)
+- 검토 대상: `cube_pipeline.py`, `run_robot_connection.sh`, `run_cube_pipeline.sh`, `test_cube_pipeline.py`, `ros2_pendant_mover.py`/`ros2_dryrun_publisher.py` 변경. 하드웨어 없이 `test_cube_pipeline` + `test_core` 20개 통과(로봇·카메라·ROS 호출 0회).
+- 수정 1건: `--serial` 기본값이 빈 문자열이었음 → D455가 2대(고정 338122300585, wrist 338122303684)라 인식이 wrist 카메라를 잡을 수 있음. 기본값을 고정 카메라 시리얼로 변경, README 문구 갱신.
+- 주의(코드 이상 아님): ① 통합 파이프라인은 자체적으로 `ros2_flange_udp.py`(UDP 5006)와 publisher(5010)를 띄우고 5005/5006을 독점 bind → 기존 터미널의 `ros2_flange_udp.py`·`wrist_handeye.py`가 떠 있으면 충돌하거나 중복. ② mover 속도 한도가 5→2 deg/s로 낮아짐(의도적). ③ plan 나이 한도 30분: 접근 후 return을 30분 넘게 미루면 거부됨(안전쪽 동작).
+- 작성자: Claude
+
+## 2026-10-02 (Claude: wrist GT 검증 + 큐브 오차 측정 스크립트)
+- wrist 최종 캘리브레이션: 30샘플 중 마커 거리 0.3–0.65 m 20샘플. marker_scale 1.0이면 fit 2.3 mm / LOO 2.6 mm, T_base_marker ≈ [987, 46, 37] mm. Human 확인: 큐브는 테이블 위에 직접, 마커는 **윗면**에 부착 → 마커 윗면 z는 약 57 mm여야 하는데 측정은 34–37 mm(약 20 mm 낮음).
+- 오프라인 점검(`--marker_scale`로 카메라→마커 거리 배율 스캔): 배율 0.982에서 fit 0.77 mm / LOO 0.89 mm로 급감(1.0일 때 2.3 mm). 고정 카메라에서도 0.977 반복됨 → 인쇄 마커가 실제로 45 mm보다 약 1.8% 작을 가능성(≈44.2 mm) 또는 intrinsics 스케일. 실측 필요. 이 배율에서도 마커 윗면 z=44 mm로 57 mm보다 약 13 mm 낮음 → 가설: base z=0이 실제 테이블 면보다 약 13 mm 위(설치 플레이트/간격?). 어제 모든 카메라 기반 z 예측이 12–23 mm 낮았던 것과 같은 방향. **미검증**; zfix가 카메라 z 오차가 아니라 base 높이 오프셋을 보정했을 수도 있음. 확인: 테이블 면의 base z를 실측(플랜지/핀 접촉 또는 줄자).
+- `wrist_handeye.py`에 `--marker_scale` 추가(solve 시 배율 적용, result.json meta에 기록). 현재 result.json은 0.982 적용본(fit 0.77 / LOO 0.89 mm). 인쇄 마커 변 길이를 캘리퍼/자로 재서 확정 필요.
+- `calibration/cube_gt_compare.py` 추가: wrist로 큐브 윗면 마커 GT(큐브 중심 = 마커 원점에서 −z로 28.5 mm) vs FoundationPose×T_base_cam(변환별). 위치 오차 dx/dy/dz, 윗면 법선 각도, yaw(90° 주기), 평균·편향·산포. 합성 데이터로 계산 검증(위치·tilt·yaw·축 재배치·90° wrap). 실기 측정은 아직 안 함.
+- 작성자: Claude
+
+## 2026-10-02 (Claude: 5점 오차 측정 결과와 기본 변환 변경)
+- `cube_gt_compare.py`로 5곳 측정. 수평 오차 평균: 기본/zfix 19.4 mm, markerscale 6.9 mm. 평균 편향(FP−GT) markerscale x −4.6, y −5.1, z +0.9 mm, 산포 ~1 mm. 상수 xy 오프셋 보정 후 leave-one-out 수평 오차 평균 2.1 mm(xy만, z·회전 제외). 자세: 법선 1.5–4°, yaw ±3°.
+- Human 결정으로 보정본을 기본으로 채택(DECISIONS 참조). z는 GT 문제로 보류(마커 실측 길이와 테이블 면 base z 필요).
+- 작성자: Claude
+
+## 2026-10-02 (Claude: 마커 배율 원인 확정, z 오차 해석)
+- Human 확인: 고정 카메라용 100 mm 출력 마커를 줄자로 재면 약 98 mm → 출력 배율 약 2% 축소(캘리브레이션이 찾은 0.977과 일치). wrist용 45 mm 마커도 같은 방식으로 출력했으므로 약 44.2 mm(0.982)로 판단(줄자로는 45 vs 44.2 구분 불가, 간접 근거). 따라서 wrist `marker_scale` 0.982 유지, 기본 변환 `T_base_cam_markerscale_xyoffset.json` 유지. 다음 출력은 인쇄 배율 100%로 하고 실측 변 길이를 `--marker_size`에 사용.
+- z 해석: GT 마커 윗면 z ≈ 43 mm(배율 0.982) / 39 mm(1.0). 큐브가 테이블 위에 있으므로 테이블 면의 base z ≈ −14 mm(배율 1.0이면 −18 mm). Human 눈대중 플레이트 두께 ≈ 20 mm와 같은 크기 → base z=0이 테이블 면이 아니라 플레이트 윗면(베이스 바닥면). 어제 줄자 렌즈 높이 11.5 cm − 1.3 cm ≈ 10.2 cm가 markerscale 카메라 z(10.3 cm)와 일치, zfix(11.5 cm)는 이 오프셋을 반대로 보정한 것. FoundationPose z는 로봇 좌표계에서 이미 일관(FP−GT dz +0.9 mm). 충돌 모델의 테이블 z=0 가정은 실제보다 높아 보수적(안전한 쪽). 플레이트 두께 정밀 측정 후 `workcell.py`/`real_cell_measured.json` 테이블 높이 수정 예정.
+- 작성자: Claude
+
+## 2026-10-02 (Claude: 테이블 높이 반영)
+- 플레이트 20 mm 측정 반영: `workcell.py` `base_plate_thickness`, `real_cell_measured.json`. 테이블 상면 z=−0.020, 프레임도 같은 기준. 단위시험 20개 통과(로봇·카메라·ROS 호출 0회). 자세한 내용은 DECISIONS 참조.
+- 작성자: Claude
+
+## 2026-10-02 (Claude: README 정리, ArUco 거리-오차)
+- 루트 `README.md`를 환경 세팅 / 평소 실행(터미널 2개) / 캘리브레이션·오차 측정 명령 / 현재 설정·한계 / 문제 해결 중심으로 재작성, gif 표 삭제(`assets/videos/*.gif` 파일은 그대로 둠). `calibration/README.md`에 `wrist_handeye.py`, `cube_gt_compare.py`와 기본 변환 설명 갱신.
+- wrist ArUco 거리-오차(30샘플, 1280x720, fx 647, 45 mm 마커, 기준 해는 0.3–0.65 m 샘플): 변 길이 ≥50 px(≤0.58 m) 평균 0.6–0.8 mm, 40–50 px 평균 1.5 mm(최대 5.9 mm는 43 px), 30–40 px(0.9 m) 13.5 mm, <30 px(1.0 m 이상) 11.6 mm. 이 표본에서 임계는 약 45 px. 단, 먼 샘플은 tilt 37°로 겹쳐 있고 표본 수가 적음.
+- 작성자: Claude

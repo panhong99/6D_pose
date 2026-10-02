@@ -1,57 +1,74 @@
-# calibration/ — 실기 M1013 + RealSense D455 (eye-to-hand) 파이프라인
+# 실기 파이프라인 구성
 
-고정 D455가 큐브를 보고 → FoundationPose로 `T_cam_object` → 로봇 base 좌표 → IK → 프레임 충돌 검사 → 관절 경유점 표 →
-(사람이 승인하며) 최저속으로 한 점씩 이동. 시뮬레이션 코드는 `~/pan/6D_pose_archive/calibration_2026-10-01/`로 옮겼다(삭제 아님).
+평소 사용 순서는 루트 [README.md](../README.md)의 **터미널 두 개 실행**을 참고합니다.
 
+```bash
+# 터미널 1 (연결)
+bash calibration/run_robot_connection.sh
+
+# 터미널 2 (인식·계획·결과 발행, 이동 없음)
+bash calibration/run_cube_pipeline.sh --serial 338122300585
+
+# 사람이 실제 이동을 진행할 때의 터미널 2 명령
+bash calibration/run_cube_pipeline.sh --serial 338122300585 --execute
 ```
-T_base_object = T_base_cam @ T_cam_object            # T_a_b: b 좌표를 a로. 단위 m, 카메라는 OpenCV 축(x 오른쪽, y 아래, z 앞)
-```
+
+통합 실행은 plan 경로를 자동 전달하며 인식 창을 계속 켜둡니다. 실제 이동은 기존 mover의 시작 선언문·점마다 `go` 승인을 유지합니다. 도착 후 `return` 입력으로 복귀를 선택하고, `quit`이면 현재 위치에서 종료합니다.
 
 ## 구성
 
-| 구분 | 파일 | 역할 |
-|---|---|---|
-| 인식 | `../real_time_project/main.py` | D455 → YOLOE-seg → FoundationPose, 카메라 기준 4x4 pose를 UDP 5005로 송신 (`../pose_sender_kimm.py`) |
-| hand-eye | `auto_handeye_capture.py`, `run_real_handeye_auto.sh` | flange ArUco를 보며 `T_base_cam` 수집·계산 (사람이 로봇을 움직이고, pose는 ROS2로 **읽기만**) |
-| | `calib_utils.py` | 변환·ArUco 검출·Park-Martin+최소제곱 해·leave-one-out |
-| | `check_marker.py`, `verify_handeye_marker.py`, `analyze_handeye_samples.py`, `real_d455_preview.py` | 마커 확인, 마커로 변환 검증, 샘플 진단, 카메라 미리보기 |
-| ROS2 | `ros2_flange_udp.py` | `get_current_tool_flange_posx`/`get_current_posj` 읽어 UDP 5006으로 송신 (읽기 전용) |
-| | `ros2_dryrun_publisher.py` | 계획 결과를 `/sixd/dryrun/*` 토픽으로 발행 (제어 토픽 아님) |
-| | `ros2_pendant_mover.py` | **감독형 실기 이동**: 경유점마다 사람이 `go` 입력, 기본 2 deg/s (하드 한도 5) |
-| 계획 | `real_pose_dryrun.py` | pose 수신 → base 변환 → IK → 충돌 검사 → 경유점 표 (`data/real_dryrun/`). 로봇에 아무것도 안 보냄 |
-| | `predict_base_pose.py` | FoundationPose 예측 base 좌표를 직접 맞춘 flange 위치와 비교 |
-| | `ik_reach_check.py` | 큐브 위치 ±범위에서 IK/관절한계/충돌 도달성 지도 |
-| 모델 | `kinematics.py` | M1013 URDF 순/역기구학, top-down 파지 자세 |
-| | `workcell.py` | 테이블·프레임 박스, 1 cm voxel 거리장, RRT+경유점 단순화 |
-| | `trajectory.py` | 부드러운 경로·속도/가속 제한 시간 배분 |
-| 시험 | `test_core.py` | 오프라인 12개 (`python -m unittest test_core`) |
+| 파일 | 역할 |
+|---|---|
+| `run_robot_connection.sh` | 터미널 1: ROS 환경 설정 + Doosan bringup |
+| `run_cube_pipeline.sh` | 터미널 2: foundationpose 환경으로 통합 실행 |
+| `cube_pipeline.py` | 자식 프로세스 관리, pose 안정성, 현재 관절 수신, 계획·검사·ROS 발행·감독형 이동 연결 |
+| `../real_time_project/main.py` | D455 → YOLOE → FoundationPose, UDP 5005 |
+| `real_pose_dryrun.py` | 공통 변환 선택·IK·작업 셀 충돌 계획 함수, 기존 개별 드라이런 CLI |
+| `ros2_flange_udp.py` | 시스템 Python: 로봇 flange·관절 읽기 → UDP 5006 |
+| `ros2_dryrun_publisher.py` | 시스템 Python: UDP 5010 → `/sixd/dryrun/*` 결과 토픽 |
+| `ros2_pendant_mover.py` | 시스템 Python: 경유점 검사 및 사람의 `go` 후 MoveJoint |
+| `kinematics.py` | M1013 URDF FK/IK·top-down 접근 자세 |
+| `workcell.py` | 테이블·프레임·카메라 충돌 모델, RRT, 직선 경유점 단순화 |
+| `trajectory.py` | 경로 보간·시간 배분 |
+| `auto_handeye_capture.py`, `run_real_handeye_auto.sh` | 사람의 로봇 조작 + ROS pose 읽기로 hand-eye 수집 |
+| `calib_utils.py` | 변환·ArUco·eye-to-hand solver |
+| `verify_handeye_marker.py`, `predict_base_pose.py` | 변환 검증·base 예측 비교 |
+| `wrist_handeye.py` | wrist D455 eye-in-hand 캘리브레이션(고정 마커, 읽기 전용). `data/wrist_handeye/` |
+| `cube_gt_compare.py` | 큐브 윗면 마커(wrist GT)와 FoundationPose×`T_base_cam` 위치 오차 측정. `data/gt_compare/` |
+| `check_marker.py`, `real_d455_preview.py` | 마커 확인·D455 미리보기 |
+| `test_core.py`, `test_cube_pipeline.py` | 로봇·카메라 없는 회귀 시험 |
 
-데이터: `data/real_handeye/<세션>/`(샘플·`T_base_cam.json`·`T_base_cam_zfix.json`), `data/real_cell_measured.json`(프레임 실측),
-`data/real_d455_intrinsics.json`, `data/m1013_collision_points.npz`(충돌 메시 샘플 캐시), `data/real_dryrun/`(최근 성공 계획).
+## 통합 실행의 경계
 
-## 사용 순서
+- 기본 실행은 상태 읽기·계획·관찰용 ROS 결과 발행까지만 합니다.
+- `--execute`에서만 기존 감독형 mover를 실행합니다. 자동 연속 이동이나 자동 복귀는 없습니다.
+- 실제 관절값이 1초 이내로 수신되지 않으면 계획을 만들지 않습니다. 영점으로 대체하지 않습니다.
+- 카메라 pose의 시각·행렬·연속 안정성, 양방향 경로의 충돌 여유·관절 한계·구간 크기를 확인합니다.
+- 인식/ROS 자식 프로세스가 종료되면 파이프라인을 중단합니다. 실행 중 mover가 있으면 SIGINT로 정지를 요청합니다.
+- UDP 수신 포트는 한 실행이 독점합니다. 기존 bridge/planner와 중복 실행하면 실패합니다.
+- 한 번 실행에 큐브 목표 하나를 고정합니다. 물체를 옮겼으면 새 실행으로 계획을 만듭니다.
+- `--offline-test`는 합성 pose만 사용하며, 저장 결과는 실제 이동용으로 거부합니다.
 
-0. 로봇 연결(별도 터미널, 연결만 함):
-   ```bash
-   sudo ip addr add 192.168.127.5/24 dev enp5s0      # 재부팅 시 1회 (컨트롤러 192.168.127.100)
-   source /opt/ros/jazzy/setup.bash && source ~/pan/doosan_ws/install/setup.bash
-   ros2 launch dsr_bringup2 dsr_bringup2_rviz.launch.py mode:=real host:=192.168.127.100 port:=12345 model:=m1013
-   ```
-1. hand-eye (카메라를 고정한 뒤): `./calibration/run_real_handeye_auto.sh --marker_size 0.10` — 자세 25개, 결과 `data/real_handeye/<시간>/`.
-   카메라가 움직이면 이전 결과는 무효이므로 반드시 재캘리브레이션.
-2. 인식 (conda, 640x480; 1280x720은 FoundationPose OOM): `python real_time_project/main.py --serial 338122300585 --width 640 --height 480`
-3. 계획 (conda): `python calibration/real_pose_dryrun.py --once` → `data/real_dryrun/<시간>/plan_001.{json,csv}`
-   (`--cell_json`으로 프레임 값 덮어쓰기. 기본 `T_base_cam`은 최신 세션의 `T_base_cam_zfix.json`)
-4. 이동 (시스템 python3, 로봇 제어권을 펜던트에서 이전, 비상정지 대기):
-   ```bash
-   python3 calibration/ros2_pendant_mover.py --plan <plan.json> --leg approach            # 검사만
-   python3 calibration/ros2_pendant_mover.py --plan <plan.json> --leg approach --execute  # 점마다 go 입력
-   python3 calibration/ros2_pendant_mover.py --plan <plan.json> --leg return --execute
-   ```
+```text
+D455 → main.py → UDP 5005 → cube_pipeline.py
+ROS 관절 읽기 → UDP 5006 → 현재 출발 자세
+T_base_cam × T_cam_object → IK/충돌 검사 → plan_001.json
+계획 → UDP 5010 → ROS /sixd/dryrun/* (관찰)
+사람 승인 → ros2_pendant_mover.py → MoveJoint (실제 이동)
+```
 
-## 안전 규칙
+변환 파일과 캘리브레이션 샘플은 읽기만 합니다. 기본 변환은 최신 세션의 `T_base_cam_markerscale_xyoffset.json`(없으면 zfix, 그 다음 `T_base_cam.json`)입니다. 수평 오차 5점 비교는 루트 README 4장을 참고하세요.
 
-- 이동은 `ros2_pendant_mover.py`만, **항상 최저속**, 한 점씩 사람이 승인. 연속·자동 이동 코드는 없다.
-- 계획이 `accepted`가 아니거나 30분 지났거나 한 관절 45° 초과, 관절 한계 2° 이내, 현재 관절이 출발점과 3° 이상 다르면 거부.
-- 프레임 위치(기둥 4개)는 실측했지만 프로파일 굵기·테이블 가장자리는 가정. 큐브 위치 오차는 현재 1~2 cm 수준(실측 대조 필요).
-- `calibration/data/real_handeye/*`의 샘플은 보존. 카메라 이동·마커 교체 후에는 새 세션을 만든다.
+## 결과와 진단
+
+매 실행 결과와 프로세스별 로그는 `data/real_pipeline/<시간_고유번호>/`에 저장됩니다.
+오프라인 결과는 `data/pipeline_offline/`에 저장됩니다. 프레임 기본값은 `data/real_cell_measured.json`입니다.
+
+프로파일 굵기와 테이블 가장자리에는 가정이 남아 있습니다. 카메라 이동 후 재캘리브레이션, 툴 장착 후 TCP 길이·반경 반영이 필요합니다. 현재 통합 동작은 큐브 중심 위 접근점 정지와 선택적 복귀이며 파지는 구현하지 않았습니다.
+
+```bash
+# 하드웨어 없는 검사
+bash calibration/run_cube_pipeline.sh --offline-test
+conda run --no-capture-output -n foundationpose \
+  python -m unittest discover -s calibration -p 'test_*.py'
+```
