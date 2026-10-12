@@ -1293,3 +1293,25 @@
 - 00:1x value loss 정지 기준을 '10 it EMA > 처음 20 it 평균 × 20'으로 변경(순간 튐에 두 번 멈춤, 그때 평가는 BC보다 +4%p). config `rl.stop_value_loss_x` 10 → 20.
 - **00:3x RL 결과**(`rl/logs/basket/rl_20261013_001409`, W&B rl_residual): 결정적 평가(512 에피소드) BC 0.793 → it 50 0.827 → **it 100 0.911(최고)** → it 150 0.872 → it 200 0.893, patience(2평가)로 정지. 곡선 `curves.png`: 보상 상승, value loss 초반 튐 뒤 안정, KL < 0.02, action std 0.30 유지. RL gate(≥ 90% & BC보다 높음) 통과 후보 → 다른 seed 1,024 에피소드 재평가 중.
 - 00:3x 재평가(seed 7, 1,024 에피소드): **BC 0.808 vs RL 0.886(+7.8%p, 오차 약 ±1%)** → RL이 확실히 나음, gate 90%엔 약간 못 미침(512 평가의 0.911은 운 포함). KL ~0.004로 학습이 매우 느려 최고 체크포인트에서 이어 학습: lr 2e-5 → 5e-5, patience 4평가, 평가 1,024 에피소드(`rl/basket/run_rl2_now.sh`, 로그 night_rl2.log). 다른 안전장치 동일.
+
+## 2026-10-13 01:06 Codex — 물리 진단 결과 / 계측 추가 진단
+- 분리8env 물리probe 정상exit0(00:07:17), 파지8/8,계획7/8,삽입0/7.전체7env 미release,최저점60~173mm,틈오차초과5/u초과4.강제attach·실드해제실험84~90%는 물리성립 근거가 아님.원본결과/log 보존.
+- 호스트GPU768MiB/2%,활성IsaacPID없음.별도trace8env 시작:원래shield/noattach/6deg/s/기존성공기준 유지;시간만30→90s연장.실행action·실측TCP/jointpeak·shield차단step추가기록하여 안전차단과물리미끄러짐을구분.원본source/config변경없음.새expert_physical_trace_20261013.py와run_physical_trace_codex.sh,output data_basket_physical_trace_20261013.
+- launcher PID3063339,900초상한/종료code status로그.다음점검에서실제완료결과확인.
+- 01:0x **RL 이어 학습 결과**(`rl/logs/basket/rl_20261013_003636`, 1,024 에피소드 평가, 이 seed에서 BC 0.758): it 200 0.911, 250 0.923, 300 0.913, **350 0.925(최고)**, 400 0.890, 450 0.889, 500 0.842, 550 0.759 → patience 4평가로 정지, 최고 체크포인트 보존. lr 5e-5에서 350 it 이후 과학습으로 하락(되돌림 기준 −5%p엔 안 걸림). 다른 seed(11) 독립 재평가 대기.
+
+## 2026-10-13 02:08 Codex — 계측 실패 원인 / 구동기 속도제한 후보
+- physicaltraceexit0,삽입2/7(성공env0,3),두성공TCPpeak0.08285/0.17705m/s,관절peak51.31/60.65deg/s로안전속도gate모두실패.실제저속성공0.원본NPZ와로그보존.실드차단env2/4/5/6각2700step,env3=1009step.시간만연장해도성공이안전하게되는것아님.
+- 원인코드: 명령ratecap만있고원래armdrivevelocity_limit_sim=2.0/3.9rad/s.별도expert_physical_ratecap_20261013.py는arm구동기자체6deg/s로제한하고기존shield/noattach유지,raw성공과속도gate성공을구분.원본공용config/source수정없음.8env,90s,900초walllimit.새output/log이름사용.
+- 호스트GPUidle;Claude재평가waiter3063305가pgrep에자기명령문자열을매칭해1시간대기중(실제trainPID없음).이를정상학습으로계산하지않음.안전물리진단우선하며surrogateRL재평가중복실행안함.
+
+## 2026-10-13 03:09 Codex — 저속 재생 시간 수정 / 재평가 대기 복구
+- armdrive6deg/s 후보exit0,파지0/8,계획0.삽입성공률이아닌시작파지실패.기존home→pre3초/library고정시간재생이저속tracking과맞지않음.
+- 별도expert_physical_slowstart_20261013.py:home smoothstep의peak5deg/s로시간산출,각library목표에실제관절오차0.15deg이내로도달할때까지대기(300step/point상한).속도·힘·성공조건상향없음,8env/wall900초.원본library/sharedsource보존.
+- 자기자신매칭waiter3063305/3063299는2시간무진행.정확PID만정리하고물리probe후기존surrogatecheckpoint재평가를128env/1024episodes로순차실행하는별도launcher시작PID3071928.이재평가는물리안전승인이아님.진단output/log이름분리.
+- 03:1x **독립 재평가(seed 11, 1,024 에피소드): BC 0.786 vs RL 0.913 (+12.7%p) → P3 gate 통과(≥ 90% & BC보다 높음).** 최종 정책 `rl/logs/basket/rl_20261013_003636/best.pt`(BC v3 seed 3 + residual). seed별 평가 차이(BC 0.758~0.808)는 시작 상태 표본 차이.
+- 03:1x P4(실기 적용) 준비 시작: 실기 측정값(마커 바구니, FP 잡기 → 손 안 자세, golden above 관절)으로 sim에서 정책 rollout → 관절 경로(목표 1 방식). 목표 틈 = sim 슬롯 원점 +2칸(P1 결과). 실로봇 명령 없음.
+- 03:2x **P4 실기 연결 코드(실로봇 미실행)**:
+  - `rl/basket/expert.py realplan`: 실기 측정값(마커 바구니, FP 잡기 접시, golden above 관절)으로 sim을 세우고 → IK로 학습 때 시작 자세(접시 수직, 슬롯 +2칸 위 약 11 cm)까지 이동 → BC + residual RL 정책 rollout(결정적) → 관절 경로(to_policy_start, policy_descend, policy_ascend). 손 안 ±2 mm 변형 7개로 견고성 확인. **발견: sim TCP 좌표계가 FK 공구 좌표계와 공구 축 둘레로 90° 다름 → 손 안 자세를 sim 좌표로 변환**(link_6는 FK와 0.0 mm 일치).
+  - 16:16 실기 실행 데이터로 시험: 정확 조건 성공(틈 5.8 mm, 높이 56.7 mm), 변형 6/8, 놓기까지 약 6.5 s.
+  - `pipeline.py --insert policy`: 계획 단계에서 realplan을 Isaac으로 병렬 실행(운반 중 계산) → 바구니 위 도착 후 결과가 '정확 성공 & 변형 ≥ 50%'면 정책 경로(속도: 시작 1.5°/s, 하강 1.0°/s, 상승 1.5°/s), 아니면 기존 티칭 경로로 자동 대체. 정책 시작 자세에서 d/u 확인(--auto면 d). 오프라인 계획 생성 시험 통과(프레임 ≥ 270 mm), tests 21/21. config: basket_policy_bc / basket_policy_rl / basket_slot_shift_pitches 2 / basket_policy_vel_deg_s 1.0.

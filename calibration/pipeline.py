@@ -239,6 +239,34 @@ def _die_with_parent():
     ctypes.CDLL('libc.so.6', use_errno=True).prctl(1, signal.SIGTERM)     # PR_SET_PDEATHSIG
 
 
+def policy_plan(job, out, Tbc, q, wait_s=240):
+    """(10/13) wait for the sim policy rollout (rl/basket/expert.py realplan), accept it only if the exact case inserted
+    and >= half of the in-hand-noise variants did; -> plan.json (FK frame clearance checked) or None (golden fallback)."""
+    t0 = time.time()
+    while job.poll() is None and time.time() - t0 < wait_s:
+        time.sleep(1)
+    res_path = out / 'realplan.json'
+    if job.poll() is None or not res_path.exists():
+        print(f'   정책 경로 계산이 끝나지 않음 -> 티칭 경로로 넣기 ({out / "realplan.log"})', flush=True)
+        return None
+    r = json.loads(res_path.read_text())
+    print(f"   정책 sim 결과: 정확 {r['sim_success_exact']}, 변형 {r['sim_success_variants']:.2f}, 틈 mm {r['final_gap_mm'][:3]}", flush=True)
+    if not r.get('legs') or not r['sim_success_exact'] or r['sim_success_variants'] < 0.5:
+        print('   정책 경로 기준 미달 -> 티칭 경로로 넣기', flush=True)
+        return None
+    L = r['legs']
+    start, down, up = L['to_policy_start']['waypoints_deg'], L['policy_descend']['waypoints_deg'], L['policy_ascend']['waypoints_deg']
+    last = (up or down)[-1]
+    from plate_plans import taught_plan
+    try:
+        return taught_plan(dict(to_policy_start=start, policy_descend=down, policy_ascend=[down[-1]] + up,
+                                to_home=[last, list(HOME_JOINTS_DEG)], policy_abort=[start[-1], start[0], list(HOME_JOINTS_DEG)]),
+                           Tbc, q, 'learned policy (BC + residual RL)')
+    except RuntimeError as e:
+        print(f'   정책 경로 거부({e}) -> 티칭 경로로 넣기', flush=True)
+        return None
+
+
 class Children:
     """Only terminate subprocesses owned by this invocation, including on failures."""
 
@@ -592,7 +620,7 @@ def run_plate(args):
             x, y = p[0] + q['offset_m'][0], p[1] + q['offset_m'][1]
             print(f'[3/5] BC+RL 정책 rollout (sim) at ({x:.4f}, {y:.4f}) yaw {yaw:.1f}: 1~2 분', flush=True)
             plan = export_plan(x, y, yaw, out / 'export.log', q)
-        early, shown = None, plan
+        early, shown, policy_job = None, plan, None
         if args.place in ('golden', 'basket'):          # (10/12) whole path before moving: reach check + RViz preview
             legs0 = json.loads(Path(plan).read_text())['legs']
             early = golden_slot_plan(q['golden_teach'], legs0['to_grasp']['waypoints_deg'][-1], legs0['lift']['waypoints_deg'][-1],
@@ -602,6 +630,24 @@ def run_plate(args):
             shown = out / 'preview_plan.json'
             shown.write_text(json.dumps(dict(both, preview_only=True)))
             print(f'   바구니 경로까지 계획 완료 (RViz 미리보기: 잡기 + 바구니 전체): {early}', flush=True)
+            if args.insert == 'policy':                 # (10/13) learned insertion: sim rollout in parallel with the motion
+                Tbb = basket_T if basket_T is not None else np.array(json.loads(
+                    (DATA / 'basket' / 'slot_01_in_basket.json').read_text())['T_base_basket_at_teach'])
+                if basket_T is None:
+                    Tbb = Tbb.copy()
+                    Tbb[:3, 3] += q.get('basket_shift_m', [0.0, 0.0, 0.0])
+                req = dict(T_base_basket=np.asarray(Tbb).tolist(), grasp_deg=legs0['to_grasp']['waypoints_deg'][-1],
+                           plate_root_fp=[float(v) for v in p], slot_shift_pitches=q.get('basket_slot_shift_pitches', 2),
+                           above_deg=json.loads(early.read_text())['legs']['to_above']['waypoints_deg'][-1],
+                           out=str(out / 'realplan.json'))
+                (out / 'realplan_req.json').write_text(json.dumps(req, indent=1))
+                policy_job = subprocess.Popen([q['isaaclab'].replace('isaaclab.sh', '_isaac_sim/python.sh'),
+                                               str(ROOT / 'rl/basket/expert.py'), 'realplan', '--headless', '--per_run', '8',
+                                               '--req', str(out / 'realplan_req.json'), '--policy', str(cpath(q['basket_policy_bc'])),
+                                               '--residual', str(cpath(q['basket_policy_rl']))],
+                                              cwd=ROOT / 'rl', env=isaac_env(), stdin=subprocess.DEVNULL,
+                                              stdout=(out / 'realplan.log').open('wb'), stderr=subprocess.STDOUT)
+                print(f'   학습 정책 넣기 경로를 sim에서 계산 중 (pid {policy_job.pid}, {out / "realplan.log"})', flush=True)
         viz(plan=str(shown))
         print(f'   plan: {plan}  (30 분 유효)', flush=True)
         if not args.execute:
@@ -688,8 +734,12 @@ def run_plate(args):
                 v = q.get('basket_insert_vel_deg_s', vel) if name in ('descend', 'shift') else vel   # in the pins: slow
                 if name == 'ascend':                            # (10/12) released: the open fingers only leave the rim
                     v = q.get('basket_ascend_vel_deg_s', vel)
-                if name in ('descend_pre', 'pre_up'):             # (10/12 Human) the first descent over the basket too fast
+                if name in ('descend_pre', 'pre_up', 'to_policy_start', 'policy_abort'):   # (10/12 Human) first descent: slow
                     v = q.get('basket_pre_vel_deg_s', vel)
+                if name == 'policy_descend':                     # dense corrective path: ~2 mm of TCP per joint degree
+                    v = q.get('basket_policy_vel_deg_s', 1.0)
+                if name == 'policy_ascend':
+                    v = q.get('basket_ascend_vel_deg_s', vel)
                 print(f'\n=== slot {k} {name}: one smooth spline at {v} deg/s ===', flush=True)
                 rec.event('leg_start', leg=f'slot{k}_{name}', vel_deg_s=v, smooth=True)
                 children.run_mover(mover_command(args, cur['plan'], name, 'leg', opening_done=True, smooth=True, vel=v), env)
@@ -733,6 +783,24 @@ def run_plate(args):
                     sleg('abort_home')
                     rec.event('done', place=args.place, slot=k, stopped='above_home')
                     return
+                if policy_job is not None:
+                    ppath = policy_plan(policy_job, out, Tbc, q)
+                    if ppath is not None:
+                        cur['plan'] = ppath
+                        rec.event('policy_plan', plan=str(ppath))
+                        sleg('to_policy_start')
+                        look('pre')
+                        if ask('\n[2/4] 학습 정책 시작 자세. d = 넣기(정책 경로), u = 다시 올려 홈 복귀 > ', ('d', 'u')) == 'u':
+                            sleg('policy_abort')
+                            rec.event('done', place=args.place, slot=k, stopped='policy_start')
+                            return
+                        sleg('policy_descend')
+                        choose_gripper(f'slot{k}_release')
+                        sleg('policy_ascend')
+                        sleg('to_home')
+                        rec.event('done', place=args.place, slot=k, insert='policy')
+                        print('[5/5] 학습 정책으로 넣기 완료.', flush=True)
+                        return
                 sleg('descend_pre')
                 look('pre')
                 a_ = ask('\n[2/4] 넣기 직전(접시 바닥이 빗살 레일 약 4 cm 위). d = 넣기, u = 다시 올려 홈 복귀 > ', ('d', 'u'))
@@ -863,6 +931,8 @@ def parse_args(argv=None):
                         'Enter stores carry / above / insert / retreat; slot = replay the taught slot path; '
                         'golden = the best full teaching (config plate_ik_bc.golden_teach) corrected to this grasp; '
                         'basket = golden + the basket pose from its 4 markers (the slot path follows a moved basket)')
+    p.add_argument('--insert', choices=('taught', 'policy'), default='taught', help='golden / basket: taught descent (default) or the '
+                   'learned policy (BC + residual RL, rl/basket) rolled out in sim on the measured basket / grasp')
     p.add_argument('--auto', action='store_true', help='plate: no Human answers after the opening phrase: gripper '
                    'closes at the grasp pose (if FP says the plate did not move) and opens at the insert; stops go on')
     p.add_argument('--stop_at_above', action='store_true',

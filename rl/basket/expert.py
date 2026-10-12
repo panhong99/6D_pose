@@ -12,6 +12,7 @@ collect: (added next) feedback expert in the slot frame -> demos for train.py bc
 import argparse
 import json
 import sys
+import time
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -23,7 +24,7 @@ sys.path[:0] = [str(HERE), str(RL)]
 def parse_args():
     from isaaclab.app import AppLauncher
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument('mode', choices=('replay', 'collect'))
+    p.add_argument('mode', choices=('replay', 'collect', 'realplan'))
     p.add_argument('--labels', default=str(ROOT / 'calibration/data/real_pipeline/labels_20261012.jsonl'))
     p.add_argument('--per_run', type=int, default=16, help='replay: envs per real run')
     p.add_argument('--jitter_mm', type=float, default=2.0, help='replay: plate xy jitter (FP noise)')
@@ -32,6 +33,8 @@ def parse_args():
     p.add_argument('--seed', type=int, default=0)
     p.add_argument('--debug', action='store_true')
     p.add_argument('--save_starts', action='store_true', help='collect: stop at `above` and save RL start states')
+    p.add_argument('--req', default=None, help='realplan: request json')
+    p.add_argument('--residual', default=None, help='realplan: residual RL checkpoint on top of --policy (BC)')
     p.add_argument('--policy', default=None, help='collect: a BC checkpoint drives instead of the expert (evaluation)')
     p.add_argument('--attach', action='store_true', help='replay: rigid in-hand plate after the lift')
     p.add_argument('--rot_sign', type=float, default=1.0)
@@ -488,12 +491,170 @@ def run_collect(args):
     env.close()
 
 
+# ---------------------------------------------------------------- P4: real-robot insertion plan from the learned policy
+def run_realplan(args):
+    """Real measurements -> sim rollout of the learned policy -> joint path for the real mover (goal-1 style).
+    --req json: T_base_basket (marker fit), grasp_deg (real grasp joints), plate_root_fp (FoundationPose at the grasp),
+    above_deg (golden plan to_above end), out (plan.json).  Env 0 is exact; envs 1.. add in-hand noise (+-2 mm / 2 deg)
+    as a robustness check.  The target gap = sim slot origin + slot_shift_pitches (P1: the real intended gap = +2)."""
+    import math
+    import numpy as np
+    import torch
+    from isaaclab.envs import ManagerBasedRLEnv
+    sys.path.insert(0, str(ROOT / 'calibration'))
+    from robot_model import Kinematics
+    import basket_env as be
+    import plate_env as pe
+    import env as E
+    import model as Mdl
+    req = json.loads(Path(args.req).read_text())
+    n = args.per_run
+    env = ManagerBasedRLEnv(make_cfg(n, not args.headless, E.CFG['expert'].get('pad_torsion_radius_m', 0.01)))
+    env.reset()
+    dev = env.device
+    robot = env.scene['robot']
+    arm = env.action_manager.get_term('arm_action')
+    aj = arm._joint_ids
+    arm.shield.safe = lambda q_: torch.ones(q_.shape[0], dtype=torch.bool, device=q_.device)
+    set_basket(env, [np.asarray(req['T_base_basket'])] * n)
+    shift = req.get('slot_shift_pitches', 2) * be.B['pins']['pitch']
+    env._slot[:, 0] += shift * torch.cos(env._slot[:, 3])
+    env._slot[:, 1] += shift * torch.sin(env._slot[:, 3])
+    q = robot.data.default_joint_pos.clone()
+    q[:, aj] = torch.tensor(np.radians(req['above_deg']), dtype=torch.float32, device=dev)
+    fj = [robot.joint_names.index(j) for j in ('left_finger_joint', 'right_finger_joint')]
+    q[:, fj] = 0.0
+    robot.write_joint_state_to_sim(q, torch.zeros_like(q))
+    robot.set_joint_position_target(q)
+    # plate in the hand: FoundationPose root at the grasp, flat, x toward the plate centre (round plate: yaw free)
+    kin = Kinematics()
+    T6 = kin.fk(np.radians(req['grasp_deg']))
+    T_tcp = T6 @ np.array([[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0.165], [0, 0, 0, 1.0]])
+    c = np.asarray(req['plate_root_fp'], float)
+    d = c[:2] - T_tcp[:2, 3]
+    d = np.r_[d / np.linalg.norm(d), 0.0]
+    Tp = np.eye(4)
+    Tp[:3, 0], Tp[:3, 1], Tp[:3, 2], Tp[:3, 3] = d, np.cross([0, 0, 1.0], d), [0, 0, 1.0], c
+    H = np.linalg.inv(T_tcp) @ Tp
+    from scipy.spatial.transform import Rotation
+    # (10/13 night) the sim TCP frame is the FK tool frame turned about the tool axis (z matches, x/y do not):
+    # express the in-hand pose in the sim frame: H_sim = R_off^T H, R_off = R_fk^T R_sim at the same joints
+    for _ in range(30):
+        sim_steps(env)
+    _, tq0 = pe.tcp_pose(env)
+    w_, x_, y_, z_ = tq0[0].cpu().numpy()
+    R_sim = Rotation.from_quat([x_, y_, z_, w_]).as_matrix()
+    R_fk = (kin.fk(np.radians(req['above_deg'])))[:3, :3]
+    R_off = R_fk.T @ R_sim
+    T_off = np.eye(4)
+    T_off[:3, :3] = R_off
+    H = np.linalg.inv(T_off) @ H
+    print(f'[realplan] sim TCP frame vs FK: {np.degrees(np.arccos(np.clip((np.trace(R_off) - 1) / 2, -1, 1))):.1f} deg', flush=True)
+    hq = Rotation.from_matrix(H[:3, :3]).as_quat()            # x y z w
+    env._attach = dict(on=torch.ones(n, dtype=torch.bool, device=dev),
+                       p=torch.tensor(H[:3, 3], dtype=torch.float32, device=dev).repeat(n, 1),
+                       q=torch.tensor([hq[3], hq[0], hq[1], hq[2]], dtype=torch.float32, device=dev).repeat(n, 1))
+    if n > 1:                                                  # robustness variants: in-hand noise on envs 1..
+        rng = torch.Generator(device=dev).manual_seed(0)
+        env._attach['p'][1:] += (torch.rand(n - 1, 3, generator=rng, device=dev) * 2 - 1) * 0.002
+    for _ in range(15):
+        sim_steps(env)
+    arm.reset(torch.arange(n, device=dev))
+    arm.orientation_locked[:] = False
+    arm._safe_target = robot.data.joint_pos[:, aj].clone()
+    nrm = pe.body_axis(env.scene['plate'].data.root_quat_w, 2)
+    facing = float((nrm[0] * E.slot_R(env)[0, :, 0]).sum())
+    tp_, tq_ = pe.tcp_pose(env)
+    T_above = kin.fk(np.radians(req['above_deg'])) @ np.array([[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0.165], [0, 0, 0, 1.0]])
+    pl_ = env.scene['plate'].data.root_pos_w[0] - env.scene.env_origins[0]
+    print(f"[realplan] sim tcp {(tp_[0] - env.scene.env_origins[0]).cpu().numpy().round(3).tolist()} vs FK tcp {T_above[:3, 3].round(3).tolist()}; "
+          f"sim tool z {pe.body_axis(tq_, 2)[0].cpu().numpy().round(2).tolist()} vs FK {T_above[:3, 2].round(2).tolist()}", flush=True)
+    print(f"[realplan] plate root {pl_.cpu().numpy().round(3).tolist()} expected {(T_above @ T_off @ H)[:3, 3].round(3).tolist()}; normal {nrm[0].cpu().numpy().round(2).tolist()} "
+          f"expected {(T_above @ T_off @ H)[:3, 2].round(2).tolist()}; slot {env._slot[0].cpu().numpy().round(3).tolist()}", flush=True)
+    print(f'[realplan] plate normal . n = {facing:+.2f} (policy trained with the concave side toward +n)', flush=True)
+    # the policy was trained from the expert's `above` (plate upright over the gap, ~11 cm up): IK there first
+    import basket_tasks as bt
+    be.B['slot']['target_tilt_deg'] = E.CFG['expert'].get('plate_tilt_deg', 0.0)
+    bt.FORCE_PLUS_N = True
+    org = env.scene.env_origins
+    W = lambda pos, quat, k: bt._T(bt._quat_to_R(quat[k].cpu().numpy()), (pos[k] - org[k]).cpu().numpy())  # noqa: E731
+    l6 = robot.body_names.index('link_6')
+    tp0, tq0 = pe.tcp_pose(env)
+    tcp_T = W(tp0, tq0, 0)
+    f_t = np.linalg.inv(tcp_T) @ W(robot.data.body_pos_w[:, l6], robot.data.body_quat_w[:, l6], 0)
+    pl = env.scene['plate']
+    ins, above, v = bt.insertion_targets(env, 0, tcp_T, W(pl.data.root_pos_w, pl.data.root_quat_w, 0), f_t)
+    fk_check = np.linalg.norm(kin.fk(np.radians(req['above_deg']))[:3, 3] - W(robot.data.body_pos_w[:, l6], robot.data.body_quat_w[:, l6], 0)[:3, 3])
+    seed = np.radians(req['above_deg'])
+    golden = json.loads((be.RL_DIR / be.B['golden_teach']).read_text())['poses']
+    q_start = bt.ik_robust(kin, above @ f_t, seed, [np.radians(golden['above']['posj']), np.radians(golden['insert']['posj'])], 'policy_start')
+    print(f"[realplan] link_6 sim vs FK {fk_check * 1000:.1f} mm; policy start tcp {above[:3, 3].round(3).tolist()} "
+          f"(max joint move {np.abs(np.degrees(q_start) - req['above_deg']).max():.1f} deg)", flush=True)
+    detach(env, torch.zeros(n, dtype=torch.bool, device=dev))
+    drive(env, [np.degrees(q_start)[None]] * n, np.zeros(n, bool), 10.0, hold=15)
+    to_start = [list(req['above_deg']), np.degrees(q_start).round(3).tolist()]
+    arm.reset(torch.arange(n, device=dev))
+    arm.orientation_locked[:] = False
+    arm._safe_target = robot.data.joint_pos[:, aj].clone()
+    bc, meta = Mdl.load_bc(args.policy, device=dev)
+    ac = Mdl.ResidualActorCritic(bc, E.CFG['rl']['residual_scale'], meta['hidden'], meta['activation']).to(dev)
+    if args.residual:
+        ac.load_state_dict(torch.load(args.residual, map_location=dev)['state'])
+    sm = torch.as_tensor(E.CFG['action']['step_max'], device=dev)
+    released = torch.zeros(n, dtype=torch.bool, device=dev)
+    t_rel = torch.zeros(n, device=dev)
+    path, rel_step = [], None
+    dt = env.step_dt
+    for step in range(int(25 / dt)):
+        o, st = E.observe(env, released)
+        with torch.no_grad():
+            a = ac.mean(o)
+        cont = a[:, :6].clamp(-1, 1)
+        opening = (a[:, 6] > 0) & ~released
+        exe = cont * sm
+        exe[released] = 0.0
+        exe[released & (t_rel > 1.0), 2] = sm[2]
+        act = E.to_env_action(env, exe, (released | opening).float())
+        act[env._attach['on'], 6] = 1.0
+        env.step(act)
+        attach_update(env)
+        if bool(opening[0]) and rel_step is None:
+            rel_step = len(path)
+        released |= opening
+        detach(env, opening)
+        t_rel = torch.where(released, t_rel + dt, t_rel)
+        path.append(torch.rad2deg(robot.data.joint_pos[0, aj]).cpu().numpy())
+        if bool(released.all()) and float(t_rel.min()) > 3.0:
+            break
+    lean = math.tan(math.radians(be.B['pins'].get('lean_deg', 0.0)))
+    st = be.basket_state(env)
+    gap = (st['d_bottom'] + st['low'].clamp(min=0) * lean).abs()
+    ok = released & (gap < 0.0085) & (st['low'] < 0.06) & (st['d_u'].abs() < 0.03)
+    path = np.array(path)
+    res = dict(created=time.strftime('%Y-%m-%d %H:%M:%S'), source='realplan (policy rollout in sim)',
+               sim_success_exact=bool(ok[0]), sim_success_variants=float(ok.float().mean()), plate_facing=facing,
+               release_index=rel_step, final_gap_mm=(gap * 1000).cpu().numpy().round(1).tolist(),
+               final_low_mm=(st['low'] * 1000).cpu().numpy().round(1).tolist())
+    if rel_step is not None:
+        down = path[:rel_step + 1]
+        up = path[rel_step + 1:]
+        k = max(1, len(down) // 60)
+        res['legs'] = dict(to_policy_start=dict(waypoints_deg=to_start), policy_descend=dict(waypoints_deg=np.vstack([down[::k], down[-1]]).round(3).tolist()),
+                           policy_ascend=dict(waypoints_deg=(up[::max(1, len(up) // 20)].round(3).tolist() if len(up) else [])))
+    Path(req['out']).write_text(json.dumps(res, indent=1))
+    print(f"[realplan] exact {res['sim_success_exact']}, variants {res['sim_success_variants']:.2f}, release at step {rel_step}, "
+          f"gap mm {res['final_gap_mm'][:4]} low mm {res['final_low_mm'][:4]} -> {req['out']}", flush=True)
+    env.close()
+
+
 if __name__ == '__main__':
     a = parse_args()
     from isaaclab.app import AppLauncher
     app = AppLauncher(a).app
     if a.mode == 'replay':
         run_replay(a)
+    elif a.mode == 'realplan':
+        run_realplan(a)
     else:
         run_collect(a)
     app.close()
