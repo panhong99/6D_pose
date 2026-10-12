@@ -23,6 +23,7 @@ expert:                            # sim feedback expert (expert.py)
   dart_episodes: 1500
   dart_noise: [0.0006, 0.0006, 0.0006, 0.002, 0.002, 0.002]   # executed action noise (labels stay clean)
   envs: 64
+  target_low_m: 0.052              # expert opens when the lowest rim point is this low (above the 49 mm rail)
 
 bc:
   hidden: [512, 256, 128]

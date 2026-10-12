@@ -31,6 +31,8 @@ def parse_args():
     p.add_argument('--out', default=None)
     p.add_argument('--seed', type=int, default=0)
     p.add_argument('--debug', action='store_true')
+    p.add_argument('--policy', default=None, help='collect: a BC checkpoint drives instead of the expert (evaluation)')
+    p.add_argument('--attach', action='store_true', help='replay: rigid in-hand plate after the lift')
     p.add_argument('--rot_sign', type=float, default=1.0)
     p.add_argument('--batches', type=int, default=1, help='collect: batches of config expert.envs envs')
     p.add_argument('--dart', action='store_true', help='collect: noisy execution, clean labels')
@@ -149,7 +151,10 @@ def drive(env, paths_deg, closed, speed, hold=15):
             j = min(np.searchsorted(s, t, 'right') - 1, len(pts) - 2)
             f = (t - s[j]) / max(s[j + 1] - s[j], 1e-9)
             q[k, aj] = torch.tensor(np.radians(pts[j] + (pts[j + 1] - pts[j]) * f), dtype=torch.float32, device=env.device)
-        q[:, fj] = torch.where(torch.as_tensor(closed, device=env.device)[:, None],
+        shut = torch.as_tensor(closed, device=env.device)
+        if getattr(env, '_attach', None) is not None:
+            shut = shut & ~env._attach['on']
+        q[:, fj] = torch.where(shut[:, None],
                                torch.full_like(q[:, fj], pe.FINGER_CLOSED), torch.zeros_like(q[:, fj]))
         robot.set_joint_position_target(q)
         sim_steps(env)
@@ -243,10 +248,14 @@ def run_replay(args):
     drive(env, L('lift', 'grasp'), ~open_, args.speed, hold=60)
     lift = env.scene['plate'].data.root_pos_w[:, 2] - env.scene.env_origins[:, 2] - pe.REST_Z
     held = (lift > 0.05).cpu().numpy()
+    if args.attach:                                            # rigid in-hand plate (see attach), no extra noise
+        attach(env, torch.as_tensor(held, device=dev))
     drive(env, L('to_above', 'slot'), ~open_, args.speed)
     drive(env, L('descend_pre', 'slot'), ~open_, args.speed / 4)
     st_pre = be.basket_state(env)
     drive(env, L('descend', 'slot'), ~open_, args.speed / 20, hold=30)
+    if args.attach:
+        detach(env, torch.ones(n, dtype=torch.bool, device=dev))
     drive(env, [None] * n, open_, args.speed, hold=45)         # release
     drive(env, L('ascend', 'slot'), open_, args.speed / 4)
     ok, st = inserted(env)
@@ -324,8 +333,14 @@ def run_collect(args):
     be.B['slot']['target_tilt_deg'] = ex.get('plate_tilt_deg', 0.0)
     # and the plate's concave side must face +n (away from the robot): facing -n it jams at ~70 mm (same check)
     bt.FORCE_PLUS_N = True
+    bt.MIN_TURN = ex.get('min_turn', False)              # round plate: pick the in-plane turn needing the least wrist turn
     lean = math.tan(math.radians(be.B['pins'].get('lean_deg', 0.0)))
     dt = env.step_dt
+    policy = None
+    if args.policy:
+        import model as Mdl
+        policy, _ = Mdl.load_bc(args.policy, device=dev)
+        print(f'[eval] BC policy {args.policy} drives the insertion', flush=True)
     for b in range(args.batches):
         rng = np.random.default_rng(args.seed * 1000 + b)
         s0 = bt.grasped_start(env, args, rng)
@@ -408,11 +423,19 @@ def run_collect(args):
             open_ = released.float()
             label = torch.cat([stepv, open_[:, None]], 1)
             exe = stepv.clone()
+            if policy is not None:                               # eval: the BC drives (the expert step is only logged)
+                with torch.no_grad():
+                    pa, pg = policy(obs)
+                exe = E.clip_step(pa * policy.step_max)
+                pol_open = (pg > 0) | released
+                open_ = pol_open.float()
             if dart:
                 exe = E.clip_step(exe + torch.randn_like(exe) * torch.as_tensor(ex['dart_noise'], device=dev))
             exe[~liv] = 0.0
             O.append(obs.cpu().numpy()); A.append(label.cpu().numpy()); M.append((liv & (t_rel < 5.0)).cpu().numpy())
-            env.step(E.to_env_action(env, exe, open_))
+            act_env = E.to_env_action(env, exe, open_)
+            act_env[env._attach['on'], 6] = 1.0                 # attached: fingers open (no fight with the teleport)
+            env.step(act_env)
             attach_update(env)
             if args.debug and step % 30 == 0:
                 k_ = np.flatnonzero(live)[:4]
@@ -426,7 +449,7 @@ def run_collect(args):
                 print(f"[dbg] t {step * dt:4.1f} low {(st['low'][k_] * 1000).round().tolist()} d_bot {(st['d_bottom'][k_] * 1000).round().tolist()} "
                       f"d_u {(st['d_u'][k_] * 1000).round().tolist()} nerr {st['normal_err'][k_].round().tolist()} rel {released[k_].tolist()} "
                       f"rot {(rot[k_].norm(dim=1) / dt).round(decimals=2).tolist()} lock {arm.orientation_locked[k_].tolist()} blk {int(arm.blocked.sum())} tcpz {((tpd - org)[k_, 2] * 1000).round().tolist()}", flush=True)
-            land = ~released & (st['low'] <= target_low)
+            land = ~released & ((st['low'] <= target_low) if policy is None else (open_ > 0.5))
             released |= land
             detach(env, land)
             t_rel = torch.where(released, t_rel + dt, t_rel)

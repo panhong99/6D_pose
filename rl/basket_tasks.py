@@ -198,8 +198,13 @@ def insertion_targets(env, k, tcp_T, plate_T, flange_T):
         Rz = np.eye(3) + s_ * K + (1 - c_) * K @ K
         R = Rz @ R_t0
         tool_z = (R @ Hr_inv)[:, 2]
-        if best is None or tool_z[2] < best[0]:
-            best = (tool_z[2], R)
+        if MIN_TURN:                                       # (10/12) least wrist turn from the current tool (reachable)
+            Rt = R @ Hr_inv
+            cost = -float(np.trace(Rt.T @ tcp_T[:3, :3]))
+        else:
+            cost = tool_z[2]
+        if best is None or cost < best[0]:
+            best = (cost, R)
     R_t = best[1]
     plate_t = _T(R_t, c_t - z_t * 0.01)
     # place by the real mesh: its lowest point on the slot line, 10 mm above the floor (taught insert ~1 cm above)
@@ -234,6 +239,7 @@ def ik_robust(kin, target, seed, priors, tag, tries=12, rng=None):
 
 N_TRANSPORT = 12
 FORCE_PLUS_N = False                                            # set by rl/basket/expert.py
+MIN_TURN = False                                                # set by rl/basket/expert.py
 
 
 def transport_poses(start, above, z_safe):

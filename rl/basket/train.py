@@ -72,8 +72,12 @@ def tensors(eps, idx, device):
     cont = np.clip(a[:, :6] / step_max, -1, 1)                      # targets in step units
     above = o[:, CFG['obs']['names'].index('above_rail')]
     w = np.where(above <= CFG['bc']['near_pin_m'], CFG['bc']['near_pin_weight'], 1.0).astype(np.float32)
+    # (10/12 night) the recorded 'open' was the released STATE (1 only after the opening): label the decision instead,
+    # the expert's rule = open once the lowest rim point is at target_low (obs low_z) or already open
+    low = o[:, CFG['obs']['names'].index('low_z')]
+    grip = np.maximum(a[:, 6], (low <= CFG['expert']['target_low_m']).astype(np.float32))
     T = lambda x: torch.as_tensor(x, device=device)
-    return T(o), T(cont), T(a[:, 6]), T(w)
+    return T(o), T(cont), T(grip), T(w)
 
 
 # ---------------------------------------------------------------- loss / metrics
