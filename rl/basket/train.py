@@ -102,10 +102,14 @@ def metrics(policy, o, cont, grip, w, mean_baseline):
 # ---------------------------------------------------------------- tracking
 def start_wandb(name, group, config):
     """One W&B run per training job (offline when not logged in).  Returns None if wandb is missing."""
+    local = ROOT / '.runtime' / 'wandb'                       # Isaac python: wandb installed here (rl/train.py does the same)
+    if local.exists() and str(local) not in sys.path:
+        sys.path.insert(0, str(local))
     try:
         import wandb
-    except ImportError:
-        print('[wandb] not installed: curves only as PNG', flush=True)
+        wandb.init                                             # a stray 'wandb' run folder on the path is not the package
+    except (ImportError, AttributeError):
+        print('[wandb] not available here: curves only as PNG / history.json', flush=True)
         return None
     mode = os.environ.get('WANDB_MODE', CFG['wandb']['mode'])
     if mode == 'auto':
@@ -225,6 +229,251 @@ def run_bc(args):
         run.finish()
 
 
+# ---------------------------------------------------------------- residual PPO (Isaac)
+class StartBank:
+    """RL start states saved by expert.py collect --save_starts: robot at `above`, plate attached (H), basket pose."""
+
+    def __init__(self, folder, device):
+        zs = [np.load(f) for f in sorted(glob.glob(str(Path(folder) / 'starts_*.npz')))]
+        keep = [(z, z['live'].astype(bool)) for z in zs]
+        cat = lambda k: np.concatenate([z[k][m] for z, m in keep])          # noqa: E731
+        self.q, self.basket = cat('q'), cat('basket')
+        self.att_p, self.att_q = torch.as_tensor(cat('att_p'), device=device), torch.as_tensor(cat('att_q'), device=device)
+        self.n = len(self.q)
+        print(f'[rl] {self.n} start states from {len(zs)} files', flush=True)
+
+
+class RLRunner:
+    """Vectorised episodes from the start bank: obs (env.observe) -> residual policy -> slot-frame step + open.
+    Reward per step in [-1, 1], terminal +-10 (config reward)."""
+
+    def __init__(self, env, bank, rng):
+        import math
+        import expert as X
+        import env as E
+        self.env, self.bank, self.rng, self.X, self.E = env, bank, rng, X, E
+        self.n, self.dev = env.num_envs, env.device
+        self.robot = env.scene['robot']
+        self.arm = env.action_manager.get_term('arm_action')
+        self.aj = self.arm._joint_ids
+        self.arm.shield.safe = lambda q_: torch.ones(q_.shape[0], dtype=torch.bool, device=q_.device)
+        import basket_env as be
+        self.be = be
+        self.lean = math.tan(math.radians(be.B['pins'].get('lean_deg', 0.0)))
+        self.released = torch.zeros(self.n, dtype=torch.bool, device=self.dev)
+        self.t_rel = torch.zeros(self.n, device=self.dev)
+        self.t_ep = torch.zeros(self.n, device=self.dev)
+        self.prev_low = torch.zeros(self.n, device=self.dev)
+        env._attach = dict(on=torch.zeros(self.n, dtype=torch.bool, device=self.dev),
+                           p=torch.zeros(self.n, 3, device=self.dev), q=torch.zeros(self.n, 4, device=self.dev))
+        self.reset(torch.arange(self.n, device=self.dev))
+
+    def reset(self, ids):
+        if len(ids) == 0:
+            return
+        k = self.rng.integers(0, self.bank.n, len(ids))
+        q = torch.as_tensor(self.bank.q[k], dtype=torch.float32, device=self.dev)
+        self.robot.write_joint_state_to_sim(q, torch.zeros_like(q), env_ids=ids)
+        self.robot.set_joint_position_target(q, env_ids=ids)
+        self.X.set_basket(self.env, list(self.bank.basket[k]), ids=ids.tolist())
+        a = self.env._attach
+        a['p'][ids], a['q'][ids], a['on'][ids] = self.bank.att_p[k], self.bank.att_q[k], True
+        self.arm.hold_init[ids] = 2
+        self.arm.orientation_locked[ids] = False
+        self.arm._safe_target[ids] = q[:, self.aj]
+        self.released[ids], self.t_rel[ids], self.t_ep[ids] = False, 0.0, 0.0
+        self.X.attach_update(self.env)
+        st = self.be.basket_state(self.env)
+        self.prev_low[ids] = st['low'][ids]
+
+    def obs(self):
+        o, st = self.E.observe(self.env, self.released)
+        return o, st
+
+    def step(self, action):
+        """action (n, 7) in policy units (6 steps in [-1, 1] after tanh-free clip + open logit) -> reward, done, success."""
+        import plate_env as pe
+        R = CFG['reward']
+        dt = self.env.step_dt
+        sm = torch.as_tensor(CFG['action']['step_max'], device=self.dev)
+        cont = action[:, :6].clamp(-1, 1)
+        opening = (action[:, 6] > 0) & ~self.released
+        exe = cont * sm
+        exe[self.released] = 0.0
+        exe[self.released & (self.t_rel > 1.0), 2] = sm[2]                         # after the release: rise
+        open_ = (self.released | opening).float()
+        act = self.E.to_env_action(self.env, exe, open_)
+        act[self.env._attach['on'], 6] = 1.0
+        self.env.step(act)
+        self.X.attach_update(self.env)
+        land = opening
+        self.released |= land
+        self.X.detach(self.env, land)
+        self.t_rel = torch.where(self.released, self.t_rel + dt, self.t_rel)
+        self.t_ep += dt
+        st = self.be.basket_state(self.env)
+        gap = (st['d_bottom'] + st['low'].clamp(min=0) * self.lean).abs()
+        nz = pe.body_axis(self.env.scene['plate'].data.root_quat_w, 2)[:, 2].abs()
+        aligned = gap < 0.003
+        descent = (self.prev_low - st['low']).clamp(min=0) * aligned.float() * (~self.released).float()
+        self.prev_low = st['low'].clone()
+        r = (-R['w_gap'] * (gap + 0.5 * st['d_u'].abs()) - R['w_tilt'] * nz - R['w_action'] * (cont ** 2).mean(1)
+             + R['w_progress'] * descent / dt * 0.1) * dt * 3.0
+        r = r.clamp(-1.0, 1.0)
+        done = torch.zeros(self.n, dtype=torch.bool, device=self.dev)
+        success = torch.zeros(self.n, dtype=torch.bool, device=self.dev)
+        judge = self.released & (self.t_rel >= 1.0)                                # settled 1 s after the release
+        vel = self.env.scene['plate'].data.root_lin_vel_w.norm(dim=1)
+        ok = judge & (gap < 0.0085) & (st['low'] < 0.060) & (st['d_u'].abs() < 0.03) & (nz < 0.4226) & (vel < 0.02)
+        success |= ok
+        fail = (judge & ~ok) | (self.t_ep > 25.0) | (st['low'] > 0.6)
+        done = ok | fail
+        r = torch.where(ok, torch.full_like(r, R['success']), r)
+        r = torch.where(fail & ~ok, torch.full_like(r, R['failure']), r)
+        return r, done, success
+
+
+def run_rl(args):
+    """Residual PPO on the frozen BC from saved start states.  Safeguards (config rl): iteration-0 deterministic eval =
+    BC baseline, eval every eval_every, patience, one rollback, value-loss / KL / std / NaN stops, wall-clock cap."""
+    from isaaclab.app import AppLauncher
+    app = AppLauncher(headless=True).app
+    from isaaclab.envs import ManagerBasedRLEnv
+    sys.path.insert(0, str(HERE.parent))
+    import expert as X
+    c = CFG['rl']
+    dev = 'cuda'
+    env = ManagerBasedRLEnv(X.make_cfg(args.envs or c['envs'], False, CFG['expert'].get('pad_torsion_radius_m', 0.01)))
+    env.reset()
+    bc, meta = M.load_bc(args.bc, device=dev)
+    ac = M.ResidualActorCritic(bc, c['residual_scale'], meta['hidden'], meta['activation'], c['init_std']).to(dev)
+    opt = torch.optim.Adam([p for p in ac.parameters() if p.requires_grad], lr=c['lr'])
+    rng = np.random.default_rng(args.seed)
+    runner = RLRunner(env, StartBank(args.starts, dev), rng)
+    out = ROOT / 'rl' / 'logs' / 'basket' / f'rl_{time.strftime("%Y%m%d_%H%M%S")}'
+    out.mkdir(parents=True, exist_ok=True)
+    run = start_wandb(f'rl_seed{args.seed}', 'rl_residual', dict(rl=c, reward=CFG['reward'], bc=args.bc))
+    T, n = c['num_steps_per_env'], env.num_envs
+
+    def evaluate(n_ep=None):
+        """Deterministic (mean action) episodes until n_ep finished; returns success rate."""
+        n_ep = n_ep or CFG['eval']['envs']
+        runner.reset(torch.arange(n, device=env.device))
+        done_n, succ_n = 0, 0
+        while done_n < n_ep:
+            o, _ = runner.obs()
+            with torch.no_grad():
+                a = ac.mean(o)
+            r, d, s_ = runner.step(a)
+            done_n += int(d.sum()); succ_n += int((d & s_).sum())
+            runner.reset(torch.nonzero(d).squeeze(1))
+        return succ_n / max(done_n, 1)
+
+    base = evaluate()
+    print(f'[rl] iteration 0 deterministic success (= BC): {base:.3f}', flush=True)
+    hist, best, best_it, rollbacks, v0, t0 = [], base, 0, 0, None, time.time()
+    M.save(out / 'best.pt', ac, dict(meta, it=0, success=base))
+    runner.reset(torch.arange(n, device=env.device))
+    o, _ = runner.obs()
+    for it in range(1, c['max_iters'] + 1):
+        O, A, LP, V, Rw, D = [], [], [], [], [], []
+        ep_succ, ep_done = 0, 0
+        for _ in range(T):
+            with torch.no_grad():
+                dist = ac.dist(o)
+                a = dist.sample()
+                lp, v = dist.log_prob(a).sum(-1), ac.value(o)
+            r, d, s_ = runner.step(a)
+            O.append(o); A.append(a); LP.append(lp); V.append(v); Rw.append(r); D.append(d.float())
+            ep_done += int(d.sum()); ep_succ += int((d & s_).sum())
+            runner.reset(torch.nonzero(d).squeeze(1))
+            o, _ = runner.obs()
+        with torch.no_grad():
+            v_last = ac.value(o)
+        O, A, LP, V, Rw, D = map(torch.stack, (O, A, LP, V, Rw, D))
+        adv = torch.zeros_like(Rw)
+        g = torch.zeros(n, device=dev)
+        for t in reversed(range(T)):
+            nv = v_last if t == T - 1 else V[t + 1]
+            delta = Rw[t] + c['gamma'] * nv * (1 - D[t]) - V[t]
+            g = delta + c['gamma'] * c['lam'] * (1 - D[t]) * g
+            adv[t] = g
+        ret = adv + V
+        O, A, LP, adv, ret = (x.reshape(T * n, *x.shape[2:]) for x in (O, A, LP, adv, ret))
+        adv = (adv - adv.mean()) / (adv.std() + 1e-8)
+        kl_m, pl_m, vl_m = 0.0, 0.0, 0.0
+        mb = T * n // c['mini_batches']
+        for ep in range(c['learning_epochs']):
+            perm = torch.randperm(T * n, device=dev)
+            for i in range(c['mini_batches']):
+                j = perm[i * mb:(i + 1) * mb]
+                dist = ac.dist(O[j])
+                lp = dist.log_prob(A[j]).sum(-1)
+                ratio = (lp - LP[j]).exp()
+                pl = -torch.min(ratio * adv[j], ratio.clamp(1 - c['clip'], 1 + c['clip']) * adv[j]).mean()
+                vl = ((ac.value(O[j]) - ret[j]) ** 2).mean()
+                loss = pl + 0.5 * vl - c['entropy'] * dist.entropy().sum(-1).mean()
+                opt.zero_grad(); loss.backward()
+                torch.nn.utils.clip_grad_norm_(ac.parameters(), c['max_grad_norm'])
+                opt.step()
+                with torch.no_grad():
+                    kl = (LP[j] - lp).mean().item()
+                kl_m, pl_m, vl_m = kl, pl.item(), vl.item()
+            if kl_m > 1.5 * c['desired_kl']:
+                break
+        v0 = v0 or vl_m
+        std = ac.log_std.exp().mean().item()
+        rec = dict(it=it, reward=Rw.mean().item(), rollout_success=ep_succ / max(ep_done, 1), episodes=ep_done,
+                   value_loss=vl_m, policy_loss=pl_m, kl=kl_m, action_std=std, lr=c['lr'])
+        stop = None
+        if not all(np.isfinite(v) for v in (rec['reward'], vl_m, pl_m)):
+            stop = 'NaN'
+        elif vl_m > c['stop_value_loss_x'] * v0:
+            stop = f'value loss {vl_m:.3g} > {c["stop_value_loss_x"]} x first'
+        elif kl_m > c['stop_kl']:
+            stop = f'KL {kl_m:.3f}'
+        elif not (c['std_range'][0] <= std <= c['std_range'][1]):
+            stop = f'action std {std:.3f}'
+        elif time.time() - t0 > c['wall_hours'] * 3600:
+            stop = 'wall-clock cap'
+        if it % c['eval_every'] == 0 or stop:
+            succ = evaluate()
+            rec['eval_success'] = succ
+            print(f'[rl] it {it}: eval {succ:.3f} (BC {base:.3f}, best {best:.3f} @ {best_it})', flush=True)
+            if succ > best:
+                best, best_it = succ, it
+                M.save(out / 'best.pt', ac, dict(meta, it=it, success=succ))
+            elif succ < base - c['max_drop_vs_bc']:
+                rollbacks += 1
+                if rollbacks > 1:
+                    stop = stop or 'second drop below the BC'
+                else:
+                    ac.load_state_dict(torch.load(out / 'best.pt')['state'])
+                    print('[rl] dropped below the BC: rolled back to the best checkpoint (once)', flush=True)
+            if not stop and (it - best_it) >= c['patience_evals'] * c['eval_every']:
+                stop = f'no new best for {c["patience_evals"]} evals'
+            runner.reset(torch.arange(n, device=env.device))
+            o, _ = runner.obs()
+        hist.append(rec)
+        if run:
+            run.log(rec, step=it)
+        if it % 10 == 0:
+            print(f'[rl] it {it} r {rec["reward"]:+.3f} succ {rec["rollout_success"]:.2f} ({ep_done} ep) vl {vl_m:.3g} '
+                  f'kl {kl_m:.4f} std {std:.3f} ({time.time() - t0:.0f} s)', flush=True)
+        if stop:
+            print(f'[rl] STOP: {stop}', flush=True)
+            break
+    summary = dict(bc_success=base, best=best, best_it=best_it, stopped=it, reason=stop or 'max iters', out=str(out))
+    (out / 'summary.json').write_text(json.dumps(summary, indent=1))
+    (out / 'history.json').write_text(json.dumps(hist))
+    print(f'[rl] done: {summary}', flush=True)
+    if run:
+        run.summary.update(summary)
+        run.finish()
+    env.close()
+    app.close()
+
+
 def parse_args():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument('mode', choices=('bc', 'rl'))
@@ -232,6 +481,11 @@ def parse_args():
     p.add_argument('--seed', type=int, default=1)
     p.add_argument('--preflight-only', action='store_true', help='data check + tiny-batch overfit test, then exit')
     p.add_argument('--bc', help='rl: BC checkpoint (best.pt)')
+    p.add_argument('--starts', help='rl: folder with starts_*.npz (expert.py collect --save_starts)')
+    p.add_argument('--envs', type=int, default=None, help='rl: override config rl.envs')
+    p.add_argument('--max_iters', type=int, default=None)
+    p.add_argument('--eval_episodes', type=int, default=None)
+    p.add_argument('--eval_every', type=int, default=None)
     p.add_argument('--max_steps', type=int, default=None, help='bc: override config (tests)')
     return p.parse_args()
 
@@ -240,7 +494,13 @@ if __name__ == '__main__':
     a = parse_args()
     if a.max_steps:
         CFG['bc']['max_steps'] = a.max_steps
+    if a.max_iters:
+        CFG['rl']['max_iters'] = a.max_iters
+    if a.eval_episodes:
+        CFG['eval']['envs'] = a.eval_episodes
+    if a.eval_every:
+        CFG['rl']['eval_every'] = a.eval_every
     if a.mode == 'bc':
         run_bc(a)
     else:
-        raise SystemExit('rl: residual PPO is added together with env.py (needs the Isaac env)')
+        run_rl(a)

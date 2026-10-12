@@ -31,6 +31,7 @@ def parse_args():
     p.add_argument('--out', default=None)
     p.add_argument('--seed', type=int, default=0)
     p.add_argument('--debug', action='store_true')
+    p.add_argument('--save_starts', action='store_true', help='collect: stop at `above` and save RL start states')
     p.add_argument('--policy', default=None, help='collect: a BC checkpoint drives instead of the expert (evaluation)')
     p.add_argument('--attach', action='store_true', help='replay: rigid in-hand plate after the lift')
     p.add_argument('--rot_sign', type=float, default=1.0)
@@ -98,8 +99,8 @@ def attach_update(env):
     pl.write_root_velocity_to_sim(torch.zeros(len(ids), 6, device=env.device), env_ids=ids)
 
 
-def set_basket(env, T_list):
-    """Basket of env i at the base-frame pose T_list[i] (marker frame, 4x4); env._slot follows like randomize_basket."""
+def set_basket(env, T_list, ids=None):
+    """Basket of env ids[i] (default: all) at the base-frame pose T_list[i] (marker frame, 4x4); env._slot follows."""
     import math
     import numpy as np
     import torch
@@ -109,20 +110,22 @@ def set_basket(env, T_list):
     Tn = be.basket_nominal_T()
     o_b, yaw_b = Tn[:3, 3], math.radians(be.B['full']['pose_base'][3])
     rel = np.asarray(o_s[:2]) - o_b[:2]
-    pose = torch.zeros(n, 7, device=dev)
-    for i, T in enumerate(T_list):
+    ids = list(range(n)) if ids is None else [int(i) for i in ids]
+    pose = torch.zeros(len(ids), 7, device=dev)
+    for j, (i, T) in enumerate(zip(ids, T_list)):
         T = np.asarray(T)
         yaw = math.atan2(T[1, 0], T[0, 0])
         d = yaw - yaw_b
-        pose[i, :3] = torch.tensor(T[:3, 3], dtype=torch.float32, device=dev)
-        pose[i, 3], pose[i, 6] = math.cos(yaw / 2), math.sin(yaw / 2)
+        pose[j, :3] = torch.tensor(T[:3, 3], dtype=torch.float32, device=dev)
+        pose[j, 3], pose[j, 6] = math.cos(yaw / 2), math.sin(yaw / 2)
         c, s = math.cos(d), math.sin(d)
         env._slot[i, 0] = float(T[0, 3] + c * rel[0] - s * rel[1])
         env._slot[i, 1] = float(T[1, 3] + s * rel[0] + c * rel[1])
         env._slot[i, 2] = float(o_s[2] + T[2, 3] - o_b[2])
         env._slot[i, 3] = yaw_s + d
-    pose[:, :3] += env.scene.env_origins
-    env.scene['basket'].write_root_pose_to_sim(pose)
+    idt = torch.tensor(ids, device=dev)
+    pose[:, :3] += env.scene.env_origins[idt]
+    env.scene['basket'].write_root_pose_to_sim(pose, env_ids=idt)
 
 
 def drive(env, paths_deg, closed, speed, hold=15):
@@ -380,6 +383,13 @@ def run_collect(args):
                 live[k] = False
         closed = np.ones(n, bool)
         drive(env, [p if p is not None else None for p in plans], closed, args.speed, hold=20)
+        if args.save_starts:                                    # RL start states: robot at `above`, plate attached
+            a_ = env._attach
+            np.savez_compressed(out / f'starts_{args.seed:02d}{b:03d}.npz', live=live,
+                                q=robot.data.joint_pos.cpu().numpy(), basket=np.stack(Ts), slot=env._slot.cpu().numpy(),
+                                att_p=a_['p'].cpu().numpy(), att_q=a_['q'].cpu().numpy(), q_ins=q_ins.cpu().numpy())
+            print(f'[starts] batch {b}: {int(live.sum())} start states', flush=True)
+            continue
         # feedback insertion, recorded
         arm = env.action_manager.get_term('arm_action')
         arm.reset(torch.arange(n, device=dev))

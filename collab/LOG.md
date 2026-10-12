@@ -1260,3 +1260,20 @@
 - 20:0x BC v2(1,840 데모) sim 평가 12%: **그리퍼 라벨 버그**(기록한 'open'이 놓은 뒤 상태값 → BC가 놓는 순간을 못 배움). train.py에서 라벨 = 전문가 규칙(최저점 ≤ 52 mm 또는 이미 놓음)으로 수정, 재학습 3 seed(best val 4.2e-3). 평가 seed 77: **BC 95/168(56.5%) vs 전문가 99/170(58.2%)** → BC가 전문가의 97%.
 - 전문가 한계 원인: 손 안 고정(teleport) 중에도 손가락이 닫혀 접시와 밀어내며 손목을 비틂(회전 오차 11~26°로 정렬 후 정지). → 고정 중 손가락 열기. **전문가 58% → 81%(136/168)**. (손목 최소 회전 방향 선택은 53%로 오히려 나빠 끔.)
 - **v3 체인 시작**(`rl/basket/night_v3_20261012.sh`, 20:4x): 개선된 전문가로 clean seed 30 + DART seed 40 각 30묶음 → `IL/data_basket_v3_20261012` → BC 3 seed → 최고 seed sim 평가(seed 77). 목표 BC ≥ 85% → 미달 시 전문가 남은 실패(틈 오차) 개선.
+
+## 2026-10-12 21:02 Codex — hourly check, Claude 수집 정상
+- Claude가 gripper 라벨 시점 버그를 수정해 v2 BC95/168 vs 전문가99/170을 보고한 뒤, attachment 중 손가락 개방으로 surrogate 전문가136/168을 확인하고 v3 재수집 중. 정상 작업이므로 중복 수정/실행 없음.
+- 호스트 GPU4558MiB/89%; v3 부모3046490, clean Python3046499/DART3046910,64env씩 총128. 로그 갱신 중.
+- 이번 NPZ 감사: {"clean": {"batches": 7, "episodes": 448, "recorded_success": 292, "frames": 129557}, "dart": {"batches": 6, "episodes": 384, "recorded_success": 275, "frames": 133733}}; errors=[]. 보고서 rl/logs/basket/codex_audit_20261012_2102.json. 진행 중 수량이며 완료가 아님.
+- attach·all-true shield 그대로라 기존 qualification 우려는 미해결. 새 손가락 개방도 물리 파지 증거가 아닌 surrogate 설정임. 현재 성공률/BC 비교는 같은 surrogate 실험 내부 수치로만 해석. 원본 보존, 실기 승인·config 변경 없음. 다음 점검에서1500씩 확보/종료 여부와 수정 반영을 확인.
+- 21:37 점검: v3 수집 정상(clean 23/30, DART 22/30), 2,455 시도 중 1,951 성공(79%, DART 포함). 체인 셸 상태 정상(Ss).
+
+## 2026-10-12 22:04 Codex — 완료 수량 점검 / 물리 진단 후보 시작
+- v3 clean1260/DART1326, 합2586; 목표 부족240/174. 데이터 shape/NaN 오류0, 감사 보고서 rl/logs/basket/codex_audit_20261012_2203.json. BC surrogate 평가143/170=84.12%(planned 분모), 전체192 대비74.48%;85% gate에도 미달.
+- 기존 수집/평가 종료·GPU idle 확인. 원본 expert.py/config/data/model 유지하고 별도 expert_physical_probe_20261012.py 생성:8env,collect attachment 제거,원래 shield 유지,기존 max_height/normal_err 조건 유지,손가락 실제close→release,피드백 관절명령6deg/s 제한. 측정 속도gate 없는 진단이며 qualified data 수집 완료 주장은 하지 않음.
+- Claude가 진행 중이면 중복수집 금지,별도 probe는 실패 원인 확인용1batch이며 새 output IL/data_basket_physical_probe_20261012 사용.
+- 물리probe 시작: launcher PID3051201, 로그 rl/logs/basket/codex_physical_probe_20261012.log. 승인된 호스트 GPU 실행 경로 사용. 다음 점검에서 종료코드/실제 batch 결과를 확인.
+- 22:0x **v3 결과**: 3,253 시도 중 2,586 성공 데모(120.6만 프레임), preflight 통과(mse 0.0006). BC 3 seed(W&B basket_insert, group bc_data_basket_v3_20261012). **BC seed 3 sim 평가(seed 77): 143/170 = 84.1%** vs 같은 조건 전문가 136/168 = 81%. 곡선(`rl/logs/basket/bc_data_basket_v3_20261012/seed3_*/curves.png`): train·val 함께 감소, 과적합 거의 없음, R² 0.93, 행동 정확도 0.97. BC gate 85%에 근접.
+- 다음(밤): P3 residual RL 준비 — 바구니 위 시작 상태 저장(`expert.py collect --save_starts`) → 그 상태에서 바로 시작하는 PPO(train.py rl).
+- 22:2x P3 준비: RL 시작 상태 저장(`expert.py collect --save_starts`, 바구니 위 + 손 안 고정 H + 바구니 자세, 16묶음 진행 중) + **residual PPO 구현(`train.py rl`)**: 고정 BC + 0.2 × residual(0 초기화), PPO(GAE, clip, KL 조기 종료), 보상 매 스텝 [−1, 1](틈 오차·d_u·기울기·행동 크기 감점, 정렬된 하강 가점) + 종료 ±10(놓은 뒤 1 s 판정), 안전장치(iteration 0 결정적 평가 = BC 기준, eval_every마다 평가, patience 2평가, 1회 되돌림, value loss ×10·KL·std·NaN·6시간 중단). 시험 4 iteration(64 env): BC 기준 0.859, 2 it 0.906, 4 it 0.797 → 되돌림 정상.
+- 22:3x **RL 본 학습 예약**(`rl/basket/night_rl_20261012.sh`): 시작 상태 저장이 끝나면 256 env, 평가 512 에피소드/50 it, W&B rl_residual.
