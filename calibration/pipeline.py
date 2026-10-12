@@ -250,6 +250,8 @@ def policy_plan(job, out, Tbc, q, wait_s=240):
         print(f'   정책 경로 계산이 끝나지 않음 -> 티칭 경로로 넣기 ({out / "realplan.log"})', flush=True)
         return None
     r = json.loads(res_path.read_text())
+    if r.get('reason'):
+        print(f"   정책 경로: {r['reason']}", flush=True)
     print(f"   정책 sim 결과: 정확 {r['sim_success_exact']}, 변형 {r['sim_success_variants']:.2f}, 틈 mm {r['final_gap_mm'][:3]}", flush=True)
     if not r.get('legs') or not r['sim_success_exact'] or r['sim_success_variants'] < 0.5:
         print('   정책 경로 기준 미달 -> 티칭 경로로 넣기', flush=True)

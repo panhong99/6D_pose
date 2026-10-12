@@ -587,7 +587,15 @@ def run_realplan(args):
     fk_check = np.linalg.norm(kin.fk(np.radians(req['above_deg']))[:3, 3] - W(robot.data.body_pos_w[:, l6], robot.data.body_quat_w[:, l6], 0)[:3, 3])
     seed = np.radians(req['above_deg'])
     golden = json.loads((be.RL_DIR / be.B['golden_teach']).read_text())['poses']
-    q_start = bt.ik_robust(kin, above @ f_t, seed, [np.radians(golden['above']['posj']), np.radians(golden['insert']['posj'])], 'policy_start')
+    try:
+        q_start = bt.ik_robust(kin, above @ f_t, seed, [np.radians(golden['above']['posj']), np.radians(golden['insert']['posj'])], 'policy_start')
+    except RuntimeError as e:   # basket too far (x >= ~1.15 m in the 10/12 runs): the pipeline uses the taught path
+        Path(req['out']).write_text(json.dumps(dict(created=time.strftime('%Y-%m-%d %H:%M:%S'), source='realplan (policy rollout in sim)',
+                                                    sim_success_exact=False, sim_success_variants=0.0, final_gap_mm=[], final_low_mm=[],
+                                                    reason=f'policy start pose unreachable: {e}'), indent=1))
+        print(f'[realplan] policy start pose unreachable ({e}) -> {req["out"]}', flush=True)
+        env.close()
+        return
     print(f"[realplan] link_6 sim vs FK {fk_check * 1000:.1f} mm; policy start tcp {above[:3, 3].round(3).tolist()} "
           f"(max joint move {np.abs(np.degrees(q_start) - req['above_deg']).max():.1f} deg)", flush=True)
     detach(env, torch.zeros(n, dtype=torch.bool, device=dev))
