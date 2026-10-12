@@ -31,6 +31,7 @@ def parse_args():
     p.add_argument('--out', default=None)
     p.add_argument('--seed', type=int, default=0)
     p.add_argument('--debug', action='store_true')
+    p.add_argument('--rot_sign', type=float, default=1.0)
     p.add_argument('--batches', type=int, default=1, help='collect: batches of config expert.envs envs')
     p.add_argument('--dart', action='store_true', help='collect: noisy execution, clean labels')
     p.add_argument('--episode_s', type=float, default=30.0, help='collect: insertion time limit')
@@ -42,10 +43,57 @@ def parse_args():
 # ---------------------------------------------------------------- shared sim helpers
 def sim_steps(env, k=None):
     for _ in range(k or env.cfg.decimation):
+        attach_update(env)
         env.scene.write_data_to_sim()
         env.sim.step(render=False)
         env.scene.update(env.physics_dt)
     env.sim.render()
+
+
+def attach(env, mask, noise_mm=0.0, noise_deg=0.0, seed=0):
+    """(10/12 night) rigid in-hand plate: the sim pinch let the plate swing like a pendulum (tool turned, plate did
+    not; the real one follows).  From now on the plate pose = TCP pose x H, H = the in-hand pose measured now, perturbed
+    by +-noise (the real FP / grasp error).  attach_update() applies it every physics step; release with detach()."""
+    import math
+    import torch
+    import plate_env as pe
+    from isaaclab.utils.math import quat_apply, quat_conjugate, quat_from_angle_axis, quat_mul
+    tp, tq = pe.tcp_pose(env)
+    pl = env.scene['plate']
+    qc = quat_conjugate(tq)
+    rel_p = quat_apply(qc, pl.data.root_pos_w - tp)
+    rel_q = quat_mul(qc, pl.data.root_quat_w)
+    g = torch.Generator(device=env.device).manual_seed(seed)
+    n = env.num_envs
+    if noise_deg > 0:
+        ax = torch.randn(n, 3, generator=g, device=env.device)
+        ax = ax / ax.norm(dim=1, keepdim=True)
+        ang = (torch.rand(n, generator=g, device=env.device) * 2 - 1) * math.radians(noise_deg)
+        rel_q = quat_mul(rel_q, quat_from_angle_axis(ang, ax))
+    if noise_mm > 0:
+        rel_p = rel_p + (torch.rand(n, 3, generator=g, device=env.device) * 2 - 1) * noise_mm / 1000
+    env._attach = dict(on=torch.as_tensor(mask, device=env.device).clone(), p=rel_p, q=rel_q)
+    attach_update(env)
+
+
+def detach(env, mask):
+    if hasattr(env, '_attach'):
+        env._attach['on'] &= ~mask
+
+
+def attach_update(env):
+    a = getattr(env, '_attach', None)
+    if a is None or not bool(a['on'].any()):
+        return
+    import torch
+    import plate_env as pe
+    from isaaclab.utils.math import quat_apply, quat_mul
+    tp, tq = pe.tcp_pose(env)
+    pl = env.scene['plate']
+    pose = torch.cat([tp + quat_apply(tq, a['p']), quat_mul(tq, a['q'])], 1)
+    ids = torch.nonzero(a['on']).squeeze(1)
+    pl.write_root_pose_to_sim(pose[ids], env_ids=ids)
+    pl.write_root_velocity_to_sim(torch.zeros(len(ids), 6, device=env.device), env_ids=ids)
 
 
 def set_basket(env, T_list):
@@ -119,10 +167,36 @@ def inserted(env, still_window=30):
     st = be.basket_state(env)
     sc = be.B['success']
     still = (env.scene['plate'].data.root_pos_w - p0).norm(dim=1) < 0.01
-    ok = ((st['d_bottom'].abs() < sc['bottom_tol_m']) & (st['d_u'].abs() < sc['centre_tol_m'])
-          & (st['low'] < sc['max_height_m']) & (st['normal_err'] < sc['max_normal_err_deg']) & still)
+    # (10/12 night) measured tines lean (-x 12.5 deg): the gap at height h is shifted -h*tan(lean) along n, and a seated
+    # plate rests near the 49 mm rail -> judge the lowest point against the leaning gap; plate within 25 deg of upright
+    import math
+    import plate_env as pe
+    lean = math.tan(math.radians(be.B['pins'].get('lean_deg', 0.0)))
+    gap_err = (st['d_bottom'] + st['low'].clamp(min=0) * lean).abs()
+    upright = pe.body_axis(env.scene['plate'].data.root_quat_w, 2)[:, 2].abs() < math.sin(math.radians(25))
+    ok = ((gap_err < sc['bottom_tol_m']) & (st['d_u'].abs() < sc['centre_tol_m'])
+          & (st['low'] < sc['max_height_m'] + 0.005) & upright & still)
+    st['gap_err'] = gap_err
     return ok, st
 
+
+def E_CFG():
+    import env as E
+    return E.CFG
+
+
+def make_cfg(n, viewer, torsion_m):
+    """basket env cfg + a torsional friction patch on the plate collider (10/12 night): the sim pinch held the rim at two
+    points and the plate swung like a pendulum about the line between the fingers (a turned tool did not turn the
+    plate, the real one does); the real 2F-85 pads press a ~22 mm rubber patch."""
+    import isaaclab.sim as sim_utils
+    import basket_env as be
+    cfg = be.make_basket_cfg(n, viewer=viewer)
+    cp = cfg.scene.plate.spawn.collision_props or sim_utils.CollisionPropertiesCfg()
+    cp.torsional_patch_radius = torsion_m
+    cp.min_torsional_patch_radius = torsion_m
+    cfg.scene.plate.spawn.collision_props = cp
+    return cfg
 
 # ---------------------------------------------------------------- P1 replay of the real runs
 def run_replay(args):
@@ -142,7 +216,7 @@ def run_replay(args):
         rows.append(dict(name=d.name, outcome=r['outcome'], plate=next(e for e in ev if e['event'] == 'plan')['plate_root_fp'],
                          Tb=json.loads(photo.read_text())['T_base_basket'], grasp=grasp, slot=slot))
     n = len(rows) * args.per_run
-    env = ManagerBasedRLEnv(be.make_basket_cfg(n, viewer=not args.headless))
+    env = ManagerBasedRLEnv(make_cfg(n, not args.headless, E_CFG()['expert'].get('pad_torsion_radius_m', 0.01)))
     env.reset()
     dev = env.device
     who = np.repeat(np.arange(len(rows)), args.per_run)
@@ -231,7 +305,7 @@ def run_collect(args):
     ex = C['expert']
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
-    env = ManagerBasedRLEnv(be.make_basket_cfg(ex['envs'], viewer=not args.headless))
+    env = ManagerBasedRLEnv(make_cfg(ex['envs'], not args.headless, ex.get('pad_torsion_radius_m', 0.01)))
     n, dev, org = env.num_envs, env.device, env.scene.env_origins
     robot, plate = env.scene['robot'], env.scene['plate']
     aj = env.action_manager.get_term('arm_action')._joint_ids
@@ -244,11 +318,18 @@ def run_collect(args):
     step_max = torch.as_tensor(C['action']['step_max'], device=dev)
     rail = be.B['pins'].get('rail_z', 0.049)
     tip = rail + 0.066                                            # tine tips ~11.5 cm above the floor
-    target_low = ex.get('target_low_m', 0.030)
+    target_low = ex.get('target_low_m', 0.052)
+    # (10/12 night) geometry check (numpy, plate mesh vs leaning tines + rails): a plate tilted 12.8 deg (taught) jams
+    # at ~71 mm, a near-vertical one (-5..+5 deg) goes down to ~46 mm (rests on the 49 mm rail) = the real recipe
+    be.B['slot']['target_tilt_deg'] = ex.get('plate_tilt_deg', 0.0)
+    # and the plate's concave side must face +n (away from the robot): facing -n it jams at ~70 mm (same check)
+    bt.FORCE_PLUS_N = True
+    lean = math.tan(math.radians(be.B['pins'].get('lean_deg', 0.0)))
     dt = env.step_dt
     for b in range(args.batches):
         rng = np.random.default_rng(args.seed * 1000 + b)
         s0 = bt.grasped_start(env, args, rng)
+        attach(env, s0['ok'], ex['in_hand_mm'], ex['in_hand_deg'], seed=args.seed * 1000 + b)
         Ts = []                                                   # random reachable-ish basket poses around the centre
         for k in range(n):
             T = Tn.copy()
@@ -287,6 +368,11 @@ def run_collect(args):
         # feedback insertion, recorded
         arm = env.action_manager.get_term('arm_action')
         arm.reset(torch.arange(n, device=dev))
+        arm.orientation_locked[:] = False                      # the grasp-time rim lock must not freeze the turn
+        # the RL shield (frame/table SDF margins) rejected ~25/64 targets right above the basket and froze those arms;
+        # the insertion moves only cm in free space (real basket plans: >= 125 mm from the frame) -> off here
+        arm._safe_target = robot.data.joint_pos[:, aj].clone()
+        arm.shield.safe = lambda q_: torch.ones(q_.shape[0], dtype=torch.bool, device=q_.device)
         released = torch.zeros(n, dtype=torch.bool, device=dev)
         t_rel = torch.zeros(n, device=dev)
         liv = torch.as_tensor(live, device=dev)
@@ -296,14 +382,22 @@ def run_collect(args):
             obs, st = E.observe(env, released)
             R = E.slot_R(env)
             # lateral (slot frame): lowest point onto the gap centre along n, plate centre onto the slot centre along u
-            lat = torch.stack([-st['d_bottom'] * 2.0, -st['d_u'] * 1.0, torch.zeros_like(st['low'])], 1) * dt
+            # the gap centre leans with the tines: at height h it sits -h*tan(lean) along n from the floor slot line
+            d_goal = -st['low'].clamp(min=0.0, max=tip) * lean
+            e_n = st['d_bottom'] - d_goal
+            lat = torch.stack([-e_n * 2.0, -st['d_u'] * 1.0, torch.zeros_like(st['low'])], 1) * dt
             # rotation toward the insert orientation (env-frame axis-angle -> slot frame)
+            # keep the PLATE upright with its normal along the rows (n): rotate the tool by the plate-normal error
+            # (the plate can turn in the fingers, so the tool target alone is not enough)
+            nrm_e = pe.body_axis(plate.data.root_quat_w, 2)
+            tgt = R[:, :, 0]                                     # concave side toward +n (debug print)
             _, tq_ = pe.tcp_pose(env)
-            rot_env = axis_angle_from_quat(quat_mul(q_ins, quat_conjugate(tq_))) * 1.0 * dt * 3.0
+            rot_env = axis_angle_from_quat(quat_mul(q_ins, quat_conjugate(tq_))) * 3.0 * dt
             rot = torch.einsum('nji,nj->ni', R, rot_env)
             high = st['low'] > tip + 0.015
-            aligned = st['d_bottom'].abs() < 0.003
-            vz = torch.where(high, torch.full_like(t_rel, -0.03), torch.where(aligned, torch.full_like(t_rel, -0.012),
+            aligned = e_n.abs() < 0.003
+            upright = nrm_e[:, 2].abs() < 0.10                      # plate within ~6 deg of upright
+            vz = torch.where(high, torch.full_like(t_rel, -0.03), torch.where(aligned & upright, torch.full_like(t_rel, -0.008),
                                                                                torch.zeros_like(t_rel)))
             vz = torch.where(released, torch.where(t_rel > 1.0, torch.full_like(t_rel, 0.03), torch.zeros_like(t_rel)), vz)
             stepv = torch.cat([lat, rot], 1)
@@ -319,19 +413,40 @@ def run_collect(args):
             exe[~liv] = 0.0
             O.append(obs.cpu().numpy()); A.append(label.cpu().numpy()); M.append((liv & (t_rel < 5.0)).cpu().numpy())
             env.step(E.to_env_action(env, exe, open_))
+            attach_update(env)
             if args.debug and step % 30 == 0:
                 k_ = np.flatnonzero(live)[:4]
                 tpd, _ = pe.tcp_pose(env)
+                kk = int(k_[0])
+                tz = pe.body_axis(pe.tcp_pose(env)[1], 2)
+                print(f"[dbg3] tool_z . plate_n per env {((tz * nrm_e).sum(1)[k_]).cpu().numpy().round(3).tolist()}  tool_z_x {tz[k_, 0].cpu().numpy().round(3).tolist()}", flush=True)
+                print(f"[dbg2] nrm {nrm_e[kk].cpu().numpy().round(3).tolist()} tgt {tgt[kk].cpu().numpy().round(3).tolist()} "
+                      f"rot_env {(rot_env[kk] / dt).cpu().numpy().round(3).tolist()} tool_z {pe.body_axis(pe.tcp_pose(env)[1], 2)[kk].cpu().numpy().round(3).tolist()} "
+                      f"q {torch.rad2deg(robot.data.joint_pos[kk, aj]).cpu().numpy().round(1).tolist()}", flush=True)
                 print(f"[dbg] t {step * dt:4.1f} low {(st['low'][k_] * 1000).round().tolist()} d_bot {(st['d_bottom'][k_] * 1000).round().tolist()} "
                       f"d_u {(st['d_u'][k_] * 1000).round().tolist()} nerr {st['normal_err'][k_].round().tolist()} rel {released[k_].tolist()} "
-                      f"rot {(rot[k_].norm(dim=1) / dt).round(decimals=2).tolist()} tcpz {((tpd - org)[k_, 2] * 1000).round().tolist()}", flush=True)
+                      f"rot {(rot[k_].norm(dim=1) / dt).round(decimals=2).tolist()} lock {arm.orientation_locked[k_].tolist()} blk {int(arm.blocked.sum())} tcpz {((tpd - org)[k_, 2] * 1000).round().tolist()}", flush=True)
             land = ~released & (st['low'] <= target_low)
             released |= land
+            detach(env, land)
             t_rel = torch.where(released, t_rel + dt, t_rel)
             if bool((released | ~liv).all()) and float(t_rel[liv].min() if liv.any() else 9) >= 5.0:
                 break
         ok, st = inserted(env)
         ok = ok & liv
+        import plate_env as pe_
+        sc_ = be.B['success']
+        up_ = pe_.body_axis(plate.data.root_quat_w, 2)[:, 2].abs() < math.sin(math.radians(25))
+        f_ = liv & ~ok
+        nr_ = torch.nonzero(f_ & ~released).squeeze(1)[:8]
+        if len(nr_):
+            _, tq_e = pe_.tcp_pose(env)
+            rerr = axis_angle_from_quat(quat_mul(q_ins, quat_conjugate(tq_e))).norm(dim=1)
+            print(f"[collect] stuck: low {(st['low'][nr_] * 1000).round().tolist()} e_n {((st['d_bottom'] + st['low'].clamp(min=0, max=tip) * lean)[nr_] * 1000).round().tolist()} "
+                  f"plate nz {pe_.body_axis(plate.data.root_quat_w, 2)[nr_, 2].round(decimals=2).tolist()} tool rot err deg {torch.rad2deg(rerr[nr_]).round().tolist()}", flush=True)
+        print(f"[collect] failures {int(f_.sum())}: never released {int((f_ & ~released).sum())}, gap > tol {int((f_ & (st['gap_err'] >= sc_['bottom_tol_m'])).sum())}, "
+              f"too high {int((f_ & (st['low'] >= sc_['max_height_m'] + 0.005)).sum())}, |d_u| {int((f_ & (st['d_u'].abs() >= sc_['centre_tol_m'])).sum())}, "
+              f"not upright {int((f_ & ~up_).sum())}", flush=True)
         obs_a, act_a, mask_a = np.stack(O, 1), np.stack(A, 1), np.stack(M, 1)
         np.savez_compressed(out / f'batch_{args.seed:02d}{b:03d}.npz', obs=obs_a.astype(np.float32), act=act_a.astype(np.float32),
                             mask=mask_a, success=ok.cpu().numpy(), dart=dart, live=live)

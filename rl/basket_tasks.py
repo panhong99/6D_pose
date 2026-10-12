@@ -182,7 +182,7 @@ def insertion_targets(env, k, tcp_T, plate_T, flange_T):
     a = tcp_T[:3, 3] - c_cur
     a -= z_cur * (a @ z_cur)
     a_loc = Rp.T @ (a / np.linalg.norm(a))
-    z_t = Np if z_cur @ Np >= 0 else -Np
+    z_t = Np if (FORCE_PLUS_N or z_cur @ Np >= 0) else -Np    # (10/12) rl/basket/expert.py: concave side to +n
     zl = np.array([0, 0, 1.0])
     A = np.stack([a_loc, np.cross(zl, a_loc), zl], 1)
     Bm = np.stack([v, np.cross(z_t, v), z_t], 1)
@@ -233,6 +233,7 @@ def ik_robust(kin, target, seed, priors, tag, tries=12, rng=None):
 
 
 N_TRANSPORT = 12
+FORCE_PLUS_N = False                                            # set by rl/basket/expert.py
 
 
 def transport_poses(start, above, z_safe):
