@@ -685,7 +685,9 @@ def run_plate(args):
             cur = dict(plan=splan)                                  # the pre-stop correction swaps in a shifted plan
 
             def sleg(name):
-                v = q.get('basket_insert_vel_deg_s', vel) if name in ('descend', 'ascend', 'shift') else vel   # in the pins: slow
+                v = q.get('basket_insert_vel_deg_s', vel) if name in ('descend', 'shift') else vel   # in the pins: slow
+                if name == 'ascend':                            # (10/12) released: the open fingers only leave the rim
+                    v = q.get('basket_ascend_vel_deg_s', vel)
                 if name in ('descend_pre', 'pre_up'):             # (10/12 Human) the first descent over the basket too fast
                     v = q.get('basket_pre_vel_deg_s', vel)
                 print(f'\n=== slot {k} {name}: one smooth spline at {v} deg/s ===', flush=True)
@@ -693,7 +695,7 @@ def run_plate(args):
                 children.run_mover(mover_command(args, cur['plan'], name, 'leg', opening_done=True, smooth=True, vel=v), env)
                 rec.event('leg_end', leg=f'slot{k}_{name}')
             if 'to_above' in json.loads(Path(splan).read_text())['legs']:     # golden / basket: four stages
-                def look(tag, measure=False):                       # read-only wrist photo + model pins (10/12)
+                def look(tag):                                      # read-only wrist photo + model pins (10/12)
                     try:                                            # child process: OpenCV stays out of this one
                         t_ask = time.time()                         # joints are not streamed during a move: wait for a fresh one
                         while (rec.last or {}).get('t', 0) < t_ask and time.time() - t_ask < 5:
@@ -703,26 +705,16 @@ def run_plate(args):
                         Tbb = Tbb.copy()
                         if basket_T is None:                        # golden: the basket where it was found today
                             Tbb[:3, 3] += q.get('basket_shift_m', [0.0, 0.0, 0.0])
-                        bs = json.loads(Path(splan).read_text()).get('basket_slot') if measure else None
                         png = out / f'wrist_{tag}.png'
                         req = dict(T_base_flange=Kinematics().fk(np.radians(rec.last['posj'])).tolist(), T_base_basket=Tbb.tolist(),
-                                   png=str(png), after=t_ask, gap=bs and dict(plate_bottom_z=bs['plate_bottom_at_pre_z'],
-                                                                           plate_centre_y=bs['plate_centre_y']))
+                                   png=str(png), after=t_ask)
                         (out / f'wrist_{tag}.req.json').write_text(json.dumps(req))
                         subprocess.run([sys.executable, str(HERE / 'camera_tools.py'), 'pre_photo', '--req',
                                         str(out / f'wrist_{tag}.req.json')], check=True, timeout=60)
-                        res = json.loads(Path(str(png) + '.result.json').read_text())
                         rec.event('wrist_snapshot', at=tag, png=str(png))
                         print(f'   손목 사진: {png} (초록 = 모델 핀 위치)', flush=True)
-                        r = res['gap']
-                        if measure:
-                            rec.event('pre_gap', result=r)
-                        if r:
-                            print('   접시 가장자리 vs 핀 틈: ' + ', '.join(f"줄 {x['row_y_basket']:+.3f}: {x['dx'] * 1000:+.1f} mm"
-                                                                     for x in r['rows']) + f"  -> x {r['dx'] * 1000:+.1f} mm 권장", flush=True)
-                        return r
                     except Exception as exc:                        # a photo never blocks the run
-                        print(f'   손목 사진/측정 실패: {exc}', flush=True)
+                        print(f'   손목 사진 실패: {exc}', flush=True)
 
                 def ask(text, keys):
                     if args.auto:                               # (10/12) no Human answers: go on ('d')
@@ -742,20 +734,8 @@ def run_plate(args):
                     rec.event('done', place=args.place, slot=k, stopped='above_home')
                     return
                 sleg('descend_pre')
-                # 10/12 13:4x: the one-edge gap measurement proved unreliable (plate near vertical, tine model changed)
-                r = look('pre', measure=q.get('basket_pre_measure', False))
-                while True:
-                    can = bool(r) and abs(r['dx']) <= 0.010
-                    a_ = ask('\n[2/4] 넣기 직전(접시 바닥이 빗살 레일 약 4 cm 위). d = 그대로 넣기, '
-                             + (f"c = x {r['dx'] * 1000:+.1f} mm 옮긴 뒤 다시 확인, " if can else '')
-                             + 'u = 다시 올려 홈 복귀 > ', ('d', 'u', 'c') if can else ('d', 'u'))
-                    if a_ != 'c':
-                        break
-                    from plate_plans import shifted_plan
-                    cur['plan'] = shifted_plan(cur['plan'], r['dx'], Tbc, q)
-                    rec.event('pre_shift', dx=r['dx'], plan=str(cur['plan']))
-                    sleg('shift')
-                    r = look('pre_shifted', measure=True)
+                look('pre')
+                a_ = ask('\n[2/4] 넣기 직전(접시 바닥이 빗살 레일 약 4 cm 위). d = 넣기, u = 다시 올려 홈 복귀 > ', ('d', 'u'))
                 if a_ == 'u':
                     sleg('pre_up')
                     sleg('abort_home')

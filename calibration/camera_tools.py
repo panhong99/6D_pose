@@ -414,68 +414,11 @@ def wrist_snapshot(cfg, T_base_flange, T_base_basket, path, n_warm=15, after=Non
     return path
 
 
-def plate_gap_dx(png, plate_bottom_z, plate_centre_y, pitch=0.02):
-    """(10/12 real) pre-stop check on a wrist_snapshot: along each of the two slot pin rows (model pins of the basket
-    pose stored with the photo, the rows nearest plate_centre_y on either side) find the plate's +x-most red pixel
-    (the leaning plate's lowest rim side), back-project it to plate_bottom_z and compare with the nearest pin-gap
-    centre.  Returns dict(dx = mean move along base x that centres the rim in the gap, rows=[...]) or None."""
-    png = Path(png)
-    d = json.loads(png.with_suffix('.json').read_text())
-    img = cv2.imread(str(png.with_suffix('.raw.png')))
-    hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-    red = (((hsv[..., 0] < 8) | (hsv[..., 0] > 170)) & (hsv[..., 1] > 120) & (hsv[..., 2] > 60)).astype(np.uint8)
-    n_lab, lab, stats, _ = cv2.connectedComponentsWithStats(red)
-    red = lab == 1 + np.argmax(stats[1:, cv2.CC_STAT_AREA]) if n_lab > 1 else red > 0     # the plate = biggest red blob
-    Tc = np.array(d['T_base_flange']) @ np.array(d['T_flange_cam'])
-    Tcb, K = np.linalg.inv(Tc), np.array(d['K'])
-
-    def proj(p):
-        c = Tcb @ np.r_[p, 1.0]
-        return (K @ (c[:3] / c[2]))[:2]
-
-    def back(u, v, z):
-        r = Tc[:3, :3] @ np.linalg.solve(K, [u, v, 1.0])
-        return Tc[:3, 3] + r * (z - Tc[2, 3]) / r[2]
-    Tb = np.array(d['T_base_basket'])
-    tops = [p1 for _, p1 in basket_pins_in_base(Tb)]
-    ys = np.array([(np.linalg.inv(Tb) @ np.r_[p, 1.0])[1] for p in tops])     # rows are straight in the basket frame
-    plate_centre_y = float((np.linalg.inv(Tb) @ np.r_[Tb[0, 3], plate_centre_y, 0, 1.0])[1])   # same frame (yaw ~1 deg)
-    rows = []
-    for side in (-1, 1):                                        # nearest row below / above the plate centre in y
-        cand = ys[(ys - plate_centre_y) * side > 0.02]
-        if not len(cand):
-            continue
-        yr = cand[np.argmin(np.abs(cand - plate_centre_y))]
-        row = np.array([p for p, y in zip(tops, ys) if abs(y - yr) < 0.005])
-        row = row[np.abs(row[:, 0] - np.median(row[:, 0])) < 0.15]          # this half of the basket (centre clip gap)
-        xs = np.sort(row[:, 0])
-        mid = np.r_[row[:, :2].mean(0), plate_bottom_z]
-        uv, du = proj(mid), proj(mid + [0.05, 0, 0]) - proj(mid)       # image direction of base +x along the row
-        n = np.array([-du[1], du[0]]) / np.linalg.norm(du)
-        hh, ww = red.shape
-        vv, uu = np.nonzero(red)
-        on = np.abs((uu - uv[0]) * n[0] + (vv - uv[1]) * n[1]) < 3       # red pixels on the row line
-        if on.sum() < 5:
-            continue
-        k = np.argmax((uu[on] - uv[0]) * du[0] + (vv[on] - uv[1]) * du[1])
-        edge = back(uu[on][k], vv[on][k], plate_bottom_z)[0]
-        gaps = (xs[:-1] + xs[1:]) / 2
-        gaps = gaps[np.diff(xs) < 1.5 * pitch]
-        g = gaps[np.argmin(np.abs(gaps - edge))]
-        rows.append(dict(row_y_basket=round(float(yr), 3), edge_x=round(float(edge), 4), gap_x=round(float(g), 4), dx=round(float(g - edge), 4)))
-    if not rows:
-        return None
-    return dict(dx=float(np.mean([r['dx'] for r in rows])), rows=rows)
-
-
 def pre_photo(a, cfg):
-    """(10/12) pipeline helper run as a child process (keeps OpenCV out of the pipeline process, which segfaulted once
-    after a photo + measurement): --req json {T_base_flange, T_base_basket, png, after, gap: {plate_bottom_z,
-    plate_centre_y} | null} -> writes {png, gap} to <png>.result.json."""
+    """(10/12) pipeline helper run as a child process (keeps OpenCV out of the pipeline process):
+    --req json {T_base_flange, T_base_basket, png, after}."""
     r = json.loads(Path(a.req).read_text())
-    png = wrist_snapshot(cfg, np.array(r['T_base_flange']), np.array(r['T_base_basket']), r['png'], after=r['after'])
-    gap = plate_gap_dx(png, r['gap']['plate_bottom_z'], r['gap']['plate_centre_y']) if r.get('gap') else None
-    Path(str(png) + '.result.json').write_text(json.dumps(dict(png=str(png), gap=gap)))
+    wrist_snapshot(cfg, np.array(r['T_base_flange']), np.array(r['T_base_basket']), r['png'], after=r['after'])
 
 
 def wrist_look(a, cfg):

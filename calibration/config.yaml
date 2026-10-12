@@ -97,69 +97,45 @@ gripper:                           # Robotiq 2F-85 via USB-RS485 (FTDI) on this 
   baud: 115200
   force: 64                        # 0..255 (1/4 of max, Human 2026-10-07); speed is always the slowest (hard-coded in gripper.py)
 
-plate_rl:                          # pipeline.py --task plate: FoundationPose plate -> RL policy rollout plan -> supervised legs
+plate_rl:                          # pipeline.py --task plate: FoundationPose plate -> plan -> supervised legs (history: collab/DECISIONS.md)
   isaaclab: /home/pan/IsaacLab/isaaclab.sh
-  checkpoint: /home/pan/IsaacLab/logs/rsl_rl/m1013_2f85_il_residual/2026-10-07_15-15-44_stage2/model_400.pt   # BC+RL, gate 97.9 %
+  checkpoint: /home/pan/IsaacLab/logs/rsl_rl/m1013_2f85_il_residual/2026-10-07_15-15-44_stage2/model_400.pt   # old BC+RL (--plate_policy rl)
   residual_base: /home/pan/IsaacLab/logs/rsl_rl/m1013_2f85_rim_slow/2026-10-07_14-05-09_stage2_bc/model_0.pt   # its BC actor
   prompt: red plate
-  tolerance_mm: [25.0, 25.0, 15.0]   # 2026-10-08: 10 -> 25 mm (hand placement; export still needs sim success). |x|, |y|, |z| of the plate root from the trained spot (rl/config.yaml plate_xy, box_h)
-  max_tilt_deg: 8.0                  # FoundationPose shows ~4 deg on a flat plate (bias), 5 deg was too tight
+  tolerance_mm: [25.0, 25.0, 15.0]   # |x|, |y|, |z| of the plate root from the trained spot (no-library mode)
+  max_tilt_deg: 8.0                  # FoundationPose shows ~4 deg on a flat plate (bias)
   placement_timeout_s: 600           # time to place the plate inside the trained area
-  offset_m: [0.0025, 0.055]          # 2026-10-12 11:4x Human: still too deep, ~10 mm shallower -> x 0.0125 -> 0.0025.
-                                     # 2026-10-12 11:1x Human: grasp 1-2 cm more +y and 5 mm shallower -> [0.0175, 0.040] -> [0.0125, 0.055]
-                                     # (x = radial, y = tangential, turned with the plate azimuth: ~ base +y near the front).
-                                     # 2026-10-12 Human: gripper goes in too deep, 5-10 mm shallower -> radial x 0.025 -> 0.0175 (7.5 mm).
-                                     # 2026-10-08 13:3x Human: grasp ~5 mm shallower -> -0.005 x (0.993, -0.117) along the finger approach.
-                                     # was [0.030, 0.039]: added to the FoundationPose plate root before the rollout (real-vs-sim grasp correction).
-                                     # 19:20 Human (2nd run): grasp 2 cm more to the robot's left (+y) and 1 cm deeper along the
-                                     # finger approach (tool axis xy ~ (0.993, -0.117)) -> (0.02, 0.02) + (0.0099, 0.0188) .
-                                     # 2026-10-07 Human: the real grasp needed the plate ~2 cm toward the robot and ~2 cm to its
-                                     # right (estimate from memory) -> real gripper lands at sim (-2, -2) cm -> plan for (+2, +2) cm.
-                                     # The placement check uses FP + offset, so place the real plate at trained spot - offset.
+  offset_m: [0.0025, 0.055]          # added to the FP plate root before planning (x radial, y tangential); tuned on the real robot 10/7-10/12
   start_tolerance_deg: 3.0           # robot must be this close to the home joints
   keep_perception: true              # FoundationPose window keeps tracking during the motion (pose logged with the joints)
-  export_envs: 8                     # sim rollouts per plan (8 instead of 16: GPU shared with FoundationPose)
-  vel_deg_s: 6.0                     # joint speed AND accel of the smooth legs (Human 19:3x: 3x the former 2 deg/s; cap 6)
-  hold_s: 3.0                        # pause with the plate lifted before lowering
+  export_envs: 8                     # sim rollouts per plan (GPU shared with FoundationPose)
+  vel_deg_s: 6.0                     # joint speed and accel of the smooth legs (cap 6, Human-approved)
+  hold_s: 3.0                        # pause with the plate lifted
 
-plate_ik_bc:                       # pipeline.py --task plate --plate_policy ik_bc (2026-10-08): overrides plate_rl keys
-  checkpoint: /home/pan/IsaacLab/logs/rsl_rl/m1013_goal1_union_claude_20261008_seed2/2026-10-08_17-38-42_stage2_bc/model_0.pt
-                                   # 10/12: the library's BC (union of all demo sets); was m1013_goal1_phi_pitch_slow_20261008_seed2
-                                   # 15:5x: the library's BC (export/--no_library still roll it out); was
-                                   # m1013_2f85_ik_sweep_pw1_nofinger/2026-10-08_12-25-33_stage2_bc (validated 10/8 real x5)
-                                   # BC only (IL), translation-invariant inputs (no arm joints / xy / fingers), 1200 demos;
-                                   # sim IK-approach gate 1024 env: 98-100 % for dx -9..+15 cm, y +-20 cm (3 seeds)
+plate_ik_bc:                       # --plate_policy ik_bc (overrides plate_rl keys)
+  checkpoint: /home/pan/IsaacLab/logs/rsl_rl/m1013_goal1_union_claude_20261008_seed2/2026-10-08_17-38-42_stage2_bc/model_0.pt   # union BC (93.6 %)
   residual_base: null              # no RL residual
   approach: ik                     # straight TCP line from ready to the rim, BC takes over within handoff_m
   handoff_m: 0.04
-  approach_fast_sim: 4.0           # plan rollout only: IK line 4x faster in SIM (real robot still 6 deg/s)
-  library: data/plan_library/20261008_174557_380970/library.npz
-                                   # 2026-10-12 (Human: demo wide grasp): union BC seed2 library, 1645/1672 sim ok;
-                                   # union BC uniform-xy final test 93.6 %.  was ../rl/reports/20261008_goal1/variant_library_combined/library.npz
-                                   # 2026-10-08 15:5x (Human: use now): Codex candidate, BC m1013_goal1_phi_pitch_slow seed2,
-                                   # r 0.85-1.32 m x phi -40..40 x pitch -15/0, 1618/1672 sim ok (home sweep + grasp + 5 s hold).
-                                   # NOT yet run on the real robot.  was: data/plan_library/20261008_133418/library.npz
-  max_azimuth_deg: 60              # plate direction from the base +x axis (frame / camera view); cell clearance checked per plan
-  tool_length_m: 0.165             # flange -> 2F-85 pinch point, for the FK cell clearance of library plans
+  approach_fast_sim: 4.0           # plan rollout only: IK line faster in sim (real robot still 6 deg/s)
+  library: data/plan_library/20261008_174557_380970/library.npz   # union BC library, 1645/1672 sim ok
+  max_azimuth_deg: 60              # plate direction from the base +x axis
+  tool_length_m: 0.165             # flange -> 2F-85 pinch point (FK cell clearance)
   tool_radius_m: 0.06
-  golden_teach: data/teach/golden/full_01_best_20261008_1504.json   # Human 10/8 15:1x "best of best" basket path (--place golden)
-  # (superseded below) basket_transit_lift_m: [0.13, 0.10, 0.07]   # (10/12 Human: still uneasy) above this much higher than taught, the highest
-                                     # the arm reaches (vertical tool: +10 cm max at the reference spot, +13 cm 5 cm closer); was 0.07
-  basket_carry_lift_m: 0.15          # (10/12) carry (flat plate over the wall) higher than taught; was = transit lift 0.07
-  basket_shift_m: [0.0, -0.076, 0.0]  # (10/12 real) where the basket really is vs the teaching (wrist photo rows + marker mean):
-                                     # drawings, RViz and the pre-stop gap measurement use this (not the path nudge below)
-  basket_nudge_m: [0.005, 0.0, 0.0]   # 13:2x: plate-path tweak only (the basket move is basket_shift_m for golden, markers for basket);
-                                     # was [0.005, -0.076, 0]. 11:1x Human at the pre stop: +x 5 mm (was [0, -0.076, 0]); (10/12 real) basket sits 7.6 cm further -y than at the teaching (wrist photo rows + marker mean agree); was -0.010
-  basket_yaw_deg: 14.7                # (10/12 real) turn the slot path about the vertical at the insert: 9.7 = plate normal (taught -8.7) along the pin rows (+1.0);
-                                      # 11:2x Human "a bit more for a smooth insert" + wrist photo plate trace ~5 deg short -> +5 (was 9.7)
-  basket_insert_up_m: 0.020           # 15:3x Human "0.5 mm" read as 0.5 cm deeper (was 0.025); 15:1x 1 cm deeper again (was 0.035); 14:5x 1 cm deeper (was 0.045). (10/12 e-stop) Human: 7.5 cm descent from pre forced the plate -> 4.5 cm less
-  basket_insert_vel_deg_s: 0.25       # (10/12 real, e-stop) descend / ascend in the pins (was 6 pipeline / 2 mover): 3 cm in ~6 s, ~0.5 cm/s TCP
-  basket_tilt_deg: 15.0              # (10/12 Human) plate top tilted toward +x (away from the robot) so it slides in; Human wants
-                                     # ~30, start 15. Pivot = the plate's lowest rim point at the insert. Needs the basket >= 12-16 cm
-                                     # closer to the robot than the reference spot (reach). 0 = taught tilt
-  basket_tilt_x_comp_m: 0.04         # (10/12 Human) with the tilt the plate landed 2 pins (4 cm) toward the robot: move +x (only when tilted)
-  basket_retreat_up_m: 0.08          # (10/12) when tilted: release, then straight up this much (taught retreat out of reach)
-  basket_transit_lift_m: [0.13, 0.10, 0.07]   # (moved here 14:5x)
-  basket_pre_vel_deg_s: 1.5          # (10/12 Human) above -> pre (first descent, ~11 cm) and back: was 6 deg/s
-  basket_pre_up_m: 0.075              # look stop: TCP this far above insert (plate bottom ~2.5 cm over the pin tops)
-  workspace_mm: {x: [-80, 140], y: [-180, 180], z: [-15, 15]}   # FP + offset - rl plate_xy; dx < -90 mm collides in sim
+  # basket insertion (golden teaching corrected; tuned on the real robot 10/12, see collab/DECISIONS.md)
+  golden_teach: data/teach/golden/full_01_best_20261008_1504.json   # best full teaching (10/8)
+  basket_shift_m: [0.0, -0.076, 0.0]   # --place golden: basket vs the teaching (also drawings / RViz)
+  basket_nudge_m: [0.005, 0.0, 0.0]    # plate path tweak
+  basket_yaw_deg: 14.7                 # slot path turned about the vertical at the insert (plate along the pin rows)
+  basket_tilt_deg: 15.0                # plate top toward +x at the insert so it slides in (0 = taught tilt)
+  basket_tilt_x_comp_m: 0.04           # with the tilt: +x along the pin rows (it landed 2 pins short)
+  basket_transit_lift_m: [0.13, 0.10, 0.07]   # above higher than taught: the highest the arm reaches
+  basket_carry_lift_m: 0.15            # carry (flat plate over the wall) higher than taught
+  basket_pre_up_m: 0.075               # look stop: TCP this far above the taught insert
+  basket_insert_up_m: 0.020            # insert end this far above the taught insert
+  basket_retreat_up_m: 0.08            # tilted: after release straight up (the highest that reaches, >= 3 cm)
+  basket_pre_vel_deg_s: 1.5            # above -> pre and back
+  basket_insert_vel_deg_s: 0.25        # in the pins
+  basket_ascend_vel_deg_s: 1.5         # after release
+  auto_max_plate_move_mm: 15.0         # --auto: do not close if FP saw the plate move more than this since planning
+  workspace_mm: {x: [-80, 140], y: [-180, 180], z: [-15, 15]}   # FP + offset - rl plate_xy (no-library mode)

@@ -1212,3 +1212,11 @@
 ## 2026-10-12 마감 요약 (Claude)
 - 목표 1 실기 완료(넓은 범위 파지). 목표 2: 바구니 넣기 실기 성공(위치·깊이 Human "완벽"), 바구니 이동 후 성공, `--auto` 연속 5회 완주. 주요 변경: 4단계 분리(바구니 위 / 넣기 직전 / 넣기 / 홈), 마커 바구니 측정(`basket --define_current`, `basket_fit_robust`), FP 기반 손 안 접시, 회전·기울임·높이·깊이·속도 설정, 손목 카메라 사진, 이동 전 전체 계획 + RViz 전체 미리보기, `--auto` 그리퍼, 빗살 실측 모델, IK 무작위 시드, segfault 대비(faulthandler, 자식 프로세스 동반 종료), README 정리.
 - 미해결: 파이프라인 segfault 원인(다음 발생 시 `faulthandler.log`), 바구니 자유도(도달 한계·운반 경유점), 바닥 접시 잡기(테두리 끝 집기 실패, 위에서 벽 집기 검토), 여러 접시, 툴 무게 되돌리기(`scratchpad resettool.py`, Human 실행 대기).
+- 16:5x 커밋 `3c75b21`(코드·설정·문서 118개 추가/수정, 23개 이동 삭제, 데이터·가중치 제외). push는 이 셸에 GitHub 자격 증명이 없어 실패 → Human 터미널에서 `git push origin pan`.
+- 16:5x Human: 놓은 뒤 복귀가 느림. 원인: ascend(놓은 뒤 수직 상승 6~8 cm)가 관절 이동 17.6°인데 핀 안 속도 0.25°/s → 약 70 s. → `basket_ascend_vel_deg_s: 1.5`(약 12 s). descend는 0.25 유지(5.7°, 약 25~30 s).
+- 16:5x 실기 정답 라벨 `calibration/data/real_pipeline/labels_20261012.jsonl`: 오늘 넣기까지 간 pipeline 실행 전부, Human '162838만 실패(각도 모자람, 핀 쌍과 안 맞음), 나머지 성공'. 넣기 직전 손목 사진의 위에서 본 접시–핀 줄 각도는 성공(−3.7°)과 실패(−3.4°)가 같음 → 실패 원인은 위에서 안 보이는 기울기/손 안 회전 → 학습 관측에 기울기가 보이는 시점 필요.
+- 17:0x Human: 학습으로 넘어가자(지금 시연은 가능, 학습은 +α, 나중엔 전체를 학습으로). 계획 초안 `collab/PLAN_2026-10-13_basket_learning.md`: P0 정리·푸시 → P1 sim을 실기에 맞추기 → P2 바구니 자유도(전문가 + IL) → P3 핀 쌍 안착(residual RL, 보상 [−1,1]/±10) → P4 실기(손목 카메라 학생 정책). Human 검토 대기.
+- 17:1x 보스(이전 표기 Human) 지시: 앞으로 문서·대화에서 'Human' 대신 '보스'로 부른다. 이전 기록은 그대로 두고 새 기록부터 적용(Codex도 동일하게).
+- 17:2x 보스: 10/21까지 안 됨, 이번 주(10/16) 안에 끝내라 → 계획 압축: P0 10/13 오전, P1 10/13 오후, P2 10/14(BC 밤), P3 10/15(RL 밤 1회, 상한 고정, BC보다 낮으면 BC만), P4 10/16 실기. 손목 학생 정책·두 번째 시점 추정기·여러 접시·바닥 잡기는 다음 주.
+- 17:4x 보스: 계획 승인, 시간 낭비 막을 안전장치 + loss 곡선 요청 → PLAN에 '안전장치'(사전 데이터 검사, 작은 배치 과적합 시험, RL 사전 20 iteration, BC patience 5,000 step, RL patience 2평가, 되돌림 1회, value loss·KL·std·NaN 중단, 6시간 상한) + '곡선'(train/val 한 그래프, 행동 정확도, R², 평가 성공률 vs BC 기준선) 추가.
+- 18:0x P0 정리: 일회성 스크립트 archive(rl: run_wide_night, run_goal1_candidates, night_checks, test_night_checks / calibration: analyze_grasp_height), ros2_ws/install·log git 추적 해제(.gitignore), 한 점 틈 측정(plate_gap_dx, pre 'c' 보정, basket_pre_measure) 삭제, calibration/config.yaml plate_rl·plate_ik_bc 주석 이력 정리(값 동일 확인, 이전 파일 scratchpad 백업). tests 21/21.
