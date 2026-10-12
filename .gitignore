@@ -172,3 +172,10 @@ run_used.yml
 /.mobileclip_blt.ts.f1b4fb026fec4d4784619cc005c758fb.part
 /yoloe-v8l-seg-pf.pt
 /FoundationPose-plus-plus
+/.runtime/
+/wandb/
+
+# colcon build output (2026-10-12)
+ros2_ws/install/
+ros2_ws/log/
+ros2_ws/build/
