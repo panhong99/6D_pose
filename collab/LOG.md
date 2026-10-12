@@ -1277,3 +1277,19 @@
 - 다음(밤): P3 residual RL 준비 — 바구니 위 시작 상태 저장(`expert.py collect --save_starts`) → 그 상태에서 바로 시작하는 PPO(train.py rl).
 - 22:2x P3 준비: RL 시작 상태 저장(`expert.py collect --save_starts`, 바구니 위 + 손 안 고정 H + 바구니 자세, 16묶음 진행 중) + **residual PPO 구현(`train.py rl`)**: 고정 BC + 0.2 × residual(0 초기화), PPO(GAE, clip, KL 조기 종료), 보상 매 스텝 [−1, 1](틈 오차·d_u·기울기·행동 크기 감점, 정렬된 하강 가점) + 종료 ±10(놓은 뒤 1 s 판정), 안전장치(iteration 0 결정적 평가 = BC 기준, eval_every마다 평가, patience 2평가, 1회 되돌림, value loss ×10·KL·std·NaN·6시간 중단). 시험 4 iteration(64 env): BC 기준 0.859, 2 it 0.906, 4 it 0.797 → 되돌림 정상.
 - 22:3x **RL 본 학습 예약**(`rl/basket/night_rl_20261012.sh`): 시작 상태 저장이 끝나면 256 env, 평가 512 에피소드/50 it, W&B rl_residual.
+
+## 2026-10-12 23:05 Codex — hourly qualification/resource check
+- Claude가 RL을256env로 시작한 호스트Python PID3055126 확인. 보스의 야간 점검 지시 Isaac동시128env이하에 맞지 않아 SIGINT 정상종료 신호를 보냄. 재개는128이하로, 원래demo 준비 목표와 qualification 수정 우선. 실기와 상관없는sim이며 기존 모델/로그 보존.
+- 기존 physical probe launcher3051201은 더 이상 없고 로그0byte/데이터없음. 백그라운드 실행이 유지되지 않은 것으로 보이며 실행 결과/성공으로 세지 않음. 세션 유지 방식으로 재시도. 원본expert/config 변경 없음.
+- v3clean1260/DART1326에서 목표 부족240/174 유지. attach·실드해제·성공판정변경 우려 미해결; RL 성능도 이surrogate조건 내부 실험 수치이며 물리/safety qualification이 아님.
+- 재시도세션22367, 호스트PythonPID3055650(8env) 실제시작/장면초기화 확인. 이전256env PPO3055126 종료확인. 로그 codex_physical_probe_retry_20261012.log,아직batch완료결과 없음.
+- 23:23 RL: 대기 조건(pgrep)이 대기하는 셸 자신의 명령어에 걸려 시작 안 됨 → 직접 실행. 첫 실행은 it 24에서 value loss 기준(1번째 iteration, 종료 보상 거의 없음)에 걸려 중단 → 기준을 처음 20 it 최대값으로 수정. 한 번 시작 직후 이유 없이 종료(로그·시스템 기록 없음) → 분리 스크립트(`rl/basket/run_rl_now.sh`)로 재실행, 정상 진행: BC 기준(결정적 512 에피소드) 0.787, 약 1.4 s/it.
+
+## 2026-10-13 00:05 Codex — hourly check / diagnostic restart
+- 호스트GPU772MiB/0%,수집·학습PID없음. Claude RL 종료: BC78.72%,best82.72%@45it,value loss54.1상한으로정상중단. 기존surrogate데이터 목표부족clean240/DART174 및qualification문제 그대로.
+- physicalprobe3055650도 종료됐으나 로그에batch/traceback/완료없고NPZ없음. 이전세션종료시정리됐을가능성이있으나원인확정안함. 실패/성공지표로세지않음.
+- 명시적setsid nohup 분리launcher run_physical_probe_codex.sh 생성.8env,기존shield/noattachment/기존height-normal판정,transport6deg/s 유지.900초실시간상한,별도status파일로실제exitcode기록,새output data_basket_physical_probe_detached_20261013.원본expert/data/config보존.
+- Detached launcher PID3058964 실제running/start status확인.이번에는다음hourly에서status의exitcode와batch완료를검증하며실측성공데이터로승격하지않음.
+- 00:1x value loss 정지 기준을 '10 it EMA > 처음 20 it 평균 × 20'으로 변경(순간 튐에 두 번 멈춤, 그때 평가는 BC보다 +4%p). config `rl.stop_value_loss_x` 10 → 20.
+- **00:3x RL 결과**(`rl/logs/basket/rl_20261013_001409`, W&B rl_residual): 결정적 평가(512 에피소드) BC 0.793 → it 50 0.827 → **it 100 0.911(최고)** → it 150 0.872 → it 200 0.893, patience(2평가)로 정지. 곡선 `curves.png`: 보상 상승, value loss 초반 튐 뒤 안정, KL < 0.02, action std 0.30 유지. RL gate(≥ 90% & BC보다 높음) 통과 후보 → 다른 seed 1,024 에피소드 재평가 중.
+- 00:3x 재평가(seed 7, 1,024 에피소드): **BC 0.808 vs RL 0.886(+7.8%p, 오차 약 ±1%)** → RL이 확실히 나음, gate 90%엔 약간 못 미침(512 평가의 0.911은 운 포함). KL ~0.004로 학습이 매우 느려 최고 체크포인트에서 이어 학습: lr 2e-5 → 5e-5, patience 4평가, 평가 1,024 에피소드(`rl/basket/run_rl2_now.sh`, 로그 night_rl2.log). 다른 안전장치 동일.

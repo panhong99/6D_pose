@@ -3,7 +3,7 @@
 set -u
 cd /home/pan/pan/6D_pose/rl
 LOG=logs/basket/night_chain.log
-while pgrep -f "save_starts" > /dev/null; do sleep 30; done
+while pgrep -f "expert.py collect .*--save_starts" > /dev/null; do sleep 30; done
 echo "$(date '+%F %T') ===== RL: starts $(ls /home/pan/pan/6D_pose/IL/basket_rl_starts_20261012 | wc -l) files" >> $LOG
 env -u CONDA_PREFIX -u CONDA_DEFAULT_ENV TERM=xterm /home/pan/IsaacLab/_isaac_sim/python.sh basket/train.py rl \
   --bc /home/pan/pan/6D_pose/rl/logs/basket/bc_data_basket_v3_20261012/seed3_20261012_215747/best.pt \

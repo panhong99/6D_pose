@@ -347,6 +347,8 @@ def run_rl(args):
     env.reset()
     bc, meta = M.load_bc(args.bc, device=dev)
     ac = M.ResidualActorCritic(bc, c['residual_scale'], meta['hidden'], meta['activation'], c['init_std']).to(dev)
+    c['lr'] = args.lr or c['lr']
+    c['patience_evals'] = args.patience or c['patience_evals']
     opt = torch.optim.Adam([p for p in ac.parameters() if p.requires_grad], lr=c['lr'])
     rng = np.random.default_rng(args.seed)
     runner = RLRunner(env, StartBank(args.starts, dev), rng)
@@ -369,9 +371,22 @@ def run_rl(args):
             runner.reset(torch.nonzero(d).squeeze(1))
         return succ_n / max(done_n, 1)
 
-    base = evaluate()
+    if args.eval_ckpt:                                         # re-evaluate a saved residual policy (and the BC) only
+        bc_rate = evaluate()
+        ac.load_state_dict(torch.load(args.eval_ckpt, map_location=dev)['state'])
+        rl_rate = evaluate()
+        print(f'[rl] re-eval ({CFG["eval"]["envs"]} episodes, seed {args.seed}): BC {bc_rate:.3f}  RL {rl_rate:.3f}  ({args.eval_ckpt})', flush=True)
+        env.close()
+        app.close()
+        return
+    if args.init_ckpt:                                         # continue from a saved residual policy; the baseline stays the BC
+        base = evaluate()
+        ac.load_state_dict(torch.load(args.init_ckpt, map_location=dev)['state'])
+        print(f'[rl] continue from {args.init_ckpt} (BC baseline {base:.3f})', flush=True)
+    else:
+        base = evaluate()
     print(f'[rl] iteration 0 deterministic success (= BC): {base:.3f}', flush=True)
-    hist, best, best_it, rollbacks, v0, t0 = [], base, 0, 0, None, time.time()
+    hist, best, best_it, rollbacks, v0, vema, t0 = [], base, 0, 0, None, 0.0, time.time()
     M.save(out / 'best.pt', ac, dict(meta, it=0, success=base))
     runner.reset(torch.arange(n, device=env.device))
     o, _ = runner.obs()
@@ -421,15 +436,19 @@ def run_rl(args):
                 kl_m, pl_m, vl_m = kl, pl.item(), vl.item()
             if kl_m > 1.5 * c['desired_kl']:
                 break
-        v0 = v0 or vl_m
+        # value loss: sparse +-10 terminals make single iterations spike (stopped twice on noise, eval was +4 pp over the
+        # BC) -> watch a 10-iteration EMA against the warm-up (first 20 iterations) mean
+        vema = vl_m if it == 1 else 0.9 * vema + 0.1 * vl_m
+        if it <= 20:
+            v0 = ((v0 or 0.0) * (it - 1) + vl_m) / it
         std = ac.log_std.exp().mean().item()
         rec = dict(it=it, reward=Rw.mean().item(), rollout_success=ep_succ / max(ep_done, 1), episodes=ep_done,
                    value_loss=vl_m, policy_loss=pl_m, kl=kl_m, action_std=std, lr=c['lr'])
         stop = None
         if not all(np.isfinite(v) for v in (rec['reward'], vl_m, pl_m)):
             stop = 'NaN'
-        elif vl_m > c['stop_value_loss_x'] * v0:
-            stop = f'value loss {vl_m:.3g} > {c["stop_value_loss_x"]} x first'
+        elif it > 20 and vema > c['stop_value_loss_x'] * v0:
+            stop = f'value loss EMA {vema:.3g} > {c["stop_value_loss_x"]} x warm-up mean {v0:.3g}'
         elif kl_m > c['stop_kl']:
             stop = f'KL {kl_m:.3f}'
         elif not (c['std_range'][0] <= std <= c['std_range'][1]):
@@ -486,6 +505,10 @@ def parse_args():
     p.add_argument('--max_iters', type=int, default=None)
     p.add_argument('--eval_episodes', type=int, default=None)
     p.add_argument('--eval_every', type=int, default=None)
+    p.add_argument('--init_ckpt', default=None, help='rl: continue from this residual checkpoint')
+    p.add_argument('--lr', type=float, default=None)
+    p.add_argument('--patience', type=int, default=None)
+    p.add_argument('--eval_ckpt', default=None, help='rl: only re-evaluate this residual checkpoint against the BC')
     p.add_argument('--max_steps', type=int, default=None, help='bc: override config (tests)')
     return p.parse_args()
 

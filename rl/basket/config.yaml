@@ -69,7 +69,7 @@ rl:                                # residual PPO on the frozen BC (rsl_rl)
   eval_every: 250                  # deterministic eval (512 envs)
   patience_evals: 2                # stop after this many evals without a new best
   max_drop_vs_bc: 0.05             # roll back once to the best checkpoint, stop on the second time
-  stop_value_loss_x: 10.0          # value loss > first value x this -> stop
+  stop_value_loss_x: 20.0          # 10-iteration EMA of the value loss > warm-up mean x this -> stop (was 10 x first: noise)
   stop_kl: 0.05
   std_range: [0.02, 1.0]
   wall_hours: 6.0
