@@ -1,0 +1,95 @@
+# Basket insertion learning (2026-10-13 plan: collab/PLAN_2026-10-13_basket_learning.md).  Read by rl/basket/*.py.
+# Scene geometry (basket, tines, slot) stays in rl/basket.yaml; the real-robot values in calibration/config.yaml plate_ik_bc.
+
+obs:                               # slot frame: x along the pin rows (basket x), y across, z up; origin = gap centre on the floor
+  names: [low_x, low_y, low_z,     # plate's lowest rim point (m)
+          nrm_x, nrm_y, nrm_z,     # plate normal
+          tool_x, tool_y, tool_z,  # tool approach axis
+          tcp_x, tcp_y, tcp_z,     # TCP (m)
+          above_rail,              # lowest rim point above the tine rail (m)
+          f_x, f_y, f_z,           # tool force (N, base axes)
+          released]                # gripper opened (0 / 1)
+action:
+  names: [dx, dy, dz, rx, ry, rz, open]   # slot-frame TCP step (m, rad) + gripper open (logit)
+  step_max: [0.00167, 0.00167, 0.00167, 0.0058, 0.0058, 0.0058]   # 5 cm/s, 10 deg/s at 30 Hz (Human speed rule)
+  hz: 30
+
+expert:                            # sim feedback expert (expert.py)
+  basket_xy_m: [0.10, 0.15]        # basket pose noise around the reference spot (+- x, +- y), reachable poses only
+  basket_yaw_deg: 15.0
+  in_hand_mm: 5.0                  # in-hand plate pose noise (FP error)
+  in_hand_deg: 5.0
+  clean_episodes: 1500
+  dart_episodes: 1500
+  dart_noise: [0.0006, 0.0006, 0.0006, 0.002, 0.002, 0.002]   # executed action noise (labels stay clean)
+  envs: 64
+
+bc:
+  hidden: [512, 256, 128]
+  activation: elu
+  lr: 1.0e-3
+  lr_min: 1.0e-5                   # cosine decay floor
+  weight_decay: 1.0e-5
+  batch: 4096
+  max_steps: 60000
+  grad_clip: 1.0
+  val_fraction: 0.1                # whole episodes held out
+  near_pin_weight: 3.0             # frames with the plate <= near_pin_m above the rail
+  near_pin_m: 0.04
+  grip_loss_weight: 0.5            # BCE on the open logit
+  acc_tol: [0.0005, 0.0005, 0.0005, 0.0017, 0.0017, 0.0017]      # "accurate" action: within 0.5 mm / 0.1 deg
+  patience_steps: 5000             # stop when val loss has not improved by min_delta for this long
+  min_delta: 0.005                 # relative
+  eval_every: 10000                # sim evaluation of the current best (eval.py, 128 envs) when Isaac is available
+  seeds: [1, 2, 3]
+  gate: 0.85                       # sim success to accept the BC
+
+preflight:                         # before any long run (minutes, not hours)
+  overfit_frames: 256
+  overfit_steps: 1000
+  overfit_max_loss: 0.02           # normalised MSE the tiny batch must reach, else: code bug -> stop
+  rl_iters: 20                     # residual 0 must reproduce the BC success within rl_match
+
+rl:                                # residual PPO on the frozen BC (rsl_rl)
+  residual_scale: 0.2
+  envs: 1024
+  num_steps_per_env: 32
+  learning_epochs: 5
+  mini_batches: 4
+  lr: 2.0e-5
+  clip: 0.2
+  desired_kl: 0.005
+  gamma: 0.998
+  lam: 0.95
+  entropy: 0.0
+  init_std: 0.3
+  max_grad_norm: 1.0
+  max_iters: 1500
+  eval_every: 250                  # deterministic eval (512 envs)
+  patience_evals: 2                # stop after this many evals without a new best
+  max_drop_vs_bc: 0.05             # roll back once to the best checkpoint, stop on the second time
+  stop_value_loss_x: 10.0          # value loss > first value x this -> stop
+  stop_kl: 0.05
+  std_range: [0.02, 1.0]
+  wall_hours: 6.0
+  gate: 0.90                       # and better than the BC, else the BC is used
+  rl_match: 0.03                   # preflight tolerance
+
+reward:                            # per step clipped to [-1, 1]; terminal +-10 (Human rule)
+  w_gap: 20.0                      # per m of lowest-point distance to the gap centre (x, y)
+  w_tilt: 1.0                      # per rad of normal error
+  w_force: 0.02                    # per N above force_free
+  force_free: 5.0
+  w_action: 0.1
+  w_progress: 10.0                 # per m of descent, only while aligned (gap error < 3 mm)
+  success: 10.0
+  failure: -10.0
+
+eval:
+  envs: 512
+  replay_envs: 64                  # P1: per real-run condition
+
+wandb:
+  project: basket_insert
+  mode: auto                       # online if logged in, else offline; WANDB_MODE overrides
+  # one run per training job; BC seeds share a group; RL resumes the same run id across chunks
