@@ -1315,3 +1315,10 @@
   - `rl/basket/expert.py realplan`: 실기 측정값(마커 바구니, FP 잡기 접시, golden above 관절)으로 sim을 세우고 → IK로 학습 때 시작 자세(접시 수직, 슬롯 +2칸 위 약 11 cm)까지 이동 → BC + residual RL 정책 rollout(결정적) → 관절 경로(to_policy_start, policy_descend, policy_ascend). 손 안 ±2 mm 변형 7개로 견고성 확인. **발견: sim TCP 좌표계가 FK 공구 좌표계와 공구 축 둘레로 90° 다름 → 손 안 자세를 sim 좌표로 변환**(link_6는 FK와 0.0 mm 일치).
   - 16:16 실기 실행 데이터로 시험: 정확 조건 성공(틈 5.8 mm, 높이 56.7 mm), 변형 6/8, 놓기까지 약 6.5 s.
   - `pipeline.py --insert policy`: 계획 단계에서 realplan을 Isaac으로 병렬 실행(운반 중 계산) → 바구니 위 도착 후 결과가 '정확 성공 & 변형 ≥ 50%'면 정책 경로(속도: 시작 1.5°/s, 하강 1.0°/s, 상승 1.5°/s), 아니면 기존 티칭 경로로 자동 대체. 정책 시작 자세에서 d/u 확인(--auto면 d). 오프라인 계획 생성 시험 통과(프레임 ≥ 270 mm), tests 21/21. config: basket_policy_bc / basket_policy_rl / basket_slot_shift_pitches 2 / basket_policy_vel_deg_s 1.0.
+- 03:3x **실기 12회 조건 전체로 정책 경로 시험(`rl/logs/basket/realplan_all/summary.txt`)**: 바구니 x ≥ 1.15 m인 13:04~14:16 5회는 정책 시작 자세(접시 수직, 슬롯 위 약 11 cm) IK 실패 = 도달 한계(파이프라인에선 티칭 경로로 자동 대체). x 1.03~1.11 m 7회: 정확 조건 6/7 성공, 손 안 ±2 mm 변형 평균 약 79%. **16:28 실기 실패 조건(각도 모자람)도 정책은 성공(틈 4.6 mm, 변형 8/8).**
+
+## 2026-10-13 아침 보고용 요약 (Claude)
+- 시뮬레이션: 전문가 81% → BC 84% → **BC + residual RL 91.3%(BC 78.6%, 같은 1,024 에피소드)**. 곡선·W&B(basket_insert: bc 3 run 그룹, rl_residual) 정상.
+- 실기 연결: `bash calibration/run.sh pipeline --task plate --plate_policy ik_bc --insert policy --execute` (정책 시작 자세에서 d/u 확인, 실패 시 티칭 경로). 바구니는 로봇 쪽(x ≤ 약 1.11 m)에 둘 것.
+- 밤에 고친 sim 문제: 그립이 접시를 못 잡아 진자처럼 흔들림 → 손 안 고정(±5 mm/±5° 오차 주입); 고정 중 손가락이 접시와 밀어냄 → 고정 중 열기; shield가 넣기 구간 팔을 멈춤 → 넣기 구간만 끔; 그리퍼 라벨 버그; sim TCP 좌표계 90° 차이; 체인 셸 대기 버그 2건, value loss 정지 기준 2회 조정.
+- 남은 위험: (1) sim 손 안 고정은 실제 미끄러짐을 반영하지 못함, (2) 실기 손 안 자세는 FP 잡기 기반 추정, (3) 정책 하강은 관절이 자잘하게 37° 움직임(1.0°/s, 약 40 s), (4) 실기 미검증.
