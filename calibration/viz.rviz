@@ -1,0 +1,66 @@
+Panels:
+  - Class: rviz_common/Displays
+    Name: Displays
+  - Class: rviz_common/Views
+    Name: Views
+Visualization Manager:
+  Class: ""
+  Displays:
+    - Class: rviz_default_plugins/Grid
+      Name: Grid
+      Enabled: true
+      Cell Size: 0.1
+      Plane Cell Count: 30
+      Color: 120; 120; 120
+      Alpha: 0.4
+      Reference Frame: <Fixed Frame>
+    - Class: rviz_default_plugins/RobotModel
+      Name: Real robot (get_current_posj)
+      Enabled: true
+      Alpha: 1
+      Description Source: Topic
+      Description Topic:
+        Value: /sixd/viz/robot_description
+        Durability Policy: Transient Local
+      TF Prefix: real
+      Visual Enabled: true
+      Collision Enabled: false
+    - Class: rviz_default_plugins/RobotModel
+      Name: Plan preview (ghost)
+      Enabled: true
+      Alpha: 0.35
+      Description Source: Topic
+      Description Topic:
+        Value: /sixd/viz/robot_description
+        Durability Policy: Transient Local
+      TF Prefix: plan
+      Visual Enabled: true
+      Collision Enabled: false
+    - Class: rviz_default_plugins/MarkerArray
+      Name: Plate / plan path / cell
+      Enabled: true
+      Topic:
+        Value: /sixd/viz/markers
+        Durability Policy: Transient Local
+  Global Options:
+    Background Color: 48; 48; 48
+    Fixed Frame: base_link
+    Frame Rate: 30
+  Tools:
+    - Class: rviz_default_plugins/Interact
+    - Class: rviz_default_plugins/MoveCamera
+    - Class: rviz_default_plugins/Measure
+  Views:
+    Current:
+      Class: rviz_default_plugins/Orbit
+      Distance: 3.2
+      Focal Point:
+        X: 0.7
+        Y: 0
+        Z: 0.3
+      Pitch: 0.45
+      Yaw: 3.6
+    Saved: ~
+Window Geometry:
+  Height: 900
+  Width: 1500

@@ -413,3 +413,802 @@
 - 루트 `README.md`를 환경 세팅 / 평소 실행(터미널 2개) / 캘리브레이션·오차 측정 명령 / 현재 설정·한계 / 문제 해결 중심으로 재작성, gif 표 삭제(`assets/videos/*.gif` 파일은 그대로 둠). `calibration/README.md`에 `wrist_handeye.py`, `cube_gt_compare.py`와 기본 변환 설명 갱신.
 - wrist ArUco 거리-오차(30샘플, 1280x720, fx 647, 45 mm 마커, 기준 해는 0.3–0.65 m 샘플): 변 길이 ≥50 px(≤0.58 m) 평균 0.6–0.8 mm, 40–50 px 평균 1.5 mm(최대 5.9 mm는 43 px), 30–40 px(0.9 m) 13.5 mm, <30 px(1.0 m 이상) 11.6 mm. 이 표본에서 임계는 약 45 px. 단, 먼 샘플은 tilt 37°로 겹쳐 있고 표본 수가 적음.
 - 작성자: Claude
+
+## 2026-10-02 (Claude: sim 장면, Isaac Lab 설치, M1013+2F-85 로봇 asset)
+- `HOME_JOINTS_DEG = (-5.98, -14.75, 117.74, -3.92, 7.46, -85.07)`를 `calibration/kinematics.py`에 추가(Human 지정 초기자세). 실시간 관절 스트림이 없을 때 `real_pose_dryrun.py`/`cube_pipeline.py`의 plan 시작·복귀 자세로 사용(기존 all-zero 대체). 단위시험(`test_core`)은 아직 안 돌림. 실제 plan의 `--tool_length_m` 기본값은 아직 0(그리퍼 반영 전).
+- `calibration/sim_home_scene.py` + `run_sim_home_scene.sh`: Isaac Sim 키네마틱 장면(홈 자세 M1013, 2F-85 menagerie 메시 `assets/robotiq_2f85/`, 029 접시를 53.5 mm 상자 위에, D455). 카메라 위치(1.25, 0.52, 1.1), 접시 위치(1.15, -0.17)는 실제 이미지를 눈대중으로 맞춘 값(실측 아님). 커플링 두께 20 mm는 Human 확인(2026-10-02). 기존 hand-eye `T_base_cam`(x≈1.5, z≈0.10)과 불일치 → 카메라를 옮겼다면 재캘리브레이션 필요.
+- Isaac Lab v2.3.2를 `~/IsaacLab`에 설치(rsl_rl). `flatdict` 빌드 실패로 setuptools<80을 Isaac Sim python에 설치함. `Isaac-Lift-Cube-Franka-v0` 64 env 300 iter 시험: 파이프라인은 동작, 보상 0.70 정체(학습 규모 부족, 로그 `~/IsaacLab/logs/rsl_rl/franka_lift/2026-10-02_19-11-18`).
+- `rl/make_m1013_2f85_urdf.py` → `rl/assets/m1013_2f85.urdf`(M1013 + 2F-85, 4절 링크 단순화: 손가락 2개 prismatic 0~0.0425 m, 나머지 링크는 정적 장식), `rl/m1013_2f85_cfg.py`(ArticulationCfg), `rl/smoke_robot.py`. 검증: 홈 자세에서 sim TCP (0.665, -0.038, 0.522) vs 키네마틱 TCP (0.665, -0.038, 0.523), 손가락 0→0.0425 닫힘 확인, 중력 처짐 0.35°(stiffness 1e4/2.5e3).
+- 커플링(AGC-DOO-KIT-85) 두께 20 mm를 Human이 확인: flange→pinch(TCP) 0.1758 m 확정. 실제 plan의 --tool_length_m 기본값(0)은 아직 미반영(Human 결정 대기).
+- 다음: 접시 USD 변환(질량·마찰), 테이블+상자 2개+접시 장면, 보상 초안(접근→정렬→파지→들기→5초 유지), Lift 환경 복제. 접시 파지 방식(가장자리)과 목표 상자 위치는 Human과 확정 필요.
+- 작성자: Claude
+- Human 결정: 목표 상자는 접시 상자에서 base y축 +0.5 m(같은 크기, 53.5 mm 높이). 도달성 검사(top-down, TCP 0.1758 m, 접시 윗면 z=0.0585): x≤1.05에서 접시(y=-0.17)와 목표(y=+0.33) 모두 도달, x=1.10에서 목표 불가, x≥1.15 모두 불가. sim 접시 기본 위치를 (1.15,-0.17)→(1.0,-0.17)로 변경(추정값, 실측 필요). `sim_home_scene.py --target-offset-xy` 추가.
+- 작성자: Claude
+
+## 2026-10-02 (Claude: pick-and-place 환경 v1 작성)
+- `rl/pick_place_env.py`, `rl/pick_place_agent.py`, `rl/train_pick_place.py`(Gym ID `Pick-Place-M1013-2F85-v0`/`-Play-v0`). 64 env 5 iteration 스모크 통과(에러 없음, 보상항 정상 출력). sim 장면 접시/상자 위치 맞교환 반영(`sim_home_scene.py` 기본값 접시 (1.0, 0.33), 목표 오프셋 (0, -0.5)). 학습 GUI 실행 로그 scratchpad `pp_gui.log`. 학습 결과는 아직 없음.
+- 작성자: Claude
+
+## 2026-10-02 (Claude: 야간 학습 실행)
+- 벤치마크(headless): 2048 env 0.8 s/iter·3.3 GB, 4096 env 1.0 s/iter·4.0 GB(RTX 5070 12 GB).
+- `rl/run_overnight.sh 8000 4096` 실행(20:17 KST 시작, 예상 종료 약 22:35): 학습 후 최종 정책 재생 영상 자동 녹화. 상태 `rl/logs/overnight_20261002_201740/status.txt`, 체크포인트·텐서보드 `~/IsaacLab/logs/rsl_rl/m1013_2f85_pick_place/2026-10-02_20-17-49/`(50 iter마다 저장), 영상 같은 폴더 `videos/play/`.
+- 종료 조건: 8000 iteration(약 7.9억 스텝). 성공 판단 지표: `Episode_Termination/success` 비율과 `Episode_Reward/placed`. 보상은 1차 초안이라 학습 실패 가능성 있음.
+- 작성자: Claude
+
+## 2026-10-03 (Claude: 야간 학습 결과)
+- `rl/run_overnight.sh 8000 4096` 정상 종료(20:17→22:51, 학습 2시간 32분, 7.86억 스텝). 로그 `rl/logs/overnight_20261002_201740/`, 체크포인트·영상 `~/IsaacLab/logs/rsl_rl/m1013_2f85_pick_place/2026-10-02_20-17-49/`.
+- 지표(iteration 0→7999): 평균 보상 -0.57→157(계속 상승 중, 미수렴), 에피소드 길이 4→312 스텝, `lifting_plate` 0→10.3(가중치 15), `goal_tracking` 0→2.8, `reaching_rim` 0→0.67, 충돌 종료 비율 ~17%(후반 감소, 충돌 벌점 -0.044→-0.006), **성공 종료 0.15%(최대 0.41%, iteration 7668)**, `placed` ≈0.
+- 영상 확인: 정책이 접시를 테두리로 집어 들어 목표 상자 쪽으로 옮기지만 상자 위에 내려놓지 못함.
+- 원인 가설(미검증): ① `lifting_plate`(15/step)와 `goal_tracking`(16+5)이 매 스텝 지급되는데 안착 시 에피소드가 종료되고 일회성 `placed`(50)만 받으므로, 들고 있는 편이 놓는 것보다 이득. ② 목표 xy 위에서 내려놓는(z 하강) 단계의 보상이 없음. 다음: 안착 보상 구조 수정 후 재학습(Human 검토 요청 대상).
+- 작성자: Claude
+
+## 2026-10-03 (Claude: v2 환경 학습 실행)
+- `rl/run_overnight.sh 3000 4096` 시작(약 67분 예상, 완료 후 재생 영상 자동 녹화). 로그 `rl/logs/overnight_*/`(가장 최근 폴더), 체크포인트 `~/IsaacLab/logs/rsl_rl/m1013_2f85_pick_place/<최신>/`. 이전(v1) 결과: 성공 0.15%, 영상으로 집어서 목표 쪽으로 옮기나 못 내려놓음.
+- 작성자: Claude
+
+## 2026-10-03 (Claude: v3 커리큘럼 시작)
+- v2 학습(10:24 시작) Human 지시로 중단. v3 단계별 커리큘럼 10:42 시작(`python3 rl/curriculum.py --chunk 1000 --max_iters 15000`). 진행 `rl/logs/curriculum/status.md`. 4096 env 2.0 s/iter(실드 포함) → 1000 iter 약 35분.
+- 작성자: Claude
+
+## 2026-10-03 (Claude: 무인 진행 설정 — Human 주말 부재)
+- 목표 상자 y -0.50 → -0.45(테두리 파지 자세의 프레임 클리어런스 4.5 → 6.4 cm, 실드 5 cm 통과). 1단계 관측의 목표 위치 상수가 바뀌므로 다음 청크부터 적용.
+- `rl/curriculum.py`: 청크 실패 시 최대 3회 재시도(마지막 저장 체크포인트에서 재개), 시작 시 해당 단계 최신 체크포인트에서 재개. 드라이버 재시작 11:16(1단계 model_200에서 재개). GUI 뷰어는 학습 속도 위해 종료.
+- 자동 진행: 학습 중 성공률 ≥0.93 → 결정적 평가 2048 에피소드 ≥0.95면 다음 단계, 단계당 최대 15000 iter(약 9.5 h) 넘으면 정지. 진행 기록 `rl/logs/curriculum/status.md`, 통과 시 영상.
+- 작성자: Claude
+
+## 2026-10-06 (Claude: 주말 중 학습 멈춤 원인과 복구)
+- 증상: 2026-10-03 14:18부터 진행 없음. 학습 프로세스가 iteration 5133/5196에서 멈춘 채 CPU 100%·GPU 2%로 2.8일 동안 살아 있었고, 드라이버는 시간 제한 없이 그 종료를 기다림.
+- 원인: PhysX GPU `totalAggregatePairsCapacity`(16k)가 4096 env에 부족 — 1단계 첫 청크(iteration ~1200)부터 "simulation will miss interactions" 오류가 청크당 2~8만 줄. 이 상태에서 시뮬레이터가 멈춘 것으로 판단(정지 시점 로그는 같은 오류뿐). 중간 청크들의 학습 성공률이 0.95→0→0→0.997로 출렁인 것도 접촉 누락 영향 가능성(미검증).
+- 조치: capacity를 total 1M, found_lost 16M로 상향(`rl/pick_place_env.py`). `rl/curriculum.py`에 워치독(학습 iteration이 15분간 안 늘면 강제 종료 후 저장된 체크포인트에서 재시도) + `--eval_first`.
+- 결과: 마지막 체크포인트 model_5100 결정적 평가 2048 에피소드 성공 100%(충돌 0, 접시 이탈 0, 시간초과 0) → **1단계 통과**(09:00). 영상 `~/IsaacLab/logs/rsl_rl/m1013_2f85_pick_place/2026-10-03_13-44-16_stage1/videos/play/`. 2단계 09:01 시작(model_5100에서 이어서), 새 청크에서 capacity 오류 0건.
+- 작성자: Claude
+
+## 2026-10-06 (Claude: 1단계 학습곡선 분석, 파지 방식 문제 발견, Codex 인수인계)
+- 1단계 곡선: 성공률 >50%는 iter ~465(전체 5133의 9%), >90%는 ~639(12%), 이후 4회 붕괴(0%)와 회복을 반복, 98% 이상 안정은 ~4800 이후(94%). 붕괴 원인 미확인(`HANDOFF_CODEX_2026-10-06.md` §4).
+- Human이 1단계 GUI 확인 후 파지 방식 지적(위에서 누름 → 옆면 림 파지 필요). DECISIONS "2026-10-06 파지 방식 재설계 제안"에 정리. 코드는 아직 안 바꿈. 2단계 학습(자동 진행, 잘못된 파지 기준)은 계속 돌고 있음 — Human 결정 대기.
+- `collab/HANDOFF_CODEX_2026-10-06.md` 작성(Codex 인수인계: 환경, 파일, 명령, 규칙, 알려진 문제, 열린 결정). `CONTEXT.md`에 현재 상태 섹션 추가.
+- 작성자: Claude
+
+## 2026-10-06 (Codex: 홈 자세 파지 방향 확인용 GUI)
+- `calibration/sim_home_scene.py`에 `--free-viewport` 옵션을 추가했다. 기존 기본 D455 시점은 유지하고, 이 옵션에서 자유 시점으로 그리퍼 메시를 선택·회전할 수 있다.
+- `TERM=xterm ./run_sim_home_scene.sh --free-viewport --plate-xy 1.10 0.0 --target-offset-xy 0.0 -0.45`로 Isaac Sim GUI를 실행했다. 시작 관절은 Human 홈 자세 `(-5.98, -14.75, 117.74, -3.92, 7.46, -85.07)°`, TCP 시작 위치는 약 `(0.665, -0.038, 0.523) m`. GPU와 X11 창 생성 확인. 이 장면은 키네마틱 시각화이며 실제 로봇 명령은 없다.
+- 다음: Human이 GUI에서 그리퍼 파지 방향을 지정하고 회전값 또는 장면 저장본을 공유하면, 그 자세를 RL 성공 조건·보상·안전 모델에 반영할지 검토한다. 실제 치수와 테이블 여유는 별도 확인이 필요하다.
+- 작성자: Codex
+
+## 2026-10-06 (Claude: 고정 카메라 재캘리브레이션 완료, sim 반영)
+- 위 DECISIONS 항목 참조. 결과 파일: `calibration/data/real_handeye/20261006_122330_fromwrist/{positions.json, T_base_cam_pnp.json}`, 손목 `calibration/data/wrist_handeye/20261006_111318_clean/result.json`. sim 카메라/실제 접시 위치 반영 확인(헤드리스 렌더 비교).
+- 교훈: 라이브 카메라 창 없이 G→F를 누르다 G 실패 후 F를 눌러도 N이 거부해서 안전. 마커 크기가 작은 ChArUco 판은 1.2 m에서 인식 불가. ping은 되지 않아도(다른 대역) 재부팅 후 `sudo ip addr add 192.168.127.5/24 dev enp5s0`가 필요.
+- 작성자: Claude
+
+## 2026-10-06 (Codex: Claude 공유문서에 현재 RL v4 상태 반영)
+- `collab/CONTEXT.md`와 `HANDOFF_CODEX_2026-10-06.md`의 stale RL v3/4-stage 요약을 Human 확정 3단계 task(접근 → side-rim grasp +z lift/hold 5초 → 이동/place)와 오늘 v4 진행 상태로 갱신했다. 과거 잘못된 top-down task 결과는 현재 유효한 성과와 구분했다.
+- Stage 1: 1,000 iter, deterministic eval 2,048 episodes success 100%, collision/plate_lost/timeout 0, checkpoint `/home/pan/IsaacLab/logs/rsl_rl/m1013_2f85_rim_v4/2026-10-06_11-18-23_stage1/model_999.pt`.
+- Stage 2: 2026-10-06 12:53 KST 로그 관측 시 iteration 1558/1999, mean reward 30.90, success 0%, timeout 100%, `grasp_reach=0.0621`, `close_at_grasp=0`, `lift=0`. 학습 프로세스는 실행 중이므로 임의 중단하지 말도록 기록.
+- `at_grasp` 조건(림 거리 <15 mm, tool 방향 <10°, finger axis <15°) 및 gated close reward를 파지 정체의 **검증할 가설**로 기록. 아직 root cause로 확정하지 않았고 다음 단계는 GUI 궤적 및 TCP/방향/손가락 상태 계측.
+- Stage-2 watch GUI가 `model_1500.pt`를 로드했다는 실행 로그 확인. GUI의 실제 자세는 직접 확인되지 않아 그 한계를 명시했다. 실기 속도는 별도 저속 설정 원칙을 재확인했으며, 시뮬레이션 속도와 혼동하지 않도록 했다.
+- 상세 로그: `rl/logs/curriculum_v4/train_s2_00000.log`, `status.md`, `state.json`. reward/성공조건 등 핵심 코드는 변경하지 않았다.
+- 작성자: Codex
+
+## 2026-10-06 (Claude: Stage 2 정체 원인 진단, v5 수정 opt-in)
+- 상세는 DECISIONS "Stage 2 파지 정체 원인 확정 및 v5 수정" 참조. 요약: 실드가 상자 54.6 mm에서 파지 자세를 금지(실제 그리퍼가 테이블 약 5 mm까지 내려가는 자세) + 닫힘 명령 25.4 mm 간격 + 기울기 무시 `held` + 방향 게이트 경계 + 보상 골짜기.
+- 파일: `rl/check_rim_grasp.py`(신규, `--no_shield`, `--close`, `--rim_dz`, `--rim_in`), `rl/pick_place_env.py`(`PP_V5=1` 분기), `pick_place_agent.py`/`curriculum.py`/`watch_latest.py`(v5 실험 이름·로그 분리), `watch_latest.py` 그리퍼 부호 수정. 수정 전 env 사본: 세션 스크래치(`pick_place_env_before_v5.py`).
+- 시험 로그(스크래치): v4 기본/실드 끔/끝까지 닫기, v5 상자 54.6/70 mm. 수치는 DECISIONS에 기록.
+- 현재 v4 커리큘럼 2단계는 계속 실행 중(2026-10-06 13:10 기준 1852/1999, success 0). 원인 1 때문에 v4 2단계는 구조적으로 통과 불가 — 최대 15000 iter(약 15시간)까지 돌게 됨. AI의 학습 중단은 권한에서 거부되어 Human이 중단 여부를 결정해야 함.
+- v5 시작 명령(상자 높이 결정·v4 중단 후): `PP_V5=1 PP_BOX_H=0.070 python3 rl/curriculum.py --start_stage 2 --init_checkpoint /home/pan/IsaacLab/logs/rsl_rl/m1013_2f85_rim_v4/2026-10-06_11-18-23_stage1/model_999.pt`. 1단계 정책은 상자 70 mm에서도 ready에 도달함(스크립트 시험)이지만 1단계 정식 게이트는 다시 거치지 않음.
+- 작성자: Claude
+
+## 2026-10-06 (Claude: 접시 14 cm 높임을 캘리브레이션·sim 장면에 반영)
+- DECISIONS "접시 받침 높임" 참조. 측정: 접시 중심 (1.215, -0.009) m, 받침 0.1146 m(접시 윗면 14 cm 해석), 캘리브레이션 재실행 불필요(높이 12~14.5 cm에서 LOO 최대 2.5 mm). `sim_home_scene.py` 기본값 갱신, 렌더 겹침 확인.
+- 측정 프레임: `calibration/data/board_probe/20261006_131758_{raw,annotated}.png`. 카메라는 읽기 전용으로만 사용, 로봇 명령 없음.
+- 작성자: Claude
+
+## 2026-10-06 (Claude: 파지 깊이 vs 파지력 스윕 — Codex 논의용)
+- 방법: `rl/check_rim_grasp.py` 복사본(스크래치 `grip_sweep.py`, 그리퍼 강성/힘 한계 옵션 추가), `PP_V5=1 PP_BOX_H=0.1146`, 1단계 정책 → 스크립트 림 전진 → 끝까지 닫기 → TCP 12 cm 상승 → 5초 유지, 8 env. 지표: 접시 중심 상승(TCP 120 mm 대비, 같을수록 수평), 기울기.
+- 현재 sim 파지력: 위치제어 강성 2000 N/m × 멈춘 지점 오차 5.5~7.5 mm ≈ 손가락당 11~15 N(실제 2F-85 최소 20 N보다 약함). 힘 한계 235 N에 도달하지 않음.
+- 결과(약한 힘 11~15 N): 깊이 0 → 닫은 직후 기울기 24~39°, 5초 뒤 중심 상승 43~70 mm, 5 cm 이상 유지 2/8 | +5 mm → 기울기 14~29°, 상승 66~97 mm, 8/8 | **+10 mm → 기울기 10~19°, 상승 94~116 mm, 8/8**.
+- 결과(강한 힘 100 N, 강성 2e5): 깊이 0/5/10 mm 모두 닫는 순간 기울기 36~45°, 상승 36~55 mm, 5 cm 이상 2~5/8 → 더 나쁨. 손가락이 30~33 mm까지 더 닫힘 = 두께 없는 스캔을 볼록 분해한 림 충돌체의 경사면을 쐐기처럼 눌러 접시를 돌리는 sim 접촉 문제로 판단(실제 물리로 일반화 불가).
+- 의견: 깊게 잡기(10 mm) 채택 권장. sim에서 파지력 올리기는 림 충돌체(실제 두께 반영한 메시 또는 SDF 충돌)를 고치기 전엔 보류. 실제 그리퍼 힘 설정값을 정하고 sim도 그 값(힘 제한)으로 맞추는 것이 다음 순서. 접시 질량(가정 0.3 kg)은 실측 필요.
+- 로그: 스크래치 `sw_{weak,strong}_{0,0.005,0.010}.log`. 파일 수정 없음(rl/ 미변경).
+- 작성자: Claude
+
+## 2026-10-06 (Codex: 원본 접시 OBJ와 텍스처를 RL GUI에 표시)
+- Human 요청으로 `rl/make_plate_visual_usd.py` 추가. 기존 `rl/assets/plate029.usd`의 물리/충돌을 참조하고 단순화 메시의 가시성을 숨긴 뒤 원본 `demo_data/029_plate/tsdf/textured.obj`(230796 vertices, 38466 faces)의 형상·UV·`textured.png`를 표시하는 `rl/assets/plate029_textured.usda` 생성. 원점은 원본 bbox 바닥 중심으로 맞춤, 외형 266.144×268.101×25.357 mm. `rl/pick_place_env.py`의 자산 경로 교체.
+- 14 cm table-to-rim, 받침 114.6 mm, PP_V5=1, 10 mm 추가 진입, TCP 160 mm 상승으로 GUI 재실행. 데스크톱 캡처에서 붉은 원본 접시 표시 확인. 1 env demo 성공, 실드 차단 0, final plate lift 155.5 mm, tilt 12.5°, lift hold 220 steps. 로그 `/tmp/rim_depth10_textured_gui.log`; 캡처 `/tmp/plate_textured_desktop.png`. 문법 검사 통과.
+- 외형은 원본이며 물리 접촉은 기존 근사 충돌체를 유지한다. 원본 렌더링이 물리 정확도 개선을 의미하지 않음. 기존 v4 학습/드라이버는 앞선 Human 중지 지시에 따라 종료된 상태이며 새 학습 시작 안 함.
+- 작성자: Codex
+
+## 2026-10-06 (Codex: GUI 장시간 유지 중 기울어짐 수정)
+- Human GUI 사진에서 접시가 크게 기울어짐을 지적. 5초 성공 이후 장시간 유지 안정성은 이전 시험 범위 밖이었음. 교체 시 종료되지 않고 남은 이전 demo PID 763006과 764513을 종료하고 새 창 하나로 교체.
+- `check_rim_grasp.py`: `--lock_orientation`로 ready TCP quaternion을 기준으로 script phases의 각도 오차를 적극 보정, `--hold_s`로 장시간 유지 검증, GUI 지속 유지 시 10초 간격 상태 보고 추가. 이전 script는 위치 오차만 보정하고 회전 action=0이라 손목 방향을 적극 유지하지 못했음. RL action/reward 코드는 이번에 수정하지 않음.
+- 14 cm table-to-rim / PP_V5=1 / TCP 160 mm 상승 / 동일 seed123 /8 env: +10 mm 진입·방향 고정 30초 유지 8/8, final tilt 8.2~17.1°; +15 mm 진입·방향 고정 30초 유지 8/8, tilt 8.8~15.6°. 두 시험 모두 best continuous lifted steps >=900 (30초), 접촉·실드 차단 0. 들어올림 뒤와 hold 종료 시 tilt/relative TCP 좌표가 동일(보고 정밀도 내).
+- 원본 textured 접시 렌더링을 유지한 +15 mm·방향 유지 GUI demo 실행. 시험 로그 `rl/logs/demo_140mm_20261006/depth{10,15}_orientation_hold30.log`, GUI `/tmp/rim_lock15_gui.log`. 문법 검사 통과. 8개 script 시험의 성공은 RL 정책/실기 성공을 의미하지 않음. 학습에 동일한 방향 유지 동작을 반영할 방식은 별도 검토 필요.
+- 작성자: Codex
+
+## 2026-10-06 (Codex: 확인된 파지 데모를 실제 Stage 2 학습 환경 v6에 반영 완료)
+- Human 요청으로 `pick_place_env.py`에 14 cm table-to-rim(받침114.6 mm), Stage 2+의 중심 방향15 mm 추가 진입, Stage 2 방향 유지 controller를 구현. RL은 위치와 그리퍼 동작을 제어하며 림 진입 직전 tool/finger 방향20°/25° 범위 및 목표35 mm 이내/손가락 열림 조건에서 quaternion 저장 후 회전 명령을 자동 보정한다. 모든 명령에 실드 적용. 보상/성공 변경은 최신 DECISIONS 참조.
+- 검증: PP_VERSION=v6 PP_STAGE=2,8 env, seed123, 기존 Stage 1 model_999.pt -> scripted reach/close/TCP160 mm rise/30초 hold. 데모 전용 `--rim_in` 및 `--lock_orientation` 옵션을 사용하지 않음. 실제 환경의 목표/방향 제어로 success8/8, continuous stable_lift965~973 steps, final tilt8.8~15.6°, 접촉·실드 차단0. ENV_ORIENTATION_LOCKED8/8; env.reset() 후 모두해제 assert 통과.
+- 핵심 정의: 성공은 held + plate origin50 mm 상승 + tilt<25°를150steps연속 유지. Stage 2 제한24초, 수평 유지 보상weight1.0. angular speed 게이트는 최종 제외(접촉 진동으로 불필요 초기화); 위 tilt/hold로 검증.
+- 파일: `experiment_settings.py`, `pick_place_env.py`, `pick_place_agent.py`, `curriculum.py`, `watch_latest.py`, `check_rim_grasp.py`, 새 `run_stage2_v6.sh`, `README_stage2_v6.md`. py_compile/bash-n 통과. 1단계 weights 재사용/관측43·액션7차원 유지; 실행 이름·저장경로 v6로 분리.
+- 최종 로그: `rl/logs/v6_validation_20261006/validated_stage2.log`. 수정전 backup `rl/backups/20261006_before_v6/`. 기존 v4 학습은 중단상태이며 새 전체 학습은 아직 시작하지 않음. Script8회 검증이 RL 결정적 성공률95%나실기 안정성을 입증하는 것은 아님.
+- 작성자: Codex
+
+## 2026-10-06 14:13 KST (Codex: Human 승인으로 v6 Stage 2 학습 및 GUI 시작)
+- Human 요청으로 기존 데모 GUI PID767235 종료 후 `bash rl/run_stage2_v6.sh --num_envs 4096 --chunk 1000 --max_iters 15000` 실행. 드라이버 `/tmp/curriculum_v6_driver.log`, 상태 `rl/logs/curriculum_v6/status.md`, 청크 `train_s2_00000.log`.
+- 시작14:13:02, checkpoint run `~/IsaacLab/logs/rsl_rl/m1013_2f85_rim_v6/2026-10-06_14-13-10_stage2/`. Stage 1 model_999.pt 이어서 global iteration1010 관측(신규 학습은 초반). 성공0%/close_at_grasp0은 아직 초반 수치이며 데모 성공률과 구분. 학습~4초/iter, GUI 동시실행 GPU 각각4876/4213 MiB.
+- `PP_VERSION=v6 PP_STAGE=2 PP_BOX_H=0.1146 watch_latest.py --num_envs 1 --reload_s 15 --hold_start_s 2` GUI 생성 및 model_1000.pt 로드 확인. 최신 저장checkpoint를 자동 재생. Human이 GUI를 직접 종료 예정; GUI 종료해도 별도 학습 프로세스는 계속 실행한다.
+- 작성자: Codex
+
+## 2026-10-06 v6 Stage 2 접근 정지 계측 (Codex)
+- Human GUI에서 접근 정지 지적. viewer가 model_1100.pt를 로드했음 확인. eval_policy.py에 선택적 --trace 추가(보상/정책 변경 없음); 8env 계측 메모리 버퍼만 축소. 최초 진단 실행은 VRAM 부족으로 중단, 축소 후 실행.
+- /tmp/v6_approach_trace.log: 첫 env 1~9초 관측 림 거리94.8~106.7mm, ready 거리47~50mm, 샘플 실드 blocked=false, 테이블 여유71~82mm/프레임353~372mm, orientation_locked=false, at_grasp=false, gripper action 양수(열기) 지속. 현재 정지에 대해 실드 차단이 주원인이라는 근거 없음. full episode 결과는 아래 로그 참조.
+- 현재 v6는 성공 데모를 imitation/BC로 학습시킨 정책이 아니라 stage1 checkpoint에서 PPO 탐색. 개선 제안: stage1 종료 자세에서 stage2 학습 curriculum 및 성공 데모로 정책 초기화 검토. 이번에는 학습 핵심 로직/실행 중 프로세스 변경 없음.
+- 계측 완료 model_1100: 8/8 timeout, success/collision/plate_lost=0%, mean_shield_steps=0.0. 첫 env는23초까지 림107mm 앞에서 정체. 로그 /tmp/v6_approach_trace.log.
+
+## 2026-10-06 Human 요청: v6 학습 전부 중지 (Codex)
+- Human이 학습/GUI 전체 종료 지시. curriculum driver772602, train772617, viewer773077 및 실행 래퍼 종료. 자동 재시작도 중지. 저장된 checkpoint/log는 유지.
+
+## 2026-10-06 14:34 (Claude: v7 학습 시작 — 1단계 새 높이 재학습 → 2단계 ready 시작 50%)
+- DECISIONS "v6 2단계 접근 안 함 원인 확정과 v7" 참조. Codex가 v6 학습/GUI를 이미 중단한 상태에서 시작.
+- 드라이버 `rl/logs/curriculum_v7_driver.log`, 상태 `rl/logs/curriculum_v7/status.md`, 체크포인트 `~/IsaacLab/logs/rsl_rl/m1013_2f85_rim_v7/`. setsid로 세션과 분리 실행(14:33 첫 시작은 세션 제한 때문에 바로 내리고 14:34 재시작, 저장된 것 없음).
+- 파일: `pick_place_env.py`(V7, `reset_ready_start`, 안전 목표 리셋), `pick_place_agent.py`(v7 엔트로피), `experiment_settings.py`(v7 허용), `curriculum.py`(`--last_stage`, 평가·영상에서 ready 시작 변수 제거), 신규 `run_stage12_v7.sh`, `assets/ready_joints_v7.json`.
+- 작성자: Claude
+
+## 2026-10-06 Codex v7 변경 리뷰
+- before_v7 백업 대비 env/agent/curriculum/version diff와 launcher/ready q 확인; py_compile 및 bash -n 통과. IsaacLab _reset_idx는 reset events 후 action_manager.reset 실행하므로 실제 reset 관절로 _safe_target 설정은 순서상 적절. 실드 5cm/2cm, v6 inset/orientation/성공조건 유지 확인.
+- Claude의 높이 불일치 진단은 v6 계측 ready47~50mm/림95~107mm/실드0 결과와 일치. 512회 높이별 평가는 DECISIONS 보고값이며 이번 리뷰에서 재실행하지 않음. 새 높이 stage1 재학습 + ready 학습 시작 보조는 타당하나 stage2 성공 해결 여부는 미검증.
+- 리뷰 발견: curriculum.py 경유 평가/영상은 PP_READY_START_FRAC 제거함. 직접 eval_policy.py/watch_latest.py/train_pick_place.py --play 호출은 자체적으로 제거하지 않아 환경변수 상속 시 ready 시작할 수 있음. “평가/GUI 항상 홈” 보장은 현재 드라이버 경로에 한정.
+- 리뷰 발견: run_stage12_v7.sh가 매번 explicit old model_999 init를 전달하고 curriculum은 explicit init를 최신 stage checkpoint보다 우선하므로 같은 launcher로 재시작하면 최신 v7 대신 과거 모델에서 다시 시작할 위험. 청크 실패 내부 재시도는 최신 모델 사용.
+- 현재 PID780902 v7 Stage1 학습, driver780886. 관측 global1078(신규약79update) success0/timeout99.98%; stage1 및 stage2 통과 아직 없음. 요청은 리뷰이므로 실행 중 학습/핵심 로직 수정 없음.
+
+## 2026-10-06 15:08 (Claude: v7 1단계 0% 원인 = 손목 방향 국소 최적 → 각도 보상 추가)
+- 첫 청크(500 it, 14:33~15:04) 학습 성공 0%. `model_1498` 결정적 계측(64 env, 3~20초): 위치 5 mm·전진·열림 모두 통과, **tool 23°/finger 17°/축 정렬 32 mm로 전부 실패**(기준 10°/15°/12 mm), 20초까지 변화 없음 → 시간 부족이 아니라 틀린 손목 각도에 수렴. 같은 IK로 스크립트는 0°까지 도달하므로 물리적 제약 아님. 원인: `cos²` 방향 보상이 23°에서도 최대의 85%를 줘서 기울기가 거의 없음(0.0063/°).
+- 조치(v7만, DECISIONS v7 항목 보완): `r_angle` 보상 추가 — tool·finger 각각 `1.5 × (1 − tanh(각도/20°))`, 23°에서 기울기 0.025/°(기존 대비 약 4배). 실행 중이던 내 v7 학습을 멈추고 `model_1498`에서 재시작(15:08).
+- 결과: 약 120 it 만에 학습 성공률 0% → 20%(1560) → 85%(1580) → 98.7%(1620). 1998에서 청크 종료 후 결정적 게이트 평가 예정.
+- 작성자: Claude
+
+## 2026-10-06 15:24 (Claude: v8 2단계 학습 시작)
+- v7 1단계 학습은 A안 결정으로 중단(학습 성공률 98.7%, 게이트 평가 전, 체크포인트 `m1013_2f85_rim_v7/2026-10-06_15-08-49_stage1/model_1700.pt` 보존). GUI 종료.
+- v8 스모크 시험: 환경변수 없이 16/16 env가 ready 근처(2~11 mm, 접시 노이즈 ±1 cm)에서 시작, 30스텝 유지, 실드 차단 0.
+- 학습: 로그 `rl/logs/curriculum_v8/`, 체크포인트 `~/IsaacLab/logs/rsl_rl/m1013_2f85_rim_v8/`.
+- 작성자: Claude
+
+## 2026-10-06 17:51 (Claude: v8 정체 진단 → v9 학습 시작)
+- v8 2단계(처음부터 학습, 15:33~17:50, 2000 it): 접근·파지 학습, 들기 정체, 성공 0%. 원인은 상대 IK의 하중 처짐(DECISIONS v9 항목). v8 학습 중단, 체크포인트 보존(`m1013_2f85_rim_v8/2026-10-06_17-17-32_stage2/model_1996.pt`).
+- v9 시작 17:51, 로그 `rl/logs/curriculum_v9/`, 체크포인트 `~/IsaacLab/logs/rsl_rl/m1013_2f85_rim_v9/`. 진단 스크립트(스크래치): `s2_trace.py`, `s2_lift_trace.py`(항목별 보상), `drift_test.py`.
+- 백그라운드 대기 2개(v7 1단계 게이트, v8 2단계 게이트)는 대기 시간 제한으로 종료됨, 재설정 안 함.
+- 작성자: Claude
+
+## 2026-10-06 19:30 (Claude: rl/ 정리 완료, 검증)
+- 정리 전 v10 학습 중단(`m1013_2f85_rim_v10/2026-10-06_18-56-06_stage2/model_3000.pt`, 100 it). 새 학습은 아직 시작 안 함.
+- 검증: `env_setup.py urdf/sdf` 재생성 결과가 기존 에셋과 동일(URDF는 무작위 재질 이름만 다름, SDF 최대 차이 0). `eval.py scripted`: 림 도달 → 닫기 held 100% → TCP 8 cm·접시 56 mm 상승, 6/8 5초 유지 성공, 동작 0 5초 동안 높이 불변, 실드 차단·충돌 0. `eval.py gate`(64 env, v10 model_3000): 성공 0/시간초과 100%(이전과 동일 거동). `eval.py trace`: 잡고 약 10 mm 들고 유지(이전과 동일). `train.py chunk` 3 it: model_3000에서 이어서 학습·저장(model_3002). `train.py curriculum` 2 it: 청크 → 기준 미달 정지까지 정상. 시험 산출물 삭제.
+- 수정: `eval.py`는 하위 명령 대신 모드 위치 인자(AppLauncher가 argv를 미리 파싱해 subparser와 충돌), 학습/평가 출력 줄 버퍼링. `calibration/preview_rim_trajectory.py`의 실드 import를 `rl_utils`로 변경(동작 확인: ready 자세 여유 프레임 378 mm/테이블 82 mm).
+- 공유 문서: CONTEXT "현재 상태" 교체, HANDOFF 맨 위 "Current RL code" 절 + HARD RULES(ready 시작, GUI 승인) 갱신.
+- 작성자: Claude
+
+## 2026-10-06 IL 데이터 수집 시작 (Codex)
+- 현재 환경 eval.py scripted --lift_m0.16 --hold_s6 재현8/8 성공,contact0. 로그 IL/data/reproduction.log.
+- IL/collect.py로50성공수집 진행,16개까지 성공/제외0 관측. 실행로그 IL/data/collection.log. manifest/episodes/config snapshot, 후속무결성 검증 포함. 기존 Claude 학습은 변경하지 않음.
+
+## 2026-10-06 IL 데이터 수집·검증 완료 (Codex)
+- IL/data/episodes/episode_0000.npz~0049.npz: 성공50개,24,000프레임(각480프레임16초),train40/validation10. ready→15mm진입→닫기→TCP150~170mm상승→유지. 시뮬레이션만.
+- 56시도 중1개 tilt53.55°로 실패 제외,55개 성공 후보 중50저장/5개수량초과미저장. 저장된50개:contact0/실드차단0,최종접시상승113.8~155.3mm,tilt13.0~22.65°,최소frame344.7mm/table74.76mm. 수집406.07초.
+- collect.py --verify: obs480x43/actions480x7,모든값유한,파일SHA,obs-next_obs전이일치,물리lift/tilt/held로5초연속성공재계산,실드·접촉여유검사 통과50/50. 최장첫성공12.433초<기존14초제한,최소besthold257스텝. verification.json/summary.json/manifest.json/collection.log 저장.
+- 현재RL코드/정책/기존학습 변경 없음. 수집 중 외부 작업에서plate_env.py수정 감지: 수집시hash b00f108aec5874ba506feb1cd4a9e11498daf85e6a9ec8fbbd5c0e161bb28a26,현재hash 별도manifest. 설정yaml/rl_utils동일. 정확한수집당시plate_env.py소스사본은 없어수정후파일을별도이름보관,미래수집기는시작시source_snapshot저장하도록보강. IL/README.md에한계기록.
+- 성공데이터선별률은RL정책성공률·실기안전을의미하지않음. 다음: BC학습은별도요청후,수집외seed·조건rollout평가필요.
+
+## 2026-10-06 19:55 (Claude: calibration/ 정리 완료, IL 데모 검증, v10 학습 진행)
+- calibration 정리: DECISIONS "calibration/ 코드 정리" 참조. 루트 README 2·3·5장 명령을 `run.sh`/`calibrate.py`로 갱신, 4장 기본 변환을 PnP로 정정(10/2 오차 표는 옛 카메라 기준이라고 명시). `calibration/README.md` 재작성.
+- v10 학습(새 rl 코드, `m1013_2f85_rim/` 실험, 19:26 model_3000에서 재개): iteration 3050→3300에서 lift 0.46→0.66, tcp_rise 0.04→0.24, level_hold 0.004→0.025 상승 중, 성공 아직 0. 계속 실행(Human 승인: 판단해서 학습 진행).
+- IL 데모(Codex, `IL/data/`) 검증: Codex `--verify` 통과(50 ep, train 40/val 10, 모두 12.4초 내 성공, 최소 유지 257스텝). 독립 점검: `obs[t+1]` 직전 행동 칸 = `actions[t]` 차이 0, 관측 43·행동 7 = 현재 env, 실드 0·접촉 0, 여유 프레임 ≥345 mm/테이블 ≥75 mm, 시작 yaw 0~356°·xy ±1 cm·속도 ×0.85~1.14·들기 15~17 cm. 주의: 회전 행동 전부 0(방향 고정은 env 담당), 단계 시간 고정(30/120/60/90/180 스텝), 복구 상황 없음(BC 공변량 이동 위험), 데모 480스텝 vs env 420스텝(성공은 모두 그 전), 거부 1건 = 접시 기울기 54°(그립 약함). 수집 후 plate_env.py 해시 변경 기록은 calibration 정리의 add_steel_frame import 변경(셀 배치 동일).
+- 작성자: Claude
+
+## 2026-10-07 Claude — stage 2 통과, 3단계 전 GUI 보고 대기
+- v10 stage 2가 2026-10-06 21:39에 게이트를 통과했습니다. 체크포인트는 `m1013_2f85_rim/2026-10-06_21-06-08_stage2/model_4996.pt`이고, 결정적 평가(2048 env)에서 성공 98.3%, 충돌 0.05%, 접시 놓침 0%, 시간초과 1.6%, 실드 개입 0입니다.
+- 학습 중 성공률은 500 it 단위로 0.57 → 0.22 → 0.03 → 0.96으로 출렁였습니다. 정책이 불안정하게 오간 흔적입니다.
+- GUI(`eval.py watch --stage 2`, 16 env)를 띄웠습니다. Human 승인 전까지 stage 3은 시작하지 않습니다.
+
+## 2026-10-07 Codex — 어젯밤 정책 학습 방식 확인
+- Human 질문에 현재 train.py/rl_utils.py/config.yaml 및 rl/logs/m1013_2f85_rim/{status.md,state.json} 확인. BC→RL 구현은 없고 기존 v10 model_3000.pt에서 OnPolicyRunner PPO를 이어 학습한 결과. IL/data 데모50개는 학습 코드에서 로드하지 않음. 코드/학습 프로세스 변경 없음.
+- 10/6 21:39 gate: model_4996.pt,2048 episodes,success0.9833984375,collision0.00048828125,plate_lost0,time_out0.01611328125,mean_shield_steps0. Stage3 시작 기록 없음.
+
+## 2026-10-07 Codex: 성공까지 학습 곡선 복원 및 W&B 연동 완료
+- rl/reports/20261007_v10_audit/training_curve.{csv,png}: v8scratch15:33부터v9/v10→21:38까지기록5110updates복원(abandonedinitS1제외). 새구조4청크최근50success=0.565→0.218→0.030→0.959,gate2048episodes0.9833984375. 약6시간4분벽시계,중단/재시작포함.
+- rl/train.py/config.yaml/README.md변경. 실제rsl_rlCPU PPO2updates+TensorBoard/W&Boffline기록확인; Loss/value_function,surrogate,entropy,success,lift,mean_reward각2points,tot_timesteps32 assertion통과. py_compile통과. 상세tracking_smoke.log. 성공시연/실로봇/기존학습·GUI프로세스변경없음,새Stage3시작없음. W&B인증없음은값노출없이bool확인,온라인보기로그인방법README기재.
+
+## 2026-10-07 Claude — 1+2 연결 데모, 파지 동작 품질 점검(재학습 안 함)
+- `rl/eval.py demo` 추가: 홈 자세 1초 → 관절 공간 MoveJ(smoothstep 4초, 실로봇의 펜던트/mover 이동에 해당, 학습 아님, 실드 위반 waypoint 0) → stage 2 정책(`m1013_2f85_rim/2026-10-06_21-06-08_stage2/model_4996.pt`). GUI 4 env 반복. 같은 파일에 `gate --speed_cap`과 동작 품질 지표(TCP 속도, 유지 중 접시 높이 변동)를 추가.
+- Human 지적: 파지 동작이 투박하다. 확인 결과 재생 속도 문제가 아니라 정책 자체의 문제다. 512 ep 결정적 평가, 로그 `rl/logs/speedcap_test.log`:
+
+| 속도 상한 (m/s) | 성공 | 놓침 | 시간초과 | TCP 속도 p50 (m/s) | 유지 중 접시 높이 변동 | 최대 들림 |
+|---|---|---|---|---|---|---|
+| 없음(학습 조건, 0.9) | 98.2% | 0 | 1.8% | 0.25 | **391 mm** | 447 mm |
+| 0.3 | 0.6% | 35.7% | 62.9% | 0.08 | 177 mm | 306 mm |
+| 0.15 | 0% | 4.7% | 88.5% | 0.04 | – | – |
+| 0.08 | 0% | 0% | 99% | 0.02 | – | – |
+
+- 해석: 정책은 약 1초 만에 접시를 13 cm 들고, 그 뒤 수십 cm를 계속 위아래로 움직이며 버틴다. 원인은 보상과 성공 조건에 있다.
+  - lift는 8 cm, tcp_rise는 10 cm에서 포화되고, 그보다 높이 들어도 벌점이 없다.
+  - stable_lift는 기울기 25° 이하만 확인하고 속도·높이 변동은 보지 않는다.
+  - 행동 상한이 약 0.9 m/s다.
+  - 추론 시점에 속도만 줄이면 정책이 그 동역학을 본 적이 없어서 바로 실패한다. 따라서 재학습이 필요하다.
+- 재학습 제안(Human 검토 전, 미실행):
+  - 학습 때부터 TCP 속도 상한(예: 0.1~0.15 m/s, windup)을 적용한다.
+  - lift를 목표 높이 대역(예: 10 cm ± 2 cm) 보상으로 바꾸고, 초과하면 벌점을 준다.
+  - 유지 성공 조건에 접시 속도 상한(예: 3 cm/s)을 추가한다.
+  - 파지 후 TCP 속도와 가속에 벌점을 준다.
+  - model_4996에서 미세조정을 먼저 시도하고, 안 되면 처음부터 학습한다.
+
+## 2026-10-07 Codex: 그래프 표시 수정
+- Human 요청으로 training_curve.png의 모든 패널 grid와 상단/우측 spine 제거, 재렌더 및 이미지 확인 완료. 데이터/학습 코드 변경 없음.
+
+## 2026-10-07 Codex: 그래프 제목·범례 수정
+- Human 요청으로 training_curve.png 대제목 제거, 범례 테두리 제거 및 패널 바깥 상단으로 이동. 재렌더·시각 확인 완료.
+
+## 2026-10-07 Codex: 저속 재학습 반영 확인
+- config.yaml/plate_env.py/eval.py 및host프로세스확인. slow설계코드는반영되어있으나조회시m1013_2f85_rim_slow실험폴더/상태로그없고train.py프로세스없음. eval.py scripted --headless --num_envs8 --lift_m.10검증실행중,기존model_4996demoGUI도남아있음. "재학습진행중"으로확인하지못함.
+- 속도항상최저/안전최우선조건을AGENTS.md,CONTEXT.md,DECISIONS에기록. 실제속도와목표변화량제한구분및관절상한미변경리뷰기록. 기존프로세스/핵심학습코드변경없음.
+
+## 2026-10-06 밤 ~ 2026-10-07 오전 요약 (Claude)
+- 10/6 19:26~21:39: v10 stage 2 curriculum(새 코드, `m1013_2f85_rim`). 500 it마다 학습 성공 0.57 → 0.22 → 0.03 → 0.96. 21:39 결정적 2048 ep에서 **98.3%**(충돌 0.05%, 놓침 0, 시간초과 1.6%)로 통과하고 멈춤(3단계 자동 진행 안 함). 로그 `rl/logs/m1013_2f85_rim/status.md`.
+- 10/7 아침: stage 2 GUI(`eval.py watch`)와 1+2 연결 데모(`eval.py demo`: 홈 → MoveJ → ready → 정책)를 Human에게 보여줌.
+- Human 지적("잡는 게 투박하다")으로 속도 상한 평가 진행. 결과는 위 표와 같다. 정책 자체가 빠르고 접시를 흔들어서 재학습이 필요하다.
+- 진단 중 발견: 어제부터 남아 있던 trace 프로세스와 `timeout`이 남긴 자식 프로세스가 Isaac 실행을 막아 env 생성이 멈췄다. 모두 PID로 종료(`pkill -f` 사용 안 함). 이후 정상.
+- Human 결정(10/7): 속도 최우선, 제안 전부 승인, 3단계 취소, W&B는 Codex 설정대로 기록, 그래프 스타일(grid 없음, 위·오른쪽 축선 없음, 전체 제목 없음, 축 제목은 허용).
+- v11 slow 구현과 검증은 DECISIONS 2026-10-07 항목. 09:49 학습 시작: `train.py curriculum --stage 2 --init m1013_2f85_rim/.../model_4996.pt`, 실험 `m1013_2f85_rim_slow`, 4096 env, 500 it 단위, 최대 15000 it, 결정적 95% 게이트, 2단계 후 정지. 상태 `rl/logs/m1013_2f85_rim_slow/status.md`, 드라이버 로그 `rl/logs/curriculum_slow_driver.log`. W&B는 offline으로 기록 중(entity 문제, DECISIONS 참조).
+- 첫 시도는 직전 프로세스 종료 직후 Isaac 앱 시작 단계에서 crash(덤프 `kit/data/.../849e891a...dmp`). 드라이버가 재시도해 정상 학습 중.
+- 초기 지표(약 5055 it, 미세조정 60 it): 성공 0, 시간초과 99%, lift 0.07, over_lift −0.09. 느린 동역학에 적응 중.
+- 다음: 1000~1500 it 안에 lift/hold가 오르지 않으면 `--scratch`로 다시 학습. 통과하면 GUI로 보고하고 승인 후 3단계(3단계도 같은 속도 상한 적용).
+
+## 2026-10-07 10:03 Claude — W&B 연결, v11 slow를 처음부터 재학습
+- W&B: project `plate_place_KIMM`(config.yaml tracking.project), entity는 비워 둠(로그인한 계정 기본 공간 `klng12345-dankook-university`). 온라인 연결 확인, run: https://wandb.ai/klng12345-dankook-university/plate_place_KIMM/runs/44ip6886 (이후 chunk마다 같은 group의 새 run).
+- v10 `model_4996`에서 이어 학습한 미세조정은 약 500 it 부근에서 중단: 정책이 림에 닿지 못함(grasp_reach 0.005), lift는 최대 0.13까지 올랐다가 0으로 후퇴. 행동 scale이 0.03 → 0.0025로 12배 작아져 옛 가중치와 맞지 않는 것으로 판단(과거 v8 이어 학습 실패와 같은 양상). 기록은 `m1013_2f85_rim_slow_finetune_discard`(체크포인트·status 둘 다)에 보관.
+- 10:02 `train.py curriculum --stage 2 --scratch`로 처음부터 재학습 시작(실험 `m1013_2f85_rim_slow`, 속도 상한 동일). 첫 시도 때 남은 chunk 프로세스 1개가 GPU를 같이 쓰고 있어서 PID로 종료.
+
+## 2026-10-07 10:09 KST Codex: 고정 RealSense 트레이 사진 촬영
+- Human 요청으로 fixedD455 serial338122300585에서1280x720 원본컬러1장촬영,45frames워밍업후저장및카메라스트림종료. calibration/data/tray_capture/20261007_100957_fixed_color.png 및동명json(K/왜곡/serial/시각). 로봇명령없음,트레이치수/형상추정은아직하지않음.
+
+## 2026-10-07 Codex: 실증 최종 거치 자세 확정
+- Human이방금촬영한사진처럼트레이슬롯에접시를세워꽂는것이목표라고확인. CONTEXT/DECISIONS에반영. 속도항상최저/안전우선조건유지.
+
+## 2026-10-07 Codex: reward shaping/modeling 및 Stage3 설계 설명
+- Ng1999potentialshaping논문,robosuitepeg-in-hole공식코드,residualRL논문을참고해Human에게단계별보상/저속경유점+정렬보정안설명. 변경은공유논의기록만,Stage2학습및Stage3핵심코드변경없음.
+
+## 2026-10-07 Codex: Human 요청으로 Isaac GUI 강제 종료
+- demo_stage12 GUI PID901575 및실행래퍼901570/901563 SIGKILL,종료확인. 별도저속학습driver916649/chunk924149는대상외로유지.
+
+## 2026-10-07 13:40 Claude → Codex: 저속 IL 데모 수집 분담
+- Human 지시: Codex와 Claude가 함께 저속 데모를 모은 뒤 BC → RL(critic warmup → PPO 미세조정)으로 학습하고, Human이 돌아오면 GUI로 확인.
+- `IL/collect.py`를 저속 env에 맞게 수정(기존 기본값은 새 action scale 0.0025와 맞지 않음).
+  - 전문가 명령 상한: `max_tcp_speed` × 에피소드별 0.7~1.0배. 이전 `clamp(±0.3)×0.85~1.15`는 새 scale에서 2.25 cm/s가 되어 3초 안에 16 cm를 못 든다.
+  - 단계 시간 `--phase_s 1,4,3,3,6`(그리퍼 20 mm/s라 닫기 3초).
+  - `--lift_m` 0.16 → 0.10(들기 목표 대역).
+  - `plate_speed_mps` 저장. verify의 stable 판정에 접시 속도 조건, 기한은 snapshot의 `episode_s[2]`.
+- 출력 충돌 방지: **Claude = `IL/data_slow_claude`(seed 456)**. Codex는 다른 이름(예: `IL/data_slow_codex`, seed 123)을 써 주세요. 기존 `IL/data`(빠른 v10 동역학)는 그대로 둔다.
+- BC/학습 코드는 Claude가 `rl/train.py`에 `bc` 모드와 `--freeze_actor`(critic warmup)로 추가 예정. 두 데이터 폴더를 모두 읽는다.
+
+## 2026-10-07 Codex: 저속 IL 분담 수집 시작
+- Human "클로드도 모으고 있으니까 너도 수집해" 지시로50성공목표,seed701,출력 IL/data/slow_codex_20261007 준비. Claude의 IL/data_slow_claude(seed456)와 분리. 현재rl소스/config를source_snapshot으로고정하고rl_utils의자산기준경로는원프로젝트,config는snapshot으로읽도록설정. 공유collect.py/rl학습코드는변경안함.
+- 전문가목표는sim기준TCP명령약25.5~34.5mm/s,현재5cm/scap유지,4envprobe후8env본수집예정. stable5초/plate속도<3cm/s/기존기울기·상승·실드유지; 실제TCP/회전/손가락관절속도,팔관절속도/가속도추가기록과속도초과제외. 실제장비최저속도인증은아님.
+- 첫probe는병렬env원점과IKbase목표혼동으로파지없어내프로세스만중단. base좌표로수정후probe2실행중. 실패probe를성공데이터로저장하지않음.
+
+## 2026-10-07 Codex: 저속 Stage2 시연50개 완료/검증
+- 출력IL/data/slow_codex_20261007(호환symlinkIL/data_slow_codex),seed701,50ep×600frames=30000frames,train40/val10. 56시도중손가락실제속도20mm/s미세초과2제외,성공54중50저장/4초과미저장. 수집533.78초. 기존Claude학습/수집파일미변경.
+- 검증50/50:SHA/유한값/obs-next_obs연속성/실제속도/충돌·실드/5초안정유지/20초기한확인. 최대첫성공16.933초,최소besthold242steps. 최대TCP33.504mm/s(PhysX),34.498mm/s(pose차분),TCP회전.956deg/s,손가락19.944mm/s,팔관절.074508rad/s=4.269deg/s,TCP가속도.345726m/s². 팔관절실기최저속도보장은아니며원시joint_vel에서수치검증.
+- finalplate64.39~101.32mm상승,tilt최대21.51deg,contact0/실드0. 18mm/s그리퍼sim한도override를manifest에명시,원학습20mm/s그리퍼설정과분리. summary/episode_metrics/verification/log/source snapshot 보관. scopeStage2만,BC/RL추가학습·실로봇명령실행없음. diagnostics예비데이터는학습에서제외.
+
+## 2026-10-07 13:50 Claude → Codex: 저속 데모 BC 결과와 Codex 데이터 제외 이유
+- Codex `data_slow_codex`(50개, 검증 통과)는 고정 시간 단계라서 BC 라벨이 모호하다. 같은 상태에서 대기와 닫기가 섞인다. 이번 BC에서는 제외했다(DECISIONS 2026-10-07 IL → RL 항목). Codex 수집기에 상태 기반 단계 전환을 넣으면 같이 쓸 수 있다. 공유 `IL/collect.py`는 상태 기반으로 바뀌었다(`--close_dist`, `--stall_steps`, `--total_s`).
+- 13:45부터 IL+RL 파이프라인 자동 실행 중. 실험 `m1013_2f85_il_rl`, GUI watch가 최신 체크포인트를 따라간다. 순수 RL 기준선은 파이프라인이 중지한다.
+
+## 2026-10-07 Codex: Human 제공 Sim-to-Real 논문 검토
+- PDF https://link.springer.com/content/pdf/10.1007/s12541-026-01595-5.pdf 의 방법·실기 실험·한계 검토. 핵심: RL reaching + heuristic gripper, sim 내 궤적 생성/실기 실행 분리. 우리 Stage2 접촉·Stage3 슬롯 삽입과 범위 차이 및 저속/정밀도 제약을 Human에게 설명. DECISIONS에 적용 제안과 근거 절 기록. 실험·로봇 명령·학습 변경 없음.
+
+## 2026-10-07 Codex: Pick-and-place RL survey 검토
+- Human 제공 ProQuest PDF 다운로드/텍스트 확인: Lobbezoo, Qian, Kwon (2021), Reinforcement Learning for Pick and Place Operations in Robotics: A Survey, Robotics10(3)105, DOI10.3390/robotics10030105. Sec3–8/Table1·2 검토. DDPG+HER 반복, 계층형/작업분해, BC/IRL/DGAIL, Q-learning/DQN/SARSA/QT-Opt, PPO계열, 모델 기반/iLQR 및 PA-POMCP 정리. MAPPO는 본 서베이의 manipulation signal 방식 명칭이며 multi-agent PPO로 단정하지 않음.
+- 보상 shaped/dense/sparse/potential 기반, domain randomization/adaptation, grasp pose 및 vision 표현을 별도 축으로 구분. 2021년 범위·상이한 과제 및 sim/실기 평가 때문에 표 성공률로 알고리즘 순위/현재 대세를 단정하지 않음. 우리 적용 우선은 저속 시연+작업분해+필요한 보정 제안, 구현 변경 없음.
+
+## 2026-10-07 17:10 Claude — IL+RL 2단계 통과, GUI 대기
+- 15:50 `m1013_2f85_il_residual/2026-10-07_15-15-44_stage2/model_400.pt`가 결정적 2048 ep에서 **성공 97.9%**, 충돌 0.05%, 놓침 0, 시간초과 2.1%로 통과했다. curriculum은 정지(3단계 미시작).
+- 같은 chunk 후반(400~648 it)에서는 학습 중 성공이 0.33까지 떨어졌다. 최고 체크포인트 선택과 rollback이 없었다면 놓쳤을 것이다. 추가 학습 시 불안정이 남아 있다.
+- 오전부터 떠 있던 GUI는 예전(삭제한 run의) 체크포인트를 계속 보여주고 있었다. 그래서 종료하고 통과 체크포인트로 GUI를 다시 띄웠다(`eval.py watch --checkpoint .../model_400.pt`, 8 env).
+- 다음: Human GUI 확인과 승인 → 3단계(트레이 이동·놓기) 설계. 들기 높이가 약 5.7 cm라 3단계 전에 목표 높이 보상 재도입을 검토한다.
+
+## 2026-10-07 Codex: Human 요청 BC+RL 결과 원로그 확인
+- state.json/status.md/eval_s2_00000.log/W&B summary 대조: residual model_400, 2048ep success2005/2048=97.9004%, collision1=0.0488%, plate_lost0, timeout42=2.0508%, mean_shield_steps0. TCP sampled p50 13.829mm/s,p95 49.896,max50.980 (명령cap50mm/s보다 약1.96% 초과). eval.py 집계식상 held_up env별 높이 range 중앙값6.599mm, 최대 들림 중앙값57.015mm이며 전역 최대/최악 흔들림으로 해석하지 않음.
+- train status: critic warm-up150 + PPO500 이후15:50게이트통과정지, 마지막model_648 최근50it성공.334 vs bestmodel_400 .983. 최고체크포인트 통과이지 학습 전체 안정 수렴은 아니다.
+- host조회시 BC+RL train 없음, pure_g998 scratch 비교학습 실행 중. watch_il_residual.log는Python Killed로 끝나며 GUI 현재정상동작 근거없음. 프로세스·설정·학습 변경없음. 실기최저속도/실증안전인증은아직별도.
+
+## 2026-10-07 Codex: Human 요청 통과 BC+RL GUI 실행
+- eval.py watch --stage2 --num_envs1 --residual on --checkpoint m1013_2f85_il_residual/2026-10-07_15-15-44_stage2/model_400.pt. 명시적 residual override로 현재 pure 비교 config(false)와 분리. loaded 로그 확인, host Python PID1020341; GPU사용약9565/12227MiB. watch_bc_rl_codex_20261007.log. 기존학습/설정변경없음,GUI는Human확인용반복실행.
+
+## 2026-10-07 Codex: Human 요청 BC+RL GUI 종료 / 순수RL GUI 교체
+- BC+RL GUI PID1020341 TERM. 이전 평가 완료 순수RL model_1300(성공55.7%,collision3.08%,lost27.98%)로watch num_envs1 residual off 실행. 새pure_g998 비교는초기model_100만저장되어훈련유지, 이번화면은이전gamma.98모델임을Human에게명시. 현재config보상/종료조건은watch에적용되므로원평가재현과구분. 이전모델관측동작확인용,학습설정변경없음. 로그watch_pure_rl_codex_20261007.log.
+
+## 2026-10-07 Codex: ROS 종료 후 펜던트 조그 불가 문의
+- Human: ROS 강제종료후Safety Controller error/조그불가, 이후다시정상. 오류코드미확보라원인확정불가. host에는조회시ROS제어노드없음. 최근17:50launch는종료시SIGINT/컨텍스트publisher예외/Disconnected기록, 안전오류코드는로그없음. 로컬driver destructor stop_rt_control/close_connection 확인. 강제종료시정리누락/모드권한전환문제는가능성일뿐고장단정안함. 다음종료는정지확인후정상종료/펜던트권한수동모드확인권고,재발시오류코드확보. 로봇명령·서보·리셋실행없음.
+
+## 2026-10-07 19:30 Claude — 실로봇 파이프라인: 모든 leg를 go 한 번으로, ROS2 관절값 전부 기록
+- Human 요청: grasp 포함 모든 이동을 한 번에. ROS2가 주는 관절값을 전부 기록해 나중에 학습에 참고.
+- `pipeline.py --task plate`: to_grasp, lift, lower, from_grasp 모두 `mover --go_per leg`(leg마다 확인 문구 1회 + go 1회). waypoint마다 정지하고, 이동마다 시작/도달 오차 검사는 그대로, 2°/s.
+- `RobotRecorder`(pipeline.py): `ros2_nodes.py flange`(20 Hz, posj deg + flange posx) UDP 샘플 전부와 이벤트(plan과 FP 접시 pose·offset, leg 시작/끝, gripper close 결과와 grasped 여부, lifted, open, done)를 `calibration/data/real_pipeline/<시각>_plate_*/robot_state.jsonl`에 기록한다. 가짜 UDP로 offline 시험 20/20 샘플 기록, 회귀 시험 20/20.
+- 주의: 야간 넓은 범위 학습이 끝나 config(체크포인트, 범위)를 갱신하기 전까지 `--task plate --execute`는 쓰지 않는다.
+
+## 2026-10-07 19:20 Claude — 2차 실증 관찰 반영: 잡는 위치 보정 (+3.0, +3.9) cm
+- Human(실행을 보고): 로봇 기준 왼쪽으로 약 2 cm, 약 1 cm 더 깊게 잡아도 된다. → `plate_rl.offset_m` (0.02, 0.02) → **(0.030, 0.039)**. 깊이는 손가락 진입 방향(툴 축의 수평 성분 (0.993, −0.117))으로 1 cm.
+- 배치 기준도 FP + offset이므로 실제 접시는 약 (1.070, −0.039)에 놓는다(화면 안내를 따른다). 정책 재학습은 없고, rollout 위치는 학습 범위 안이다.
+- 같은 시각 FP 추적 창은 실행 내내 유지하고 FP pose를 `robot_state.jsonl`에 기록한다(`keep_perception`, export 8 env).
+
+## 2026-10-07 20:00 Claude — 오늘 실증 마무리 준비, 넓은 범위 학습 막힘
+- 실로봇 파이프라인(`pipeline.py --task plate --execute`): 구간별 movesj 한 동작, 그리퍼만 사람 선택, 6°/s, 관절·FP 기록. 시험 21/21, 경로 생성 확인(8/8 성공, 오후 정책 쌍 고정).
+- 야간 자동 파이프라인(`rl/logs/wide_pipeline.log`)은 BC가 3 seed 모두 충돌 100%라 19:22에 스스로 정지했다(config 변경 없음). 원인과 Codex 검토 요청은 DECISIONS 20:00 항목.
+- config 변경(오후 정책 실행에 영향 없음): `task.plate_obs_noise` 0.005 → 0.001, `task.obs_rim_rel: true`(46차원, 43차원 체크포인트 자동 감지), `geometry.plate_reset_x/y` 넓은 범위, 받침 kinematic(따라감), `rewards.residual.held_drift`.
+
+## 2026-10-07 20:10 실증 4차 (Human): "매우 훌륭, 아주 좋음"
+- `pipeline.py --task plate --execute`: 구간별 movesj 한 동작 6°/s, 그리퍼만 사람 선택, 오후 BC+RL 정책, offset (0.030, 0.039). 기록은 `calibration/data/real_pipeline/`의 최신 `*_plate_*/robot_state.jsonl`.
+- Human: 오늘 실증 마무리. 오늘 밤 목표는 ① 잡은 뒤 앞으로 미는 문제 제거 ② FP가 준 위치 그대로(학습 위치로 옮기지 않고) 같은 동작으로 잡기. 로봇 전원 끔. Codex가 넓은 범위 BC 문제를 검토 중.
+
+## 2026-10-07 Codex: 20:00 넓은 BC 검토 완료
+- Human이미지요청으로공유DECISIONS/LOG및코드·저장데이터·CPU체크포인트분석. 수집/평가관측shift근거없음,성공BC와wide의MSE4배비교오류정정,파지전환첫close에서wide32/32열림+전진출력확인(좁은도전환지연있어sole원인단정금지). 전문가감속부재/입력hidden state/전환부희귀표본/누적오차를우선가설로정리. 제안만DECISIONS기록. 증거JSON rl/reports/20261007_wide_bc_review/. 실행중프로세스·정책·속도·실드변경없음.
+
+## 2026-10-07 20:04 Codex — 야간 v2 검토 완료
+- 최신 수집/BC/residual RL/평가/실물 export 코드를 read-only 검토. 입력 scaling folding, phase sampling, 43D 호환성, 실로봇 고정 정책 쌍은 정상 확인. 실행 중 코드·설정·프로세스는 수정하지 않았다.
+- 야간 스크립트에서 수집/검증 실패 후에도 진행 가능, BC가 모두 0% 성공/100% 충돌이어도 RL 시작 가능이라는 두 P1을 발견. 실패 즉시 종료와 BC 수치 qualification 조건을 보완해야 한다. 상세 위치와 이유는 DECISIONS의 20:04 항목.
+- clean 데모 200개/102000 frames/186.99 s 수집 및 검증 all_passed=true 확인. `rl/logs/wide_pipeline_v2.log`상 DART 수집 단계. 새 BC/RL 성과는 아직 평가 전이다.
+- 다음: 자동 중단 조건 보완 → BC gate 확인 → residual PPO → 통과 모델의 held 이후 수평 이동량/충돌률/export FK 확인. 성공률 95%만으로 오늘 목표인 전방 밀림 제거를 입증하지 않는다. 검증 split 없는 BC 중복 scaling P2는 현재 정상 split에는 영향 없음.
+
+## 2026-10-07 20:08 Claude — 야간 v2 실행 중단 (Human 지시), Codex로 인계
+- Human: Codex 지적(① 수집·검증 실패 시 다음 단계로 넘어가지 않고 중단 ② BC가 최소 성공률·최대 충돌률 기준을 넘을 때만 RL 진행)을 반영해 Codex가 다시 돌린다. Claude 실행은 취소.
+- 중단 시점까지 결과(재사용 가능):
+  - `IL/data_wide2_claude` 200개(비례 전문가, 검증 통과)
+  - `IL/data_wide2_claude_dart` 200개(DART 0.2, 거절 6, 검증 통과)
+  - BC seed 1 `m1013_2f85_rim_slow/2026-10-07_20-05-44_stage2_bc/model_0.pt`: 512 env 결정적 **성공 96.1%, 충돌 0%**. seed 2·3은 학습 전에 중단.
+- config는 바뀌지 않았다: `residual.base` = 오후 좁은 BC, 실험명 `m1013_2f85_il_residual`. 실로봇 고정 정책 쌍(`calibration/config.yaml plate_rl`)도 그대로.
+- Codex 의견 수용: 성공률 95%를 넘어도 "잡은 뒤 앞으로 미는 문제" 해결은 별도 검증이 필요하다(통과 체크포인트로 `eval.py export` 후 lift leg의 TCP 수평 이동량을 FK로 측정, 실기 기준 이전 106 mm).
+- 실행 스크립트(참고용): `/tmp/claude-1000/.../scratchpad/wide_pipeline.sh`. 단계는 데모 → BC 3 seed 평가 → config base·실험명 변경 → residual curriculum.
+
+## 2026-10-07 20:21 Codex — 안전한 야간 파이프라인 재시작
+- Human 승인으로 두 P1 중단 조건을 구현. 이전 실행 종료 상태 확인 후 중복 lock과 job token 종료 처리로 재시작. 학습/보상/속도/실드/실물 쌍은 유지, gate에 raw drift 계측만 추가.
+- 검증된 clean200+DART200을 새 verify로 재검증. CPU qualification 테스트9개 + 별도 세션 고아 child 종료 재현 통과. BC seed1 97.4609%/collision0, seed2 96.2891%/collision0; seed3 평가 중.
+- W&B online/server 실제 기록 확인: https://wandb.ai/klng12345-dankook-university/plate_place_KIMM/runs/25e685bc1f63 . driver PID1117275; 실행 디렉터리 `/home/pan/pan/6D_pose/rl/logs/night_codex_20261007_201842`. 전체 조건·내일 graph 가이드는 DECISIONS 20:21 항목.
+
+## 2026-10-07 20:23 Codex — 야간 재시작 실제 PPO 진입 확인
+- BC seed3 success97.8515625%, collision0%, lost0%, timeout2.1484375%로 최종 선택(512 env). TCP speed p95 4.400cm/s, max 4.998cm/s. held TCP forward p95 2.21mm, plate forward p95 4.91mm. 이는 BC baseline이고 최종 residual RL 결과는 아직 아님.
+- residual PPO run `/home/pan/IsaacLab/logs/rsl_rl/m1013_2f85_il_residual_wide/2026-10-07_20-21-50_stage2`에 실제 진입, critic warm-up150 중 iteration21 확인. zero residual/base 정확히선택, actor/noise freeze 로그 확인. W&B online 동일 run URL 확인.
+- config diff는 residual.base·paths.experiment 두 항목뿐임을 YAML 구조 비교로 재확인. 보호 파일 SHA 모두 동일. Human 실로봇 정책 쌍 유지.
+- W&B read-only API에서 새 run의 실제 PPO scalar19행/iteration18까지 수신 확인(loss·success·collision·entropy·noise·LR 포함). 근거 `/home/pan/pan/6D_pose/rl/logs/night_codex_20261007_201842/wandb_server_verified.json`.
+
+## 2026-10-08 08:40 Codex — 야간 RL 통과 실패
+- Human 요청으로 로그·curriculum state·BC/gate 계측·체크포인트·W&B 서버를 read-only 확인. 시뮬레이션 재평가, 재학습, 로봇 실행/정책 교체는 하지 않았다. 결과 JSON: `/home/pan/pan/6D_pose/rl/reports/20261008_overnight_result/result.json`.
+- 10/7 23:35:18 KST, critic warm-up150 + PPO3000을 마치고 95% gate 미통과로 종료. passed_checkpoint=null. host에 야간 학습/Isaac/W&B child 프로세스 없음. W&B 서버 상태 finished, 온라인 기록과 마지막 native success0/timeout1 및 Eval83.4473%를 대조했다.
+- 위치 범위는 학습·평가 snapshot 모두 x±6 cm/y±8 cm. sim GT 위치에 ±1 mm 관측 noise이며 FoundationPose의 새 넓은 실기 검증은 아직 아니다.
+- 선택 BC seed3(512ep): success97.8516%, collision/lost0%, timeout2.1484%. held TCP +x p95 2.208mm, 접시+x4.907mm, TCPXYp953.913/max16.948mm. TCP speed p95 4.400/max4.998cm/s. 유지 중 높이 변화 중앙값13.400mm.
+- 유일한 RL gate(2048ep, first run model300): success83.4473%, collision/lost0%, timeout16.5527%. held TCP+x p9587.054mm, 접시+x89.626mm, TCPXYp95107.990/max201.702mm. TCP speed p954.997/max5.461cm/s. 유지 중 높이 변화 중앙값53.297mm. 평가 표본 수는 다르지만 RL의 전방 이동 악화와 95% 미통과는 명확하다.
+- 첫 PPO chunk saved model300의 최근 학습 success proxy는98.3%였으나 결정적 평가83.45%. 이후 chunk에서 rollback 후에도 붕괴하여 말기 최근50it 학습 성공0%, timeout100%. 마지막model2396의 결정적 평가는 없으므로 '최종 평가 성공0%'로 표기하지 않는다.
+- NaN/Inf scalar0건 및 검사한 BC/model300/finalmodel2396 가중치 finite. 소프트웨어 검증 오류/프로세스 crash가 아니라 현재 RL 구성이 좋은 BC를 악화시킨 결과다. 원인 단서: actor freeze critic warm-up 동안 실제 adaptive LR0.01(설정1e-4의100배). 스케줄·optimizer resume 확인 후 원인 확정 필요.
+- 이번 RL은 실기 채택 근거가 없고 전방 밀림 제거 목표 미달. BC baseline을 보존하고 matched 평가·GUI/FK를 우선, residual 정책 변화 및 LR/전역 best 보존/수평 이동 제약을 검토해야 한다. 새 학습은 이 요청에서 시작하지 않았다. 기존 실로봇 policy pair와 안전/속도 설정 및 보호 파일 SHA는 유지.
+- W&B: https://wandb.ai/klng12345-dankook-university/plate_place_KIMM/runs/25e685bc1f63 . success curve 붕괴와 held forward/actual speed를 함께 확인해야 한다. loss 감소만으로 성과를 판정하지 않는다.
+
+## 2026-10-08 Codex — PPO 붕괴 재발 방지 변경
+- Human 지적 후 로그와 코드에서 반복되는 “중간에 좋아졌다가 붕괴”를 조사하고 구현 수정. 원인을 단일 요인으로 단정하지 않고, adaptive LR 급등 가능성, 6cm에서 포화되는 held drift cost, deterministic regression 뒤에도 이어지는 curriculum을 각각 코드 수준의 위험으로 기록.
+- residual 전용 fixed LR 2e-5, resume LR reset, held drift linear penalty to 40cm, BC deterministic baseline 비교 후 매 chunk gate 평가 및 (−5%p 또는 <90% 또는 충돌/놓침) 중단을 추가. 신규 experiment `m1013_2f85_il_residual_wide_stable`; 기존 run/checkpoint 보존.
+- 야간 driver 기본명도 새 experiment로 변경해 재사용 state와 충돌 방지. 실기 고정 policy pair, calibration, speed cap, shield는 수정하지 않음.
+- `py_compile` 및 YAML parse 통과. Isaac 실행/성능 테스트와 새 학습은 하지 않음. 변경 전 파일은 `rl/backups/20261008_collapse_fix/`에 저장.
+
+## 2026-10-08 Codex — W&B run 명칭 정리
+- Human 요청으로 project `plate_place_KIMM`의 전체 16개 기존 run을 API에서 experiment/알고리즘/checkpoint 지표와 대조해 구분 가능한 표시명으로 변경. `wandb_eval_s2_resume` 중복 3개는 각각 rim_slow PPO gate, il_rl BC gate 2.2%, il_rl BC gate 83.1%로 구분. 모든 이름은 `robot_PPO` 또는 `robot_BC`로 시작하며, 기존 run ID/metric 이력은 그대로. 원래 이름은 각 run Notes에 남김.
+- 향후 코드 이름: PPO-only, BC-init PPO, BC residual PPO, BC 평가를 prefix로 분리하고 stage/update/gate tag를 표시. training chunks만 같은 training ID로 resume; gate 평가와 preflight는 고유 ID를 사용해 시계열을 분리.
+- W&B API에서 16개 전체 목록을 재조회하여 반영 확인, `train.py`·`run_wide_night.py` 구문검사 통과. 파일 백업: `rl/backups/20261008_wandb_names/`. 새 training run은 아직 시작하지 않음.
+
+## 2026-10-08 Claude — 야간 residual RL 붕괴 시점·원인 판독 (read-only)
+- 붕괴 시점: 첫 PPO chunk it ~275–350. it 174–274 학습 성공 99%. 이후 같은 시점에 held_drift(−0.11 → −4.3), over_lift, hold_still, held_speed가 함께 커짐 = 잡은 뒤 흔들고, 더 들고, 앞으로 밀기 시작. 이어서 dropped/knocked가 나오고, it ~450부터는 아예 안 잡음(time_out → 100%, held 계열 0) = "가만히 있기" 붕괴.
+- 같은 시점 value loss 1 → 133. 실제 PPO 중 LR(TensorBoard Loss/learning_rate)은 대부분 하한 1e-5에 붙어 있음 = 최소 LR에서도 KL이 목표(0.005)의 2배를 넘음. LR 0.01은 critic warm-up(actor 고정, KL=0이라 adaptive LR이 상한까지 오름) 구간에서만 확인. 그래서 warm-up LR은 부차 요인으로 보고, 주 원인은 이미 97.9%인 BC 위에서 성공 보상이 포화되어 작은 penalty와 noise가 gradient를 끌고 가고, critic이 무너져 advantage가 망가진 것으로 판단.
+- 확대 요인: 최고 checkpoint를 학습(확률적) 성공률로 골라 model_300(0.983)을 택했으나 결정적 평가는 83.4%, 전방 p95 87 mm(BC는 2.2 mm). rollback이 이미 오염된 checkpoint로 돌아가 매 chunk 더 빨리 붕괴. 첫 평가(83% < BC 97.9%)에서 멈출 규칙이 없어 2.5시간 계속 진행.
+- Codex 08:40 이후 수정(residual 고정 LR 2e-5, 매 chunk 결정적 gate와 BC 대비 −5%p 중단, held_drift 선형)은 위 원인과 맞음.
+- 제안: BC seed3(`m1013_2f85_rim_slow/2026-10-07_20-20-51_stage2_bc/model_0.pt`)는 sim에서 이미 성공 97.9%, 충돌 0, 잡은 뒤 TCP 전방 p95 2.2 mm. 오늘 목표 두 가지(전방 밀림, 넓은 범위)를 RL 없이 충족할 가능성이 큼. GUI 확인 → export lift leg FK 전방량 → 실기 순서로 BC 단독을 먼저 검증하고, RL은 그 뒤 선택 사항으로 두는 것을 권장.
+
+## 2026-10-08 Claude — ThinkAct(NVIDIA, arXiv 2507.16815) 검토 (Human 요청)
+- GRPO 대상은 MLLM(추론 + 2D 그리퍼 궤적 keypoint 계획)뿐이다. 보상 = 0.9·(0.5 goal: 시작·끝점 일치 + 0.5 traj: 데모 궤적과 DTW 유사도) + 0.1 format. 모두 0~1 범위의 양수 보상이고 critic이 없다(group 상대 advantage).
+- 파지·들기 같은 저수준 동작은 DiT action model을 IL로만 학습(MLLM은 고정, latent 조건). RL로 학습하지 않는다. 폐루프는 N step(SimplerEnv 15, LIBERO 75)마다 다시 계획.
+- 우리 적용(제안): ① 접근 경로만 RL/GRPO, 파지·들기·유지는 IL(BC)로 분리 ② 보상은 0~1 유사도/도달형으로 바꿔 큰 음수 벌점 제거(어젯밤 "안 잡기" 붕괴 원인) ③ critic 없는 group 상대 advantage(Isaac에서 같은 접시 위치 env를 묶음) — 어젯밤 value loss 1→133 문제를 피함 ④ 접근 중 FP로 재계획(FP는 접근 중 안정, std<1.1 mm). MLLM/VLA 자체는 2주 시연에 과하다.
+
+## 2026-10-08 Codex — flange/TCP 계산 기록
+- Human 확인된 홈 자세에서 M1013 URDF FK로 base→flange를 계산해 DECISIONS에 기록. 시뮬레이션 URDF의 단순화된 flange→Robotiq pinch 변환으로 base→TCP도 참고값 계산했으나, 실물 어댑터 및 체결 방향이 확인되지 않아 보정 완료값으로 보지 않음.
+- GrabCAD 링크는 RealSense wrist-camera mount 용도로 확인됨. 이는 그리퍼 pinch TCP와 별도 좌표 사슬일 수 있음. 실물 adapter가 flange와 그리퍼 사이에 실제로 삽입되어 있으면 출력 CAD와 장착 방향/체결 구조를 받아야 변환을 반영할 수 있음.
+
+## 2026-10-08 Human 보충 — adapter 실제 장착 확인 및 TCP 재계산 상태
+- Human이 출력 PickNik 기반 adapter가 M1013 flange와 Robotiq 2F-85 사이에 실제 장착돼 있고 D455가 adapter에 고정된 구성을 확인함. 이전 추정과 달라짐을 DECISIONS에 정정 기록.
+- 이 adapter를 포함한 실제 TCP 변환을 계산하려면 수정 CAD/assembly frame 또는 측정된 flange→adapter 및 adapter→Robotiq 변환이 필요함. GrabCAD는 UR5용 원본이며 저장소에는 Human 수정 출력 CAD가 없음. 원본 UR5 URDF의 값은 M1013에 그대로 적용하지 않음.
+- 앞서 산출한 base→flange는 유지. 앞서 산출한 base→TCP는 adapter를 포함하지 않은 simulator 모델 참고값이므로 실제 로봇 TCP 값으로 사용하면 안 됨. wrist-camera hand-eye는 bracket 변경 여부에 따라 유효성을 확인할 것.
+
+## 2026-10-08 Codex — wrist D455 hand-eye 기반 홈 위치 계산
+- 기존 hand-eye(`20261006_111318_clean`, 14개 샘플) 변환을 홈 자세의 URDF `T_base_flange`와 합성해 Base→wrist D455 optical frame 위치 `(548.944, −29.901, 644.471) mm`, ZYZ `(−6.937, 118.473, −90.703)°`를 계산함. 이 값은 calibration 당시의 카메라/adapter 장착이 유지됐을 때에만 유효.
+- 카메라 변환과 Robotiq pinch TCP 변환을 분리해 기록. 실제 gripper TCP 수치는 계속 실측/pivot 보정 대기.
+
+## 2026-10-08 12:00 Claude — 방향 전환: IK 접근 + BC 잡기 (Human 승인), 넓은 범위 학습 진행 중
+- Human: 접시를 아무 데나 놓아도 FP 위치대로 잡아야 한다. 급하므로 RL 대신 **IK 접근 + BC(IL) 잡기·들기**로 간다. 이번 데이터는 나중에 RL 시연 데이터로 쓴다. 트레이 꽂기는 사람도 어렵다(별도 논의).
+- 코드:
+  - `rl/eval.py`: `--approach ik`(rim까지 TCP 직선, gripper open, 0.85×max_tcp_speed. `--handoff_m` 0.04 안에 들어오면 정책이 이어받음. gate/watch/export 공통), `--plate_range DX DY`(평가 범위 확대), `--dump`(gate의 env별 시작 위치와 결과 → 실패 지도). 백업 scratchpad `eval.py.bak_20261008`.
+  - `IL/collect.py`: `--plate_range DX DY`(manifest에 기록).
+- 상대 좌표 BC(local): ignore_obs에 팔 관절 [0,6], TCP xy [16,18], 접시 xy [25,27], target [31,34]을 추가해 xy 평행이동에 불변. `m1013_2f85_ik_bc_local/2026-10-08_11-57-30_stage2_bc` (기존 wide 400 데모, val mse 0.00252 = 기존 BC와 같음).
+- 512 env 결정적 평가(sim):
+
+| 정책 | 접근 | 범위 | 성공 | 충돌 | 시간초과 | 잡은 뒤 전방 p95 |
+|---|---|---|---|---|---|---|
+| local BC | 정책 | 학습 범위 ±6/±8 cm | 96.9% | 0% | 3.1% | 2.1 mm |
+| local BC | IK→BC | ±15/±20 cm | 83.0% | 4.7% | 11.9% | 1.8 mm |
+| 기존 BC seed3 | IK→BC | ±15/±20 cm | 87.5% | 4.3% | 7.8% | 2.3 mm |
+| local BC | 정책 | ±15/±20 cm | 86.7% | 5.1% | 7.4% | 1.6 mm |
+
+- 해석: 넓은 범위 실패율이 방식에 상관없이 비슷하다 → 학습하지 않은 위치의 데이터 부족과 위치별 기하(도달, 받침·프레임 충돌)가 원인 후보. 실패 지도로 확인 예정.
+- 12:01 자동 실행(`rl/logs/ik_wide_pipeline.log`, 실패 시 즉시 중단):
+  1. ±15/±20 cm 데모 수집: clean 400(`IL/data_ikwide_clean`, seed 4101), DART 0.2 400(`IL/data_ikwide_dart`, seed 4102), 각각 verify.
+  2. 기존 wide 400 + 새 800으로 local/global BC 학습.
+  3. IK 접근 gate 1024 env와 실패 지도(`rl/logs/ikwide_map_*.npz`).
+- RL은 하지 않는다. 실로봇 정책 쌍(`calibration/config.yaml plate_rl`)과 rl/config.yaml은 변경하지 않음.
+
+## 2026-10-08 12:35 Claude — IK+BC 넓은 범위 결과: 손가락 copycat 제거로 해결, 실로봇 모드 추가
+- 데이터: `IL/data_ikwide_clean`(400, 거절 35), `IL/data_ikwide_dart`(400, 거절 48). 범위 ±15/±20 cm, verify 통과. 전문가 거절은 가까운 쪽(dx<−9 cm) 팔 충돌, 먼 쪽(dx>+7 cm) 잡은 뒤 기울기 >25°.
+- 처음에 데이터 1200개로 BC를 학습하니 오히려 54~60%, 학습을 길게(12k step) 하면 0%. 원인: **손가락 관절 obs [6:8] copycat**. "이미 닫히는 중이면 닫는다"를 배워서 rim에 도착(d_rim 0)해도 닫기를 시작하지 못함(trace: grip +0.41에서 멈춤). phase_weight 1로 4k step이면 92%가 나오지만 seed나 학습 길이를 바꾸면 0%라 우연.
+- 해결: BC ignore_obs에 손가락 [6,8]도 추가(팔 관절·TCP xy·접시 xy·target·관절속도·이전 action 포함, 평행이동 불변), phase_weight 1.0. IK 접근 gate 1024 env:
+
+| BC | 전체 | dx −15~−9 cm | dx −9~+15 cm (y ±20 cm) | 잡은 뒤 전방 p95 |
+|---|---|---|---|---|
+| nofinger seed3 4k (선택) | 92.7% | 62% (충돌 34%) | 98.9~100% | 2.4 mm |
+| nofinger seed3 12k | 93.0% | 74% | 96.8~99.4% | 0.9 mm |
+| nofinger seed1 / seed2 | 92.9 / 91.6% | 69 / 61% | 98.1~100% | — |
+
+- 남은 실패는 가까운 영역(dx < −9 cm) 충돌뿐이다. 고정 그리퍼 방향의 기하 문제이고 학습 문제가 아니다. TCP 속도 p95는 4.3 cm/s(상한 5). max 6.5~11 cm/s 순간값은 이 충돌 영역에서 나온 것으로 추정(확인 필요).
+- 실로봇: `pipeline.py --task plate --plate_policy ik_bc`(기본값 rl = 어제 시연 그대로). `calibration/config.yaml plate_ik_bc`가 plate_rl을 덮어쓴다: checkpoint `m1013_2f85_ik_sweep_pw1_nofinger/2026-10-08_12-25-33_stage2_bc/model_0.pt`, residual 없음, `approach: ik`, `workspace_mm` x −80~+140, y ±180(FP + offset − plate_xy 기준). export에 `--residual off --approach ik` 전달. 가로·세로 범위 밖이면 이동 안내. offset (0.030, 0.039)는 그대로 둠(다른 위치에서는 실기 확인 필요).
+- export 시험(sim only): (1.22, 0.17, yaw 40) / (1.03, −0.17, −120) / (1.10, 0, 0) 모두 8/8 성공, accepted, 프레임 여유 ≥ 202 mm. calibration tests 21/21.
+- 백업: scratchpad `eval.py.bak_20261008`, `collect.py.bak_20261008`, `pipeline.py.bak_20261008`, `calib_config.yaml.bak_20261008`. RL 미사용, rl/config.yaml 변경 없음. GUI `eval.py watch --approach ik --plate_range 0.12 0.18`(8 env) 실행.
+
+## 2026-10-08 13:05 Claude — RViz 미리보기(`run.sh viz`), 실기 1회 알람 정지
+- 실기 ik_bc 1차(접시 FP (1.186, 0.134), rollout (1.216, 0.173)): to_grasp 스플라인을 시작하고 약 2 s 뒤 컨트롤러 알람 `OnLogAlarm level 2, group 5, index 7056`으로 정지(관절 2가 1.6°, 관절 6이 3°만 움직임). mover는 재시도하지 않고 멈춤. 같은 알람이 10/2에도 movej 시작 직후 1회 있었다. 의미는 미확인 → 펜던트 문구를 Human에게 요청. 로그 `calibration/data/real_pipeline/20261008_125025_plate_xfi9e0b7`, `~/.ros/log/ros2_control_node_1389509_*.log`.
+- bringup의 `/dsr01/joint_states`는 이 빌드에서 항상 0이라 기본 RViz 로봇이 움직이지 않는다(조회만으로 확인).
+- 새 `ros2_nodes.py viz`(읽기 전용) + `calibration/viz.rviz` + `run.sh viz [--plan P]`:
+  - 실제 로봇: get_current_posj 10 Hz → TF `real/*`
+  - 미리보기: plan의 to_grasp + lift를 30°/s로 반복 재생하는 반투명 로봇 `plan/*` + TCP 경로선(파랑 to_grasp, 주황 lift) + "close here" 점
+  - 작업 셀 상자, 2F-85 블록, FP 접시 메시(허용 범위 안이면 초록, 밖이면 빨강), 허용 배치 영역(파란 판)
+- `pipeline.py`가 UDP 5011(`config udp.viz`)로 plate, area, plan을 보낸다. viz가 없으면 무시. tests 21/21. TF·marker 발행 확인.
+- 진행 중: 1축 회전 대칭(FK 오차 0) → 같은 반경의 접시는 1축만 돌린 동작으로 잡는다. 거리 방향만 데이터로 넓힐 예정.
+
+## 2026-10-08 13:20 Claude — 퇴근 시 자동 커밋·푸시 설정, 접시 안정 판정 수정
+- Human: 퇴근한다고 하면 코드·yaml만 자동 커밋·푸시한다. data와 모델 파라미터는 올리지 않는다. → `collab/eod_push.sh`(`--dry-run`으로 목록만 확인).
+  - 대상: 허용 확장자(py/sh/yaml/md/rviz/urdf/xml 등)이면서 1 MB 이하, data/logs/weights/wandb/reports 폴더 밖, 추적 파일 삭제 포함. 비밀값으로 보이면 중단.
+  - 브랜치 `pan` → origin. 현재 dry-run: 추가·수정 99, 삭제 23.
+- 실기 대기 시간 원인: `FpStream.stable()`이 회전 3° 일치까지 요구했는데, 둥근 접시의 yaw는 FP에서 매 프레임 0~360°로 튄다(오늘 기록 std 약 100°). → 접시는 z축(법선)만 비교하도록 변경(`sensors.py` `symmetric_z`, pipeline plate만 적용, 큐브는 그대로). tests 21/21.
+- 같은 이유로 FP GUI의 박스가 회전한다. 위치와 기울기는 정상.
+- 기존 모드 `plate_rl.tolerance_mm` 10 → 25 mm(손 배치. export의 sim 성공 검사는 그대로). Isaac 시작 segfault 시 export 1회 자동 재시도.
+- SOS 위반 알람(7056 = `OPERATION_SAFETY_FUNCTION_SOS_VIOLATION`, `DRFC.h`): 10 wp 경로에서도 재현되므로 경로 문제가 아니라 로봇 상태 문제로 추정. 펜던트 모드 확인을 요청했고, 기존 모드로 재확인 중.
+
+## 2026-10-08 13:40 Claude — 경로 라이브러리(어느 방향이든, 실행 중 계산 0초), 경로 서버, 얕은 파지
+- Human 요청: 테이블 어디서든 팔이 닿으면 잡기, IK 경로 계산 비효율 해소, 홈 → 준비 자세 → 접시 우회 대신 더 직접, 5 mm 얕게 잡기, RViz로 경로 확인, 가려짐을 보고 스스로 잡기(후속).
+- 1축 회전 대칭(FK 오차 0)을 쓴다. 경로는 반경 r에만 의존하고, 방향은 1축에 방위각을 더하면 된다.
+- 전문가 반경 측정(`IL/probe_radial_20261008`, 96 ep): 1.00~1.32 m 성공, 1.00 m 미만은 팔 충돌, 1.35 m 이상은 도달 실패.
+- `rl/eval.py library`: 반경 2 mm 간격 161 env를 한 번에 생성. pass 1에서 ready → 직선으로 rim 10 cm 앞 q_pre를 구하고, pass 2에서 **홈 → q_pre를 관절 1회 이동**(물리 켠 채 sweep, 접시 접촉 검사) → 남은 10 cm 직선 → BC 잡기·들기(1 s 안정 유지에서 종료).
+  - 결과 `calibration/data/plan_library/20261008_133418/library.npz`: **142/161 성공, 반경 1.038~1.320 m**(1.000~1.036은 sweep 중 접시 접촉 또는 미파지).
+- `pipeline.py --plate_policy ik_bc`(config `plate_ik_bc.library`):
+  - 배치 검사: 반경 1.043~1.315 m, 방향 ±60°. offset은 접시 방위각만큼 회전해서 적용.
+  - 계획 생성 `plan_from_library`: 가장 가까운 성공 반경, 1축 회전, FK 셀 간섭 검사(프레임·D455 ≥ 50 mm, 테이블 ≥ 20 mm, rl shield 기준. 2F-85는 0.165 m × r 0.06 도구). 수 ms, Isaac 불필요.
+  - 오프라인 시험: (1.07, −0.03), (1.10, 0.30), (1.25, 0.05) accepted. (0.95, −0.45), (0.80, 0.70)은 프레임 기둥 40/22 mm로 거부.
+- 경로 서버 `pipeline.py --task plate --plate_policy ik_bc --export_server`(`rl/eval.py serve`, TCP 5012). 라이브러리 없는 모드용 대체 경로이며 1분 이상 → 15~28 s. export는 1 s 안정 유지에서 종료(이전 5 s), 첫 성공 2 s 뒤 중단, `--approach_fast` 4(sim 전용), `--rotate` 옵션.
+- `plate_rl.offset_m` (0.030, 0.039) → **(0.025, 0.040)**: Human "5 mm 얕게", 손가락 진입 방향으로 −5 mm.
+- RViz viz 재기동, 라이브러리 경로를 표시. 다음: 파이프라인 시작 시 viz 자동 실행, Human "조금 더 아래로 내려간 느낌"을 높이 보정으로 반영(크기 확인 필요), 가려짐 기반 자동 파지.
+
+## 2026-10-08 14:00 Claude — Human 목표 1·2 공유, 계획 초안
+- 실기 ik_bc 5회: Human "파지 높이가 조금씩 어긋나는 것 말고는 전반적으로 괜찮다". 다음 보정: 범위를 테이블 전체로, 경로 최적화.
+- Human 목표(다음 주까지): 목표 1 = 임의 위치·자세 파지, 목표 2 = 바구니 슬롯 삽입(티칭 데모 + 바구니 pose가 바뀌어도 되는 학습). 원문 요지는 CONTEXT, 계획·학습 계획·일정·Codex 검토 요청은 DECISIONS 10/8 14:00.
+
+## 2026-10-08 Codex — Claude 계획 검토 및 목표/학습 실행안
+- Claude가 CONTEXT/DECISIONS에 정리한 목표 1(임의 접시 pose 파지)·목표 2(바구니 슬롯 삽입) 계획을 확인하고, 별도 검토안을 DECISIONS의 `2026-10-08 Codex 검토 — 목표 달성 및 학습 실행안`에 기록했다.
+- 현재 계획 기본은 IK/기하 경로 + BC 파지/들기·삽입이며, PPO/residual RL 재개는 보류한다. 기존 로그의 넓은 범위 평가 92.7~93.0%, 가까운 접근 구간 62~74%와 충돌률을 고려하면, CONTEXT의 “98~100%”를 전체 범위 성공률로 말하면 안 된다.
+- 최우선 진행 순서: (1) 실기 SOS 7056 알람이 실제로 해소됐는지 확인, (2) flange–실물 adapter–2F-85–D455 조립체 포함 TCP/충돌 외형 검증, (3) 위치별 고정 검증 세트에서 실패 원인 지도화 및 sim gate 충족, (4) 안전 조건/사람 승인 후 저속 실기 단계 검증, (5) 바구니 slot 기하·pose 정의, (6) 한 슬롯 티칭/BC부터 시작해 위치·방향 변화로 확장.
+- Claude 초안 중 토크 기반 반력 판정은 API/임계값/재현성이 미확인이라 아직 실행 가능한 성공 조건이 아니다. 검증 전 좌우 흔들기 판정은 넣지 않도록 DECISIONS에 남겼다.
+- 이 turn에서는 코드, 학습 프로세스, 로봇, GUI를 변경/실행하지 않았다. 문서 두 개만 갱신했다.
+
+## 2026-10-08 14:10 Claude — 실행 계획표 공유: `collab/PLAN_2026-10-08.md`
+- 작업 ID·담당·선행·완료 기준·날짜·상태 표. Codex 담당: A1 파지 높이 편향 분석, C1 바구니 모델, C2 바구니 6D pose, C4 두산 외력 API 조사. Human: B2 슬롯 티칭과 확인 3건. 나머지는 Claude.
+- 시작할 때 상태를 `진행(이름)`으로, 끝나면 `완료`로 바꾸고 결과는 LOG에 남긴다.
+- 14:20 Human "목표 1이 너무 길다" → PLAN 일정 단축: 목표 1은 10/9~10/10(A2+A3 동시, A4는 선택), B 티칭은 10/9부터 병행, C1 10/11 / C2 10/12 / C3 10/13~17 / C4 조사 10/10 / 리허설 10/18~21.
+
+## 2026-10-08 14:40 Claude — 역할 재배치(Human 10/9~10/11 부재), 바구니 티칭 구현
+- 목표 1(A1·A1b·A2·A3) → **Codex**. 상세 지시서 `collab/HANDOFF_CODEX_2026-10-08.md`. 실로봇 명령 금지, sim·분석만, 실기 확인 10/12.
+- 바구니 티칭(B1) 구현: `pipeline.py --task plate --plate_policy ik_bc --execute --place teach [--slot k]`.
+  - lift 뒤 Human이 펜던트로 이동하며 carry / above / insert / (그리퍼 열기) / retreat에서 Enter → `calibration/data/teach/slot_kk.json`.
+  - 재생은 `--place slot`: lift 끝 → carry → above → insert 순서로 2° 이상 간격 densify(≤ 90 wp), smooth 6°/s → 열기 → insert → retreat → home. FK 프레임 여유 검사. 슬롯 번호는 `data/teach/next_slot.json`으로 자동 증가.
+- 라이브러리와 슬롯 코드는 `calibration/plate_plans.py`로 분리(pipeline 1006 → 832줄). plan 폴더 이름에 ms를 붙여 같은 초 충돌을 막음. tests 21/21, 라이브러리·슬롯 오프라인 시험 통과.
+
+## 2026-10-08 Codex — HANDOFF 목표 1 착수 / A1 높이 분석 완료
+- Human 이미지의 인계 지시를 받아 A1·A1b·A2·A3을 진행. 실제 로봇/그리퍼 명령은 하지 않음. PLAN 상태 갱신.
+- A1: lifted 이벤트 기록은 5회가 아니라 6회. 그 중 13:12 실행 plan에는 BC+RL residual enabled=true, 나머지 5개는 residual=false. 모두 새 반경 library 이전 rl_policy_rollout이다. source/checkpoint별 차이를 분석 JSON에 남김.
+- gripper 이벤트 직전 1초 FP median과 165 mm 가정 TCP 비교: 실행 plan 기준 높이 편향 평균 −5.135 mm, 표본 SD 5.283 mm; 후보 library 기준 −5.664 ±5.282 mm. 실제 관절–실행 plan 차이는 최대 약 0.01°, flange FK–posx 차이는 약 0.2 mm 이내.
+- preclose FP 높이가 plan 당시보다 평균 +4.297 mm, 최대 +8.157 mm 변함. 원인은 가림/추적 편향 또는 실제 움직임일 수 있으며 영상/접촉 측정 없이 단정 불가. 초기 FP로 비교한 편향은 −0.838 ±3.950 mm. 따라서 평균값으로 고정 z offset을 적용하지 않음.
+- 재현 도구 calibration/analyze_grasp_height.py; report rl/reports/20261008_grasp_height/{analysis.json,report.md,height_bias.png}. 모든 TCP 값은 실물 adapter를 계측하지 않은 모델 가정. 그림 규칙 준수.
+- A1b 후보: --plate_dz를 eval.py에 추가, 받침 바닥을 table에 유지하도록 height도 조절. 기존 파일 보존. −8 mm 후보 8개 반경(1.04~1.32m, 40mm 간격)은 물리 sim 파지+5초 유지 8/8. log rl/logs/codex_goal1_height_m8.log, library rl/reports/20261008_goal1/height_m8/library.npz. 전체 반경/실기 통과로 해석하지 않음.
+- A2 후보: phi ±40°, pitch ±15°의 IK bank(165개) 생성; IK reachability 165/165는 파지 성공이 아님. 시연 수집의 물리 성공/충돌 검사로 선별 중. 기존 목표/ready/실드는 opt-in bank가 없으면 그대로 사용.
+- A3: simulator open-gripper+coupling mesh로 후보 clearance/시간 파라미터 검증 시작. 실물 출력 adapter와 carried plate는 포함하지 않으므로 후보만 생성.
+
+## 2026-10-08 Codex — 목표 1 시연 보충/BC 후보 학습
+- 접근 bank(r 0.85~1.32m, phi −40/−20/0/20/40°, pitch −15/0°)로 clean 200 + DART 200 성공 시연 추가. ±25° joint1 rotation, 5초 안정 hold·실드·접촉·여유 검사 유지. 각 집합에서 반경 <1.04m 성공 시연 105개. rejected clean 78, DART 83; 모두 별도 manifest에 이유 기록.
+- IL/data_goal1_variants_clean_20261008, IL/data_goal1_variants_dart_20261008; 각 verification.json all_passed=true. 기존 데이터 덮어쓰지 않음. 최초 probe 32개는 훈련에 사용하지 않음.
+- 기존 1200 + 신규 400개로 BC 4000 update ×3 seed. 손가락/관절/절대 xy/속도/previous action 숨김, rim_rel×20, phase_weight=1 유지. 설정 snapshot 및 별도 experiment: m1013_goal1_phi_pitch_slow_20261008_seed{1,2,3}. RL 사용하지 않음. BC loss·validation·gripper sign acc W&B 온라인 기록.
+- 학습과 분리된 holdout bank: r 0.875~1.305m(40mm 간격), phi −30/−10/10/30°, pitch −10/−5°. 기존 BC와 새 후보를 동일 seed8201·1024 env·az ±25°로 비교 시작. 이 gate는 pregrasp 이후 접촉 skill 평가이며 home→접시 전체 경로 승인은 별도 library 물리 sweep과 workspace 검사 필요.
+- 기존 calibration/tests.py 21/21 + 좌표/height selector 신규 test_goal1_candidates.py 3/3 통과(하드웨어 mock/오프라인).
+- 14:55 정정: 경로 라이브러리 모드(홈 → q_pre 직접, 1축 회전)는 **실로봇 미검증**이다. 10/8 실기 5회는 export 모드(ready → 직선 → BC, sim rollout)였다. 오늘 티칭은 `--no_library`(검증된 모드)로 하고, 라이브러리 모드는 10/12 실기에서 검증한 뒤 기본으로 쓴다.
+
+## 2026-10-08 15:20 Claude — 전체 티칭(잡기 + 슬롯) 도구
+- Human: Codex가 목표 1을 끝내면 실기에 적용한다. 오늘은 처음부터 티칭으로 잡기부터 놓기까지 한다.
+- `pipeline.py --task teach --slot k`(읽기 전용):
+  - 접시는 표시한 고정 위치. Human이 펜던트로 움직이며 Enter: pre_grasp → grasp → (c) → lift → carry → above → insert(바닥에서 1 cm 위) → (o) → retreat.
+  - 저장: `calibration/data/teach/full_kk.json`
+- `--task replay [--slot k] --execute`:
+  - 홈 확인, FK 프레임 검사(바구니는 셀 모델에 없음).
+  - to_grasp(홈 → pre_grasp → grasp) → c(잡힘 확인, 안 잡히면 중단) → to_slot(grasp → lift → carry → above → insert) → o → slot_out(insert → retreat → 홈).
+  - smooth 6°/s, 키포즈 사이는 관절 직선을 densify(≥ 2°, ≤ ~90 wp). 슬롯 번호는 `next_full.json`으로 자동 증가. FP와 정책은 쓰지 않음.
+- 코드: `plate_plans.py`의 `taught_plan` / `teach_full` / `full_plan`, `pipeline.py`의 `run_taught`. tests 21/21.
+
+
+## 2026-10-08 Codex — 목표 1 중간 검증 / 실제 적용 금지 유지
+- 기존 BC와 새 3 seed의 미학습 접근 방향 validation(1024 env): 기존 13.67%, 새 seed1 78.91%, seed2 79.88%, seed3 77.54%. 이 시험은 새 phi/pitch 영역이며 기존 기본 영역의 성능과 혼동하지 않는다. 선택 후보 seed2, activated=false. rl/reports/20261008_goal1/{gate_comparison.json,selected_candidate.json}.
+- 신규 seed2로 r 0.85~1.32m / 2mm 간격 × phi −20/0° × pitch −15/0°: **948/948** home→pre 물리 sweep + 파지/들기 + 5초 hold, 실드 차단 0, arm collision 0, sweep 접촉 0. variant_library_dense/library.npz. 초기 Kit 시작 segfault 1회 후 재시도 성공; 검증 결과가 없는 첫 log를 성공으로 계산하지 않음.
+- xy 균일 작업영역 시험: 첫 random bank 시험 89.55%였음(1024 env이나 중복 추출). 이를 고유 1024 위치 --bank_fixed로 개선하여 phi=0,pitch=0 시험: 913/1024=89.16%, 충돌4, plate lost13, timeout94. 성공한 913회 TCP 최고 .04955m/s; 실패에서 29회 목표 상한 초과, 전체 최고 .17295m/s. 속도 목표 제한 ≠ 실제 속도 보장. workspace_gate_phi0_fixed.json 및 gate_workspace_phi0_fixed.npz. 성공률 95% 미달이고 실제 적용은 금지.
+- 프레임 가까운 |y|>0.25에서 실패 집중. 방향을 위치별로 고르는 후보 시험 진행 중. 선택은 pre/close/hold 3자세의 FK 여유를 이용하며 **전체 경로 안전 검증을 대체하지 않는다**. 대상 위치 제거/성공 조건 완화 없음. 같은 위치 재시험은 tuning validation으로 표시하고 최종 독립 seed gate 필요.
+- 높이: 기존 BC(15 반경)는 dz −8/−4/0mm 15/15, +4mm 3/15, +8mm 0/15. 새 seed2 + 방향 후보 250개는 −8mm 173/250, −4mm179/250, +4mm198/250, +8mm200/250. 네 높이 모두 성공 후보가 있는 반경 25/25(0.85~1.32m, 20mm 격자). 실패 방향은 ok=false로 남김. variant_height_index.json; 20mm 격자는 임의 반경에서 4mm tolerance 밖을 거부하므로 아직 배치용 dense height library가 아님.
+- 오프라인 높이 selector는 pre-approach FP root z로 선택하며 finite 검사/높이 오차 2.5mm 초과 거부/성공 없는 높이 제외. 각 phi/pitch별 최근접 성공 반경 → 셀 여유가 가장 큰 방향 선택. sim_open_gripper 외형 opt-in, 기존 cylinder 설정 유지. 실제 출력 adapter와 carried plate는 미모델링.
+- A3: dense library에서 8개 대표 반경(0.85~1.32m)의 home→pre retiming 8/8 통과. 6deg/s, 6deg/s², TCP .05m/s, 회전10deg/s, 기존 obstacle margin+10mm 유지. 원래 관절 직선이 이미 최단이므로 경로/시간 감소를 주장하지 않는다. BC 궤적 변경 없음. optimization_dense_representatives/optimization.json.
+- calibration/config.yaml 및 기존 checkpoint/library는 변경하지 않음. 실로봇/그리퍼 명령 없음. 계측 TCP/adapter 및 실기 확인은 Human과 10/12.
+
+## 2026-10-08 15:05 Claude — Human "지금 해야 한다": Codex 후보 라이브러리를 실기 모드에 연결 (실로봇 첫 확인은 오늘 Human과)
+- `calibration/config.yaml plate_ik_bc`:
+  - `library` → `../rl/reports/20261008_goal1/variant_library_combined/library.npz`(Codex 후보, r 0.85~1.32 m × φ −40~40 × pitch −15/0, sim 1618/1672)
+  - `checkpoint` → `m1013_goal1_phi_pitch_slow_20261008_seed2`
+  - 이전 값은 config 주석과 scratchpad `calib_config.yaml.bak_20261008_combined`에 있다.
+  - 높이 index(`library_height_index`)는 켜지 않음(Codex: FP z 흔들림으로 고정 보정 보류).
+- Codex의 `plate_plans.plan_from_library`(방향 후보별 최근접 반경 → FK 셀 여유가 가장 큰 후보)를 그대로 쓴다.
+  - 오프라인 시험 8곳 모두 accepted: (1.07, −0.03), (0.90, 0), (0.88, 0.25), (1.10, 0.30), (0.95, −0.45), (1.20, −0.35), (1.25, 0.05), (1.00, 0.45). 이전 라이브러리에서 거부되던 (0.95, −0.45)도 다른 φ로 통과.
+  - tests 21/21.
+- 주의: workspace gate(무작위 위치)는 90.8%로 95% 미달(Codex). 실기 첫 확인은 쉬운 위치부터 하고 RViz로 미리 본다. `--no_library`는 오전에 검증된 모드(이제 checkpoint가 seed2라 export rollout도 seed2 BC를 쓴다는 점에 주의).
+- Codex에게: 위 config 변경은 Human 지시로 한 것이다. 후보 라이브러리를 교체·갱신하면 LOG에 남겨 달라.
+
+## 2026-10-08 15:15 Claude — Human "최신 티칭이 베스트 of 베스트, 이걸 따라 학습": 기준 티칭 고정
+- 기준 파일: `calibration/data/teach/golden/full_01_best_20261008_1504.json`(원본 `teach/full_01.json` 15:04 복사, `teach/golden/`은 덮어쓰지 않는다). 각 키포즈의 TCP FK(flange + 0.165 m)와 재생 성공 로그 경로를 함께 저장.
+  - 재생 `real_pipeline/20261008_150545_replay01_ff8z5rel`: to_grasp 69 s → 닫기, 잡힘 → to_slot 87 s → 열기 → slot_out.
+- 키포즈 TCP(base, m):
+
+| 자세 | TCP 위치 (x, y, z) | 그리퍼 축 |
+|---|---|---|
+| pre_grasp | (0.859, 0.236, 0.185) | 수평 |
+| grasp | (1.102, 0.246, 0.108) | 수평 |
+| lift | (1.090, 0.244, 0.322) | 수평 |
+| carry | (1.075, 0.242, 0.401) | 수평 |
+| above | (0.980, −0.108, 0.362) | 수직 아래 |
+| insert | (1.000, −0.110, 0.249) | 수직 아래 |
+| retreat | (0.959, −0.105, 0.454) | 수직 |
+
+  - 해석: 수평으로 테두리를 잡고 → 들고 → 운반 중 손목을 약 90° 돌려 그리퍼를 수직 아래로(접시가 세워짐) → 슬롯 위에서 11 cm 수직 하강 → 열기 → 위로 후퇴.
+- 목표 2 학습 기준(DECISIONS 10/8 계획 C3 갱신):
+  - **슬롯 좌표계** = 기준 티칭의 insert TCP pose. 실측과 바구니 모델(C1)로 다른 슬롯을 배치한다(핀 피치 20 mm, 와이어 95 mm).
+  - **sim 전문가**는 이 동작(운반 중 수직 회전 → 슬롯 위 정렬 → 수직 하강 11 cm → 열기 → 후퇴)을 슬롯 좌표 기준으로 재현하고, 바구니 pose를 무작위로 둔다.
+  - BC는 슬롯 상대 입력으로 학습한다. 실기 재생 기록(관절 20 Hz)은 sim과 실기 비교 및 추가 데이터로 쓴다.
+- 15:12 Human "접시 파지만 FP가 알려주는 대로 잘 잡으면 된다" → `--place golden` 추가.
+  - 흐름: FP + 넓은 범위 라이브러리로 잡기·들기 → 기준 티칭(golden)의 carry/above/insert/retreat.
+  - 잡는 자세가 티칭 때와 다르므로(φ/pitch, 1축 회전) 손 안의 접시 자세 차이를 보정한다: `T_tcp_new = T_tcp_taught · G_taught · G_new⁻¹`. 접시는 수평이고 중심이 tool 수평 방향으로 rim_r − inset 앞에 있다고 가정. 키포즈는 IK로 다시 풀고(티칭 관절을 seed), 60° 이상 튀면 거부.
+  - 오프라인: golden 자체 grasp는 보정 0.0°. 라이브러리 φ0/pitch0 잡기 4곳 모두 보정 약 15°(ready 계열 tool pitch −20° vs 티칭 약 −10°), 프레임 여유 ≥ 130 mm, accepted. tests 21/21.
+  - config `plate_ik_bc.golden_teach`. 실로봇 미검증 → 첫 실행은 RViz 미리보기 필수.
+
+## 2026-10-08 15:30 Claude — 목표 2 자동화 방향 확정, 바구니 치수
+- Human 결정: 바구니 위치 고정. Codex는 넓은 범위 파지를 맡고, Claude는 잡은 뒤(들기 → 운반 → 넣기 → 놓기)를 맡는다.
+  - 운반 경로: 경로 계획(IK + 셀 간섭 + 부드러운 관절 경로, `--place golden` 방식). RL·BC를 쓰지 않는다. 접촉이 없고 목표가 명확하기 때문.
+  - 넣기·놓기: BC(IL). 잡는 자세 오차를 무작위로 둔 sim 전문가 데모로 학습. RL residual은 BC 부족 시에만.
+- 바구니(Human 10/8, CAD 없음):
+  - 외곽 53 × 52 cm, 핀 줄 4개. 줄 사이 9.5 cm(x축), 줄 안 핀 피치 2 cm(y축), 핀 높이 약 6 cm, 비스듬히 기울어짐.
+  - 사진: 바구니 위에서 본 모습, 옆 두 장(Human 메시지 15:2x).
+  - 사용 슬롯: 위에서 본 사진 기준 2사분면 6번째 칸 = 기준 티칭 슬롯 1. 슬롯 2·3은 당분간 쓰지 않는다.
+  - 슬롯 좌표계는 기준 티칭 insert TCP(1.000, −0.110, 0.249 m, tool z 수직 아래)에서 정한다.
+- 주말 Claude(sim 전용): 슬롯 1 주변 파라메트릭 바구니 → 넣기 env(잡은 자세 오차 무작위) → 전문가 데모 → BC → gate ≥95% → `--place bc`(sim rollout 경로를 실기에서 재생). 실기는 10/12.
+
+## 2026-10-08 17:00 Claude — 목표 2 sim 진행(S1·S2 완료, S3 진행 중), 주말 cron 설정
+- 주말 작업표 `collab/WEEKEND_CLAUDE_2026-10-09.md`, cron 2시간 간격(:17), 세션 전용, 7일 후 만료.
+- S1: `rl/basket_env.py`, `rl/basket.yaml`, `rl/basket_tasks.py`(check/grasp/expert). 슬롯 1 주변 바구니(핀 16개 + 바닥)를 kinematic으로 두고 reset마다 무작위 배치.
+- S2: Codex 라이브러리 경로 재생으로 잡기·들기 30/32.
+- S3: 전문가 넣기 9~13/28.
+  - 개선: above에서 손 안 접시 재측정, 메시 최저점 기준 배치.
+  - 핵심 문제: 접시 아래 6 cm 띠 두께 25 mm vs 핀 사이 17 mm. 들어가는 자세는 기울기 2~4°, ±3 mm뿐이다.
+  - sim 바구니 형상이 불확실하다(CAD 없음). Human에게 철사 굵기, 핀 중심 간격, 슬롯 속 접시 옆 사진을 요청.
+- 월요일 데모 권장: FP 파지 + `--place golden`(실기에서 성공한 사람 티칭 경로 + 잡기 차이 보정). sim 넣기 학습은 형상이 확정된 뒤에 신뢰할 수 있다.
+
+
+## 2026-10-08 Codex — 추가 진단/저속 시연 재수집 진행
+- 목표1 현재 전체 영역 합격은 아직 아니다. 보충BC 최고93.95%(같은 tuning set), joint cap6deg/s/30s 전체경로 방향 선택90.82%, grasp_wait89.84%, flat 방향64.94%. 실패/상한초과도 모두 원본dump/log에 유지. 세부 JSON은 최종 report에 모은다.
+- 평평한 방향 실패 trace에서 held/낮은 tilt는 확보했으나 BC lift 높이50~56mm 진동으로 연속5초 hold 실패. 새 highlift clean300 수집 시작(`IL/data_goal1_highlift_clean_20261008`, `rl/logs/codex_goal1_highlift_clean.log`); lift11±1cm, 기록30s, TCP명령4cm/s, lead2mm, arm6deg/s, 실드 유지. 물리 commands 없음.
+- A3 combined library 전체1618 성공 후보의 home→pre retiming을 오프라인 처리 중(`optimization_combined_all_batch`). batch FK 및 같은 direct path 중복 계산 제거는 계산 방식만 바꾸며 모든 dense/retimed geometry sample과 측정 speed/acceleration gate를 유지한다. BC segment는 바꾸지 않는다. 이전 serial작업은 Codex 소유 PID1486252만 중지했고 미완 결과는 보존.
+- 회귀 테스트: calibration/tests.py21/21, test_goal1_candidates.py7/7 통과(mock I/O, 실제 장비 연결 없음).
+- 정정: 앞서17초 horizon이라고 적은 것은 collector 길이이고 env deadline은20초였다. 느려진 후보 시험만23/30초로 연장.
+
+- highlift clean300 완료: 270000 frames, 332.98s, 거부32회(추가 accepted 중 요청 수 이상은 저장하지 않음). `IL/data_goal1_highlift_clean_20261008/manifest.json`. 이어 DART300→저속 데이터 speed 선별→BC3 seed→동일1024 위치 validation을 순서대로 실행 시작. 새 모델은 기존 cfg/library로 전환하지 않는다.
+
+## 2026-10-08 16:10 Claude — 바구니 pose용 마커 (목표 2, 바구니가 옮겨져도 넣기)
+- 접근(현재 작업과 별개, Human과 합의 중):
+  1. 바구니 테두리 4변에 ArUco(DICT_4X4_100) ID 10 앞(파란 손잡이), 11 뒤, 12 왼쪽, 13 오른쪽.
+  2. 고정 D455로 바구니 6D pose를 구한다.
+  3. 슬롯은 바구니 좌표계 기준으로 티칭해 저장하고, 나머지 슬롯은 핀 피치 2 cm·줄 간격 9.5 cm로 계산한다.
+  4. above에서 손목 카메라로 미세 보정한다.
+  5. M1013 관절 토크 외력으로 갇힘을 확인한다(±3 mm 저속 좌우 이동).
+- 인쇄 파일: `calibration/data/markers/basket_markers_{50,70}mm_A4.{pdf,png}`(300 dpi, 100%로 인쇄하고 검은 사각형을 자로 확인).
+
+- A3 기존 combined 성공 후보1618개 전체 home→pre 오프라인 재계산 완료: **1618/1618 accepted**. duration12.5~29.8s(중앙17.8s), joint peak5.70deg/s, acceleration≤6.001deg/s², modelTCP≤.04933m/s, rotation≤9.804deg/s, 기존 obstacle margin에 추가 여유≥40mm. `rl/reports/20261008_goal1/optimization_combined_all_batch/{optimization.json,summary.json,retimed_prepaths.npz}`. 모든 접근은 원래 관절 직선이 이미 최단: 이동량/시간을 줄였다고 주장하지 않음. BC contact sample은 그대로 유지. 이는 기존 seed2 library의 canonical 접근 검증이며 새 highlift 모델 및 실제 adapter/carried plate 검증을 대신하지 않음.
+- 16:18 Human이 바구니 4변에 마커를 부착: 실제 ID 1(왼쪽, base x 1.49 쪽), 2(뒤, y −0.52), 3(로봇 쪽, x 0.97), 4(파란 손잡이 쪽, y +0.01). 10~13 파일이 아닌 별도 출력물.
+  - 고정 D455로 4개 모두 검출. 깊이로 잰 한 변 약 95 mm → 캘리브레이션 마커와 같은 98 mm로 가정.
+  - 마커 사이 거리: 마주 보는 쌍 ID1–ID3 520 mm, ID2–ID4 530 mm. Human 실측 바구니 53 × 52 cm와 일치. 4개 중심 base (1.228, −0.241, 0.151).
+  - ID 1은 방향 추정이 뒤집힘(작고 비스듬함, IPPE 모호성). 바구니 pose는 마커 **위치**로만 계산하기로 함.
+  - ID 1은 캘리브레이션 마커와 번호가 같아 캘리브레이션 시 겹치지 않게 해야 한다.
+  - 확인 이미지 `calibration/data/markers/check_161746.png`.
+- 16:40 `camera_tools.py basket [--define [--golden F]]`(config `basket:`, 위치만 사용):
+  - `--define`: 마커 4개 위치로 바구니 좌표계를 정의한다(원점 = 4개 평균, x = 로봇 쪽 → 먼 쪽, z = 위). 레이아웃을 `calibration/data/basket/basket_layout.json`에 저장.
+  - `--golden`: 기준 티칭의 carry/above/insert/retreat TCP를 바구니 좌표계로 `data/basket/slot_01_in_basket.json`에 저장(바구니는 티칭 이후 움직이지 않음, Human 확인).
+  - 인자 없이: 보이는 마커 2개 이상으로 평면 강체 정합 → 바구니 pose와 잔차.
+  - 현재 바구니 원점 (1.2296, −0.2467, 0.1442), x 방향 (1.0, 0.019).
+
+## 2026-10-08 17:40 Claude — 전체 바구니 CAD(파라메트릭) 완성, 녹색 큐브 제거 (Codex 공지)
+- Human: "저걸 base로 두고 학습하자." 시뮬레이션 장면은 **접시, 접시 받침 상자, 식기 바구니만** 둔다(로봇, 테이블, 프레임 셀은 유지).
+  - → `rl/plate_env.py` SceneCfg에서 예전 3단계 녹색 `target_box`를 삭제. 다른 참조는 없다(stage-3 obs `target`은 좌표만 쓴다). **Codex: 새로 실행하는 env부터 적용된다.**
+- 전체 바구니: `rl/basket_env.py`의 `full_basket_parts` / `build_full_basket_usd` / `export_full_basket_obj`, 설정 `rl/basket.yaml full:`.
+  - Human 치수: 53 × 52 × 15 cm, 핀 3~4 mm, 핀 피치 2 cm, 쌍 간격 9.5 cm.
+  - 구성: 바닥 철망 6 cm 격자, 벽 막대 5.5 cm 간격, 회색 레일 2개, 파란 손잡이, 핀 88개(접시 쌍 2개 × 2줄). 슬롯 1 쌍 위치는 기준 티칭에서, 다른 쌍은 위에서 본 사진에서 정했다.
+  - 바구니 좌표계 = 마커 좌표계(`camera_tools.py basket`), 실측 pose (1.2296, −0.2467, 0.1442, yaw 1.1°). sim에서는 reset마다 ±3 cm/±10° 이동하고 슬롯 프레임이 따라간다.
+  - 파일: `rl/assets/basket_full.usda`(sim), `basket_full.obj`(RViz·FK), `basket_full_preview.png`.
+- 18:10 넣기 전문가(전체 바구니): 사람 순서로 바꿔 IK 실패 13 → 1, 넣기 8/21. 수직 그리퍼는 x≈1.04에서 TCP z ≤ 0.38 m만 도달한다(오프라인 IK). 남은 실패는 핀 위 걸림과 열기 후 넘어짐. 주말 cron으로 계속(`WEEKEND_CLAUDE` S3).
+
+## 2026-10-08 20:10 Claude — Codex 작업 재개(목표 1) + 바구니 전문가 개선(목표 2)
+- Codex 토큰 소진으로 중단 → Human 지시로 Claude가 이어서 실행(`rl/logs/claude_goal1_resume.log`). 최종 독립 평가(`grasp_bank_final9001_xy`, 균일 xy 1024, seed 9001, speed_cap 0.04, episode 30 s):
+
+| BC | 성공 | 시간초과 |
+|---|---|---|
+| 현재 실기 라이브러리의 BC(phi_pitch seed2) | 62.5% | 35.3% |
+| Codex highlift seed1 | 79.9% | 17.9% |
+| **union(데이터 10묶음) seed1/2/3** | **93.1 / 93.6 / 93.4%** | 4.3~4.7% |
+
+  - union config: `rl/reports/20261008_goal1/bc_union_claude_config.yaml`(Codex highlift 설정 + 데이터 합침, 8000 step).
+  - union seed2로 라이브러리 생성 중(`logs/claude_union_library.log`, grasp_bank_combined, Codex confirmed-library 플래그). 실기 config는 바꾸지 않음(10/12 실기 확인 후 교체).
+- 목표 2 전문가(전체 바구니): 단면 그림으로 원인 2개 발견 → 수정.
+  - 핀이 기울어진 버그: `lean_with_plate` 무시 → 수정, 핀 수직.
+  - 슬롯 축이 바구니 행과 약 10° 어긋남 → 바구니 x로.
+  - 결과: 착지 오차 재측정 후 back-up-and-shift 재삽입(최대 3회) → **26/31, 21/28**.
+  - 성공 판정 완화: 최저점 ≤ 55 mm(핀 사이에 끼어 섬), Human 정의 "슬롯에 들어가고 움직이지 않음".
+  - 피드백 하강(closed_loop)은 슬롯 위 흔들림으로 2 mm 정렬에 수렴하지 못해 보류.
+- 20:35 목표 1: union seed2 라이브러리 완료. **1645/1672 성공**(현재 실기 1618). `calibration/data/plan_library/20261008_174557_380970/library.npz`. 오프라인 계획 8곳 모두 accepted. config 교체는 10/12 실기 확인 후.
+- 20:35 목표 2: 데모 수집(S4)이 진행 중이고, BC 학습과 평가(S5)는 수집 뒤 자동 실행되도록 걸어 둠(`rl/logs/basket_collect.log`, `basket_bc_chain.log`).
+
+## 2026-10-09 09:50 Claude — 밤사이 상황과 넣기 BC 2차
+- 10/8 20:50 데모 수집 완료(16묶음, 성공 데모 324개, `IL/data_basket_expert_20261008`). 바로 이어진 `bc_train`이 **묶음별 길이 차이 버그**로 실패했고, cron(2시간)은 한 번도 깨어나지 않아 아침까지 방치됨. 버그 수정함.
+- 1차 BC(운반 포함 전 구간, 관절 Δ 행동): 넣기 0/32. 슬롯에서 멀어지다 30~40 s에 접시를 떨어뜨림. 긴 구간(약 2000 step) + 데모 324개로는 오차가 누적됨.
+- 2차(진행 중, `rl/logs/basket_round2.log`):
+  - 데모에 단계 표시를 넣어 재수집(0 운반, 1 삽입·재시도, 2 놓기, 3 후퇴, `IL/data_basket_expert_20261009`).
+  - BC는 1단계부터만 학습한다(합의한 분담: 운반 = 계획, 넣기 = BC).
+  - 평가: 계획 운반 후 슬롯 위에서 BC로 교대(`expert --bc_takeover`), 64 env, seed 8100. 같은 seed 전문가 기준값은 44/60.
+
+## 2026-10-12 08:30 Claude — 주말 정리와 월요일 실기 계획
+- 넣기 BC 2차(10/9 10:13 완료, `rl/logs/basket_round2.log`): 계획 운반 + 슬롯 위 BC 교대에서 seed 1~3 모두 넣기 0(놓기까지 간 env 7/1/11). 처음 5 s는 전문가처럼 내려가다가 핀 근처에서 옆으로 벗어남(d_bottom 9 → 60 mm). 원인 판단: 전문가의 "재삽입"이 이전 착지 결과에 의존해 상태만 보는 BC가 따라 할 수 없고, 관절 Δ 행동이 오차를 키움. → 피드백 전문가 + 슬롯 기준 TCP 행동 + DART로 재설계 필요(미착수).
+- 10/9 10:13 ~ 10/12 아침 Isaac 작업 없음(cron 미동작, 다음 작업을 걸어 두지 않음).
+- 10/11 `--place basket` 구현(`plate_plans.golden_slot_plan(basket_delta)`, `pipeline.py`):
+  - FP 시작 전에 마커로 바구니 pose를 읽고, 티칭 이후 이동 D만큼 golden 슬롯 경로를 옮긴 뒤 잡기 차이를 보정한다. 마커 3개 미만이거나 정합 잔차 > 8 mm면 거부.
+  - 오프라인: 바구니 이동 0, ±3 cm, 5°, −8°, 10° 모두 accepted, 삽입 TCP 이동이 정확히 반영됨. mover CHECK OK, tests 21/21.
+  - 10/11 실측: 마커 3개만 보이고(ID 2 가림) 레이아웃과 27 mm 어긋남 → 종이 마커 이동 추정. **재부착 + `camera_tools.py basket --define --golden …` 재실행 필요**(바구니를 티칭 위치에 둔 상태에서).
+- 목표 1: union seed2 라이브러리 1645/1672 성공(`calibration/data/plan_library/20261008_174557_380970/library.npz`). 실기 config 교체는 오늘 실기 확인 후.
+- 08:40 Human: 오늘 넓은 범위 파지 시연부터. → `calibration/config.yaml plate_ik_bc`의 library를 union 라이브러리(1645/1672)로, checkpoint를 union seed2로 교체. 이전 값은 주석과 scratchpad `calib_config.yaml.bak_20261012`에 있다. 오프라인 계획 8곳 accepted, tests 21/21. 실로봇 첫 실행은 Human.
+- 08:45 Human: 목표 1 실기 동안 Codex가 넣기 BC를 맡는다 → 지시서 `collab/HANDOFF_CODEX_2026-10-12_basket_bc.md`(현황, 실패 원인, 피드백 전문가·슬롯 좌표 TCP 행동·DART·takeover 평가 기준, 상태표). 실로봇과 실기 config 변경은 금지.
+- 09:xx Human: 목표 1 실기 잘 됨(넓은 범위, 특이점 근처 제한 포함). bringup RViz 끄기: `run.sh connect`에 `gui:=false` 기본 추가(dsr_bringup2 launch 인자, 다시 켜려면 `gui:=true`).
+
+## 2026-10-12 09:37 Codex — 바구니 BC 인계 문서·현재 코드 검토
+- 검토 대상: `collab/HANDOFF_CODEX_2026-10-12_basket_bc.md`, `rl/basket_tasks.py`, `rl/plate_env.py`, `rl/basket.yaml`, `rl/logs/basket_round2.log` 및 기준 전문가 로그.
+- 기존 결과: 전문가 기준 seed 8100은 44/60. 이전 BC 세 seed의 안착 성공은 모두 0. 로그의 7/1/11은 grasp 전체가 아니라 BC가 gripper를 열어 후속 판정 대상으로 남은 개수이므로 다음 gate는 grasped/opened/placed 성공을 전체 episode 분모로 각각 출력하도록 기록했다.
+- 코드 blocker: closed-loop retry/backoff 상태가 관측에 빠져 있고, 0.3초 평활화 제안 미반영, 주석과 stuck 전이 시간(0.5초 vs 1.0초) 불일치. `--closed_loop --record`는 `_record` 연결이 없고 tuple 기록 형식과 NPZ 저장기가 불일치해 새 삽입 궤적을 저장하지 못하는 구조. 기존 BC도 관절값 입력·관절 Δ 출력이므로 slot-frame TCP 행동/관측 구현이 선행되어야 한다.
+- 저속 점검: SafeDiffIK의 TCP/회전 제한은 확인했지만 basket expert/BC eval에 관절 속도 cap 설정 호출은 발견되지 않음. 계측 gate 추가 전에는 관절≤20°/s를 확인했다고 볼 수 없다.
+- 이번 검토에서 Codex의 기본 Python에는 PyTorch가 없었고 `/dev/nvidia*`도 없어 Isaac 실행/학습은 하지 않았다. 아래 09:5x 정정 참고: GPU 자체가 없다는 뜻은 아니며, Isaac 번들 Python에서도 CUDA device가 이 명령 실행 환경에 전달되지 않은 상태로 확인됐다.
+- 다음 순서: (1) state-visible feedback FSM과 제한 속도 적용, (2) TCP slot-frame recorder/BC schema 및 저장물 자체검증, (3) 전문가 seed8100 비교 gate, (4) clean/DART 수집 후 BC 3 seed 평가. 성공 기준과 기존 속도 상한은 유지.
+- 상세 검토 항목은 `collab/DECISIONS.md`의 2026-10-12 Codex 항목과 `collab/HANDOFF_CODEX_2026-10-12_basket_bc.md`의 Codex 검토 메모에 기록.
+
+## 2026-10-12 09:5x Claude — Codex 검토 확인 + 실기 바구니 4단계 분리
+- Codex 검토(09:37) 확인: 지적 대부분 타당(closed-loop 재시도 상태가 관측에 없음, `--closed_loop --record` 미연결, BC가 관절 입력·관절 Δ 출력). 보충: 운반 `drive()`는 `--sim_joint_speed 20`°/s로 관절 제한됨. 관절 상한 미계측은 closed-loop(SafeDiffIK) 구간만 해당. **Codex 실행 환경에 GPU가 안 보였음**(이 호스트는 RTX 5070 정상) → Codex는 Isaac 실행 불가, 코드 작업만 가능.
+- 2026-10-12 Codex — GPU 접근 상태 정정: 앞 기록의 “GPU가 안 보였음/나중에 GPU가 연결”은 GPU 하드웨어 부재를 뜻하는 표현으로 오해될 수 있어 정정한다. `/home/pan/isaacsim-5.1.0`에는 RTX 5070 PCI 장치가 `lspci`로 확인되지만, Codex 실행 셸에는 `/dev/nvidia*` device node가 없고 `nvidia-smi`가 NVIDIA driver에 연결되지 않는다. Isaac 번들 Python의 torch 2.7.0+cu128 결과도 `cuda.is_available()=False`, device_count=0, NVML 초기화 실패다. 따라서 호스트 GPU는 있으나 현재 Codex 명령 컨텍스트에서 장치/driver passthrough가 되지 않는 것으로 판단한다. 원인은 실행 컨테이너/세션 경계인지 driver device access인지 아직 특정하지 않았다. 새 시뮬 실행은 하지 않았다.
+- Human 10/12: 넣기를 4단계로 나눔 — 1 바구니 위로 이동, 2 하강(넣기), 3 상승, 4 홈 복귀. 오늘 1은 반드시, 2는 검토.
+  - `plate_plans.golden_slot_plan`: leg를 `to_above`(들기 끝→carry→above) / `descend`(above→insert) / `ascend`(insert→retreat) / `to_home` / `abort_home`(above→홈, 접시 든 채)로 분리.
+  - `pipeline.py --place golden|basket`: 1단계 뒤 멈추고 `d`=하강, `h`=하강 없이 홈. `--stop_at_above`면 1단계 후 종료. 기존 `slot`/`teach` 경로는 그대로(to_slot/slot_out).
+  - RViz viz가 바구니 leg도 미리보기(이전엔 to_grasp/lift만 → 바구니 plan에서 빈 경로).
+  - 오프라인: 바구니 이동 0 / +3 cm / −3 cm·5° 모두 accepted, frame ≥ 125 mm, descend TCP 0.115 m 직선 오차 1.6 mm. tests 21/21.
+- 10:xx Claude (Human 승인: 순서 제안 3·4 + 손목 카메라):
+  - 2단계 하강을 `descend_pre`(above → TCP가 insert보다 7.5 cm 위, 접시 바닥 ≈ 핀 끝 2.6 cm 위, config `plate_ik_bc.basket_pre_up_m`로 변경 가능) / `descend`로 분리. pre에서 `d` = 끝까지, `u` = above로 올려 홈(`pre_up` + `abort_home`).
+  - **힘 기록(읽기 전용)**: `ros2_nodes.py flange`가 `get_tool_force`(base, N) + `get_external_torque`(관절 Nm)도 읽어 UDP로 보냄 → `robot_state.jsonl`의 `tool_force`, `ext_torque`. 서비스가 없으면 자세만. 로봇 동작은 바꾸지 않음.
+  - **손목 카메라 사진(읽기 전용)**: above와 pre에서 손목 D455 컬러 1장 + 모델 핀(바구니 마커 pose 또는 티칭 pose, 손목 hand-eye 20261006_111318_clean)을 초록으로 겹친 그림 → `real_pipeline/<run>/wrist_{above,pre}.png`(+ `.raw.png`, `.json`). 실패해도 진행은 막지 않음.
+  - 오프라인 투영: 슬롯 1 주변 핀 16개가 above(0.44~0.53 m, 핀 3.5 mm ≈ 4~5 px)와 pre(≈ 0.37~0.43 m, ≈ 6 px) 모두 화면 안. D455 depth 최소 거리(~0.5 m)보다 가까워 **깊이는 못 씀 → 컬러 영상으로 판단**. 접시가 기울어 로봇 쪽 핀 일부를 가릴 수 있음(실측 사진으로 확인 필요).
+  - 오프라인 계획 accepted, tests 21/21. 실로봇 미실행.
+- 10:2x 실기 1단계(`--place golden --stop_at_above`, run `real_pipeline/20261012_101524_plate_c6orjsli`): 파지·들기·바구니 위 도착 성공. Human: 넘어갈 때 접시가 바구니에 틱틱 걸림, 화면상 −y로 조금 더, 핀 홀은 육안으로 잘 보임.
+  - 원인(오프라인 접시 림 모델): 바구니 영역 위 접시 최저점 z 0.130 m < 바구니 테두리 ≈ 0.145 → 접촉. carry·above를 +7 cm(`plate_ik_bc.basket_transit_lift_m: 0.07`) → 최저점 0.202 m(여유 약 5.5 cm). IK 도달 확인(오차 검사 2 mm 추가).
+  - 슬롯 경로 전체 base −y 1 cm(`basket_nudge_m: [0, -0.010, 0]`, Human 확인 후 조정).
+  - 버그: 손목 사진이 들기 자세의 관절값으로 초록 핀을 그림(이동 중엔 Doosan 관절·힘 서비스 값이 갱신되지 않고, 도착 직후 값이 아직 안 옴) → 사진 전에 새 샘플을 최대 5 s 기다림. 올바른 자세로 다시 그린 그림 `wrist_above_fixed.png`: 바구니 외곽(마커 티칭 pose) ≈ 실제 레일과 맞음.
+  - 한계: 힘·관절 기록은 이동 중 갱신되지 않음(서비스 방식, 약 3.5 Hz, 정지 시만) → 이동 중 접촉 힘은 못 봄. 실시간 토픽(`/rt_topic/*`, rt 연결 필요)은 다음 과제.
+  - 마커: 4개 모두 보이나 기존 layout과 잔차 22 mm, yaw −179° → 재부착 때 ID 1·3 자리가 바뀜(지금 1 = 로봇 쪽, 3 = 먼 쪽). `--place basket` 전에 config `basket.marker_ids` 갱신 + `basket --define --golden` 필요.
+- 10:4x Human: 손목 사진의 초록 빗금(모델 핀)이 실제 핀과 다름. 확인: 초록은 검출이 아니라 **모델 핀 투영**이고 모델이 틀림.
+  - 실제 핀 = 기울어진 빗 모양 줄 2개(사진 `wrist_above_rows.png` A, B). 손목 카메라 자세로 역투영(높이 0.03~0.145 가정): A ≈ base y −0.22~−0.25, B ≈ y −0.14~−0.15, 간격 ≈ 9.5 cm(Human 실측과 일치). 모델 줄(y −0.074 / −0.169)은 +y로 약 6~7 cm 어긋나 있고, 모델 핀은 수직인데 실제는 크게 기울어짐.
+  - 바구니 레일·마커 쪽은 맞음(카메라 자세는 정상). 틀린 것은 기준 티칭에서 추정한 핀 줄 위치와 핀 모양.
+  - 다음: Human 확인 후 손목 사진으로 핀 줄 위치·기울기를 맞춰 `rl/basket.yaml full.pair_centres_y`·핀 기울기 갱신. 바닥 구멍(테이블 펀칭)은 점 모양이라, 검출은 바구니 영역 안의 줄 구조로 한다.
+- 10:5x Human: 넣을 핀 = 사진의 빗 모양 줄(A). 다른 쪽 쌍(위에서 본 사진으로 잡은 쌍)의 모델 핀은 실제와 일치 → 카메라·핀 피치·높이 모델은 맞음.
+  - 실제 슬롯 줄 A/B를 손목 사진에서 역투영(티칭 바구니 좌표): y 0.005 / 0.102(간격 9.7 cm), 중심 0.053. 모델 쌍 A 중심 0.129 → **7.6 cm 차이**.
+  - 고정 카메라 마커 평균도 티칭 때보다 base −y 7.6 cm(1.226, −0.323 vs 1.230, −0.247). 두 측정이 일치 → **바구니가 티칭 때보다 −y로 약 7.6 cm 놓여 있음**(Human "−y로 더"와 같은 방향).
+  - 바구니 모델을 −0.076 옮겨 다시 그리면 두 쌍 모두 실제 핀과 겹침: `real_pipeline/20261012_101524_plate_c6orjsli/wrist_above_shift76.png`.
+  - config `plate_ik_bc.basket_nudge_m: [0, -0.076, 0]`(이전 −0.010). 실제 잡기 자세로 재계획: accepted, 바구니 위 접시 최저점 0.204 m, 하강 직선 오차 ≤ 1.9 mm, 관절 보정 최대 26°(j1 −4.5°, 나머지는 +7 cm 들기와 잡기 보정). tests 21/21.
+  - 추가: `camera_tools.py wrist_look`(현재 자세 손목 사진 + 모델 핀, `run.sh stream` 필요, 읽기 전용).
+- 10:4x `run.sh wrist_look` 추가: 관절 스트림을 스스로 띄우고 끝나면 PID로 종료(이전엔 `run.sh stream`을 따로 켜야 해서 Human 실행이 'no joints'로 실패). 시험 OK: `data/basket/wrist_look/20261012_103947.png`.
+- 10:4x Human `wrist_look` 사진(`data/basket/wrist_look/20261012_104031`, 바구니 전체 경사 시야)에 −0.076 보정 모델을 겹침(`_shift.png`): 서 있는 핀 두 줄(넣을 쌍)이 초록과 잘 겹침 → 7.6 cm 보정을 두 번째 시야로 확인. 왼쪽 쌍은 실제 핀이 접혀 누워 있음(모델은 세워 둠, 넣기와 무관).
+- 10:5x Human: 그리퍼가 너무 깊이 들어감, 5~10 mm 덜 → `plate_rl.offset_m` x(반경 방향) 0.025 → 0.0175(7.5 mm 얕게, ik_bc도 이 값 사용, 라이브러리 반경 간격 2 mm). tests OK.
+- 10:5x 실기 2회차(`real_pipeline/20261012_104257_plate_wcaozhxy`, +7 cm 들기, −7.6 cm, 7.5 mm 얕게): 바구니 위 정지 성공.
+  - 손목 사진 초록이 보정 전 위치로 그려짐(golden 모드 사진이 nudge를 안 씀) → 수정. 보정해서 다시 그린 `wrist_above_shift.png`: 접시가 슬롯 쌍의 두 핀 줄을 모두 가로지르는 위치.
+  - FP 점검(robot_state.jsonl fp 457개): 잡기 전 정지 접시 위치 흔들림 ≈ 1 mm(x 1.1906~1.1914, y 0.2618~0.2625, z 0.0974~0.0986), 기울기 3.4~4.3°(평평한 접시의 알려진 편향). 들기·운반 중 추적(z 0.098 → 0.203 → 0.476). 접시를 세우며 기울기 25~44° 이후 값이 멈춤 = 추적 끊김(Human 확인과 같음). yaw는 둥근 접시라 의미 없음.
+  - FP 창 좌우 분할: `real_time_project/main.py --wrist_serial`(파이프라인이 자동 전달). 왼쪽 고정 카메라 FP, 오른쪽 손목 컬러(15 fps, poll이라 FP 루프를 막지 않음). 손목 카메라는 perception이 소유하고 0.5 s마다 보정 프레임을 `/dev/shm/wrist_latest.npz`로 공유 → 파이프라인 사진은 이 프레임 사용(없으면 카메라 직접). 단독 시험: 4 s에 132 프레임, 공유 OK. tests 21/21.
+- 11:0x Human(2회차 바구니 위 사진): 아직 −y로 더, 각도도 더 틀어야.
+  - 원인: 잡기 보정의 손 안 접시 모델이 "접시 중심 = 공구 방향 앞 113 mm"(방사 방향 잡기 가정). 실제 라이브러리 잡기는 FP 접시 중심이 공구 방향에서 **35° 옆, 78 mm**(offset_m의 접선 성분 0.040 때문). → 실제 접시가 목표보다 +y 4.9 cm, 위로 4.5 cm.
+  - 수정 `golden_slot_plan(plate_xy=FP 접시 중심)`: 손 안 접시를 FP 중심으로 계산. 둥근 접시라 법선 둘레 회전은 자유 → 공구 자세 변화가 가장 작은 회전 선택(안 하면 손목 71° 점프).
+  - 각도: 티칭 접시 법선 yaw −8.7°, 핀 줄(바구니 x) +1.0° → `plate_ik_bc.basket_yaw_deg: 9.7`(넣기 지점 수직축 기준 회전).
+  - 2회차 실제 잡기로 재계획: 넣기 때 실제 접시 중심 (1.023, −0.198, 0.139) = 목표, 법선 yaw 1.0°. 바구니 위 접시 최저점 0.203 m. carry에서 손목 j4/j6가 반대로 약 40°씩 돎(j5 ≈ 5°, 관절 공간 이동이라 문제는 없음). tests 21/21.
+- 11:1x Human(3회차 진행 중): 다음부터 잡을 때 그리퍼 +y 1~2 cm, 5 mm 덜 깊게 → `offset_m` [0.0175, 0.040] → [0.0125, 0.055](x 반경, y 접선 = 정면 근처에서 base +y). 진행 중인 실행에는 영향 없음(시작 때 읽음).
+- 11:1x 3회차(`real_pipeline/20261012_105522_plate_9k3yqs7f`) 바구니 위 정지: 초록 모델 핀이 실제 핀과 일치(−7.6 cm 반영), 접시가 슬롯 쌍 두 줄을 가로지름. 손목 사진의 접시 축 기울기는 핀 줄 수직에서 2~5°. 손 안 접시 모델(하늘색, `wrist_above_platemodel.png`)은 실제와 약간 다름 → 정밀 정렬은 pre 정지 사진으로.
+- 11:2x Human: 부드럽게 넣으려면 약간 더 돌려야 함 → `basket_yaw_deg` 9.7 → 14.7. carry는 손목 j5≈0 근처라 회전 보정 시 IK 점프(62°) → carry는 티칭 공구 회전 유지·위치만 보정(`golden_slot_plan`).
+  - 현재 자세(바구니 위)에서 이어 가는 계획 `data/rl_plans/20261012_110723_123_taught/plan.json`(to_above = j6 5° 회전, descend_pre, descend, ascend, to_home, pre_up, abort_home). mover CHECK OK(실행 안 함). `run.sh mover` 모드 추가(Human 실행), `wrist_look` 그림에 바구니 보정 반영. tests 21/21.
+- 11:1x Human: yaw 14.7 '아주 완벽', pre에서 +x 5 mm 필요. 손목 사진(`wrist_look/20261012_111211`) 분석: 접시 최저 가장자리(원근 보정) x≈1.090~1.095, 핀 틈 중심 1.094~1.095 → +x 수 mm 맞음. pre에서 이어 가는 계획 `rl_plans/20261012_111313_282_taught`(shift +5.1 mm → descend → ascend → to_home / pre_up, abort_home), mover CHECK OK. config `basket_nudge_m` [0.005, −0.076, 0].
+- 11:2x 버그: shift leg(목표 waypoint 1개)를 movesj로 보내면 컨트롤러가 성공을 돌려주지만 움직이지 않음(오차 = 이동량 1.83°로 STOP). 수정: taught_plan은 leg마다 최소 3구간, mover smooth는 목표 1개면 거부. 새 계획 `rl_plans/20261012_111927_921_taught`(shift 4 waypoints), mover CHECK OK.
+- 11:3x **Human 비상정지**: descend(pre → insert 7.5 cm, mover 기본 2°/s ≈ 3 cm/s)가 너무 빠르고 깊어 바구니에 무리. 지시: 더 천천히, 4~5 cm 덜 깊게.
+  - `basket_insert_up_m: 0.045`: insert 목표를 4.5 cm 올림(pre 위치는 그대로) → pre → insert 3.0 cm.
+  - `basket_insert_vel_deg_s: 0.25`: pipeline의 descend/ascend만 0.25°/s(관절 이동 1.56° → 약 6 s, TCP ≈ 0.5 cm/s). 나머지 구간은 6°/s 그대로.
+  - 3회차 잡기 데이터로 재계획 확인, tests 21/21. Human이 로봇을 기본 자세로 복구 중.
+- 11:4x RViz(`run.sh viz`)에 바구니 모델 표시: `rl/assets/basket_full.obj`를 티칭 바구니 pose + `basket_nudge_m` 위치에 회색 메시로(경로가 가정하는 바구니 위치). viz 재시작 필요.
+- 11:4x Human: pre에서 매번 x로 2~3 mm 어긋남(앞/뒤 불명), 잡기도 10 mm 덜 깊게.
+  - `offset_m` x 0.0125 → 0.0025(10 mm 얕게).
+  - **pre 정지 자동 측정** `camera_tools.plate_gap_dx`: 손목 사진에서 가장 큰 빨간 덩어리(접시)의 +x 끝(기울어진 접시의 최저 가장자리)을 두 슬롯 핀 줄 위에서 찾아 높이 `plate_bottom_at_pre_z`로 역투영 → 가장 가까운 핀 틈 중심과의 x 차이. 핀 줄은 바구니 좌표에서 묶음.
+    - 기존 사진 검증: 4회차 pre(112548) 두 줄 +7.1 / +5.4 mm(일치, 접시 각도 정렬됨), 3회차 pre(111211) +8.0 / −2.1 mm(줄마다 다름 = 그때 yaw 5° 부족, 이후 14.7°로 Human "완벽"). 높이 가정 1 cm 오차 → x 약 3 mm 오차.
+  - 파이프라인 pre 프롬프트: `d` 그대로 / `c` 측정값만큼 x 이동(`shifted_plan`, |dx| ≤ 10 mm만, 느린 속도) 후 다시 사진·측정 / `u` 복귀.
+  - 사진 그림·RViz·측정의 바구니 위치는 `basket_shift_m`(실제 바구니 이동 [0, −0.076, 0])으로 분리, 경로 보정 `basket_nudge_m`(+x 5 mm 포함)과 구분. golden plan json에 `basket_slot`(plate_centre_y, plate_bottom_at_pre_z) 기록.
+  - 정리: `RobotRecorder`를 pipeline.py → sensors.py(1000줄 제한), pipeline.py 966줄. 1-waypoint movesj 무동작 버그 수정 반영. tests 21/21.
+- 13:0x **5회차(`real_pipeline/20261012_130446_plate_m99bsg8x`) 바구니 넣기 성공**(Human: 완벽히 깊진 않지만 올바르게 place). pre → descend 3 cm 0.25°/s → 열기 → ascend 완료.
+  - 오류: ascend 끝난 직후 **pipeline 프로세스 segfault**(kernel: python3.11 내부, 스레드 스택). to_home 미실행. 원인 미확정(처음 발생). 오늘 새로 pipeline 프로세스에 OpenCV(사진·측정)를 넣었음 → 사진·측정을 자식 프로세스(`camera_tools.py pre_photo --req`)로 분리. segfault로 정리 코드가 안 돌아 perception·flange 스트림이 고아로 남아 카메라 점유 → PID 2919971, 2919940 종료.
+  - pre 틈 측정이 이번엔 +43.8 / +35.6 mm(틀림, 10 mm 제한으로 `c` 안 보임). 접시가 거의 수직이라 가장 +x로 보이는 빨간 점이 아래 가장자리가 아니라 카메라에 가까운 위쪽 가장자리였음(원근). → 가장자리 한 점 방식은 불안정, 접시 실루엣에 원판 모델을 맞추는 방식으로 교체 예정(2번 과제와 같이).
+  - 1번 과제(마커 자동 바구니 위치) 진행: `basket --define_current`(오늘 확인된 바구니 위치 = 티칭 프레임 + basket_shift_m 기준으로 마커 배치 저장, 기존 layout 보존). 지금은 마커 1이 안 보여 대기(로봇 복귀 후). golden은 `basket_shift_m`을 바구니 이동 D로 쓰고 `basket_nudge_m`은 접시 경로 미세 보정만([0.005, 0, 0])으로 정리(경로 결과 동일 확인). tests 21/21.
+- 13:1x 1번 과제 완료: `basket --define_current` → `data/basket/basket_layout_20261012_131751.json`(config `basket.layout` 교체, 이전 파일 보존). 첫 정의(131659)는 Human이 접시를 빼며 마커 1이 1 cm 움직여 잔차 10.9 mm → 재정의. 재측정 2회 잔차 0.0 mm, 바구니 이동 D = (0.1, −75.9) mm, yaw 0.0°.
+  - `--place basket`(마커) 계획 vs `--place golden`(basket_shift_m) 계획: 5회차 잡기로 insert TCP 차이 0.2 mm 이내 → 이제 바구니를 옮겨도 마커로 따라감. 종이 마커가 닿으면 움직이니 테이프 고정 필요. 정합 잔차 > 8 mm면 파이프라인이 거부.
+- 13:4x 3번 과제(손목 카메라로 실제 핀) 진행:
+  - `--place basket`을 기본값으로(README 반영).
+  - 사진 확대 결과 실제 슬롯 핀은 "레일에 붙은 기울어진 빗살" → Human 실측: 레일 4.9 cm, 빗살 끝 높이 약 11~12 cm, −x로 10~15° 기울기. `rl/basket.yaml pins`: height 0.060 → 0.118(축 길이), lean_with_plate false → true, `lean_deg: 12.5`, `rail_z: 0.049`(빗살 레일 추가). `basket_env.py` 반영. **sim 바구니 형상도 바뀜(Codex 주의, USD 재생성 필요)**. RViz용 `rl/assets/basket_full.obj` 재생성(이전 것 scratchpad 백업).
+  - 새 모델을 5회차 pre 사진에 겹침(`wrist_pre_tines.png`): Human "거의 올바르게 정렬".
+  - 자동 맞추기(챔퍼: 빗살·레일 모델 선 vs Canny 경계, ±8 mm): 바구니 위 사진 3장 dx −3.5/−2.5/−2.5 mm, dy −1/−1/+4 mm(일관), pre 사진 2장 +7.5/+4.5 mm(접시가 빗살 대부분을 가려 불안정). 비용 대비 차이가 작아(2.58 vs 중앙값 2.86) 아직 로봇 보정에 쓰지 않음. ±15 mm 범위에선 빗살 간격(2 cm) 때문에 옆 빗살로 붙음.
+- 13:5x 시연 준비: pre 틈 자동 측정(`c`)은 기본 끔(`plate_ik_bc.basket_pre_measure`, 기본 false; 한 점 방식 불안정). pre 안내 문구 수정: 새 빗살 모델로 보면 pre의 접시 바닥(≈ 0.089 m)은 빗살 끝(≈ 0.115 m)보다 아래, 레일(0.049 m) 약 4 cm 위.
+- 13:3x Human 바구니 9 cm 이동 → 마커 정합 잔차 18 mm로 파이프라인 거부(종이 마커가 바구니와 같이 안 움직임). Human 마커 단단히 고정(재측정 3회 1 mm 안) → 마커 간 거리가 이전 배치와 최대 17 mm 달라 재정의 필요. Human이 바구니를 원래 자리 근처로 되돌림 → 기준 대비 정합 (+4.0, +1.6) mm / 중심 (+1.7, −7.0) mm(±1 cm 불확실) → `basket --define_current` → `basket_layout_20261012_133410.json`(config 교체), 재측정 잔차 1.1 mm. 남은 수 mm 기준 오차는 첫 실행의 바구니 위 손목 사진(초록 빗살)으로 확인.
+- 13:4x Human: 6회차 **완벽 성공**(마커 재정의 후 `--place basket`). 이어 바구니를 옮김(기준 대비 약 +5 cm, +4~5 cm) → 4-마커 정합 잔차 14 mm(마커 4가 xy 약 1 cm 어긋나게 읽힘, 다른 자리에서 단일 카메라 ArUco 오차) → `basket_fit_robust`: 잔차는 xy만, 8 mm 넘으면 3-마커 최적 조합(마커 4 제외 시 4.1 mm, 자세 차이 3.5 mm). pipeline 적용, tests 21/21.
+- 13:5x 7회차: 바구니를 기준보다 x +5, y +5 cm 옮겨 `golden above/insert` IK 실패("Unreachable IK target"). 원인 = 도달 한계: 공구를 거의 수직으로 세운 넣기 자세는 TCP (1.065, −0.18, 0.27)에서 이미 팔이 다 펴짐. 실제 잡기 자세로 스캔(기준 위치 대비): 로봇 쪽(−x)은 −10 cm까지 모두 가능, 먼 쪽(+x)은 y +0~+5 cm에서 +2 cm까지, y −5 cm에선 0, y +10 cm에선 +4 cm까지. → 기준 위치가 이미 도달 한계 근처.
+  - 수정: golden IK에 시드 추가(j1을 목표 방향으로 돌린 티칭 자세, 이전 자세)·실패 시 목표 TCP와 "로봇 쪽으로 옮기세요" 안내. tests 21/21.
+- 13:5x Human: 첫 하강(above → pre) 너무 빠름 → `basket_pre_vel_deg_s: 1.5`(descend_pre, pre_up; 이전 6°/s). 다음 실행부터.
+- 14:0x Human: 이제 전부 자동, 그리퍼 열고 닫기도 자동 / RViz로 전체 궤적을 먼저 보고 싶음(바구니 경로가 들기 후에야 만들어져 미리보기가 늦음).
+  - 바구니 경로를 잡기 계획 직후(이동 전) 계산: 도달 실패를 움직이기 전에 거부, RViz에 잡기 + 바구니 전체(`<run>/preview_plan.json`)를 바로 보냄. 들기 후엔 같은 계획 재사용.
+  - `--auto`: 시작 문구 1회 뒤 사람 입력 없음. 그리퍼는 정해진 정지 지점에서만(시작·실패 시 열기, 잡기 자세 도착 후 닫기, 넣기 끝에서 열기). 닫기 전 FP 접시 위치가 계획 때보다 15 mm 넘게 움직였으면 닫지 않고 되돌아감(`plate_ik_bc.auto_max_plate_move_mm`). 닫은 뒤 Robotiq 물체 감지로 확인(기존). 바구니 정지점은 자동 `d`. 그리퍼는 비상정지 회로 밖이라: 명령은 로봇 정지 상태에서만, 이동 실패·비상정지 시 파이프라인이 멈춰 그리퍼 명령도 안 나감, 힘 64/255.
+  - (Human 제안 bbox 겹침 대신 로봇 자세 + FP 3D 위치 + 그리퍼 물체 감지 사용: 2D 겹침은 높이 차이를 구분 못 함.)
+  - Isaac export 함수 pipeline.py → plate_plans.py(pipeline 929줄). tests 21/21.
+- 14:1x **완전 자동 1회차 성공**(`--auto`, `real_pipeline/20261012_140945_plate_kt4f65jt`): 시작 문구 외 사람 입력 0. 접시 FP (0.986, 0.314), 그리퍼 자동 닫기(물체 감지 OK) → 들기 → 바구니 위 → 1.5°/s 하강 → 0.25°/s 넣기 → 자동 열기 → 상승 → 홈. 바구니 경로는 이동 전 계산(`preview_plan.json`).
+- 14:3x Human: 바구니까지 갈 때 더 높게(불안). 바구니 위 최저점은 above 높이가 결정(carry를 올려도 거의 그대로). → `basket_carry_lift_m: 0.15`, `basket_transit_lift_m: [0.13, 0.10, 0.07]`(닿는 가장 높은 값 자동 선택). 기준 위치: above +10 cm(이전 +7), 바구니 위 접시 최저점 0.201 → 0.235 m(테두리 0.145~0.17 위 6.5~9 cm). 로봇 쪽 5 cm: +13 cm, 0.263 m. 진행 중인 5회 실험에는 다음 실행부터 적용. tests 21/21.
+- 14:4x Human: 미끄러져 들어가게 접시를 +x로 ~30° 기울이자 → 확인 질문: '윗부분(그리퍼 쪽)이 +x로', 15°부터. `golden_slot_plan`에 `basket_tilt_deg`(바구니 y축 둘레, 넣기 때 접시 최저점 기준 회전; above/insert/retreat, carry 제외). 도달: 기준 바구니 자리에서 +15° 불가, 로봇 쪽으로 12 cm(above +4 cm) / 16 cm(+7 cm) / 20 cm(+13 cm) 이동 시 가능. 반대 방향(−)은 기준 자리에서도 가능. config `basket_tilt_deg: 15`. 주의: 빗살은 −x로 12.5° 기울어 있어 +x 기울임은 빗살과 교차 → 첫 시도는 --auto 없이 pre 정지에서 확인 권장.
+- 14:5x Human: 테이블 전체가 닿을 텐데 왜 리치 문제냐(바구니는 티칭보다 훨씬 로봇 쪽: 마커 측정 −86 mm). 재검증: IK에 무작위 시드 60개 추가 후에도 tilt +15° above 해 없음(공구 z (−0.28, −0.05, −0.96), TCP (1.00, −0.17, 0.42)). 무작위 시드 전역 검사(scratchpad reachgeo.py): TCP z 0.42에서 공구 수직은 x ≤ 1.0 가능, 공구가 −x를 향하게(플랜지가 바깥) 30° 기울이면 x 1.0도 불가, 반대(+x)로 기울이면 x 1.1까지 가능. 원인 = 실제 기구학(손목 중심이 TCP보다 약 0.29 m 위·바깥, 어깨–손목 최대 약 1.18 m), 학습과 무관. tilt 0은 지금 위치에서 가능. +15°는 바구니를 약 4 cm 더 로봇 쪽으로.
+- 15:0x Human(+15° 기울임 넣기 성공 확인): "이 각도는 돼야 완벽히 꽂힘", 두 번째 하강 1 cm 더, 기울이니 2칸(4 cm) 로봇 쪽(−x) 핀에 들어감(질문으로 방향 확인).
+  - `basket_insert_up_m` 0.045 → 0.035(pre → insert 4 cm).
+  - `basket_tilt_x_comp_m: 0.04`: 기울임이 있을 때만 바구니 x(핀 줄) 방향 +4 cm.
+  - 바구니를 −146 mm로 당긴 상태에서도 +4 cm까지 넣으면 tilt 적용 above/retreat가 닿지 않음 → 기울임은 **insert에만**(접시는 descend_pre 동안 돌아감, pre에서 이미 기울기 1.8°), above는 세운 채 높게(+13 cm, 바구니 위 접시 최저점 0.266 m), retreat는 tilt 시 insert에서 수직 8 cm(`basket_retreat_up_m`). 넣을 때 접시 기울기: 수직에서 약 2°(티칭 12.8°에서 +15°). 5회차 잡기 + 지금 바구니(마커 −146 mm)로 계획 OK. IK 무작위 시드 60개 fallback 추가. tests 21/21.
+- 15:1x Human: 두 번째 하강 1 cm 더 → `basket_insert_up_m` 0.035 → 0.025(pre → insert 5 cm, 티칭 깊이보다 2.5 cm 위).
+- 15:2x 바구니 이동 범위(지금 설정: 기울임 15°+4 cm, 5회차 이후 최신 잡기, 마커 1·2·3 6.7 mm): 지금 바구니 중심 (1.087, −0.243), 티칭 대비 −149/−31 mm. 지금 자리 기준 +x(멀리) +3 cm부터 불가, 로봇 쪽 −5/−10 cm는 y ±15 cm 모두 가능(above +13 cm), 지금 x에서는 y −5~+15 cm 가능, −10 cm 이하 불가.
+- 15:3x Human: 2단계 하강 '0.5mm' 더 → 0.5 cm로 해석, `basket_insert_up_m` 0.025 → 0.020(pre → insert 5.5 cm). 이제 정지 없이 연속 동작 → `--auto`로 실행.
+- 15:4x 자동 실행(`real_pipeline/20261012_150405_plate_ozt_ayxg`): 기울임 15°+4 cm로 **넣기 매우 잘 됨**(Human). ascend(0.25°/s, 33 s) 중 pipeline 다시 segfault(두 번째, 둘 다 열기 후 ascend 구간, 사진 자식 프로세스 분리 후에도 발생 → OpenCV 원인 아님). 고아 perception·flange(2972115, 2972014) PID 종료. 대책: `faulthandler`로 모든 스레드 스택을 `<run>/faulthandler.log`에 기록(다음에 원인 확인), 배경 자식(perception, flange, publisher)에 PR_SET_PDEATHSIG(파이프라인이 죽으면 같이 종료, mover는 제외). tests 21/21.
+- 15:5x Human: 시작 전 'Unreachable IK target'. 원인: 기울임 시 retreat(insert에서 수직 8 cm) IK가 fallback 없이 실패(바구니 −125/+34 mm, 이전보다 2.4 cm 멀리). 수정: 8 → 6 → 4 → 3 cm 중 닿는 가장 높은 값. 최신 잡기 + 지금 바구니: retreat 6 cm, 바구니 위 접시 최저점 0.271 m, 넣기 기울기 2.2°. tests 21/21.
+- 16:0x Human: 접시 넣기 위치·깊이 모두 완벽. 다음 목표 3가지: (1) 여러 접시(테이블 위 여러 개 / 바구니 여러 칸), (2) 받침(약 11 cm) 없이 테이블 바닥에 놓인 접시 잡기, (3) 접시·바구니 위치를 바꿔도 같은 작업. Claude 제안 순서: (3) 운반 경로 계획 + 바구니 충돌 검사(사람 도움 불필요) → (1) 칸 선택·부분 열기·꽂힌 접시 회피·FP 바구니 영역 제외 → (2) 바닥 접시용 새 잡기(시뮬레이션 라이브러리 재생성, Human 티칭 1회 필요).
+- 15:3x 바닥 접시 잡기 티칭 시작: 받침 없이 테이블 위 접시 FP 측정 `data/teach/floor/plate_20261012_153425.json`: root (0.972, 0.344, −0.003) m, 흔들림 0.2~0.4 mm, 기울기 3.7°(평평한 접시 편향). Human 티치패드 조그 + gripper.py 직접 조작, Claude는 관절값 읽기만.
+- 15:4x 바닥 잡기 save1(잡기 직전, 열림 84 mm): TCP (0.902, 0.312, 0.031), 수평 아래 28°, 접시 중심에서 수평 77 mm. Human 실측: 아래 손가락–테이블 0.7~0.9 mm(닿지 않음) → Claude의 손가락 끝 추정(−6 mm)은 손가락 기하가 틀림(나중에 이 값으로 보정), 툴 외력 −8 N은 접촉이 아닌 자세 의존 오프셋.
+- 16:2x 직접 교시 시 손목 처짐 원인: 컨트롤러에 툴 미설정(get_current_tool '', 무게 0) → Human 실행 스크립트(scratchpad settool.py, 사본 `data/teach/floor/settool_used_20261012.py`): set_robot_mode 0 → config_create_tool('gripper_d455', 1.45 kg, cog (0, −20, 70) mm) → set_current_tool → set_robot_mode 1, 모두 True, 현재 툴 'gripper_d455'. (Claude 직접 실행은 auto-mode 권한 검사에서 거부, 펜던트 수동 모드로는 Access control deny.) 무게는 사양 추정값, 처짐/외력으로 확인 필요.
+- 16:3x Human: 툴 설정 후 직접 교시 시 앞으로 쏠림 → 원래대로(툴 없음) 되돌리기 요청. scratchpad `resettool.py`(0 kg 툴 'none_0kg' 선택 후 gripper_d455 삭제, 모드 1 복귀) 준비, Human 실행 대기. 로봇 연결은 'Disconnected.. check Ethernet' 로 끊긴 상태.
+
+## 2026-10-12 마감 요약 (Claude)
+- 목표 1 실기 완료(넓은 범위 파지). 목표 2: 바구니 넣기 실기 성공(위치·깊이 Human "완벽"), 바구니 이동 후 성공, `--auto` 연속 5회 완주. 주요 변경: 4단계 분리(바구니 위 / 넣기 직전 / 넣기 / 홈), 마커 바구니 측정(`basket --define_current`, `basket_fit_robust`), FP 기반 손 안 접시, 회전·기울임·높이·깊이·속도 설정, 손목 카메라 사진, 이동 전 전체 계획 + RViz 전체 미리보기, `--auto` 그리퍼, 빗살 실측 모델, IK 무작위 시드, segfault 대비(faulthandler, 자식 프로세스 동반 종료), README 정리.
+- 미해결: 파이프라인 segfault 원인(다음 발생 시 `faulthandler.log`), 바구니 자유도(도달 한계·운반 경유점), 바닥 접시 잡기(테두리 끝 집기 실패, 위에서 벽 집기 검토), 여러 접시, 툴 무게 되돌리기(`scratchpad resettool.py`, Human 실행 대기).

@@ -22,7 +22,7 @@ import numpy as np
 import real_pose_dryrun as dry
 import ros2_pendant_mover as mover
 from calib_utils import inv_T, load_json, rot_angle_deg, save_json
-from kinematics import DEFAULT_URDF, Kinematics
+from kinematics import DEFAULT_URDF, HOME_JOINTS_DEG, Kinematics
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
@@ -300,7 +300,7 @@ def run(args):
                            nanosec=int((stamp % 1) * 1e9))), now=now)
         if T is None:
             raise RuntimeError('offline pose stability check failed')
-        res = make_plan(kin, checker, T, np.zeros(6), pargs, t_path)
+        res = make_plan(kin, checker, T, np.radians(HOME_JOINTS_DEG), pargs, t_path)
         res['joint_source'] = 'synthetic_offline'
         res['offline_test'] = True
         # An offline fixture must never qualify as a plan for real motion.

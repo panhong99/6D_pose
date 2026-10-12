@@ -1,0 +1,165 @@
+# Real-robot side: M1013 + 2F-85 + two D455 (fixed, wrist).  Read by calib_core.load_config() in every calibration/ tool.
+# Units: metres / degrees unless the key says otherwise.  Relative paths are relative to calibration/.
+# Safety limits of the real-robot mover are NOT here: they are constants in ros2_nodes.py (speed <= 2 deg/s).
+
+paths:
+  data: data
+  m1013_share: /home/pan/pan/doosan_ws/install/dsr_description2/share/dsr_description2
+  cell_json: data/real_cell_measured.json          # measured frame / table (overrides robot_model.FRAME_CELL)
+  intrinsics: data/real_d455_intrinsics.json       # fixed D455 colour K at 1280x720 (PnP of the fixed camera)
+  gripper_dir: ../assets/robotiq_2f85              # mujoco_menagerie Robotiq 2F-85 (sim scene)
+  plate_obj: ../demo_data/029_plate/tsdf/textured.obj
+  ros_setup: /opt/ros/jazzy/setup.bash
+  doosan_setup: ../../doosan_ws/install/setup.bash
+
+robot:
+  home_joints_deg: [-5.98, -14.75, 117.74, -3.92, 7.46, -85.07]   # Human home pose (2026-10-02)
+  robot_id: dsr01
+  controller_ns: dsr_controller2
+  host: 192.168.127.100            # controller; this PC needs 192.168.127.5/24 on enp5s0 after a reboot
+  port: 12345
+  coupling_m: 0.020                # AGC-DOO-KIT-85 flange coupling (Human 2026-10-02)
+
+cameras:
+  fixed_serial: "338122300585"
+  wrist_serial: "338122303684"
+  width: 1280
+  height: 720
+  fps: 30
+
+udp:                               # all on 127.0.0.1
+  fp_pose: 5005                    # real_time_project/main.py -> mesh-to-camera 4x4 + timestamp
+  flange: 5006                     # ros2_nodes.py flange -> {posx, posj, t}
+  publish: 5010                    # pipeline -> ros2_nodes.py publisher
+  viz: 5011                        # pipeline -> ros2_nodes.py viz (RViz plate / plan preview)
+  export_server: 5012              # TCP: pipeline -> warm rl/eval.py serve (pipeline.py --export_server)
+
+marker:                            # loose calibration marker (wrist hand-eye + fixed camera)
+  id: 1
+  dictionary: DICT_4X4_100
+  size_m: 0.100                    # nominal print
+  scale: 0.98                      # printed / nominal (tape ~98 mm, hand-eye fit 0.977)
+  pixels_per_cell: 10              # ArUco bit sampling; OpenCV default 4 missed the oblique 100 mm marker
+
+basket:                            # dish basket pose from 4 ArUco markers on its rim (Human 2026-10-08 16:1x)
+  marker_ids: {robot_side: 3, far: 1, handle: 4, back: 2}   # robot side x~0.97, far side x~1.49, blue handle y~+0.01
+  marker_size_m: 0.098             # same print as the calibration marker (depth estimate ~95 mm); ID 1 = calibration ID!
+  n_frames: 20
+  layout: data/basket/basket_layout_20261012_133410.json   # 10/12 14:xx re-fixed markers (was basket_layout_20261012_131751.json); 13:2x markers re-taped: --define_current (today's basket = teaching frame + basket_shift_m); was data/basket/basket_layout.json
+
+capture:                           # one sample = n_frames marker poses averaged while the robot is still
+  n_frames: 20
+  still_s: 1.5
+  still_mm: 0.3
+  still_deg: 0.1
+
+wrist:                             # eye-in-hand T_flange_cam (calibrate.py wrist)
+  max_jitter_mm: 1.0
+  min_tilt_deg: 15.0
+  min_dist: 0.3
+  max_dist: 0.7                    # solve filter used for the 2026-10-06 result (14 of 19 samples); capture beyond it is ignored
+  min_new_mm: 20.0
+  min_new_deg: 8.0
+  target_samples: 20
+
+fixed:                             # fixed-camera T_base_cam from wrist-located markers (calibrate.py fixed)
+  max_jitter_mm: 2.0
+  min_tilt_deg: 10.0
+
+gt_compare:                        # FoundationPose x T_base_cam vs wrist-GT marker on the cube (calibrate.py gt)
+  marker_id: 1
+  marker_size_m: 0.045
+  dictionary: DICT_4X4_50
+  cube_edge_m: 0.057
+  max_jitter_mm: 1.0
+  min_tilt_deg: 10.0
+
+stability:                         # FoundationPose stream: last n poses must agree
+  n: 8
+  mm: 3.0
+  deg: 3.0
+
+planner:                           # pipeline.py: top-down pregrasp above the cube, collision-checked joint path
+  margin_m: 0.10
+  pregrasp_height_m: 0.10
+  tool_length_m: 0.0               # Human decision pending (gripper not yet modelled in the real plan)
+  tool_radius_m: 0.05
+  reach_m: [0.25, 1.25]
+  z_m: [-0.03, 0.15]
+  max_segment_deg: 45.0
+  prompt: "rubik's cube"
+  conf: 0.15
+  timeout_s: 180.0
+
+gripper:                           # Robotiq 2F-85 via USB-RS485 (FTDI) on this PC; gripper.py (system Python + pyserial)
+  port: /dev/ttyUSB0
+  slave: 9
+  baud: 115200
+  force: 64                        # 0..255 (1/4 of max, Human 2026-10-07); speed is always the slowest (hard-coded in gripper.py)
+
+plate_rl:                          # pipeline.py --task plate: FoundationPose plate -> RL policy rollout plan -> supervised legs
+  isaaclab: /home/pan/IsaacLab/isaaclab.sh
+  checkpoint: /home/pan/IsaacLab/logs/rsl_rl/m1013_2f85_il_residual/2026-10-07_15-15-44_stage2/model_400.pt   # BC+RL, gate 97.9 %
+  residual_base: /home/pan/IsaacLab/logs/rsl_rl/m1013_2f85_rim_slow/2026-10-07_14-05-09_stage2_bc/model_0.pt   # its BC actor
+  prompt: red plate
+  tolerance_mm: [25.0, 25.0, 15.0]   # 2026-10-08: 10 -> 25 mm (hand placement; export still needs sim success). |x|, |y|, |z| of the plate root from the trained spot (rl/config.yaml plate_xy, box_h)
+  max_tilt_deg: 8.0                  # FoundationPose shows ~4 deg on a flat plate (bias), 5 deg was too tight
+  placement_timeout_s: 600           # time to place the plate inside the trained area
+  offset_m: [0.0025, 0.055]          # 2026-10-12 11:4x Human: still too deep, ~10 mm shallower -> x 0.0125 -> 0.0025.
+                                     # 2026-10-12 11:1x Human: grasp 1-2 cm more +y and 5 mm shallower -> [0.0175, 0.040] -> [0.0125, 0.055]
+                                     # (x = radial, y = tangential, turned with the plate azimuth: ~ base +y near the front).
+                                     # 2026-10-12 Human: gripper goes in too deep, 5-10 mm shallower -> radial x 0.025 -> 0.0175 (7.5 mm).
+                                     # 2026-10-08 13:3x Human: grasp ~5 mm shallower -> -0.005 x (0.993, -0.117) along the finger approach.
+                                     # was [0.030, 0.039]: added to the FoundationPose plate root before the rollout (real-vs-sim grasp correction).
+                                     # 19:20 Human (2nd run): grasp 2 cm more to the robot's left (+y) and 1 cm deeper along the
+                                     # finger approach (tool axis xy ~ (0.993, -0.117)) -> (0.02, 0.02) + (0.0099, 0.0188) .
+                                     # 2026-10-07 Human: the real grasp needed the plate ~2 cm toward the robot and ~2 cm to its
+                                     # right (estimate from memory) -> real gripper lands at sim (-2, -2) cm -> plan for (+2, +2) cm.
+                                     # The placement check uses FP + offset, so place the real plate at trained spot - offset.
+  start_tolerance_deg: 3.0           # robot must be this close to the home joints
+  keep_perception: true              # FoundationPose window keeps tracking during the motion (pose logged with the joints)
+  export_envs: 8                     # sim rollouts per plan (8 instead of 16: GPU shared with FoundationPose)
+  vel_deg_s: 6.0                     # joint speed AND accel of the smooth legs (Human 19:3x: 3x the former 2 deg/s; cap 6)
+  hold_s: 3.0                        # pause with the plate lifted before lowering
+
+plate_ik_bc:                       # pipeline.py --task plate --plate_policy ik_bc (2026-10-08): overrides plate_rl keys
+  checkpoint: /home/pan/IsaacLab/logs/rsl_rl/m1013_goal1_union_claude_20261008_seed2/2026-10-08_17-38-42_stage2_bc/model_0.pt
+                                   # 10/12: the library's BC (union of all demo sets); was m1013_goal1_phi_pitch_slow_20261008_seed2
+                                   # 15:5x: the library's BC (export/--no_library still roll it out); was
+                                   # m1013_2f85_ik_sweep_pw1_nofinger/2026-10-08_12-25-33_stage2_bc (validated 10/8 real x5)
+                                   # BC only (IL), translation-invariant inputs (no arm joints / xy / fingers), 1200 demos;
+                                   # sim IK-approach gate 1024 env: 98-100 % for dx -9..+15 cm, y +-20 cm (3 seeds)
+  residual_base: null              # no RL residual
+  approach: ik                     # straight TCP line from ready to the rim, BC takes over within handoff_m
+  handoff_m: 0.04
+  approach_fast_sim: 4.0           # plan rollout only: IK line 4x faster in SIM (real robot still 6 deg/s)
+  library: data/plan_library/20261008_174557_380970/library.npz
+                                   # 2026-10-12 (Human: demo wide grasp): union BC seed2 library, 1645/1672 sim ok;
+                                   # union BC uniform-xy final test 93.6 %.  was ../rl/reports/20261008_goal1/variant_library_combined/library.npz
+                                   # 2026-10-08 15:5x (Human: use now): Codex candidate, BC m1013_goal1_phi_pitch_slow seed2,
+                                   # r 0.85-1.32 m x phi -40..40 x pitch -15/0, 1618/1672 sim ok (home sweep + grasp + 5 s hold).
+                                   # NOT yet run on the real robot.  was: data/plan_library/20261008_133418/library.npz
+  max_azimuth_deg: 60              # plate direction from the base +x axis (frame / camera view); cell clearance checked per plan
+  tool_length_m: 0.165             # flange -> 2F-85 pinch point, for the FK cell clearance of library plans
+  tool_radius_m: 0.06
+  golden_teach: data/teach/golden/full_01_best_20261008_1504.json   # Human 10/8 15:1x "best of best" basket path (--place golden)
+  # (superseded below) basket_transit_lift_m: [0.13, 0.10, 0.07]   # (10/12 Human: still uneasy) above this much higher than taught, the highest
+                                     # the arm reaches (vertical tool: +10 cm max at the reference spot, +13 cm 5 cm closer); was 0.07
+  basket_carry_lift_m: 0.15          # (10/12) carry (flat plate over the wall) higher than taught; was = transit lift 0.07
+  basket_shift_m: [0.0, -0.076, 0.0]  # (10/12 real) where the basket really is vs the teaching (wrist photo rows + marker mean):
+                                     # drawings, RViz and the pre-stop gap measurement use this (not the path nudge below)
+  basket_nudge_m: [0.005, 0.0, 0.0]   # 13:2x: plate-path tweak only (the basket move is basket_shift_m for golden, markers for basket);
+                                     # was [0.005, -0.076, 0]. 11:1x Human at the pre stop: +x 5 mm (was [0, -0.076, 0]); (10/12 real) basket sits 7.6 cm further -y than at the teaching (wrist photo rows + marker mean agree); was -0.010
+  basket_yaw_deg: 14.7                # (10/12 real) turn the slot path about the vertical at the insert: 9.7 = plate normal (taught -8.7) along the pin rows (+1.0);
+                                      # 11:2x Human "a bit more for a smooth insert" + wrist photo plate trace ~5 deg short -> +5 (was 9.7)
+  basket_insert_up_m: 0.020           # 15:3x Human "0.5 mm" read as 0.5 cm deeper (was 0.025); 15:1x 1 cm deeper again (was 0.035); 14:5x 1 cm deeper (was 0.045). (10/12 e-stop) Human: 7.5 cm descent from pre forced the plate -> 4.5 cm less
+  basket_insert_vel_deg_s: 0.25       # (10/12 real, e-stop) descend / ascend in the pins (was 6 pipeline / 2 mover): 3 cm in ~6 s, ~0.5 cm/s TCP
+  basket_tilt_deg: 15.0              # (10/12 Human) plate top tilted toward +x (away from the robot) so it slides in; Human wants
+                                     # ~30, start 15. Pivot = the plate's lowest rim point at the insert. Needs the basket >= 12-16 cm
+                                     # closer to the robot than the reference spot (reach). 0 = taught tilt
+  basket_tilt_x_comp_m: 0.04         # (10/12 Human) with the tilt the plate landed 2 pins (4 cm) toward the robot: move +x (only when tilted)
+  basket_retreat_up_m: 0.08          # (10/12) when tilted: release, then straight up this much (taught retreat out of reach)
+  basket_transit_lift_m: [0.13, 0.10, 0.07]   # (moved here 14:5x)
+  basket_pre_vel_deg_s: 1.5          # (10/12 Human) above -> pre (first descent, ~11 cm) and back: was 6 deg/s
+  basket_pre_up_m: 0.075              # look stop: TCP this far above insert (plate bottom ~2.5 cm over the pin tops)
+  workspace_mm: {x: [-80, 140], y: [-180, 180], z: [-15, 15]}   # FP + offset - rl plate_xy; dx < -90 mm collides in sim

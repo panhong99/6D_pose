@@ -1,74 +1,63 @@
-# 실기 파이프라인 구성
+# calibration/ — 실로봇 쪽 (M1013 + 2F-85 + D455 2대)
 
-평소 사용 순서는 루트 [README.md](../README.md)의 **터미널 두 개 실행**을 참고합니다.
+평소 실행 순서는 루트 [README.md](../README.md) 2·3장을 봅니다. 여기는 파일 지도와 실행 환경입니다.
+모든 수치(시리얼, 마커, 포트, 캡처 기준, 계획 파라미터)는 `config.yaml`에 있습니다. 실로봇 mover의 속도 한계(2 °/s)만 안전을 위해 `ros2_nodes.py` 안의 상수입니다.
 
-```bash
-# 터미널 1 (연결)
-bash calibration/run_robot_connection.sh
+## 파일
 
-# 터미널 2 (인식·계획·결과 발행, 이동 없음)
-bash calibration/run_cube_pipeline.sh --serial 338122300585
+| 파일 | 실행 환경 | 내용 |
+|---|---|---|
+| `config.yaml` | – | 경로, 로봇(홈 자세·네임스페이스·IP), 카메라 시리얼, UDP 포트, 마커, 캡처·계획 기준 |
+| `calib_core.py` | 어디서나 | 변환·posx, ArUco, hand-eye 풀이(eye-to-hand / eye-in-hand / 고정 카메라 평균·PnP), 최신 결과 선택, `selftest()` |
+| `robot_model.py` | 어디서나 | M1013 FK/IK, 작업 셀 박스·거리장 충돌 검사·RRT, 경로 보간·시간 배분. `reach`(IK 도달 지도), `points`(충돌 샘플 캐시) |
+| `sensors.py` | conda | D455 컬러 스트림, UDP 수신(로봇 pose 5006, FP pose 5005), 마커 샘플 캡처, `RobotRecorder`(실행 기록) |
+| `calibrate.py` | conda | `wrist`(T_flange_cam), `fixed`(T_base_cam), `gt`(FP 오차 측정), `selftest` |
+| `camera_tools.py` | conda | `preview`, `marker`, `probe`, `basket`(마커로 바구니 위치, `--define_current`), `wrist_look`·`pre_photo`(손목 사진 + 모델 핀) |
+| `pipeline.py` | conda | 접시(`--task plate`): FP → 잡기 계획 → 바구니 계획 → 구간별 실행(`--auto`). 큐브 작업과 티칭(`--task teach/replay`)도 |
+| `plate_plans.py` | conda | 잡기 라이브러리 선택, 티칭 경로, `golden_slot_plan`(바구니 이동·손 안 접시·기울임·높이 보정 + IK), Isaac export |
+| `ros2_nodes.py` | 시스템 Python + ROS | `flange`(읽기 전용 pose·외력 스트림), `publisher`, `mover`(구간 실행), `viz`(RViz 미리보기 + 바구니) |
+| `gripper.py` | 시스템 Python | Robotiq 2F-85 (USB-RS485), 가장 느린 속도 |
+| `sim_scene.py` | Isaac Sim | 실제 셀 디지털 트윈(캘리브레이션된 카메라 시점 렌더, 궤적 재생) |
+| `tests.py` | conda | 하드웨어 없는 회귀 시험 21개 |
+| `run.sh` | bash | `connect`, `stream`, `viz`, `pipeline`, `mover`, `wrist_look`, `sim`, `tests` (환경 설정 포함) |
+| `data/` | – | 캘리브레이션 결과·샘플·계획(덮어쓰지 않음) |
+| `archive/` | – | 2026-10-06 정리 전 파일(실행하지 않음) |
 
-# 사람이 실제 이동을 진행할 때의 터미널 2 명령
-bash calibration/run_cube_pipeline.sh --serial 338122300585 --execute
-```
+## 실행 환경이 중요한 이유
 
-통합 실행은 plan 경로를 자동 전달하며 인식 창을 계속 켜둡니다. 실제 이동은 기존 mover의 시작 선언문·점마다 `go` 승인을 유지합니다. 도착 후 `return` 입력으로 복귀를 선택하고, `quit`이면 현재 위치에서 종료합니다.
+- ROS 2(`rclpy`)는 시스템 Python 3.12에서만 돕니다. conda Python에서 import하면 깨집니다. `run.sh connect|stream`이 conda 변수를 지우고 ROS를 source합니다.
+- `pipeline.py`(conda)는 `ros2_nodes.py`를 import해서 mover와 같은 검증 함수로 계획을 미리 검사합니다. 그래서 `ros2_nodes.py`는 `rclpy`를 함수 안에서만 import합니다.
+- `sim_scene.py`는 Isaac Sim의 python(`isaacsim-5.1.0/python.sh`), `rl/`은 Isaac Lab의 python을 씁니다. 둘 다 `robot_model.py`의 셀 배치를 공유합니다.
 
-## 구성
+## 좌표와 결과 파일
 
-| 파일 | 역할 |
-|---|---|
-| `run_robot_connection.sh` | 터미널 1: ROS 환경 설정 + Doosan bringup |
-| `run_cube_pipeline.sh` | 터미널 2: foundationpose 환경으로 통합 실행 |
-| `cube_pipeline.py` | 자식 프로세스 관리, pose 안정성, 현재 관절 수신, 계획·검사·ROS 발행·감독형 이동 연결 |
-| `../real_time_project/main.py` | D455 → YOLOE → FoundationPose, UDP 5005 |
-| `real_pose_dryrun.py` | 공통 변환 선택·IK·작업 셀 충돌 계획 함수, 기존 개별 드라이런 CLI |
-| `ros2_flange_udp.py` | 시스템 Python: 로봇 flange·관절 읽기 → UDP 5006 |
-| `ros2_dryrun_publisher.py` | 시스템 Python: UDP 5010 → `/sixd/dryrun/*` 결과 토픽 |
-| `ros2_pendant_mover.py` | 시스템 Python: 경유점 검사 및 사람의 `go` 후 MoveJoint |
-| `kinematics.py` | M1013 URDF FK/IK·top-down 접근 자세 |
-| `workcell.py` | 테이블·프레임·카메라 충돌 모델, RRT, 직선 경유점 단순화 |
-| `trajectory.py` | 경로 보간·시간 배분 |
-| `auto_handeye_capture.py`, `run_real_handeye_auto.sh` | 사람의 로봇 조작 + ROS pose 읽기로 hand-eye 수집 |
-| `calib_utils.py` | 변환·ArUco·eye-to-hand solver |
-| `verify_handeye_marker.py`, `predict_base_pose.py` | 변환 검증·base 예측 비교 |
-| `wrist_handeye.py` | wrist D455 eye-in-hand 캘리브레이션(고정 마커, 읽기 전용). `data/wrist_handeye/` |
-| `cube_gt_compare.py` | 큐브 윗면 마커(wrist GT)와 FoundationPose×`T_base_cam` 위치 오차 측정. `data/gt_compare/` |
-| `check_marker.py`, `real_d455_preview.py` | 마커 확인·D455 미리보기 |
-| `test_core.py`, `test_cube_pipeline.py` | 로봇·카메라 없는 회귀 시험 |
+- 변환은 4×4, 미터, `T_a_b` = a에서 본 b(b 좌표를 a 좌표로 바꾸는 행렬). Doosan posx는 mm·도·ZYZ.
+- 고정 카메라: `data/real_handeye/<최신>/T_base_cam_pnp.json`을 `calib_core.latest_t_base_cam()`이 고릅니다.
+- 손목 카메라: `data/wrist_handeye/<최신>/result.json` (현재 `20261006_111318_clean`).
+- 다시 계산(`--solve`, `--resolve`)은 기존 결과를 덮어쓰지 않습니다(`--out` 필요, `--force`로만 교체).
 
-## 통합 실행의 경계
+## 안전 경계
 
-- 기본 실행은 상태 읽기·계획·관찰용 ROS 결과 발행까지만 합니다.
-- `--execute`에서만 기존 감독형 mover를 실행합니다. 자동 연속 이동이나 자동 복귀는 없습니다.
-- 실제 관절값이 1초 이내로 수신되지 않으면 계획을 만들지 않습니다. 영점으로 대체하지 않습니다.
-- 카메라 pose의 시각·행렬·연속 안정성, 양방향 경로의 충돌 여유·관절 한계·구간 크기를 확인합니다.
-- 인식/ROS 자식 프로세스가 종료되면 파이프라인을 중단합니다. 실행 중 mover가 있으면 SIGINT로 정지를 요청합니다.
-- UDP 수신 포트는 한 실행이 독점합니다. 기존 bridge/planner와 중복 실행하면 실패합니다.
-- 한 번 실행에 큐브 목표 하나를 고정합니다. 물체를 옮겼으면 새 실행으로 계획을 만듭니다.
-- `--offline-test`는 합성 pose만 사용하며, 저장 결과는 실제 이동용으로 거부합니다.
+- 기본 실행은 읽기·계획·관찰용 발행까지만 합니다. 실제 이동은 `pipeline.py --execute`에서 mover가 웨이포인트마다 사람의 `go`를 받아서만 합니다.
+- mover 거부 조건: 속도 > 2 °/s, 승인 안 된 계획, 오프라인 계획, 30분 넘은 계획, 한 동작 45° 초과, 관절 한계 2° 이내, 현재 관절이 계획 시작점과 3° 이상 차이(`go` 직후 다시 확인), 도달 오차 1° 초과. 컨트롤러가 거부하면 재시도 없이 멈춥니다.
+- 관절값이 1초 이내로 수신되지 않으면 계획하지 않습니다(0으로 대체하지 않음).
+- 재부팅 후 PC에 컨트롤러 대역 주소가 필요합니다: `sudo ip addr add 192.168.127.5/24 dev enp5s0`.
 
-```text
-D455 → main.py → UDP 5005 → cube_pipeline.py
-ROS 관절 읽기 → UDP 5006 → 현재 출발 자세
-T_base_cam × T_cam_object → IK/충돌 검사 → plan_001.json
-계획 → UDP 5010 → ROS /sixd/dryrun/* (관찰)
-사람 승인 → ros2_pendant_mover.py → MoveJoint (실제 이동)
-```
+## 접시 → 바구니 (2026-10-12)
 
-변환 파일과 캘리브레이션 샘플은 읽기만 합니다. 기본 변환은 최신 세션의 `T_base_cam_markerscale_xyoffset.json`(없으면 zfix, 그 다음 `T_base_cam.json`)입니다. 수평 오차 5점 비교는 루트 README 4장을 참고하세요.
+실행 명령은 루트 [README.md](../README.md) 2장. 관련 설정은 `config.yaml`의 `plate_ik_bc`:
 
-## 결과와 진단
+| 키 | 지금 값 | 뜻 |
+|---|---|---|
+| `golden_teach` | `data/teach/golden/full_01_best_20261008_1504.json` | 기준 넣기 티칭 |
+| `basket_shift_m` | [0, −0.076, 0] | `--place golden`에서 바구니 위치(티칭 대비) |
+| `basket_nudge_m` | [0.005, 0, 0] | 접시 경로 미세 보정 |
+| `basket_yaw_deg` / `basket_tilt_deg` | 14.7 / 15 | 핀 줄에 맞춘 회전 / 미끄러져 들어가게 기울임(넣기 자세만) |
+| `basket_tilt_x_comp_m` | 0.04 | 기울일 때 핀 줄 방향 보정 |
+| `basket_transit_lift_m` / `basket_carry_lift_m` | [0.13, 0.10, 0.07] / 0.15 | 바구니 위·운반 높이(닿는 가장 높은 값) |
+| `basket_pre_up_m` / `basket_insert_up_m` | 0.075 / 0.020 | 넣기 직전 정지점 / 넣는 깊이(티칭 대비 위) |
+| `basket_pre_vel_deg_s` / `basket_insert_vel_deg_s` | 1.5 / 0.25 | 첫 하강 / 핀 안 속도 |
+| `basket_retreat_up_m` | 0.08 | 기울였을 때 놓은 뒤 수직 상승(닿는 만큼) |
+| `offset_m` (`plate_rl`) | [0.0025, 0.055] | 잡기 위치 보정(반경, 접선) |
 
-매 실행 결과와 프로세스별 로그는 `data/real_pipeline/<시간_고유번호>/`에 저장됩니다.
-오프라인 결과는 `data/pipeline_offline/`에 저장됩니다. 프레임 기본값은 `data/real_cell_measured.json`입니다.
-
-프로파일 굵기와 테이블 가장자리에는 가정이 남아 있습니다. 카메라 이동 후 재캘리브레이션, 툴 장착 후 TCP 길이·반경 반영이 필요합니다. 현재 통합 동작은 큐브 중심 위 접근점 정지와 선택적 복귀이며 파지는 구현하지 않았습니다.
-
-```bash
-# 하드웨어 없는 검사
-bash calibration/run_cube_pipeline.sh --offline-test
-conda run --no-capture-output -n foundationpose \
-  python -m unittest discover -s calibration -p 'test_*.py'
-```
+바구니 모델(빗살 실측: 레일 4.9 cm, 끝 높이 약 11.5 cm, −x로 12.5°)은 `rl/basket.yaml`, 마커 배치는 `basket.layout`.

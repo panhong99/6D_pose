@@ -152,7 +152,7 @@ def main():
     X, scale = np.array(wr['T_flange_cam']), wr['meta'].get('marker_scale', 1.0)
     if args.marker_scale is not None:
         scale = args.marker_scale
-    paths = args.t_base_cam or sorted(newest('real_handeye/*/T_base_cam.json').parent.glob('T_base_cam*.json'))
+    paths = args.t_base_cam or sorted(max({f.parent for pat in ('*/T_base_cam_pnp.json', '*/T_base_cam.json') for f in (DATA / 'real_handeye').glob(pat)}).glob('T_base_cam*.json'))
     variants = {p.stem: np.array(load_json(p)['T_base_cam']) for p in paths}
     out = args.out or DATA / 'gt_compare' / time.strftime('%Y%m%d_%H%M%S')
     out.mkdir(parents=True, exist_ok=True)

@@ -1,0 +1,54 @@
+# Dish-basket insertion task (goal 2, 2026-10-08).  Read by rl/basket_env.py.  Base frame, metres, degrees.
+# Slot 1 comes from the Human's best full teaching (calibration/data/teach/golden/full_01_best_20261008_1504.json):
+# insert TCP (1.000, -0.110, 0.249) m with the tool straight down; a flat-plate in-hand model puts the plate centre at
+# (1.023, -0.122, 0.139) with normal (0.964, -0.147, 0.221): plate ~13 deg from vertical, top toward the robot,
+# lowest rim point z ~0.011 m.  No CAD: pins / rows from the Human's measurements (53 x 52 cm basket, 4 pin rows
+# 9.5 cm apart, pin pitch 2 cm, pins ~6 cm, leaning).
+golden_teach: ../calibration/data/teach/golden/full_01_best_20261008_1504.json
+slot:
+  plate_centre: [1.023, -0.122, 0.139]      # plate centre at the taught insert pose
+  plate_normal: [0.964, -0.147, 0.221]      # its normal; the horizontal part is the slot axis n (pins line up along n)
+  floor_z: 0.000                            # basket floor top: ~1 cm under the plate's lowest point (Human: insert ~1 cm above)
+  target_tilt_deg: 12.8                     # = taught plate tilt: bottom between two pins, body leaning on the next pin.
+                                            # (earlier 3.0 from a no-contact fit for pins parallel to the plate:
+  target_bottom_n_m: 0.0                    #  mesh band 25 mm vs 17 mm gap, best tilt 2-4 deg, bottom -3 mm, 2.8 mm play)
+pins:
+  rows_u: [-0.0475, 0.0475]                 # the two pin rows the plate crosses, along u = z x n (9.5 cm apart)
+  pitch: 0.020                              # along n; the plate stands between the pins at +-pitch/2 from the slot plane
+  per_row: 8                                # pins at +-0.01, +-0.03, +-0.05, +-0.07 m around the slot plane
+  height: 0.118                             # (10/12 Human, real comb) tine length from the floor: tip ~11.5 cm high (was 0.060)
+  radius: 0.0015                            # 3 mm wire
+  lean_with_plate: true                     # (10/12 Human) tines lean toward -x (robot side) like the taught plate (was false:
+  lean_deg: 12.5                            #  upright 6 cm pins, a guess from 10/8); measured 10-15 deg
+  rail_z: 0.049                             # (10/12 Human) the rail the tines are fixed to, above the floor
+                                            # (10/8 18:4x) pins ~upright; the plate leans ~13 deg on the next pin (dish-rack way).
+                                            # true = pins parallel to the plate: the curved dish jams 3-5 cm up (sim 10/8)
+floor_size: [0.40, 0.30, 0.004]             # thin plate as the wire floor (n x u x thickness)
+randomize:                                  # per reset, around the nominal slot (fixed basket for the demo, varied for learning)
+  xy_m: 0.03
+  yaw_deg: 10.0
+success:                                    # (10/8 S3) judged at the plate BOTTOM: the rim between the two pins
+  bottom_tol_m: 0.0085                      # lowest rim point within this of the slot line along n (pitch/2 - pin radius)
+  max_normal_err_deg: 20.0                  # plate plane within this of the taught (leaning) slot plane
+  plane_tol_m: 0.008                        # (diagnostic only) plate centre to the slot plane
+  centre_tol_m: 0.030                       # and of the slot centre along u
+  max_height_m: 0.055                       # (10/8 19:xx) lowest point below the pin tops (6 cm): captured between pins (Human:
+                                            # "in the slot and not moving" = success); was 0.025 (on the floor)
+  still_s: 1.0                              # plate speed < 1 cm/s for this long with the gripper open
+full:                                       # whole basket (10/8 17:xx), basket frame = marker frame (calibration
+                                            # camera_tools.py basket): origin = mean of the 4 rim markers (rail top),
+                                            # x = robot side -> far side, y -> blue handle, z up.  Human: 53 x 52 x 15 cm,
+                                            # pins 3-4 mm, pin pitch 2 cm, rows of a plate pair 9.5 cm apart.
+  pose_base: [1.2296, -0.2467, 0.1442, 1.1]   # measured basket frame in base (x, y, z, yaw deg), 10/8 16:40
+  size_xy: [0.53, 0.52]
+  floor_z: -0.144                           # basket floor (wire grid top) in the basket frame = base z ~0.0
+  wall_rod_pitch: 0.055
+  rod_r: 0.002
+  floor_grid: 0.060
+  rail_w_h: [0.020, 0.030]                  # gray side rails (x = +-size/2), along y
+  handle_w_h: [0.025, 0.025]                # blue handle (y = +size/2), along x
+  pair_centres_y: [0.129, -0.110]           # plate pair A (slot 1, from the golden teaching) and pair B (top-view photo)
+  pin_x_span: [-0.245, 0.245]
+  centre_gap_x: 0.025                       # no pins at |x| < this (central clip in the photo)
+  slot_axis_from_basket: true               # (10/8 19:xx) slot axis n = basket x (rows), not the taught-normal yaw
+  pin_r: 0.00100                            # 3.5 mm measured; 2 mm in sim = compliance proxy (10/8: real plate went in, rigid 3.5 mm pins leave <3 mm play)

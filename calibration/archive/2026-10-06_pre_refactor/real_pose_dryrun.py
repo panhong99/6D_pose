@@ -26,23 +26,25 @@ from scipy.spatial.transform import Rotation
 
 import workcell as wc
 from calib_utils import inv_T, load_json, rot_angle_deg, save_json
-from kinematics import DEFAULT_URDF, Kinematics, cube_yaw_deg, grasp_frames
+from kinematics import DEFAULT_URDF, HOME_JOINTS_DEG, Kinematics, cube_yaw_deg, grasp_frames
 from trajectory import polyline_path
 
 DATA = Path(__file__).resolve().parent / 'data'
 
 
 def latest_t_base_cam():
-    found = sorted((DATA / 'real_handeye').glob('*/T_base_cam.json'))
-    if not found:
+    """Newest real_handeye session; inside it prefer T_base_cam_pnp.json (2026-10-06 fixed-camera PnP calibration, camera moved),
+    then the 2026-10-02 cube-GT corrected variants (valid only for the OLD camera placement), then plain T_base_cam.json."""
+    root = DATA / 'real_handeye'
+    sessions = sorted({f.parent for pattern in ('*/T_base_cam_pnp.json', '*/T_base_cam.json') for f in root.glob(pattern)})
+    if not sessions:
         raise SystemExit('no real hand-eye result in data/real_handeye/; pass --t_base_cam')
     # Human decision 2026-10-02: marker-scale + constant x/y offset fitted on 5 cube positions vs wrist-ArUco GT
-    # (horizontal error ~7 -> ~2 mm leave-one-out; zfix was ~19 mm).  Valid for the current camera placement only.
-    for name in ('T_base_cam_markerscale_xyoffset.json', 'T_base_cam_zfix.json'):
-        chosen = found[-1].with_name(name)
+    # (horizontal error ~7 -> ~2 mm leave-one-out; zfix was ~19 mm).  Valid for the old camera placement only.
+    for name in ('T_base_cam_pnp.json', 'T_base_cam_markerscale_xyoffset.json', 'T_base_cam_zfix.json', 'T_base_cam.json'):
+        chosen = sessions[-1] / name
         if chosen.is_file():
             return chosen
-    return found[-1]
 
 
 def parse_args(argv=None):
@@ -217,9 +219,9 @@ def main():
         T_med[:3, 3] = np.median([h[:3, 3] for h in history], axis=0)
         cur = joints.drain_last()
         fresh = bool(cur and 'posj' in cur and time.time() - cur.get('t', 0) < 1.0)
-        start_q = np.radians(cur['posj']) if fresh else np.zeros(6)
+        start_q = np.radians(cur['posj']) if fresh else np.radians(HOME_JOINTS_DEG)
         if not fresh:
-            print('NOTE: no fresh joint stream (ros2_flange_udp.py) - path starts from all-zero joints', flush=True)
+            print('NOTE: no fresh joint stream (ros2_flange_udp.py) - path starts from the home joints', flush=True)
         res = plan_dryrun(kin, checker, T_med, start_q, args)
         res['t_base_cam_file'] = str(t_path)
         res['cell'] = str(args.cell_json) if args.cell_json else 'FRAME_CELL'

@@ -19,7 +19,7 @@ _ROOT = _HERE.parent
 for _directory in (_ROOT, _HERE):
     sys.path.insert(0, str(_directory))
 
-from real_time_utils import D455Source, PoseTracker, RecoveryTracker
+from real_time_utils import D455Source, PoseTracker, RecoveryTracker, rectification_maps
 from pose_sender_kimm import PoseSender
 
 
@@ -90,6 +90,9 @@ def parse_args(argv=None):
 
     g = p.add_argument_group('Camera / output')
     g.add_argument('--serial', default='')
+    g.add_argument('--wrist_serial', default='', help='also show this colour-only D455 (wrist) on the right; its newest '
+                   'rectified frame is shared at --wrist_share for the pipeline photos (one owner of the camera)')
+    g.add_argument('--wrist_share', type=Path, default=Path('/dev/shm/wrist_latest.npz'))
     g.add_argument('--width', type=int, default=640)
     g.add_argument('--height', type=int, default=480)
     g.add_argument('--fps', type=int, default=30)
@@ -122,6 +125,46 @@ def parse_args(argv=None):
     if not args.prompt.strip().strip('.'):
         p.error('prompt must describe an object')
     return args
+
+
+class WristView:
+    """(2026-10-12) Second D455, colour only, never blocks the pose loop (poll); every 0.5 s the newest frame is
+    rectified to K and written to `share` (npz rgb, K, t) so the pipeline can take wrist photos without opening it."""
+
+    def __init__(self, serial, share, width=1280, height=720, fps=15):
+        import pyrealsense2 as rs
+        self.pipe, self.share, self.rgb, self.t_save = rs.pipeline(), share, None, 0.0
+        cfg = rs.config()
+        cfg.enable_device(serial)
+        cfg.enable_stream(rs.stream.color, width, height, rs.format.rgb8, fps)
+        intr = self.pipe.start(cfg).get_stream(rs.stream.color).as_video_stream_profile().get_intrinsics()
+        self.K = np.array([[intr.fx, 0, intr.ppx], [0, intr.fy, intr.ppy], [0, 0, 1]], dtype=np.float32)
+        self.map1, self.map2 = rectification_maps(intr, self.K)
+
+    def poll(self):
+        frames = self.pipe.poll_for_frames()
+        if frames and frames.get_color_frame():
+            self.rgb = np.asanyarray(frames.get_color_frame().get_data()).copy()
+            if time.time() - self.t_save > 0.5:
+                self.t_save = time.time()
+                rgb = self.rgb if self.map1 is None else cv2.remap(self.rgb, self.map1, self.map2, cv2.INTER_LINEAR)
+                tmp = self.share.with_name(self.share.stem + '.tmp.npz')
+                np.savez(tmp, rgb=rgb, K=self.K, t=self.t_save)
+                os.replace(tmp, self.share)
+        return self.rgb
+
+    def close(self):
+        self.pipe.stop()
+
+
+def side_by_side(left, right):
+    """left = fixed camera view, right = wrist view scaled to the same height (black if not yet available)."""
+    h = left.shape[0]
+    if right is None:
+        right = np.zeros((h, int(h * 16 / 9), 3), np.uint8)
+    right = cv2.resize(right, (int(right.shape[1] * h / right.shape[0]), h))
+    cv2.putText(right, 'wrist', (10, 25), cv2.FONT_HERSHEY_SIMPLEX, .6, (0, 255, 255), 2)
+    return np.hstack([left, right])
 
 
 def build_detector(args):
@@ -159,9 +202,10 @@ def main():
 
     camera = D455Source(args.width, args.height, args.fps, args.serial, args.max_depth)
     sender = PoseSender(args.udp_host, args.udp_port, args.frame_id)
+    wrist = WristView(args.wrist_serial, args.wrist_share) if args.wrist_serial else None
     window = f'FoundationPose {args.detector.upper()} D455'
     cv2.namedWindow(window, cv2.WINDOW_NORMAL)
-    cv2.resizeWindow(window, 1600, 1200)
+    cv2.resizeWindow(window, 2400 if args.wrist_serial else 1600, 900 if args.wrist_serial else 1200)
     mode = 'automatic' if args.auto_recovery else 'manual'
     print(f'{args.detector} + FoundationPose + Cutie/Kalman ready ({mode} recovery) | '
           f'Pose UDP -> {args.udp_host}:{args.udp_port} | S: re-detect | Q/ESC: quit', flush=True)
@@ -188,6 +232,8 @@ def main():
                 print(out['status'], flush=True)
                 previous_status = out['status']
             cv2.putText(image, out['status'], (10, 48), cv2.FONT_HERSHEY_SIMPLEX, .45, (0, 255, 0), 1)
+            if wrist is not None:
+                image = side_by_side(image, wrist.poll())
             cv2.imshow(window, cv2.cvtColor(image, cv2.COLOR_RGB2BGR))
             key = cv2.waitKey(1) & 0xff
             t3 = time.perf_counter()
@@ -208,6 +254,8 @@ def main():
     finally:
         sender.close()
         camera.close()
+        if wrist is not None:
+            wrist.close()
         cv2.destroyAllWindows()
 
 

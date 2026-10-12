@@ -45,6 +45,7 @@ def parse_args(argv=None):
     p.add_argument('--marker_id', type=int, default=1)
     p.add_argument('--marker_size', type=float, default=0.045, help='black-square edge, m (MEASURE the printout)')
     p.add_argument('--dictionary', default='DICT_4X4_50')
+    p.add_argument('--pixels_per_cell', type=int, default=10, help='ArUco bit-sampling resolution (OpenCV default 4 missed oblique 100 mm markers)')
     p.add_argument('--marker_scale', type=float, default=1.0,
                    help='solve-time correction: multiplies the camera->marker distance (= true printed edge / --marker_size)')
     p.add_argument('--width', type=int, default=1280)
@@ -237,7 +238,7 @@ def main():
 
     robot = PoseStream(args.udp_port)
     cam = WristCam(args.serial, args.width, args.height, args.fps)
-    detector = make_detector(args.dictionary)
+    detector = make_detector(args.dictionary, args.pixels_per_cell)
     samples = load_json(session / 'samples.json')['samples'] if (session / 'samples.json').is_file() else []
     paused, cooldown, reported = False, 0.0, False
     log(f'session {session}  marker {args.marker_size * 1000:.1f} mm id {args.marker_id}  wrist {args.serial}')

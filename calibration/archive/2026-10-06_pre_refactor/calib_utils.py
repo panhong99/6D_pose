@@ -66,10 +66,14 @@ def T_to_posx(T):
 
 # ------------------------------------------------------------------ ArUco marker
 
-def make_detector(dictionary='DICT_4X4_50'):
+def make_detector(dictionary='DICT_4X4_50', pixels_per_cell=None):
+    """pixels_per_cell: bit-sampling resolution (OpenCV default 4).  A printed 100 mm marker seen obliquely with glare
+    (2026-10-06 wrist view) was rejected at 4 and decoded correctly at 8-12; None keeps the old behaviour."""
     aruco = cv2.aruco
     params = aruco.DetectorParameters()
     params.cornerRefinementMethod = aruco.CORNER_REFINE_SUBPIX
+    if pixels_per_cell:
+        params.perspectiveRemovePixelPerCell = int(pixels_per_cell)
     return aruco.ArucoDetector(aruco.getPredefinedDictionary(getattr(aruco, dictionary)), params)
 
 

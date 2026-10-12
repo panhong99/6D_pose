@@ -14,6 +14,8 @@ from scipy.spatial.transform import Rotation
 
 from calib_utils import make_T
 
+# Working home pose (Human, 2026-10-02), deg.  Start/return pose whenever no live joint stream is available.
+HOME_JOINTS_DEG = (-5.98, -14.75, 117.74, -3.92, 7.46, -85.07)
 DEFAULT_URDF = Path('/home/pan/pan/doosan_ws/install/dsr_description2/share/dsr_description2/urdf/m1013.urdf')
 
 
