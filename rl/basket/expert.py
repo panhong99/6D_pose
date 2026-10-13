@@ -26,6 +26,8 @@ def parse_args():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument('mode', choices=('replay', 'collect', 'realplan'))
     p.add_argument('--labels', default=str(ROOT / 'calibration/data/real_pipeline/labels_20261012.jsonl'))
+    p.add_argument('--plans', default=None, help='replay: jsonl of planned setups {name, plate, Tb, plan} (10/13 quadrant plans: '
+                   'one plan.json with to_grasp/lift/to_above/descend/ascend) instead of real runs')
     p.add_argument('--per_run', type=int, default=16, help='replay: envs per real run')
     p.add_argument('--jitter_mm', type=float, default=2.0, help='replay: plate xy jitter (FP noise)')
     p.add_argument('--speed', type=float, default=20.0, help='sim joint speed for transport legs (deg/s)')
@@ -216,8 +218,11 @@ def run_replay(args):
     from isaaclab.envs import ManagerBasedRLEnv
     import basket_env as be
     import plate_env as pe
-    runs = [json.loads(l) for l in open(args.labels)]
+    runs = [] if args.plans else [json.loads(l) for l in open(args.labels)]
     rows = []
+    for r in ([json.loads(l) for l in open(args.plans)] if args.plans else []):   # planned, not run: 'outcome' = planned
+        legs = json.loads(Path(r['plan']).read_text())['legs']
+        rows.append(dict(name=r['name'], outcome='planned', plate=r['plate'], Tb=r['Tb'], grasp=legs, slot=legs))
     for r in runs:
         d = Path(r['run']) if Path(r['run']).is_absolute() else ROOT / 'calibration/data/real_pipeline' / r['run']
         ev = [json.loads(x) for x in open(d / 'robot_state.jsonl') if '"event"' in x]
@@ -257,7 +262,8 @@ def run_replay(args):
     if args.attach:                                            # rigid in-hand plate (see attach), no extra noise
         attach(env, torch.as_tensor(held, device=dev))
     drive(env, L('to_above', 'slot'), ~open_, args.speed)
-    drive(env, L('descend_pre', 'slot'), ~open_, args.speed / 4)
+    if all('descend_pre' in rows[i]['slot'] for i in who):    # taught slot paths only (quadrant plans: to_above -> descend)
+        drive(env, L('descend_pre', 'slot'), ~open_, args.speed / 4)
     st_pre = be.basket_state(env)
     drive(env, L('descend', 'slot'), ~open_, args.speed / 20, hold=30)
     if args.attach:

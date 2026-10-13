@@ -685,7 +685,8 @@ def run_plate(args):
                 return None
             root, fyaw, ftilt = plate_root_in_base(Tbc @ fp.hist[-1])
             viz(plate=(Tbc @ fp.hist[-1]).tolist(), ok=True)
-            return dict(plate_root=[round(float(v), 5) for v in root], yaw_deg=round(fyaw, 2), tilt_deg=round(ftilt, 2))
+            return dict(plate_root=[round(float(v), 5) for v in root], yaw_deg=round(fyaw, 2), tilt_deg=round(ftilt, 2),
+                        T=np.round(Tbc @ fp.hist[-1], 5).tolist())     # (10/13) full pose: plate normal in the hand afterwards
         rec = RobotRecorder(receivers[0], out / 'robot_state.jsonl', fp_sample)   # every ROS2 joint/flange sample + FP
         rec.event('plan', plan=str(plan), plate_root_fp=[float(v) for v in p], yaw_deg=yaw, tilt_deg=tilt,
                   offset_m=q['offset_m'], rollout_plate=[x, y])
