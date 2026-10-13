@@ -736,9 +736,11 @@ def plate_in_hand(run_dir=None):
     return hand_plate(req['grasp_deg'], req['plate_root_fp']) + (d.name,)
 
 
-def hand_plate(grasp_deg, plate_root, normal=(0.0, 0.0, 1.0), sag_deg=None):
+def hand_plate(grasp_deg, plate_root, normal=(0.0, 0.0, 1.0), tilt_deg=None):
     """(H, tool): the plate at `plate_root` (FP root = bottom centre, base) with this normal, held by the TCP at these
-    joints.  Grasp: plate flat; after the lift (10/13): the FP normal there, the plate sags ~6 deg in the fingers."""
+    joints.  Grasp: plate flat; after the lift (10/13): the FP normal there.  `tilt_deg` = (toward the grasp point, toward
+    the rim tangent): the plate turns about its centre in the fingers after the lift (Isaac 10/13: (-13, +5) deg, centre
+    within 5 mm; config plate_hand_tilt_deg, default none)."""
     kin, tool = Kinematics(), np.eye(4)
     tool[2, 3] = C['plate_ik_bc'].get('tool_length_m', 0.165)
     T_tcp = kin.fk(np.radians(grasp_deg)) @ tool
@@ -751,14 +753,15 @@ def hand_plate(grasp_deg, plate_root, normal=(0.0, 0.0, 1.0), sag_deg=None):
     T_pl = np.eye(4)
     T_pl[:3, :3] = np.stack([x, np.cross(n, x), n], 1)
     T_pl[:3, 3] = c
-    sag = np.radians(C['plate_ik_bc'].get('plate_sag_deg', 0.0) if sag_deg is None else sag_deg)
-    if sag:                                                  # the centre drops: plate turns about the rim tangent at the grasp
-        c_, s_ = np.cos(sag), np.sin(sag)
+    tx, ty = np.radians(C['plate_ik_bc'].get('plate_hand_tilt_deg', [0.0, 0.0]) if tilt_deg is None else tilt_deg)
+    if tx or ty:                                             # new normal in the plate frame, shortest turn from z
+        m = np.array([np.tan(tx), np.tan(ty), 1.0])
+        m /= np.linalg.norm(m)
+        ax = np.cross([0, 0, 1.0], m)
         R = np.eye(4)
-        R[:3, :3] = [[c_, 0, -s_], [0, 1, 0], [s_, 0, c_]]   # x -> cos x + sin z (toward the grasp point goes up)
-        P = np.eye(4)
-        P[0, 3] = PLATE_R
-        T_pl = T_pl @ P @ R @ np.linalg.inv(P)
+        R[:3, :3] = __import__('scipy.spatial.transform', fromlist=['Rotation']).Rotation.from_rotvec(
+            ax / np.linalg.norm(ax) * np.arccos(m[2])).as_matrix()
+        T_pl = T_pl @ R
     return np.linalg.inv(T_tcp) @ T_pl, tool
 
 
