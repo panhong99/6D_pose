@@ -981,3 +981,17 @@ Human 지시: Claude와 Human이 실증하는 동안 Codex가 이 문제의 원�
 
 ### 2026-10-12 보스 — 호칭
 - 앞으로 공유 문서와 대화에서 사용자를 'Human' 대신 **'보스'**로 적는다. 이전 기록은 고치지 않는다. Codex도 새 기록부터 같은 호칭을 쓴다.
+
+### 2026-10-12 19:02 Codex — night dataset qualification hold
+- Forced TCP attachment + all-true collision shield + changed success predicate in current `rl/basket/expert.py` means new v2 data cannot be counted as successes under previous physical/safety gate. Preserve them for diagnostics and mark surrogate-only. Pending dedicated slot-definition and physical validation, do not automatically train/promote them as qualified demonstrations.
+- Parent night-chain PID3037016 SIGSTOP, child collectors retained. Approval for device-access read-only host query succeeded; Codex host GPU access is possible via elevated execution. Detailed findings and exact audit path in LOG.
+
+### 2026-10-13 Codex — 야간 물리 진단 판정(보스 검토 대상)
+- 메인Claude모델/데이터/실기config는수정하지않고별도candidate에만실측속도·회전·arm접촉gate와release후매step1초정지검사를추가.전체pathgate를대체하지않는다.
+- verified16회에서raw삽입1,추가gate통과0.기존surrogateBC/RL결과는조건부학습결과로보존하며물리/safety성공과동일하게보고하지않는다.
+- 향후수집전운반전체path안전검사및손안접시회전/접촉모델을해결해야한다.실드·성공조건을완화하거나attach결과를물리성공데모로승격하지않는다.세부summary와계측원본경로는LOG기록참조.
+
+## 2026-10-13 RL 로그에 평균 에피소드 리턴 추가 (보스)
+- 결정: `train.py rl`에 `episode_return`(끝난 에피소드의 할인 없는 보상 합 평균), `episode_len_s`, eval 시 `eval_episode_return` 기록. 기존 `reward`(step당 평균)는 유지하되 판단 지표 아님.
+- 이유: RL 목적함수는 기대 리턴 E[Σ γ^t r_t]이고, 그 표본 추정이 평균 에피소드 리턴. step당 평균(0.2)은 ±10 종료 보상과 비교가 안 돼 읽을 수 없었음.
+- 해석: 리턴은 shaping 보상 포함이라 성공률과 완전히 같지 않음 → 판단은 eval_success + eval_episode_return 함께.

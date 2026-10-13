@@ -346,6 +346,8 @@ def run_rl(args):
     dev = 'cuda'
     env = ManagerBasedRLEnv(X.make_cfg(args.envs or c['envs'], False, CFG['expert'].get('pad_torsion_radius_m', 0.01)))
     env.reset()
+
+    # bc==behavior cloning
     bc, meta = M.load_bc(args.bc, device=dev)
     ac = M.ResidualActorCritic(bc, c['residual_scale'], meta['hidden'], meta['activation'], c['init_std']).to(dev)
     c['lr'] = args.lr or c['lr']
@@ -363,14 +365,17 @@ def run_rl(args):
         """Deterministic (mean action) episodes until n_ep finished; returns success rate."""
         n_ep = n_ep or CFG['eval']['envs']
         runner.reset(torch.arange(n, device=env.device))
-        done_n, succ_n = 0, 0
+        done_n, succ_n, rets, acc = 0, 0, [], torch.zeros(n, device=env.device)
         while done_n < n_ep:
             o, _ = runner.obs()
             with torch.no_grad():
                 a = ac.mean(o)
             r, d, s_ = runner.step(a)
+            acc += r
             done_n += int(d.sum()); succ_n += int((d & s_).sum())
+            rets += acc[d].tolist(); acc[d] = 0.0
             runner.reset(torch.nonzero(d).squeeze(1))
+        evaluate.ret = float(np.mean(rets)) if rets else float('nan')   # mean episode return (undiscounted sum of r)
         return succ_n / max(done_n, 1)
 
     if args.view:                                              # GUI: BC (+ residual) episodes at real time, until closed
@@ -394,9 +399,11 @@ def run_rl(args):
         return
     if args.eval_ckpt:                                         # re-evaluate a saved residual policy (and the BC) only
         bc_rate = evaluate()
+        bc_ret = evaluate.ret
         ac.load_state_dict(torch.load(args.eval_ckpt, map_location=dev)['state'])
         rl_rate = evaluate()
-        print(f'[rl] re-eval ({CFG["eval"]["envs"]} episodes, seed {args.seed}): BC {bc_rate:.3f}  RL {rl_rate:.3f}  ({args.eval_ckpt})', flush=True)
+        print(f'[rl] re-eval ({CFG["eval"]["envs"]} episodes, seed {args.seed}): success BC {bc_rate:.3f}  RL {rl_rate:.3f}; '
+              f'mean episode return BC {bc_ret:+.2f}  RL {evaluate.ret:+.2f}  ({args.eval_ckpt})', flush=True)
         env.close()
         app.close()
         return
@@ -411,9 +418,10 @@ def run_rl(args):
     M.save(out / 'best.pt', ac, dict(meta, it=0, success=base))
     runner.reset(torch.arange(n, device=env.device))
     o, _ = runner.obs()
+    ep_acc, ep_len = torch.zeros(n, device=dev), torch.zeros(n, device=dev)   # running return / length per env
     for it in range(1, c['max_iters'] + 1):
         O, A, LP, V, Rw, D = [], [], [], [], [], []
-        ep_succ, ep_done = 0, 0
+        ep_succ, ep_done, rets, lens = 0, 0, [], []
         for _ in range(T):
             with torch.no_grad():
                 dist = ac.dist(o)
@@ -422,6 +430,9 @@ def run_rl(args):
             r, d, s_ = runner.step(a)
             O.append(o); A.append(a); LP.append(lp); V.append(v); Rw.append(r); D.append(d.float())
             ep_done += int(d.sum()); ep_succ += int((d & s_).sum())
+            ep_acc += r; ep_len += 1
+            rets += ep_acc[d].tolist(); lens += ep_len[d].tolist()
+            ep_acc[d], ep_len[d] = 0.0, 0.0
             runner.reset(torch.nonzero(d).squeeze(1))
             o, _ = runner.obs()
         with torch.no_grad():
@@ -464,6 +475,7 @@ def run_rl(args):
             v0 = ((v0 or 0.0) * (it - 1) + vl_m) / it
         std = ac.log_std.exp().mean().item()
         rec = dict(it=it, reward=Rw.mean().item(), rollout_success=ep_succ / max(ep_done, 1), episodes=ep_done,
+                   **(dict(episode_return=float(np.mean(rets)), episode_len_s=float(np.mean(lens)) * env.step_dt) if rets else {}),
                    value_loss=vl_m, policy_loss=pl_m, kl=kl_m, action_std=std, lr=c['lr'])
         stop = None
         if not all(np.isfinite(v) for v in (rec['reward'], vl_m, pl_m)):
@@ -478,7 +490,7 @@ def run_rl(args):
             stop = 'wall-clock cap'
         if it % c['eval_every'] == 0 or stop:
             succ = evaluate()
-            rec['eval_success'] = succ
+            rec['eval_success'], rec['eval_episode_return'] = succ, evaluate.ret
             print(f'[rl] it {it}: eval {succ:.3f} (BC {base:.3f}, best {best:.3f} @ {best_it})', flush=True)
             if succ > best:
                 best, best_it = succ, it
@@ -494,6 +506,7 @@ def run_rl(args):
                 stop = f'no new best for {c["patience_evals"]} evals'
             runner.reset(torch.arange(n, device=env.device))
             o, _ = runner.obs()
+            ep_acc[:], ep_len[:] = 0.0, 0.0
         hist.append(rec)
         if run:
             run.log(rec, step=it)
