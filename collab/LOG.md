@@ -1362,3 +1362,5 @@
 - YOLOE 바구니 인식 확인(`checking_yoloe.py --serial 338122300585`, 고정 카메라, conf 0.1): 'wire basket' 0.91로 바구니 bbox 정확, 'plate' 0.42, 33 FPS. 'dishwasher basket'/'dish rack'/'basket'은 같은 물체에서 'wire basket'에 밀림. bbox는 2D라 슬롯 위치(±8.5 mm)에는 부족 → 마커 대체 후보: YOLOE 마스크 + basket_full.obj로 FP 6D 추정.
 - 파이프라인 `--insert policy`: 바구니 측정 직후 학습 범위 안/주의/밖 출력(`plate_plans.basket_range_note`, config `basket_policy_range`). 판정은 여전히 sim 결과(정확 성공 + 변형 ≥ 50%)가 결정.
 - 버그: `plate_plans.isaac_env`가 `os` import 없이 이동돼 있어 `--insert policy` 첫 실기 실행에서 NameError(로봇 이동 전) → import 추가, 두 파일 미정의 이름 검사 통과.
+- **실증 1회차 (13:23, `20261013_132344_plate_xg0lstv_`, `--insert policy --execute`)**: 바구니 x 1.084, y −0.245, 1.2°(학습 범위 안). sim 판정 정확 성공, 변형 8/8(틈 1.0~4.6 mm, 깊이 50~52 mm) → 정책 경로 사용. 실측 구간 시간: 정책 시작 자세 27.0 s(1.5°/s), **정책 하강 106.7 s(0.4°/s)**, 상승 32.5 s. 실기 결과(꽂힘 여부)는 보스 확인 대기.
+- 보스: 정책 하강 "너무 너무 느려, 1/10 → 3/10" → `basket_policy_vel_deg_s` 0.4 → 1.2(예상 약 36 s).
