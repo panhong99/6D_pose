@@ -1021,12 +1021,220 @@ def quadrant_plans(a):
         print(f'RViz preview (if run.sh viz is running): {show}')
 
 
+def measured_basket(cfg=None):
+    """Basket pose (base) from the fixed camera's markers, read-only.  Each marker ID has its own stored position in the
+    basket frame (config basket.layout), so the fit (2-D Kabsch) finds the basket at any yaw, also turned around."""
+    from calib_core import cpath
+    from camera_tools import basket_fit_robust, basket_measure
+    cfg = cfg or C
+    layout = json.loads(cpath(cfg['basket']['layout']).read_text())
+    T, res, seen = basket_fit_robust(basket_measure(cfg), layout, cfg['basket'].get('max_fit_residual_m', 0.008))
+    return T, res, seen
+
+
+def robot_quadrants(Tbb):
+    """{robot quadrant: basket-model quadrant}.  Q1..Q4 are named as seen from the robot (top view, robot at the bottom,
+    far = +x, left = +y); the model's quadrants are fixed to the basket (markers), so a turned basket maps onto them."""
+    c = np.asarray(Tbb)[:3, 3]
+    out = {}
+    for qd, gaps in basket_gaps().items():
+        m = (np.asarray(Tbb) @ np.r_[np.mean(gaps, 0), 1.0])[:3] - c
+        out[next(k for k, (fn, lr) in QUADRANTS.items() if (fn == 'far') == (m[0] > 0) and (lr == 'left') == (m[1] > 0))] = qd
+    return out
+
+
+def look_pose(Tbb, model_qd, Tbc, q, cam_h=(0.42, 0.36, 0.48), seed=None):
+    """Joints for a wrist photo straight down on one quadrant: camera centred over its gaps `cam_h` above the basket
+    frame, image top = the basket's far side (pin pairs stacked top -> bottom); turned 180 / +-90 deg if out of reach.
+    -> (joints deg, image turn deg, camera height) or None."""
+    import ros2_nodes
+    from calib_core import load_json, newest_wrist_result
+    kin = Kinematics()
+    lo, hi = np.array(ros2_nodes.joint_limits_deg()).T
+    Tfc = np.array(load_json(newest_wrist_result())['T_flange_cam'])
+    free = quadrant_checkers(Tbc, q, Tbb, np.eye(4), np.eye(4))[2]
+    T = np.asarray(Tbb)
+    target = (T @ np.r_[np.mean(basket_gaps()[model_qd], 0)[:2], 0.0, 1.0])[:3]
+    for h in cam_h:
+        for turn in (0, 180, 90, -90):
+            t = np.radians(turn)
+            xb = T[:3, 0] * np.cos(t) + T[:3, 1] * np.sin(t)
+            Tc = np.eye(4)
+            Tc[:3, 1] = -xb                                   # image down = toward the robot side
+            Tc[:3, 2] = [0, 0, -1.0]
+            Tc[:3, 0] = np.cross(Tc[:3, 1], Tc[:3, 2])
+            Tc[:3, 3] = target + [0, 0, h]
+            for sd in ([seed] if seed is not None else []) + [np.radians(HOME_JOINTS_DEG)]:
+                try:
+                    j = kin.ik(Tc @ np.linalg.inv(Tfc), sd)
+                except RuntimeError:
+                    continue
+                jd = np.degrees(j)
+                if ((jd > lo + 3) & (jd < hi - 3)).all() and free.clearance(j) >= 1.0:
+                    return jd, turn, h
+    return None
+
+
+def look_plans(a):
+    """Wrist photos of the basket quadrants (read-only planning): basket from the markers (or --basket), one look pose per
+    quadrant, legs `<Q>_look` (home -> look) and `<Q>_home` (look -> home) in one plan.json, plus a photo request per
+    quadrant for `camera_tools.py pre_photo --req` (photo + model pins) and `pins --req` (pair numbers)."""
+    Tbc = np.array(__import__('calib_core').load_json(__import__('calib_core').latest_t_base_cam())['T_base_cam'])
+    q = C['plate_ik_bc']
+    if a.measure:
+        Tbb, res, seen = measured_basket()
+        print(f'basket from markers {seen}: fit {res * 1000:.1f} mm', flush=True)
+    else:
+        c, s_ = np.cos(np.radians(a.basket[2])), np.sin(np.radians(a.basket[2]))
+        Tbb = np.eye(4)
+        Tbb[:2, :2] = [[c, -s_], [s_, c]]
+        Tbb[:3, 3] = [a.basket[0], a.basket[1], a.basket_z]
+    yaw = np.degrees(np.arctan2(Tbb[1, 0], Tbb[0, 0]))
+    print(f'basket centre ({Tbb[0, 3]:.3f}, {Tbb[1, 3]:+.3f}, {Tbb[2, 3]:.3f}) yaw {yaw:+.1f} deg', flush=True)
+    free = quadrant_checkers(Tbc, q, Tbb, np.eye(4), np.eye(4))[2]
+    rq = robot_quadrants(Tbb)
+    home = np.radians(HOME_JOINTS_DEG)
+    legs, looks = {}, {}
+    for qd in a.quadrants:
+        lp = look_pose(Tbb, rq[qd], Tbc, q)
+        if lp is None:
+            print(f'{qd}: no look pose (reach / joint limit / clearance)', flush=True)
+            continue
+        jd, turn, h = lp
+        try:
+            to, how = free.plan(home, np.radians(jd))
+            back, _ = free.plan(np.radians(jd), home)
+        except RuntimeError as e:
+            print(f'{qd}: no path ({e})', flush=True)
+            continue
+        legs[f'{qd}_look'] = [np.degrees(w).tolist() for w in to]
+        legs[f'{qd}_home'] = [np.degrees(w).tolist() for w in back]
+        looks[qd] = dict(joints_deg=np.round(jd, 3).tolist(), model_quadrant=rq[qd], image_turn_deg=turn, camera_above_m=h, path=how)
+        print(f'{qd} (model {rq[qd]}): camera {h:.2f} m above, image turned {turn:+d} deg, path {how}', flush=True)
+    if not legs:
+        raise SystemExit('no look pose for any quadrant')
+    path = taught_plan(legs, Tbc, q, 'wrist look poses')
+    plan = json.loads(Path(path).read_text())
+    plan.update(basket_T=Tbb.tolist(), look=looks)
+    Path(path).write_text(json.dumps(plan, indent=1))
+    kin, stamp = Kinematics(), time.strftime('%Y%m%d_%H%M%S')
+    shots = DATA / 'basket' / 'wrist_look'
+    shots.mkdir(parents=True, exist_ok=True)
+    print(f'\nplan: {path}\n(보스) per quadrant, robot at home:')
+    for qd, lk in looks.items():
+        req = shots / f'{stamp}_{qd}.req.json'
+        req.write_text(json.dumps(dict(T_base_flange=kin.fk(np.radians(lk['joints_deg'])).tolist(), T_base_basket=Tbb.tolist(),
+                                       png=str(shots / f'{stamp}_{qd}.png'), after=None, quadrant=qd, plan=str(path), **lk), indent=1))
+        print(f'  bash calibration/run.sh mover --plan {path} --leg {qd}_look --smooth --go_per leg --vel_deg_s 20 --execute\n'
+              f'  python calibration/camera_tools.py pre_photo --req {req}\n'
+              f'  bash calibration/run.sh mover --plan {path} --leg {qd}_home --smooth --go_per leg --vel_deg_s 20 --execute')
+    socket = __import__('socket')
+    socket.socket(socket.AF_INET, socket.SOCK_DGRAM).sendto(json.dumps(dict(plan=str(path))).encode(), ('127.0.0.1', C['udp'].get('viz', 5011)))
+
+
+def _random_one(job):
+    """One random (basket pose, plate position, quadrant, gap) -> result row.  Forked worker; globals in _RANDOM."""
+    import contextlib
+    import io
+    k, bx, by, yaw, px, py, qd, gap = job
+    G = _RANDOM
+    globals()['DATA'] = G['out']                              # the batch's plan.json files stay in its own folder
+    np.random.seed(k)
+    c, s_ = np.cos(np.radians(yaw)), np.sin(np.radians(yaw))
+    Tbb = np.eye(4)
+    Tbb[:2, :2] = [[c, -s_], [s_, c]]
+    Tbb[:3, 3] = [bx, by, G['basket_z']]
+    row = dict(k=k, basket=[bx, by, yaw], plate=[px, py], quadrant=qd, gap=gap + 1)
+    t0 = time.time()
+    try:
+        with contextlib.redirect_stdout(io.StringIO()):
+            gpath = plan_from_library(float(np.hypot(px, py)), float(np.degrees(np.arctan2(py, px))), G['q'], G['Tbc'])
+    except Exception as e:                                   # noqa: BLE001
+        return dict(row, ok=False, stage='grasp', why=str(e)[:120], s=round(time.time() - t0, 1))
+    gl = json.loads(Path(gpath).read_text())['legs']
+    grasp = {n: gl[n]['waypoints_deg'] for n in ('to_grasp', 'lift')}
+    model_qd = robot_quadrants(Tbb)[qd]
+    try:
+        with contextlib.redirect_stdout(io.StringIO()):
+            path, rep = quadrant_plan(Tbb, model_qd, gap, G['H'], G['tool'], grasp['lift'][-1], G['Tbc'], G['q'], grasp_legs=grasp,
+                                      phi_step=G['phi_step'])
+    except Exception as e:                                   # noqa: BLE001
+        return dict(row, ok=False, stage='place', why=str(e)[:120], s=round(time.time() - t0, 1))
+    if path is None:
+        why = sorted({w if w == 'ik/limit' else w.split(' ')[0] for _, w in rep['tried']})
+        return dict(row, ok=False, stage='place', why=','.join(why), s=round(time.time() - t0, 1))
+    return dict(row, ok=True, stage='done', why='', phi=rep['phi_deg'], clearance=rep['clearance_ratio'], plan=str(path),
+                s=round(time.time() - t0, 1))
+
+
+def random_plans(a):
+    """Offline batch: random basket pose (x, y, yaw) + random plate position + random quadrant/gap -> full plan
+    (library grasp + lift, quadrant carry/insert/home).  Success rate and why it fails, by basket position and yaw."""
+    import multiprocessing as mp
+    rng = np.random.default_rng(a.seed)
+    out = DATA / 'basket' / f'random_{time.strftime("%Y%m%d_%H%M%S")}'
+    out.mkdir(parents=True)
+    H, tool, run = plate_in_hand(a.run)
+    _RANDOM.update(out=out, H=H, tool=tool, q=C['plate_ik_bc'], basket_z=a.basket_z, phi_step=a.phi_step,
+                   Tbc=np.array(__import__('calib_core').load_json(__import__('calib_core').latest_t_base_cam())['T_base_cam']))
+    jobs = []
+    while len(jobs) < a.n:
+        bx, by = rng.uniform(*a.x), rng.uniform(*a.y)
+        yaw = rng.uniform(-a.yaw_range, a.yaw_range)
+        r, az = rng.uniform(0.86, 1.30), rng.uniform(-40, 40)
+        px, py = r * np.cos(np.radians(az)), r * np.sin(np.radians(az))
+        if abs(py) > 0.42 or np.hypot(px - bx, py - by) < 0.37 + PLATE_R + 0.05:   # plate not on / against the basket (53 cm square)
+            continue
+        jobs.append((len(jobs), bx, by, yaw, px, py, rng.choice(list(QUADRANTS)), int(rng.integers(0, 10))))
+    print(f'{len(jobs)} random setups (basket x {a.x} y {a.y} yaw +-{a.yaw_range}, plate r 0.86-1.30 az +-40 |y|<=0.42) '
+          f'with {a.workers} workers -> {out}', flush=True)
+    rows = []
+    with mp.get_context('fork').Pool(a.workers) as pool, (out / 'rows.jsonl').open('w') as f:
+        for row in pool.imap_unordered(_random_one, jobs):
+            rows.append(row)
+            f.write(json.dumps(row) + '\n')
+            f.flush()
+            if len(rows) % 20 == 0:
+                print(f'  {len(rows)}/{len(jobs)}: success {np.mean([r_["ok"] for r_ in rows]):.2f}', flush=True)
+    ok = np.array([r_['ok'] for r_ in rows])
+    summ = dict(n=len(rows), success=float(ok.mean()), grasp_run=run, args={k: v for k, v in vars(a).items() if k != 'mode'},
+                by_quadrant={qd: float(np.mean([r_['ok'] for r_ in rows if r_['quadrant'] == qd] or [0])) for qd in QUADRANTS},
+                fails={})
+    for r_ in rows:
+        if not r_['ok']:
+            key = f'{r_["stage"]}: {r_["why"][:60]}'
+            summ['fails'][key] = summ['fails'].get(key, 0) + 1
+    (out / 'summary.json').write_text(json.dumps(summ, indent=1))
+    _random_figure(rows, out / 'random.png')
+    print(json.dumps(summ, indent=1), flush=True)
+
+
+def _random_figure(rows, path):
+    import matplotlib
+    matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+    fig, ax = plt.subplots(1, 2, figsize=(10, 4.5))
+    for r_ in rows:
+        ax[0].scatter(r_['basket'][1], r_['basket'][0], c='tab:green' if r_['ok'] else 'tab:red', s=14)
+        ax[1].scatter(r_['basket'][2], r_['basket'][0], c='tab:green' if r_['ok'] else 'tab:red', s=14)
+    ax[0].set_xlabel('basket centre y [m] (+ = left)')
+    ax[0].set_ylabel('basket centre x [m]')
+    ax[0].invert_xaxis()
+    ax[1].set_xlabel('basket yaw [deg]')
+    ax[1].set_ylabel('basket centre x [m]')
+    for a_ in ax:
+        a_.spines[['top', 'right']].set_visible(False)
+    fig.tight_layout()
+    fig.savefig(path, dpi=120)
+
+
+_RANDOM = {}
 _REACH = {}
 
 if __name__ == '__main__':
     import argparse
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument('mode', choices=('basket_reach', 'quadrant_plans'))
+    p.add_argument('mode', choices=('basket_reach', 'quadrant_plans', 'look_plans', 'random_plans'))
     p.add_argument('--basket', type=float, nargs=3, default=(0.75, 0.15, 0.0), metavar=('X', 'Y', 'YAW'), help='quadrant_plans: basket pose')
     p.add_argument('--plate', type=float, nargs=2, default=None, help='quadrant_plans: plate x y (turns the newest grasp about joint 1)')
     p.add_argument('--quadrants', nargs='+', default=['Q3', 'Q4', 'Q1', 'Q2'])
@@ -1043,6 +1251,10 @@ if __name__ == '__main__':
     p.add_argument('--phi_step', type=int, default=15)
     p.add_argument('--random_seeds', type=int, default=4)
     p.add_argument('--workers', type=int, default=16)
+    p.add_argument('--n', type=int, default=300, help='random_plans: setups')
+    p.add_argument('--yaw_range', type=float, default=15.0, help='random_plans: basket yaw uniform in +-this [deg]')
+    p.add_argument('--seed', type=int, default=0)
+    p.add_argument('--measure', action='store_true', help='look_plans: basket from the fixed camera markers (read-only)')
     p.add_argument('--run', default=None, help='real run folder for the in-hand plate (default: newest with realplan_req)')
     a = p.parse_args()
-    basket_reach(a) if a.mode == 'basket_reach' else quadrant_plans(a)
+    dict(basket_reach=basket_reach, quadrant_plans=quadrant_plans, look_plans=look_plans, random_plans=random_plans)[a.mode](a)

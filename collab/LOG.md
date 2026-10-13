@@ -1388,3 +1388,12 @@
 - C primary-source7편(REFLECT/AHA/Sentinel/FINO-Net/TRANSIC/Recovery RL/Farid RSS2022) collab/FAILURE_DETECTION_REVIEW_2026-10-13.md. 논문사실/우리적용추론 구분.
 - 기존+새 모의테스트24/24, diff whitespace검사통과. 실로봇/그리퍼명령없음,Claude파일/rl수정없음,기존데이터보존.
 - hourly heartbeat automation(id=automation) 활성: TASKBOARD 새 요청·리뷰 확인, 밤 작업 지속,10/14 09:00 KST 보고 후 일시중지. 잔여컨텍스트 토큰% 조회수단이 없어 5%라는 수치는 추정하지 않음.
+
+## 2026-10-13 19:2x Claude — 분면 손목 사진, 무작위 배치 검사, 점검
+- 바구니를 +y로 옮김(보스): 고정 카메라 실측 (0.811, +0.167, 0.142) 회전 −0.9°, 마커 2·3·1, 잔차 6.8 mm. (0.99, +0.215)와 (0.89, +0.157)에서는 Q1 넣기 IK 불가(도달 지도대로 먼 분면 x ≤ 0.85).
+- 이 위치에서 분면 IK 넣기 4/4 (접시 −y (1.05, −0.37), 운반 여유/기준 Q3 1.12, Q4 1.0, Q1 1.0, Q2 1.41).
+- `plate_plans.py look_plans --measure`: 분면별 손목 보기 자세(카메라 0.42 m 위 수직, 화면 위 = 바구니 먼 쪽; Q2는 90° 회전) + 홈 왕복 경로 + 사진 요청. 보스가 이동, Claude가 사진(카메라 읽기만) → `calibration/data/basket/wrist_look/20261013_190126_Q{1..4}`. 모델 핀이 실제와 대체로 겹치나 **클립 근처 핀 3~4개/줄 누락**(보스 확인), 빗살 끝 수 mm, Q2 위 두 줄 약 20 px 어긋남.
+- 마커 ID: 마커마다 바구니 좌표 위치를 기억해 2-D Kabsch로 맞추므로 회전 제한 없음. 분면 이름은 로봇 기준(`robot_quadrants`)으로 바구니 회전 시 자동 대응.
+- Codex A 검출기를 새 사진 4장에 적용: 확정 쌍 Q3 1, Q4 4, Q1 0, Q2 2 → Codex D(실제 핀 배치 측정)/E(검출기 개선) 추가.
+- `random_plans` 추가: 무작위 바구니(x 0.5~0.9, y ±0.35, 회전 ±15°)·접시(r 0.86~1.30, |y| ≤ 0.42)·분면·틈 → 라이브러리 잡기 + 분면 넣기 전체 계획. 300건 실행 중. IK 시드 한계 밖 버그 수정(`Kinematics.ik` clip).
+- 내 밤 계획과 시간별 점검: `collab/PLAN_CLAUDE_2026-10-13_night.md`.

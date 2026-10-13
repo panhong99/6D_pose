@@ -64,7 +64,9 @@ class Kinematics:
             actual = self.fk(q)
             return np.r_[actual[:3, 3] - target[:3, 3],
                          Rotation.from_matrix(target[:3, :3].T @ actual[:3, :3]).as_rotvec() * .25]
-        fit = least_squares(residual, seed, bounds=([j[3] for j in self.joints], [j[4] for j in self.joints]), max_nfev=250)
+        lo, hi = np.array([j[3] for j in self.joints]), np.array([j[4] for j in self.joints])
+        seed = np.clip(seed, lo + 1e-6, hi - 1e-6)            # a seed at/over a limit (e.g. a taught pose) is refused by scipy
+        fit = least_squares(residual, seed, bounds=(lo, hi), max_nfev=250)
         if np.linalg.norm(residual(fit.x)) > 1e-4:
             raise RuntimeError('Unreachable IK target')
         return fit.x
