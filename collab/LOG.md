@@ -1355,3 +1355,4 @@
 - 지정시각마감에따라automation bc를PAUSED로변경완료.중지사유는작업완료가아닌야간점검기한종료.후속필수작업:전체운반path안전성·physical그립/손안회전·시뮬접촉모델을고치고검증된전문가로clean/DART수집재개.
 - 최종summary rl/reports/codex_basket_night_20261013/summary.json,세부감사rl/logs/basket/codex_audit_20261012_2203.json,물리계측codex_physical_verified.log.실기명령실행없음.
 - 10/13 오전: 보스 W&B 질문 → 지표 정의 문서 `collab/METRICS_basket.md`. GUI 확인용 `train.py rl ... --view <ckpt|bc>` 추가(9 env, 실시간, 에피소드마다 성공/실패 출력, W&B/폴더 생성 안 함). 확인된 로그 문제: (1) rollout_success가 50 it마다 0 = eval 직후 전 env 리셋으로 그 iteration에 끝난 에피소드가 0개(실패 아님), (2) reward는 step당 평균이라 에피소드 리턴이 아님, (3) RL W&B run이 재시작마다 새로 생김(rl_seed1 3개) + 재평가도 run 생성 → 재평가는 이제 run 안 만듦, (4) 최종 RL eval이 it 350 0.925 → 550 0.759로 하락(best.pt는 350 사용).
+- 평균 에피소드 리턴 재평가(1,024판, seed 11, `train.py rl --eval_ckpt`): 성공 BC 0.793 / RL 0.905, **리턴 BC −4.99 / RL +4.17**. 종료 보상(±10)만으로는 BC +5.9, RL +8.1이므로 shaping 누적이 BC −10.9, RL −3.9 → shaping이 종료 보상과 같은 크기(가중치 재검토 후보).
