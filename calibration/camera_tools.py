@@ -7,6 +7,7 @@
   python calibration/camera_tools.py pins --out NEW_DIR                           saved wrist photos only; numbered diagnostic overlays
   python calibration/camera_tools.py basket_stats --out NEW_DIR                   fixed camera repeatability; --marker_size_m is actual printed size
   python calibration/camera_tools.py pin_layout --labels LABELS.json --out NEW_DIR   ray/height-plane measurement from checked pixel labels
+  python calibration/camera_tools.py plate_angle --req wrist_above.req.json --out NEW_DIR  RGB disk silhouette yaw diagnostic
 
 preview : one camera (default the first found) with depth colour map and centre depth; S saves to data/real_env/.
           --all / --serial: several cameras side by side (no saving).
@@ -911,10 +912,149 @@ def basket_stats(a, cfg):
     return result
 
 
+def plate_angle(req, out, radius_m=0.134):
+    """Estimate disk-plane yaw from one saved RGB silhouette, with the planned perpendicular orientation as prior.
+
+    The inverse projection has a second yaw branch. This diagnostic only fits ±40° around basket +y
+    and reports sensitivity to colour threshold; it must not directly command a wrist joint.
+    """
+    from scipy.optimize import least_squares
+    req, out = Path(req), Path(out)
+    r = json.loads(req.read_text())
+    png = Path(r['png'])
+    meta = json.loads(png.with_suffix('.json').read_text())
+    raw = png.with_name(png.stem + '.raw.png')
+    image = cv2.imread(str(raw))
+    if image is None:
+        raise FileNotFoundError(raw)
+    K = np.asarray(meta['K'], float)
+    Tbc = np.asarray(meta['T_base_flange'], float) @ np.asarray(meta['T_flange_cam'], float)
+    Tbb = np.asarray(meta['T_base_basket'], float)
+    R = Tbc[:3, :3].T @ Tbb[:3, :3]
+    hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+    phase = np.linspace(0, 2*np.pi, 128, endpoint=False)
+    cos_phase, sin_phase = np.cos(phase), np.sin(phase)
+
+    def projection(state):
+        cx, cy, cz, yaw = state
+        tangent = R @ np.array([np.cos(yaw), np.sin(yaw), 0.0])
+        up = R @ np.array([0.0, 0.0, 1.0])
+        points = np.array([cx, cy, cz])[None] + radius_m * (
+            cos_phase[:, None] * tangent + sin_phase[:, None] * up)
+        if np.min(points[:, 2]) <= 0.05:
+            raise ValueError('Projected plate behind camera')
+        uvw = points @ K.T
+        return uvw[:, :2] / uvw[:, 2:3]
+
+    estimates = []
+    for sat in (65, 80, 95):
+        red = (((hsv[:, :, 0] < 15) | (hsv[:, :, 0] > 165)) &
+               (hsv[:, :, 1] > sat) & (hsv[:, :, 2] > 45)).astype(np.uint8)
+        _, components, stats, _ = cv2.connectedComponentsWithStats(red)
+        if len(stats) < 2 or int(stats[1:, 4].max()) < 10000:
+            raise ValueError('No large red plate silhouette in saved image')
+        component = 1 + int(np.argmax(stats[1:, 4]))
+        contours, _ = cv2.findContours((components == component).astype(np.uint8),
+                                       cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+        observed = cv2.fitEllipse(max(contours, key=cv2.contourArea))
+        center = np.asarray(observed[0], float)
+        sizes = np.asarray(observed[1], float)
+        minor_dir = np.array([np.cos(np.radians(observed[2])), np.sin(np.radians(observed[2]))])
+
+        def ellipse_properties(state):
+            xy = projection(state)
+            mean = xy.mean(axis=0)
+            eigenvalues, eigenvectors = np.linalg.eigh(np.cov(xy.T))
+            return mean, 2*np.sqrt(2*eigenvalues), eigenvectors[:, 0], xy
+
+        def residual(state):
+            mean, lengths, direction, _ = ellipse_properties(state)
+            cross = direction[0]*minor_dir[1] - direction[1]*minor_dir[0]
+            return np.r_[(mean-center)/15.0, (lengths-sizes)/15.0, cross*3.0]
+
+        # Circle plane should be perpendicular to basket x; a farther yaw branch is underdetermined
+        # by one RGB view and is deliberately excluded rather than presented as a unique solution.
+        depth = max(0.2, min(0.6, 2*radius_m*K[0, 0]/sizes[1]))
+        start = [(center[0]-K[0, 2])*depth/K[0, 0],
+                 (center[1]-K[1, 2])*depth/K[1, 1], depth, np.pi/2]
+        fit = least_squares(residual, start,
+                            bounds=([-0.4, -0.4, 0.17, np.radians(50)],
+                                    [0.4, 0.4, 0.8, np.radians(130)]), max_nfev=250)
+        mean, lengths, _, poly = ellipse_properties(fit.x)
+        estimates.append(dict(saturation_threshold=sat, plate_plane_yaw_basket_deg=float(np.degrees(fit.x[3])),
+                              perpendicular_error_deg=float(np.degrees(fit.x[3])-90.0),
+                              fit_residual_norm=float(np.linalg.norm(residual(fit.x))),
+                              observed_ellipse=dict(center_px=center.tolist(), axes_px=sizes.tolist(),
+                                                    minor_axis_deg=float(observed[2])),
+                              projected_ellipse=dict(center_px=mean.tolist(), axes_px=lengths.tolist()),
+                              projected_outline_px=poly.tolist(), red_component_px=int(stats[component, 4])))
+    median = float(np.median([x['perpendicular_error_deg'] for x in estimates]))
+    # One ellipse cannot separate yaw from a small out-of-vertical dish tilt.
+    # Demonstrate the ambiguity with a joint fit before any controller consumes this diagnostic.
+    observed_mid = estimates[1]['observed_ellipse']
+    centre_mid = np.asarray(observed_mid['center_px'], float)
+    axes_mid = np.asarray(observed_mid['axes_px'], float)
+    angle_mid = float(observed_mid['minor_axis_deg'])
+
+    def tilted_outline(state):
+        cx, cy, cz, yaw, tilt = state
+        tangent = R @ np.array([np.cos(yaw), np.sin(yaw), 0.0])
+        normal = R @ np.array([-np.sin(yaw), np.cos(yaw), 0.0])
+        up = np.cos(tilt)*(R @ np.array([0.0, 0.0, 1.0])) + np.sin(tilt)*normal
+        points = np.array([cx, cy, cz])[None] + radius_m*(
+            cos_phase[:, None]*tangent + sin_phase[:, None]*up)
+        uvw = points @ K.T
+        return (uvw[:, :2]/uvw[:, 2:3]).astype(np.float32)
+
+    def tilted_residual(state):
+        fitted = cv2.fitEllipse(tilted_outline(state))
+        angle_difference = (fitted[2]-angle_mid+90.0) % 180.0-90.0
+        return np.r_[(np.asarray(fitted[0])-centre_mid)/15.0,
+                     (np.asarray(fitted[1])-axes_mid)/15.0,
+                     angle_difference/15.0]
+
+    upright = estimates[1]
+    z_guess = max(0.2, min(0.6, 2*radius_m*K[0, 0]/axes_mid[1]))
+    joint_start = [(centre_mid[0]-K[0, 2])*z_guess/K[0, 0],
+                   (centre_mid[1]-K[1, 2])*z_guess/K[1, 1], z_guess,
+                   np.radians(upright['plate_plane_yaw_basket_deg']), 0.0]
+    joint = least_squares(tilted_residual, joint_start,
+                          bounds=([-0.4, -0.4, 0.17, np.radians(50), np.radians(-15)],
+                                  [0.4, 0.4, 0.8, np.radians(130), np.radians(15)]),
+                          max_nfev=300, diff_step=1e-4)
+    joint_fit = dict(yaw_error_deg=float(np.degrees(joint.x[3])-90.0),
+                     out_of_vertical_tilt_deg=float(np.degrees(joint.x[4])),
+                     residual_norm=float(np.linalg.norm(tilted_residual(joint.x))))
+    view = image.copy()
+    xy = np.rint(np.asarray(estimates[1]['projected_outline_px'])).astype(np.int32)
+    cv2.polylines(view, [xy], True, (20, 220, 50), 2)
+    cv2.polylines(view, [np.rint(tilted_outline(joint.x)).astype(np.int32)], True, (255, 180, 40), 2)
+    cv2.ellipse(view, tuple(np.rint(estimates[1]['observed_ellipse']['center_px']).astype(int)),
+                tuple(np.rint(np.asarray(estimates[1]['observed_ellipse']['axes_px'])/2).astype(int)),
+                estimates[1]['observed_ellipse']['minor_axis_deg'], 0, 360, (0, 230, 255), 2)
+    cv2.putText(view, f'if upright: yaw error {median:+.1f} deg; tilt-fit: {joint_fit["yaw_error_deg"]:+.1f} deg',
+                (20, 35), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 200, 255), 2, cv2.LINE_AA)
+    result = dict(req=str(req.resolve()), image=str(raw.resolve()), radius_assumption_m=radius_m,
+                  method='red connected-component contour; ellipse fit; perspective disk fit around planned 90 deg',
+                  perpendicular_error_deg=median, threshold_sensitivity_deg=float(np.ptp(
+                      [x['perpendicular_error_deg'] for x in estimates])), fits=estimates,
+                  joint_yaw_tilt_fit=joint_fit,
+                  conclusion='Yaw is not identifiable from this one RGB silhouette without an independent tilt measurement.',
+                  limits='Single RGB view has yaw-branch ambiguity; disk assumed circular and 268 mm wide. '
+                         'Gripper occlusion, dish depth and unknown plate tilt add unmeasured bias. Diagnostic only; '
+                         'do not command wrist correction from the upright-only estimate.')
+    out.mkdir(parents=True, exist_ok=False)
+    cv2.imwrite(str(out/'plate_angle.png'), view)
+    (out/'plate_angle.json').write_text(json.dumps(result, indent=2))
+    print(json.dumps(dict(out=str(out), upright_only_error_deg=median,
+                          joint_yaw_tilt_fit=joint_fit, conclusion=result['conclusion'])))
+    return result
+
+
 if __name__ == '__main__':
     cfg = load_config()
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument('mode', choices=('preview', 'marker', 'probe', 'locate', 'basket', 'wrist_look', 'pre_photo', 'pins', 'basket_stats', 'pin_layout'))
+    p.add_argument('mode', choices=('preview', 'marker', 'probe', 'locate', 'basket', 'wrist_look', 'pre_photo', 'pins', 'basket_stats', 'pin_layout', 'plate_angle'))
     p.add_argument('--define', action='store_true', help='basket: define the basket frame / marker layout now')
     p.add_argument('--define_current', action='store_true', help='basket: marker layout in today\'s known basket frame (10/12)')
     p.add_argument('--golden', default=None, help='basket --define: also store this full teaching\'s slot in the basket frame')
@@ -928,6 +1068,7 @@ if __name__ == '__main__':
     p.add_argument('--dictionary', default=None)
     p.add_argument('--out', type=Path, help='pins / basket_stats: new output directory')
     p.add_argument('--labels', type=Path, help='pin_layout: checked pin root/tip pixel labels JSON')
+    p.add_argument('--plate_radius_m', type=float, default=0.134, help='plate_angle: assumed dish outer radius')
     p.add_argument('--rotate', choices=('auto', '0', '90', '270'), default='auto', help='pins: display rotation, raw projection unchanged')
     p.add_argument('--search_mm', type=float, default=8.0, help='pins: maximum local correction along basket x')
     p.add_argument('--marker_size_m', type=float, help='basket_stats: actual printed black square side, override for this run only')
@@ -952,6 +1093,10 @@ if __name__ == '__main__':
         if not a.labels or not a.out:
             p.error('pin_layout requires --labels and --out')
         pin_layout_measure(a.labels, a.out)
+    elif a.mode == 'plate_angle':
+        if not a.req or not a.out:
+            p.error('plate_angle requires --req and --out')
+        plate_angle(a.req, a.out, a.plate_radius_m)
     elif a.mode == 'pre_photo':
         pre_photo(a, cfg)
     else:
