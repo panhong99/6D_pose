@@ -265,6 +265,11 @@ def policy_plan(job, out, Tbc, q, wait_s=240):
         down = down + [np.degrees(Kinematics().ik(T, np.radians(down[-1]))).round(3).tolist()]
     from plate_plans import taught_plan, thin_waypoints as thin   # repeated waypoints: the controller does not move
     start, down, up = thin(start), thin(down), thin([down[-1]] + up)
+    lo, hi = np.array(nodes.joint_limits_deg()).T          # (10/13) controller limits (J5 +-135, the sim rise went past):
+    up = up[:next((i for i, w in enumerate(up) if not ((np.array(w) > lo + 3) & (np.array(w) < hi - 3)).all()), len(up))]   # rise while inside
+    if len(up) < 3:
+        print('   정책 상승 경로가 관절 한계에 걸림 -> 티칭 경로로 넣기', flush=True)
+        return None
     last = up[-1]
     try:
         return taught_plan(dict(to_policy_start=start, policy_descend=down, policy_ascend=up,

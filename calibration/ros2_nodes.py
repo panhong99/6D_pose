@@ -194,12 +194,16 @@ def mover_args(argv=None):
     return p.parse_args(argv)
 
 
+CONTROLLER_LIMITS_DEG = {'joint_5': (-135.0, 135.0)}   # (10/13) controller alarm 1207 'JNT(5) POS LIMIT' at 135.7 (URDF says 360)
+
+
 def joint_limits_deg():
     limits = {}
     for joint in ET.parse(URDF).getroot().iter('joint'):
         lim = joint.find('limit')
         if joint.get('type') == 'revolute' and lim is not None and joint.get('name', '').startswith('joint_'):
             limits[joint.get('name')] = (np.degrees(float(lim.get('lower'))), np.degrees(float(lim.get('upper'))))
+    limits.update(CONTROLLER_LIMITS_DEG)
     return [limits[f'joint_{i}'] for i in range(1, 7)]
 
 
