@@ -1452,3 +1452,8 @@
 ## 2026-10-14 04:24 Codex — Q3 전 구간 자동 후보
 - Q3 두 줄에서 끝점 검은선 세로 프로파일 국소 최대를 찾아 왼쪽12개, 오른쪽13개 후보와 선 추적 오버레이를 새 `calibration/data/basket/wrist_look/pin_candidates_q3_codex_20261014.json/.png`로 저장. 시작할 때 수동 확인한 각 줄 위쪽3개와 후보의 끝점 간격은 대체로 맞음.
 - 전체 오버레이에서 격자 교차점(y≈345)과 하단 마커 가림 부근의 뿌리 대응이 틀리고 오른쪽 끝 1개가 실제 핀인지 분명하지 않다. 모든 새 항목은 `candidate`, checked 수는 기존14개 그대로. 25개를 실측 핀 수, 검출 성공 또는 E recall로 세지 않음. 저장 사진 분석만 수행.
+
+## 2026-10-14 05:24 Codex — Q3 중간 핀 4개 추가 확인
+- Q3 중간 구간 4배 크롭(`/tmp/q3_mid_candidate_zoom.png`)에서 pair B 각 줄의 후보 2개씩, 총4개 원본 철사와 오버레이 선이 일치함을 육안 확인. 기존 Q3 6개와 합친 새 `calibration/data/basket/wrist_look/pin_labels_q3_partial_checked_20261014_v2.json`(10개), 역투영 `calibration/data/basket/pin_layout_q3_partial_checked_20261014_v2/pin_layout_measured.json` 저장. 기존 부분 결과는 보존.
+- 추가 4개 root x는 왼쪽−37.4/−61.5mm, 오른쪽−43.9/−64.7mm. 선이 부채꼴이라 root 간격이 tip 간격처럼 일정하지 않으며, 이 값은 라벨과 모델 높이 가정에 따른 추정치다. 다음 핀들은 자동 능선이 인접 핀/격자로 넘어가는 장면이 보여 제외.
+- 현재 checked는 Q1 4 + Q3 10 + Q4 4 = 18개. 전체 D 라벨/클립/모델 비교와 E 평가는 미완료. 로봇/그리퍼 명령 없음.
