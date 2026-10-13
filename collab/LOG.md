@@ -1443,3 +1443,8 @@
 - Q1 확대와 원본 오버레이에서 pair A 위쪽 2개×2줄 root/tip 4개를 수동 확인. 라벨 `calibration/data/basket/wrist_look/pin_labels_q1_partial_checked_20261014.json`, 역투영 `calibration/data/basket/pin_layout_q1_partial_checked_20261014/pin_layout_measured.json`. 모델 높이 가정에서 root x=184.9/164.8mm 및184.1/163.2mm, tip x=196.9/179.4mm 및194.8/177.3mm. x방향 기울기−9.2~−12.4°, 끝점 클릭 약2~3px 불확실. Q4의 반대편에서 본 동일 pair A 구간이라 x 위치가 다름.
 - Q2 사진은 표시상 90° 회전이며 원본은1280×720. 회전 표시에서 보인 아래 레일 핀 2개의 픽셀을 원본 좌표로 되돌려 `calibration/data/basket/wrist_look/pin_labels_q2_partial_candidate_20261014.json`에 저장. 줄 이름과 뿌리 대응을 확정하지 못해 `candidate` 유지, 역투영/정답 수에 넣지 않음.
 - 확인된 일부 핀은 Q1/Q3/Q4 합계14개. D 전체 목표인 Q1~Q4 모든 줄, 클립 인접 핀과 모델 차이 표는 아직 미완료. 이 부분 라벨로 E의 precision/recall을 계산하지 않음. 실로봇·그리퍼 명령 없음.
+
+## 2026-10-14 03:22 Codex — Q2 후보의 줄 배정·간격 검산
+- Q2 회전 화면에서 고른 핀 후보 2개를 원본 픽셀로 되돌려 저장 K/T로 역투영. rail 높이 가정에서 root 바구니좌표(+59.0,−68.6)mm, (+87.0,−69.4)mm; tip(+76.0,−75.3)mm, (+101.1,−73.2)mm. y는 Q3 확인 `pair_B_row_plus` 약−56.7mm보다 12mm 낮고 `row_minus` 약−140.8mm보다 훨씬 가까워 줄은 plus일 가능성이 높음.
+- 다만 Q2 후보 간 root x 간격28.0mm는 Q3 같은 줄의 수동 확인 핀 간격17.6~18.4mm와 맞지 않는다. Q2 사진의 핀 대응/정점 클릭 또는 시점·캘리브레이션 오차를 분리하지 못했으므로 `calibration/data/basket/wrist_look/pin_labels_q2_partial_candidate_20261014_v2.json`로 후보만 보존. 정답으로 승격하지 않음. Q1과 Q4의 pair A root y는 약164.4/166.0mm로 서로 근접해 일부 교차 시점 검산은 통과.
+- D 최종 파일과 E 수치는 이 불일치가 해결된 뒤에만 만들 것. 실로봇/그리퍼 명령 없음.
