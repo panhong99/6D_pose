@@ -1433,3 +1433,8 @@
 - Q4 원본 4배 확대에서 가림이 없는 위쪽 핀 2개씩, 두 줄 총4개의 실제 철사 끝과 고정 뿌리를 육안 확인. 부분 라벨 `calibration/data/basket/wrist_look/pin_labels_q4_partial_checked_20261014.json`, 별도 역투영 `calibration/data/basket/pin_layout_q4_partial_checked_20261014/pin_layout_measured.json`. 기존 원본과 후보 파일은 보존.
 - 가정한 rail/tip 높이 평면에서 왼쪽 줄 root x=+13.0,−4.6mm / tip x=−4.2,−21.0mm, 오른쪽 줄 root x=+10.6,−8.6mm / tip x=−7.0,−23.8mm(바구니 중심 기준). 각 줄의 두 핀 간격은 root에서17.6/19.2mm. x방향 기울기12.9~14.9°. 끝점 수동 클릭 불확실성 약2~3px, 높이는 모델 가정이므로 절대 3D 정확도 주장은 아님.
 - Q4 일부만 checked이며 D 전체 정답(4사진/4줄)·클립 위치·모델 차이 표는 아직 미완료. 이 4개로 E의 recall 또는 80% 달성을 계산하지 않음. 로봇/그리퍼 명령 없음.
+
+## 2026-10-14 01:20 Codex — Q3 부분 수동 라벨 6개
+- Q3 원본 4배 확대에서 pair B 두 줄의 가림 없는 위쪽 핀 3개씩을 수동으로 root/tip 픽셀 표시하고 오버레이를 재검토. 새 라벨 `calibration/data/basket/wrist_look/pin_labels_q3_partial_checked_20261014.json`, 별도 역투영 `calibration/data/basket/pin_layout_q3_partial_checked_20261014/pin_layout_measured.json`. 검토용 오버레이는 `/tmp/q3_partial_checked_overlay.png`.
+- 모델 높이 가정에서 왼쪽 줄 root x=+7.4,−11.0,−28.6mm / tip x=−11.2,−27.9,−43.3mm, 오른쪽 줄 root x=+5.0,−13.4,−31.0mm / tip x=−14.0,−30.0,−46.8mm. root x 인접 피치17.6~18.4mm, x방향 기울기12.5~16.0°. 일부 끝점 클릭 오차2~3px, 높이 모델 가정, 카메라/hand-eye 오차는 별도다.
+- Q3/Q4 지금까지 일부 핀 총10개만 checked. Q1/Q2, 나머지 핀, 클립 주변 및 모델과의 전체 차이는 아직 확인 중이며 D/E 완료 또는 검출 성능으로 보고하지 않음. 실로봇/그리퍼 명령 없음.
