@@ -139,7 +139,7 @@ plate_ik_bc:                       # --plate_policy ik_bc (overrides plate_rl ke
   basket_ascend_vel_deg_s: 1.5         # after release
   basket_policy_bc: ../rl/logs/basket/bc_data_basket_v3_20261012/seed3_20261012_215747/best.pt   # --insert policy (10/13)
   basket_policy_rl: ../rl/logs/basket/rl_20261013_003636/best.pt   # residual RL on it: sim 0.913 vs BC 0.786 (1,024 ep)
-  basket_policy_vel_deg_s: 1.0         # policy_descend: 37.7 deg of joint travel for ~7 cm (corrections) -> ~2 mm/s TCP, ~40 s
+  basket_policy_vel_deg_s: 0.4         # policy_descend (10/13): 1.0 was ~4.5 mm/s TCP in the pins, faster than the taught descend (0.25 -> 56 mm in 26.7 s = 2.1 mm/s); 0.4 -> ~2 mm/s, ~45 s
   basket_slot_shift_pitches: 2         # real intended gap = sim slot origin + 2 pins (P1 replay 10/12)
   auto_max_plate_move_mm: 15.0         # --auto: do not close if FP saw the plate move more than this since planning
   workspace_mm: {x: [-80, 140], y: [-180, 180], z: [-15, 15]}   # FP + offset - rl plate_xy (no-library mode)
