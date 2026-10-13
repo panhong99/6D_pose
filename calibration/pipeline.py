@@ -511,6 +511,8 @@ def run_plate(args):
             if err > q['start_tolerance_deg']:
                 raise RuntimeError(f'robot is {err:.1f} deg from home; move it to home with the pendant first')
         basket_delta, basket_T = None, None
+        if args.insert == 'quadrant' and (args.place != 'basket' or not args.quadrant):
+            raise SystemExit('--insert quadrant needs --place basket (measured markers) and --quadrant Q1..Q4')
         if args.place == 'basket':                           # markers first: the fixed D455 is FoundationPose's afterwards
             from camera_tools import basket_fit_robust, basket_measure
             slot1 = json.loads((DATA / 'basket' / 'slot_01_in_basket.json').read_text())
@@ -593,7 +595,22 @@ def run_plate(args):
             print(f'[3/5] BC+RL 정책 rollout (sim) at ({x:.4f}, {y:.4f}) yaw {yaw:.1f}: 1~2 분', flush=True)
             plan = export_plan(x, y, yaw, out / 'export.log', q)
         early, shown, policy_job = None, plan, None
-        if args.place in ('golden', 'basket'):          # (10/12) whole path before moving: reach check + RViz preview
+        if args.place == 'basket' and args.insert == 'quadrant':   # (10/13) any basket pose, IK carry + insert, no teaching
+            legs0 = json.loads(Path(plan).read_text())['legs']
+            from plate_plans import hand_plate, pin_gap, quadrant_plan, robot_quadrants
+            H, tool = hand_plate(legs0['to_grasp']['waypoints_deg'][-1], p)
+            mq = robot_quadrants(basket_T)[args.quadrant]
+            early, rep = quadrant_plan(basket_T, mq, pin_gap(basket_T, mq, args.pin), H, tool, legs0['lift']['waypoints_deg'][-1], Tbc, q)
+            if early is None:
+                raise RuntimeError(f'{args.quadrant} pin {args.pin}: no insert plan from this grasp ({rep["tried"][:4]})')
+            print(f'   {args.quadrant} (바구니 모델 {mq}) 핀 {args.pin}: 넣기 계획 OK, 운반 {rep["carry"]}, '
+                  f'충돌 여유/기준 {rep["clearance_ratio"]}', flush=True)
+            both = json.loads(Path(plan).read_text())
+            both['legs'].update(json.loads(early.read_text())['legs'])
+            shown = out / 'preview_plan.json'
+            shown.write_text(json.dumps(dict(both, preview_only=True, basket_T=np.asarray(basket_T).tolist(),
+                                             plate_in_tcp=np.asarray(H).tolist())))
+        elif args.place in ('golden', 'basket'):          # (10/12) whole path before moving: reach check + RViz preview
             legs0 = json.loads(Path(plan).read_text())['legs']
             early = golden_slot_plan(q['golden_teach'], legs0['to_grasp']['waypoints_deg'][-1], legs0['lift']['waypoints_deg'][-1],
                                      Tbc, q, basket_delta=basket_delta, plate_xy=p[:2])
@@ -683,7 +700,7 @@ def run_plate(args):
             choose_gripper('abort')
             leg('from_grasp')
             raise RuntimeError('no grasp: measure how far the plate had to move and set plate_rl.offset_m')
-        merge = args.auto and args.insert == 'policy' and q.get('auto_merged_legs', False) and early is not None   # (10/13 보스)
+        merge = args.auto and args.insert in ('policy', 'quadrant') and q.get('auto_merged_legs', False) and early is not None   # (10/13 보스)
         if not merge:
             leg('lift')
             rec.event('lifted')
@@ -770,6 +787,15 @@ def run_plate(args):
                 if ask('\n[1/4] 바구니 위. d = 2단계 하강 시작, h = 하강 없이 홈 복귀 > ', ('d', 'h')) == 'h':
                     sleg('abort_home')
                     rec.event('done', place=args.place, slot=k, stopped='above_home')
+                    return
+                if args.insert == 'quadrant':                  # straight down at the insert speed, release, straight up + home
+                    if merge:
+                        look('above')
+                    mleg([(splan, 'descend')], 'insert', q.get('basket_quadrant_vel_deg_s', q.get('basket_policy_vel_deg_s', 1.0)))
+                    choose_gripper(f'slot{k}_release')
+                    mleg([(splan, 'ascend'), (splan, 'to_home')], 'retreat', vel)
+                    rec.event('done', place=args.place, quadrant=args.quadrant, pin=args.pin, insert='quadrant', merged=merge)
+                    print(f'[5/5] {args.quadrant} 핀 {args.pin} 넣기 완료.', flush=True)
                     return
                 if policy_job is not None:
                     ppath = policy_plan(policy_job, out, Tbc, q)
@@ -927,8 +953,13 @@ def parse_args(argv=None):
                         'Enter stores carry / above / insert / retreat; slot = replay the taught slot path; '
                         'golden = the best full teaching (config plate_ik_bc.golden_teach) corrected to this grasp; '
                         'basket = golden + the basket pose from its 4 markers (the slot path follows a moved basket)')
-    p.add_argument('--insert', choices=('taught', 'policy'), default='taught', help='golden / basket: taught descent (default) or the '
-                   'learned policy (BC + residual RL, rl/basket) rolled out in sim on the measured basket / grasp')
+    p.add_argument('--insert', choices=('taught', 'policy', 'quadrant'), default='taught', help='golden / basket: taught descent (default), the '
+                   'learned policy (BC + residual RL, rl/basket) rolled out in sim on the measured basket / grasp, or quadrant = '
+                   'IK carry + straight-down insert into --quadrant / --pin of the measured basket (10/13, no teaching)')
+    p.add_argument('--quadrant', choices=('Q1', 'Q2', 'Q3', 'Q4'), default=None,
+                   help='--insert quadrant: robot view, robot at the bottom: Q1 far-right, Q2 far-left, Q3 near-left, Q4 near-right')
+    p.add_argument('--pin', type=int, default=5, help='--insert quadrant: pin-pair number in the quadrant, 1 = farthest from '
+                   'the robot (wrist image top -> bottom); the plate goes into the gap just robot-side of that pair')
     p.add_argument('--auto', action='store_true', help='plate: no Human answers after the opening phrase: gripper '
                    'closes at the grasp pose (if FP says the plate did not move) and opens at the insert; stops go on')
     p.add_argument('--stop_at_above', action='store_true',

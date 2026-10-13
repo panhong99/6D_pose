@@ -733,17 +733,22 @@ def plate_in_hand(run_dir=None):
     """H = plate (centre, z = normal, x = toward the grasp point) in the TCP frame, from a real run's grasp (FP + joints)."""
     d = Path(run_dir) if run_dir else sorted(p.parent for p in (DATA / 'real_pipeline').glob('*/realplan_req.json'))[-1]
     req = json.loads((d / 'realplan_req.json').read_text())
+    return hand_plate(req['grasp_deg'], req['plate_root_fp']) + (d.name,)
+
+
+def hand_plate(grasp_deg, plate_root):
+    """(H, tool): the plate lying at `plate_root` (FP, base) as held by the TCP at the grasp joints."""
     kin, tool = Kinematics(), np.eye(4)
     tool[2, 3] = C['plate_ik_bc'].get('tool_length_m', 0.165)
-    T_tcp = kin.fk(np.radians(req['grasp_deg'])) @ tool
-    c = np.asarray(req['plate_root_fp'][:3]) + [0, 0, 0.01]
+    T_tcp = kin.fk(np.radians(grasp_deg)) @ tool
+    c = np.asarray(plate_root[:3]) + [0, 0, 0.01]
     a = T_tcp[:3, 3] - c
     a[2] = 0.0
     x = a / np.linalg.norm(a)
     T_pl = np.eye(4)
     T_pl[:3, :3] = np.stack([x, np.cross([0, 0, 1.0], x), [0, 0, 1.0]], 1)
     T_pl[:3, 3] = c
-    return np.linalg.inv(T_tcp) @ T_pl, tool, d.name
+    return np.linalg.inv(T_tcp) @ T_pl, tool
 
 
 def _reach_one(job):
@@ -1043,9 +1048,20 @@ def robot_quadrants(Tbb):
     return out
 
 
+def pin_gap(Tbb, model_qd, pin):
+    """Gap index (basket_gaps order) for pin number `pin` (1 = the pair farthest from the robot in the quadrant, counted
+    toward the robot = wrist image top -> bottom) : the plate goes into the gap just robot-side of pair `pin`."""
+    n = len(basket_gaps()[model_qd])
+    if not 1 <= pin <= n:
+        raise ValueError(f'--pin {pin}: this quadrant has gaps 1..{n}')
+    T = np.asarray(Tbb)
+    away = (T[:3, 0] @ np.r_[T[:2, 3], 0.0]) >= 0           # basket x points away from the robot
+    return n - pin if away else pin - 1
+
+
 def look_pose(Tbb, model_qd, Tbc, q, cam_h=(0.42, 0.36, 0.48), seed=None):
     """Joints for a wrist photo straight down on one quadrant: camera centred over its gaps `cam_h` above the basket
-    frame, image top = the basket's far side (pin pairs stacked top -> bottom); turned 180 / +-90 deg if out of reach.
+    frame, image top = the pin rows' end away from the robot (pin pairs stacked top -> bottom); turned 180 / +-90 deg if out of reach.
     -> (joints deg, image turn deg, camera height) or None."""
     import ros2_nodes
     from calib_core import load_json, newest_wrist_result
@@ -1055,10 +1071,11 @@ def look_pose(Tbb, model_qd, Tbc, q, cam_h=(0.42, 0.36, 0.48), seed=None):
     free = quadrant_checkers(Tbc, q, Tbb, np.eye(4), np.eye(4))[2]
     T = np.asarray(Tbb)
     target = (T @ np.r_[np.mean(basket_gaps()[model_qd], 0)[:2], 0.0, 1.0])[:3]
+    away = np.sign(T[:3, 0] @ np.r_[T[:2, 3], 0.0]) or 1.0    # basket x (pin rows) pointing away from the robot
     for h in cam_h:
         for turn in (0, 180, 90, -90):
             t = np.radians(turn)
-            xb = T[:3, 0] * np.cos(t) + T[:3, 1] * np.sin(t)
+            xb = away * (T[:3, 0] * np.cos(t) + T[:3, 1] * np.sin(t))
             Tc = np.eye(4)
             Tc[:3, 1] = -xb                                   # image down = toward the robot side
             Tc[:3, 2] = [0, 0, -1.0]
