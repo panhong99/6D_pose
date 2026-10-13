@@ -549,6 +549,7 @@ def pin_layout_measure(labels_path, out):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'rl'))
     import basket_env as be
     floor = be.B['full']['floor_z']
+    root_z = floor + be.B['pins']['rail_z']
     top = floor + be.B['pins']['height'] * np.cos(np.radians(be.B['pins']['lean_deg']))
     measured = []
     for photo in labels['photos']:
@@ -562,17 +563,21 @@ def pin_layout_measure(labels_path, out):
         for pin in photo['pins']:
             if pin.get('review') != 'checked':
                 continue
-            root = _pixel_to_basket_plane(pin['root_uv'], floor, Tbb, Tbc, K)
+            root = _pixel_to_basket_plane(pin['root_uv'], root_z, Tbb, Tbc, K)
             tip = _pixel_to_basket_plane(pin['tip_uv'], top, Tbb, Tbc, K)
             dy = abs(root[1] - tip[1])
+            base_at_floor = root + (tip-root)*(floor-root_z)/(top-root_z)
             measured.append(dict(image=str(path), row=pin['row'], root_uv=pin['root_uv'], tip_uv=pin['tip_uv'],
-                                 base_basket_xyz=root.tolist(), top_basket_xyz=tip.tolist(),
+                                 root_at_rail_basket_xyz=root.tolist(), base_basket_xyz=base_at_floor.tolist(),
+                                 top_basket_xyz=tip.tolist(),
                                  root_x_m=float(root[0]), tip_x_m=float(tip[0]),
                                  transverse_disagreement_mm=float(dy * 1000),
                                  lean_deg=float(np.degrees(np.arctan2(root[0] - tip[0], tip[2] - root[2]))),
                                  review=pin['review']))
-    result = dict(source_labels=str(labels_path.resolve()), assumed_base_z_m=floor, assumed_tip_z_m=top,
-                  method='saved camera ray intersection with assumed pin base/tip height planes',
+    result = dict(source_labels=str(labels_path.resolve()), assumed_base_z_m=floor,
+                  assumed_visible_root_z_m=root_z, assumed_tip_z_m=top,
+                  method='saved camera ray intersection with visible comb-rail root and tip height planes; '
+                         'floor base extrapolated along measured segment',
                   accuracy_note='Pixel clicks and assumed heights are not independently measured 3D ground truth.',
                   pins=measured)
     out.mkdir(parents=True, exist_ok=False)

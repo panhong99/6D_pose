@@ -353,6 +353,32 @@ class CameraPinTests(unittest.TestCase):
             found = self.camera._pixel_to_basket_plane(uv, local[2], Tbb, Tbc, K)
             np.testing.assert_allclose(found, local, atol=1e-9)
 
+    def test_visible_comb_root_uses_rail_height_not_floor(self):
+        import sys
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1]/'rl'))
+        import basket_env as be
+        floor = be.B['full']['floor_z']
+        root_z = floor + be.B['pins']['rail_z']
+        tip_z = floor + be.B['pins']['height']*np.cos(np.radians(be.B['pins']['lean_deg']))
+        Tbb = np.eye(4); Tbb[:3, 3] = [.8, .15, .14]
+        Tbc = np.eye(4); Tbc[:3, :3] = np.diag([1., -1., -1.]); Tbc[:3, 3] = [.8, .15, .60]
+        root, tip = np.array([.08, -.10, root_z]), np.array([.055, -.10, tip_z])
+        uv = self.camera._pin_project(np.stack([root, tip]) @ Tbb[:3, :3].T + Tbb[:3, 3],
+                                      np.linalg.inv(Tbc), self.K)[0]
+        with tempfile.TemporaryDirectory() as tmp:
+            photo = Path(tmp)/'sample.raw.png'
+            photo.with_name('sample.json').write_text(json.dumps(dict(
+                T_base_basket=Tbb.tolist(), T_base_flange=Tbc.tolist(),
+                T_flange_cam=np.eye(4).tolist(), K=self.K.tolist())))
+            labels = Path(tmp)/'labels.json'
+            labels.write_text(json.dumps(dict(photos=[dict(image=str(photo), pins=[dict(
+                row='pair_A_front', root_uv=uv[0].tolist(), tip_uv=uv[1].tolist(), review='checked')])])))
+            result = self.camera.pin_layout_measure(labels, Path(tmp)/'out')
+            measured = result['pins'][0]
+            np.testing.assert_allclose(measured['root_at_rail_basket_xyz'], root, atol=1e-9)
+            np.testing.assert_allclose(measured['top_basket_xyz'], tip, atol=1e-9)
+            self.assertAlmostEqual(measured['base_basket_xyz'][2], floor)
+
 
 if __name__ == '__main__':
     unittest.main()
