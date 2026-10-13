@@ -210,8 +210,12 @@ class CollisionChecker:
         shape = np.ceil((np.array([b[1] for b in bounds]) - self.lo) / resolution).astype(int)
         occ = np.zeros(shape, dtype=bool)
         centres = self.lo + (np.indices(shape).transpose(1, 2, 3, 0) + 0.5) * resolution
-        for _, centre, size in boxes:
-            occ |= np.all(np.abs(centres - np.asarray(centre)) <= np.asarray(size) / 2, axis=-1)
+        for box in boxes:                               # (name, centre, size[, R]): R = 3x3 box axes in base (10/13 basket walls)
+            _, centre, size = box[:3]
+            d = centres - np.asarray(centre)
+            if len(box) > 3:
+                d = d @ np.asarray(box[3])
+            occ |= np.all(np.abs(d) <= np.asarray(size) / 2, axis=-1)
         self.occupancy = occ
         self.distance = ndimage.distance_transform_edt(~occ, sampling=resolution).astype(np.float32)   # m to nearest occupied
         self.boxes = boxes
@@ -368,8 +372,20 @@ class CollisionChecker:
         path.with_suffix('.json').write_text(json.dumps(
             dict(frame='robot base, metres, z up', resolution=self.res, origin=self.lo.tolist(),
                  shape=list(self.occupancy.shape), margin=self.margin,
-                 boxes=[dict(name=n, centre=list(map(float, c)), size=list(map(float, s))) for n, c, s in self.boxes]),
+                 boxes=[dict(name=b[0], centre=list(map(float, b[1])), size=list(map(float, b[2]))) for b in self.boxes]),
             indent=1))
+
+
+class MultiChecker(CollisionChecker):
+    """(10/13) several checkers (own boxes, margins, tool clouds) as one for planning: clearance = the smallest
+    clearance / margin ratio, so 1.0 is "at the margin" of the tightest checker."""
+
+    def __init__(self, checkers):
+        self.checkers, self.kin = checkers, checkers[0].kin
+        self.margin, self.plan_margin = 1.0, PLAN_MARGIN_FACTOR
+
+    def clearance(self, q):
+        return min(c.clearance(q) / c.margin for c in self.checkers)
 
 
 def build_checker(kin, T_base_cam, margin_m, tool_length_m=0.0, tool_radius_m=0.05, cell_json=None):

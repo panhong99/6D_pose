@@ -866,12 +866,171 @@ def _reach_figure(xs, ys, grid, all4, path):
     plt.close(fig)
 
 
+# ---------------------------------------------------------------- quadrant plan (10/13: no taught path, any basket pose in reach)
+PLATE_R = 0.134                                            # plate mesh 26.7 cm across, 2.5 cm thick
+
+
+def basket_boxes(Tbb, wall=0.012, top=0.03):
+    """Basket body as 4 oriented wall boxes (base frame): 53 x 52 cm, floor -0.144 .. rim + rails/handle (`top`) in the
+    basket frame.  The pins are not boxes: the plate goes between them by design."""
+    import sys
+    sys.path.insert(0, str(ROOT / 'rl'))
+    import basket_env as be
+    sx, sy = be.B['full']['size_xy']
+    z0, z1 = be.B['full']['floor_z'], top
+    zc, h = (z0 + z1) / 2, z1 - z0
+    R = np.asarray(Tbb)[:3, :3]
+    loc = [('wall_robot', [-sx / 2 + wall / 2, 0, zc], [wall, sy, h]), ('wall_far', [sx / 2 - wall / 2, 0, zc], [wall, sy, h]),
+           ('wall_right', [0, -sy / 2 + wall / 2, zc], [sx, wall, h]), ('wall_handle', [0, sy / 2 - wall / 2, zc], [sx, wall, h])]
+    return [(n, (np.asarray(Tbb) @ np.r_[c, 1.0])[:3].tolist(), sz, R) for n, c, sz in loc]
+
+
+def plate_cloud(H, tool):
+    """Plate disk samples in the link_6 frame (attached to the hand)."""
+    a = np.linspace(0, 2 * np.pi, 32, endpoint=False)
+    pts = [np.c_[r * np.cos(a), r * np.sin(a), np.full(len(a), z)] for r in (PLATE_R, 0.09, 0.045) for z in (-0.01, 0.015)]
+    pts = np.vstack(pts + [[[0, 0, 0]]])
+    return (np.c_[pts, np.ones(len(pts))] @ (tool @ H).T)[:, :3]
+
+
+def quadrant_checkers(Tbc, q, Tbb, H, tool):
+    """Collision checkers for the quadrant plan: (with the plate in the hand, after the release)."""
+    import copy
+    from robot_model import CollisionChecker, MultiChecker
+    lib = library_checkers(Tbc, q)
+    c = np.asarray(Tbb)[:3, 3]
+    basket = CollisionChecker(Kinematics(), basket_boxes(Tbb), resolution=0.005, margin=q.get('basket_wall_margin_m', 0.01),
+                              bounds=((c[0] - 0.5, c[0] + 0.5), (c[1] - 0.5, c[1] + 0.5), (-0.05, 0.6)))
+    basket.set_tool(q.get('tool_length_m', 0.165), q.get('tool_radius_m', 0.06))
+    plate = plate_cloud(H, tool)
+
+    def with_plate(ch):
+        ch2 = copy.copy(ch)
+        ch2.tool = np.vstack([ch.tool, plate]) if ch.tool is not None else plate
+        return ch2
+    held = [with_plate(lib['frame'][0]), with_plate(lib['table'][0]), with_plate(basket)]
+    insert = [held[0], held[1], basket]                     # the plate itself goes into the basket by design
+    free = [lib['frame'][0], lib['table'][0], basket]
+    return MultiChecker(held), MultiChecker(insert), MultiChecker(free)
+
+
+def quadrant_plan(Tbb, quadrant, gap, H, tool, start_deg, Tbc, q, grasp_legs=None, tilt_deg=0.0, centre_h=0.18, above_m=0.11,
+                  phi_step=10, seeds=None):
+    """Plan.json for one quadrant gap from the plate in the hand: to_above (carry, straight or RRT), descend (straight
+    down, plate upright, +basket_policy_extra_down_m), ascend (straight up), to_home, abort_home.  -> (path, report)."""
+    import ros2_nodes
+    from robot_model import polyline_path as pp
+    kin = Kinematics()
+    lo, hi = np.array(ros2_nodes.joint_limits_deg()).T
+    held, inserting, free = quadrant_checkers(Tbc, q, Tbb, H, tool)
+    gap_b = (np.asarray(Tbb) @ np.r_[basket_gaps()[quadrant][gap], 1.0])[:3]
+    n, t = np.asarray(Tbb)[:3, 0], np.radians(tilt_deg)
+    zt = n * np.cos(t) + np.array([0, 0, 1.0]) * np.sin(t)
+    v = -n * np.sin(t) + np.array([0, 0, 1.0]) * np.cos(t)
+    extra = q.get('basket_policy_extra_down_m', 0.0)
+    seeds = seeds or [np.radians(start_deg), np.radians(HOME_JOINTS_DEG)]
+    ok_lim = lambda qq: ((np.degrees(qq) > lo + 3) & (np.degrees(qq) < hi - 3)).all()   # noqa: E731
+    tried = []
+    for phi in sorted(range(-90, 91, phi_step), key=abs):
+        ph = np.radians(phi)
+        x = v * np.cos(ph) + np.cross(zt, v) * np.sin(ph)
+        Tp = np.eye(4)
+        Tp[:3, :3] = np.stack([x, np.cross(zt, x), zt], 1)
+        Tp[:3, 3] = gap_b + v * centre_h / np.cos(t)
+        T6 = Tp @ np.linalg.inv(H) @ np.linalg.inv(tool)
+        down, prev = [], None
+        for lift in np.linspace(above_m, -extra, 13):        # above -> insert (+extra), ~1 cm steps
+            Tl = T6.copy()
+            Tl[2, 3] += lift
+            sol = None
+            for sd in ([prev] if prev is not None else seeds):
+                try:
+                    cand = kin.ik(Tl, sd)
+                except RuntimeError:
+                    continue
+                if ok_lim(cand) and (prev is None or np.degrees(np.abs(cand - prev)).max() < 8):
+                    sol = cand
+                    break
+            if sol is None:
+                break
+            down.append(sol)
+            prev = sol
+        if len(down) < 13:
+            tried.append((phi, 'ik/limit'))
+            continue
+        c_ins = inserting.path_clearance(pp(np.array(down), 0.5))
+        if c_ins < 1.0:
+            tried.append((phi, f'insert clearance {c_ins:.2f}'))
+            continue
+        try:
+            carry, how = held.plan(np.radians(start_deg), down[0])
+            home, how_h = free.plan(down[0], np.radians(HOME_JOINTS_DEG))
+        except RuntimeError as e:
+            tried.append((phi, str(e)))
+            continue
+        legs = dict(to_above=[np.degrees(w).tolist() for w in carry], descend=[np.degrees(w).tolist() for w in down],
+                    ascend=[np.degrees(w).tolist() for w in down[::-1]], to_home=[np.degrees(w).tolist() for w in home],
+                    abort_home=[np.degrees(w).tolist() for w in free.plan(down[0], np.radians(HOME_JOINTS_DEG))[0]])
+        if grasp_legs:
+            legs = dict(grasp_legs, **legs)
+        path = taught_plan(legs, Tbc, q, f'quadrant {quadrant} gap {gap + 1}')
+        plan = json.loads(Path(path).read_text())
+        rep = dict(quadrant=quadrant, gap=gap + 1, phi_deg=phi, carry=how, home=how_h, tried=tried, accepted=plan['accepted'],
+                   clearance_ratio=dict(carry=round(held.path_clearance(pp(np.array(carry), 0.5)), 2), insert=round(c_ins, 2),
+                                        after=round(free.path_clearance(pp(np.array(home), 0.5)), 2)))
+        plan.update(basket_T=np.asarray(Tbb).tolist(), plate_in_tcp=np.asarray(H).tolist(), quadrant_plan=rep)
+        Path(path).write_text(json.dumps(plan, indent=1))
+        return path, rep
+    return None, dict(quadrant=quadrant, gap=gap + 1, tried=tried)
+
+
+def quadrant_plans(a):
+    """Offline: one plan per quadrant for a basket pose and a plate position (the newest real grasp turned about joint 1
+    to that plate), printed as a table; the chosen quadrant goes to the RViz preview (run.sh viz)."""
+    import socket
+    H, tool, run = plate_in_hand(a.run)
+    d = DATA / 'real_pipeline' / run
+    ev = [json.loads(x) for x in (d / 'robot_state.jsonl').read_text().splitlines() if '"event"' in x]
+    gplan = json.loads(Path(next(e for e in ev if e['event'] == 'plan')['plan']).read_text())['legs']
+    req = json.loads((d / 'realplan_req.json').read_text())
+    p0 = np.asarray(req['plate_root_fp'][:2])
+    dj = 0.0 if a.plate is None else np.degrees(np.arctan2(a.plate[1], a.plate[0]) - np.arctan2(p0[1], p0[0]))
+    if a.plate is not None and abs(np.hypot(*a.plate) - np.hypot(*p0)) > 0.02:
+        print(f'note: plate radius {np.hypot(*a.plate):.3f} m vs grasped {np.hypot(*p0):.3f} m: only the direction is changed')
+    turn = lambda w: [w[0] + dj] + list(w[1:])              # noqa: E731
+    grasp = {k: [turn(w) for w in gplan[k]['waypoints_deg']] for k in ('to_grasp', 'lift')}
+    Tbc = np.array(__import__('calib_core').load_json(__import__('calib_core').latest_t_base_cam())['T_base_cam'])
+    q = C['plate_ik_bc']
+    c, s_ = np.cos(np.radians(a.basket[2])), np.sin(np.radians(a.basket[2]))
+    Tbb = np.eye(4)
+    Tbb[:2, :2] = [[c, -s_], [s_, c]]
+    Tbb[:3, 3] = [a.basket[0], a.basket[1], a.basket_z]
+    print(f'basket ({a.basket[0]:.2f}, {a.basket[1]:+.2f}) yaw {a.basket[2]:+.0f}; plate direction turned {dj:+.1f} deg (grasp of {run})')
+    out = {}
+    for qd in a.quadrants:
+        t0 = time.time()
+        path, rep = quadrant_plan(Tbb, qd, a.gap, H, tool, grasp['lift'][-1], Tbc, q, grasp_legs=grasp, tilt_deg=a.tilt)
+        out[qd] = path
+        print(f'{qd} gap {a.gap + 1}: ' + (f'OK phi {rep["phi_deg"]:+d}, carry {rep["carry"]}, home {rep["home"]}, '
+                                          f'clearance/margin {rep["clearance_ratio"]}, accepted {rep["accepted"]} ({time.time() - t0:.0f} s) -> {path}'
+                                          if path else f'NO PLAN ({time.time() - t0:.0f} s): {rep["tried"][:4]}'), flush=True)
+    show = out.get(a.show) or next((p_ for p_ in out.values() if p_), None)
+    if show:
+        socket.socket(socket.AF_INET, socket.SOCK_DGRAM).sendto(json.dumps(dict(plan=str(show))).encode(),
+                                                                ('127.0.0.1', C['udp'].get('viz', 5011)))
+        print(f'RViz preview (if run.sh viz is running): {show}')
+
+
 _REACH = {}
 
 if __name__ == '__main__':
     import argparse
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument('mode', choices=('basket_reach',))
+    p.add_argument('mode', choices=('basket_reach', 'quadrant_plans'))
+    p.add_argument('--basket', type=float, nargs=3, default=(0.75, 0.15, 0.0), metavar=('X', 'Y', 'YAW'), help='quadrant_plans: basket pose')
+    p.add_argument('--plate', type=float, nargs=2, default=None, help='quadrant_plans: plate x y (turns the newest grasp about joint 1)')
+    p.add_argument('--quadrants', nargs='+', default=['Q3', 'Q4', 'Q1', 'Q2'])
+    p.add_argument('--show', default='Q3', help='quadrant_plans: quadrant sent to RViz')
     p.add_argument('--x', type=float, nargs=2, default=(0.50, 1.25), help='basket centre x range [m]')
     p.add_argument('--y', type=float, nargs=2, default=(-0.35, 0.35), help='basket centre y range [m]')
     p.add_argument('--step', type=float, default=0.05)
@@ -886,4 +1045,4 @@ if __name__ == '__main__':
     p.add_argument('--workers', type=int, default=16)
     p.add_argument('--run', default=None, help='real run folder for the in-hand plate (default: newest with realplan_req)')
     a = p.parse_args()
-    basket_reach(a)
+    basket_reach(a) if a.mode == 'basket_reach' else quadrant_plans(a)

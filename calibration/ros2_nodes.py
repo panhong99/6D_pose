@@ -446,7 +446,8 @@ def run_viz(a):
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.bind(('127.0.0.1', a.port))
     sock.setblocking(False)
-    state = dict(real=None, pending=None, plate=None, plate_ok=False, area=None, plan=None, preview=None, t0=time.time())
+    state = dict(real=None, pending=None, plate=None, plate_ok=False, area=None, plan=None, preview=None, t0=time.time(),
+                 basket=None, held=None, release_k=0)
 
     def stamp():
         return node.get_clock().now().to_msg()
@@ -503,9 +504,20 @@ def run_viz(a):
                      rgba=(0.55, 0.45, 0.35, 0.35) if name == 'table' else (0.7, 0.7, 0.75, 0.6))
               for i, (name, c, size) in enumerate(frame_layout(measured_cell()))]
         ms.append(gripper('real', 0, (0.15, 0.15, 0.15, 1.0)))
-        if T_basket is not None:
-            ms.append(marker('basket', 0, Marker.MESH_RESOURCE, pose=T_basket, rgba=(0.25, 0.25, 0.3, 0.9),
+        T_b = state['basket'] if state['basket'] is not None else T_basket   # (10/13) the plan's basket pose first
+        if T_b is not None:
+            ms.append(marker('basket', 0, Marker.MESH_RESOURCE, pose=T_b, rgba=(0.25, 0.25, 0.3, 0.9),
                              mesh_resource=basket_mesh))
+        if state['held'] is not None and state['preview'] is not None:   # (10/13) plate in the hand until the release
+            k = int((time.time() - state['t0']) * a.rate) % (len(state['preview']) + int(2 * a.rate))
+            if k < state.get('grasp_k', 0):
+                pass
+            elif k < state['release_k']:
+                ms.append(marker('held', 0, Marker.MESH_RESOURCE, 'plan/link_6', state['held'], rgba=(0.9, 0.75, 0.2, 0.9),
+                                 mesh_resource=plate_mesh))
+            else:
+                T_rel = kin.fk(np.radians(state['preview'][state['release_k'] - 1])) @ state['held']
+                ms.append(marker('held', 0, Marker.MESH_RESOURCE, pose=T_rel, rgba=(0.9, 0.75, 0.2, 0.9), mesh_resource=plate_mesh))
         if state['plate'] is not None:
             ok = state['plate_ok']
             ms.append(marker('plate', 0, Marker.MESH_RESOURCE, pose=state['plate'], rgba=(0.2, 0.9, 0.3, 1) if ok else (0.95, 0.3, 0.2, 1),
@@ -543,11 +555,21 @@ def run_viz(a):
         seq = [np.array(plan['legs'][leg]['waypoints_deg'], dtype=float) for leg in ('to_grasp', 'lift', 'to_slot', 'slot_out', 'to_above', 'descend_pre', 'descend', 'ascend', 'to_home')
                if leg in plan['legs']]
         path_q = np.concatenate(seq)
-        dense = [path_q[0]]                                             # preview at a_viz_deg_s (faster than the real 6)
+        dense, at = [path_q[0]], [1]                                    # preview at a_viz_deg_s (faster than the real 6)
         for a_, b_ in zip(path_q[:-1], path_q[1:]):
             n = max(1, int(np.ceil(np.abs(b_ - a_).max() / a.preview_deg_s * a.rate)))
             dense += [a_ + (b_ - a_) * k / n for k in range(1, n + 1)]
+            at.append(len(dense))                                       # preview index reached at each waypoint
         state['plan'], state['preview'], state['t0'] = plan, np.array(dense), time.time()
+        state['basket'] = np.array(plan['basket_T']) if 'basket_T' in plan else None
+        state['held'] = None
+        if 'plate_in_tcp' in plan:                                      # mesh root = plate bottom, 1 cm under the centre
+            off = np.eye(4)
+            off[2, 3] = -0.01
+            state['held'] = box_pose([0, 0, tcp_m]) @ np.array(plan['plate_in_tcp']) @ off
+            cnt = lambda lgs: sum(len(plan['legs'][lg]['waypoints_deg']) for lg in lgs if lg in plan['legs'])   # noqa: E731
+            state['grasp_k'] = at[max(cnt(('to_grasp',)) - 1, 0)]
+            state['release_k'] = at[max(cnt(('to_grasp', 'lift', 'to_above', 'descend')) - 1, 0)]
         node.get_logger().info(f'plan preview: {path} ({len(dense) / a.rate:.0f} s loop)')
 
     def on_posj(future):
