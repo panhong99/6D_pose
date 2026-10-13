@@ -650,6 +650,8 @@ def run_plate(args):
                                               cwd=ROOT / 'rl', env=isaac_env(), stdin=subprocess.DEVNULL,
                                               stdout=(out / 'realplan.log').open('wb'), stderr=subprocess.STDOUT)
                 print(f'   학습 정책 넣기 경로를 sim에서 계산 중 (pid {policy_job.pid}, {out / "realplan.log"})', flush=True)
+                from plate_plans import basket_range_note
+                basket_range_note(Tbb, q)
         viz(plan=str(shown))
         print(f'   plan: {plan}  (30 분 유효)', flush=True)
         if not args.execute:

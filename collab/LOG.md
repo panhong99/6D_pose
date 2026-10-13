@@ -1360,3 +1360,4 @@
 - 실기 7조건 × 64변형 재측정(`rl/logs/basket/realplan_all64/`): 변형 성공 0.86/0.98/0.64/0.64/0.84/0.62/0.97, 평균 **0.79(448판)**, 정확 조건 6/7(이번엔 161612 실패, 145522 성공 → 경계 조건이라 sim 비결정성에 뒤집힘). 학습 분포 평가 90.5%보다 낮음: 실기 손 안 자세가 학습 분포 가장자리.
 - 속도 점검(보스 질문): 정책 하강 1.0°/s는 TCP 평균 약 6.9 mm/s(추정; 어제 실측 비율 반영 시 약 4.5 mm/s)로 **어제 티칭 핀 구간(0.25°/s, 56 mm / 26.7 s = 2.1 mm/s)보다 2배 이상 빨랐음** → `basket_policy_vel_deg_s` 0.4로 낮춤(약 2 mm/s, 약 45 s). 시작 자세 이동·상승은 어제 승인 속도(1.5°/s)와 같음, 운반은 6°/s 상한 그대로. 마커: 바구니 위치는 아직 ArUco 피팅으로만 얻으므로 떼면 안 됨.
 - YOLOE 바구니 인식 확인(`checking_yoloe.py --serial 338122300585`, 고정 카메라, conf 0.1): 'wire basket' 0.91로 바구니 bbox 정확, 'plate' 0.42, 33 FPS. 'dishwasher basket'/'dish rack'/'basket'은 같은 물체에서 'wire basket'에 밀림. bbox는 2D라 슬롯 위치(±8.5 mm)에는 부족 → 마커 대체 후보: YOLOE 마스크 + basket_full.obj로 FP 6D 추정.
+- 파이프라인 `--insert policy`: 바구니 측정 직후 학습 범위 안/주의/밖 출력(`plate_plans.basket_range_note`, config `basket_policy_range`). 판정은 여전히 sim 결과(정확 성공 + 변형 ≥ 50%)가 결정.

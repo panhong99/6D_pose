@@ -618,3 +618,15 @@ def export_plan(x, y, yaw, log, q):
     if not found or not found[-1].endswith('accepted=True'):
         raise RuntimeError(f'RL plan not created / not accepted; see {log}')
     return Path(found[-1].split()[1])
+
+
+def basket_range_note(Tbb, q):
+    """(10/13) where the measured basket is vs the RL training range (config basket_policy_range)."""
+    r, x, y = q.get('basket_policy_range', {}), float(Tbb[0][3]), float(Tbb[1][3])
+    yaw = float(np.degrees(np.arctan2(Tbb[1][0], Tbb[0][0])))
+    ok = lambda k, v: r.get(k) is None or r[k][0] <= v <= r[k][1]               # noqa: E731
+    where, base = f'바구니 x {x:.3f} m, y {y:+.3f} m, 각도 {yaw:+.1f} deg', ok('x', x) and ok('yaw_deg', yaw)
+    print(f'   [범위] {where}: 학습 범위 안' if base and ok('y', y) else
+          f'   [범위 주의] {where}: 학습 범위 밖, sim 확인만 된 범위 -> sim 판정을 보고 진행' if base and ok('y_sim_checked', y) else
+          f'   [범위 밖] {where}: 학습 범위 x {r.get("x")} y {r.get("y")} 각도 {r.get("yaw_deg")} 밖 -> sim 판정에서 떨어지면 '
+          f'티칭 경로 (이 위치는 티칭 경로도 미검증)', flush=True)
