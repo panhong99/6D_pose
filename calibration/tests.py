@@ -340,6 +340,19 @@ class CameraPinTests(unittest.TestCase):
         self.assertEqual(r['status'], 'occluded')
         self.assertIsNone(r['correction_mm'])
 
+    def test_label_ray_intersection_recovers_known_pin_points(self):
+        Tbb = np.eye(4)
+        Tbb[:3, 3] = [.8, .15, .14]
+        Tbc = np.eye(4)
+        Tbc[:3, :3] = np.diag([1., -1., -1.])
+        Tbc[:3, 3] = [.8, .15, .60]
+        K = self.K
+        for local in ([.08, -.10, -.144], [.055, -.10, -.029]):
+            world = (Tbb @ np.r_[local, 1])[:3]
+            uv = self.camera._pin_project(world[None], np.linalg.inv(Tbc), K)[0][0]
+            found = self.camera._pixel_to_basket_plane(uv, local[2], Tbb, Tbc, K)
+            np.testing.assert_allclose(found, local, atol=1e-9)
+
 
 if __name__ == '__main__':
     unittest.main()

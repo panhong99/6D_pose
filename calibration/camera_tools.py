@@ -6,6 +6,7 @@
   python calibration/camera_tools.py locate                                       plate position vs the RL sim spot
   python calibration/camera_tools.py pins --out NEW_DIR                           saved wrist photos only; numbered diagnostic overlays
   python calibration/camera_tools.py basket_stats --out NEW_DIR                   fixed camera repeatability; --marker_size_m is actual printed size
+  python calibration/camera_tools.py pin_layout --labels LABELS.json --out NEW_DIR   ray/height-plane measurement from checked pixel labels
 
 preview : one camera (default the first found) with depth colour map and centre depth; S saves to data/real_env/.
           --all / --serial: several cameras side by side (no saving).
@@ -522,6 +523,62 @@ def _pin_project(points, Tcb, K):
     return uv[:, :2] / xyz[:, 2:3], xyz[:, 2]
 
 
+def _pixel_to_basket_plane(uv, z_local, T_base_basket, T_base_cam, K):
+    """Intersect a camera ray with a known basket-height plane; no depth is inferred from the image."""
+    uv = np.asarray(uv, float)
+    Tbb, Tbc, K = (np.asarray(v, float) for v in (T_base_basket, T_base_cam, K))
+    if uv.shape != (2,) or K.shape != (3, 3) or not np.isfinite(uv).all():
+        raise ValueError('pixel and saved 3x3 intrinsics required')
+    direction = Tbc[:3, :3] @ (np.linalg.inv(K) @ np.r_[uv, 1.0])
+    plane_z = (Tbb @ np.array([0., 0., z_local, 1.]))[2]
+    if abs(direction[2]) < 1e-8:
+        raise ValueError('camera ray nearly parallel to pin height plane')
+    scale = (plane_z - Tbc[2, 3]) / direction[2]
+    if scale <= 0:
+        raise ValueError('pin height plane behind camera')
+    base_point = Tbc[:3, 3] + scale * direction
+    return (np.linalg.inv(Tbb) @ np.r_[base_point, 1.])[:3]
+
+
+def pin_layout_measure(labels_path, out):
+    """Convert manually checked tip/root pixels to 3D. Labels remain provenance, never inferred ground truth."""
+    labels_path, out = Path(labels_path), Path(out)
+    labels = json.loads(labels_path.read_text())
+    from calib_core import cpath
+    import sys
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'rl'))
+    import basket_env as be
+    floor = be.B['full']['floor_z']
+    top = floor + be.B['pins']['height'] * np.cos(np.radians(be.B['pins']['lean_deg']))
+    measured = []
+    for photo in labels['photos']:
+        path = Path(photo['image'])
+        meta = json.loads(path.with_suffix('.json').read_text())
+        Tbb = np.asarray(meta['T_base_basket'], float)
+        Tbc = np.asarray(meta['T_base_flange'], float) @ np.asarray(meta['T_flange_cam'], float)
+        K = np.asarray(meta['K'], float)
+        for pin in photo['pins']:
+            if pin.get('review') != 'checked':
+                continue
+            root = _pixel_to_basket_plane(pin['root_uv'], floor, Tbb, Tbc, K)
+            tip = _pixel_to_basket_plane(pin['tip_uv'], top, Tbb, Tbc, K)
+            dy = abs(root[1] - tip[1])
+            measured.append(dict(image=str(path), row=pin['row'], root_uv=pin['root_uv'], tip_uv=pin['tip_uv'],
+                                 base_basket_xyz=root.tolist(), top_basket_xyz=tip.tolist(),
+                                 root_x_m=float(root[0]), tip_x_m=float(tip[0]),
+                                 transverse_disagreement_mm=float(dy * 1000),
+                                 lean_deg=float(np.degrees(np.arctan2(root[0] - tip[0], tip[2] - root[2]))),
+                                 review=pin['review']))
+    result = dict(source_labels=str(labels_path.resolve()), assumed_base_z_m=floor, assumed_tip_z_m=top,
+                  method='saved camera ray intersection with assumed pin base/tip height planes',
+                  accuracy_note='Pixel clicks and assumed heights are not independently measured 3D ground truth.',
+                  pins=measured)
+    out.mkdir(parents=True, exist_ok=False)
+    (out/'pin_layout_measured.json').write_text(json.dumps(result, indent=2))
+    print(json.dumps(dict(out=str(out), checked_pins=len(measured)), ensure_ascii=False))
+    return result
+
+
 def _pin_image_context(img, cfg):
     gray = cv2.GaussianBlur(cv2.cvtColor(img, cv2.COLOR_BGR2GRAY), (3, 3), 0.6)
     hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
@@ -856,7 +913,7 @@ def basket_stats(a, cfg):
 if __name__ == '__main__':
     cfg = load_config()
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument('mode', choices=('preview', 'marker', 'probe', 'locate', 'basket', 'wrist_look', 'pre_photo', 'pins', 'basket_stats'))
+    p.add_argument('mode', choices=('preview', 'marker', 'probe', 'locate', 'basket', 'wrist_look', 'pre_photo', 'pins', 'basket_stats', 'pin_layout'))
     p.add_argument('--define', action='store_true', help='basket: define the basket frame / marker layout now')
     p.add_argument('--define_current', action='store_true', help='basket: marker layout in today\'s known basket frame (10/12)')
     p.add_argument('--golden', default=None, help='basket --define: also store this full teaching\'s slot in the basket frame')
@@ -869,6 +926,7 @@ if __name__ == '__main__':
     p.add_argument('--marker_mm', type=float, default=None)
     p.add_argument('--dictionary', default=None)
     p.add_argument('--out', type=Path, help='pins / basket_stats: new output directory')
+    p.add_argument('--labels', type=Path, help='pin_layout: checked pin root/tip pixel labels JSON')
     p.add_argument('--rotate', choices=('auto', '0', '90', '270'), default='auto', help='pins: display rotation, raw projection unchanged')
     p.add_argument('--search_mm', type=float, default=8.0, help='pins: maximum local correction along basket x')
     p.add_argument('--marker_size_m', type=float, help='basket_stats: actual printed black square side, override for this run only')
@@ -889,6 +947,10 @@ if __name__ == '__main__':
         basket_stats(a, cfg)
     elif a.mode == 'pins':
         pins_mode(a, cfg)
+    elif a.mode == 'pin_layout':
+        if not a.labels or not a.out:
+            p.error('pin_layout requires --labels and --out')
+        pin_layout_measure(a.labels, a.out)
     elif a.mode == 'pre_photo':
         pre_photo(a, cfg)
     else:
