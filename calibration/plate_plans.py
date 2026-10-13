@@ -736,17 +736,20 @@ def plate_in_hand(run_dir=None):
     return hand_plate(req['grasp_deg'], req['plate_root_fp']) + (d.name,)
 
 
-def hand_plate(grasp_deg, plate_root):
-    """(H, tool): the plate lying at `plate_root` (FP, base) as held by the TCP at the grasp joints."""
+def hand_plate(grasp_deg, plate_root, normal=(0.0, 0.0, 1.0)):
+    """(H, tool): the plate at `plate_root` (FP root = bottom centre, base) with this normal, held by the TCP at these
+    joints.  Grasp: plate flat; after the lift (10/13): the FP normal there, the plate sags ~6 deg in the fingers."""
     kin, tool = Kinematics(), np.eye(4)
     tool[2, 3] = C['plate_ik_bc'].get('tool_length_m', 0.165)
     T_tcp = kin.fk(np.radians(grasp_deg)) @ tool
-    c = np.asarray(plate_root[:3]) + [0, 0, 0.01]
+    n = np.asarray(normal, float) / np.linalg.norm(normal)
+    n = n if n[2] >= 0 else -n
+    c = np.asarray(plate_root[:3]) + 0.01 * n
     a = T_tcp[:3, 3] - c
-    a[2] = 0.0
+    a -= (a @ n) * n
     x = a / np.linalg.norm(a)
     T_pl = np.eye(4)
-    T_pl[:3, :3] = np.stack([x, np.cross([0, 0, 1.0], x), [0, 0, 1.0]], 1)
+    T_pl[:3, :3] = np.stack([x, np.cross(n, x), n], 1)
     T_pl[:3, 3] = c
     return np.linalg.inv(T_tcp) @ T_pl, tool
 

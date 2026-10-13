@@ -702,11 +702,34 @@ def run_plate(args):
             leg('from_grasp')
             raise RuntimeError('no grasp: measure how far the plate had to move and set plate_rl.offset_m')
         merge = args.auto and args.insert in ('policy', 'quadrant') and q.get('auto_merged_legs', False) and early is not None   # (10/13 보스)
-        if not merge:
+        lift_alone = not merge or args.insert == 'quadrant'     # quadrant: stop after the lift to see the plate in the hand
+        if lift_alone:
             leg('lift')
             rec.event('lifted')
             time.sleep(q.get('hold_s', 3.0))
         lift_end = json.loads(Path(plan).read_text())['legs']['lift']['waypoints_deg'][-1]
+        if args.insert == 'quadrant':                       # (10/13 실기) the plate sags in the fingers: replan from the FP plate now
+            fp.poll()
+            if fp.hist and rec.last:
+                Tn = Tbc @ fp.hist[-1]
+                root, _, tilt_now = plate_root_in_base(Tn)
+                from plate_plans import hand_plate, pin_gap, quadrant_plan, robot_quadrants
+                n_now = Tn[:3, :3] @ (Tbc @ T)[:3, :3].T @ [0, 0, 1.0]   # change since the flat plate: FP's ~2-4 deg bias cancels
+                H2, tool2 = hand_plate(rec.last['posj'], root, n_now)
+                print(f'   들어 올린 뒤 접시 (FP): 기울기 {tilt_now:.1f} deg (잡기 전 {tilt:.1f}) -> 손 안 접시 자세로 넣기 경로 다시 계산',
+                      flush=True)
+                mq = robot_quadrants(basket_T)[args.quadrant]
+                again, rep2 = quadrant_plan(basket_T, mq, pin_gap(basket_T, mq, args.pin), H2, tool2, rec.last['posj'], Tbc, q,
+                                            centre_h=q.get('basket_quadrant_centre_h_m', 0.18))
+                if again is not None:
+                    early = again
+                    rec.event('replan_after_lift', plan=str(again), tilt_deg=tilt_now, plate_root=[float(v) for v in root],
+                              normal=np.asarray(n_now).tolist())
+                    print(f'   다시 계산 OK: {again} (충돌 여유/기준 {rep2["clearance_ratio"]})', flush=True)
+                else:
+                    print(f'   다시 계산 실패 ({rep2["tried"][:3]}): 처음 계획으로 진행', flush=True)
+            else:
+                print('   FP 접시 없음: 처음 계획으로 진행', flush=True)
         if args.place == 'teach':
             k = args.slot or next_slot()
             teach_slot(k, rec, choose_gripper, lift_end)
@@ -777,7 +800,7 @@ def run_plate(args):
                         pass
                     return a_
                 if merge:
-                    mleg([(plan, 'lift'), (splan, 'to_above')], 'carry', vel)
+                    mleg([(splan, 'to_above')] if lift_alone else [(plan, 'lift'), (splan, 'to_above')], 'carry', vel)
                 else:
                     sleg('to_above')
                     look('above')
