@@ -1467,3 +1467,8 @@
 - Q2 카메라 높이는 Q3와 같은 basket z=0.420m, fx/fy도 같음. Q2 회전 화면에서 원본 좌표로 되돌린 후보를 원본 6배 크롭(`/tmp/q2_candidate_overlay_zoom.png`)에 겹치니 2개 모두 실제 철사 시작·끝을 따라감. `pair_B_row_plus` 가능성이 높아 `calibration/data/basket/wrist_look/pin_labels_q2_partial_checked_20261014.json`과 `calibration/data/basket/pin_layout_q2_partial_checked_20261014/pin_layout_measured.json`에 부분 확인 라벨로 저장.
 - rail 높이 가정에서 두 root x=+59.0/+87.0mm, y=−68.6/−69.4mm. 두 핀 사이28.0mm는 Q3 같은 줄의 일부 핀 간격17.6~18.4mm보다 큼. 사진상 두 선은 실제로 별도 철사이지만 바구니의 실제 간격 변화·핀 누락·Q2 pose/K 오차는 아직 구별하지 못함. 줄 배정도 y근접에 근거한 잠정 해석이므로 정밀 배치 사용 전 교차 확인 필요.
 - 현재 사진 4장 모두에서 적어도 일부 핀을 육안 확인(Q1 4,Q2 2,Q3 10,Q4 10 =26개). 클립 주변·전체 핀 목록/모델 차이 표와 E 평가는 미완료. 실로봇/그리퍼 명령 없음.
+
+## 2026-10-14 08:26 Codex — D 부분 라벨 통합 및 모델 진단
+- 4사진의 마지막 수동 확인 라벨(Q1 4/Q2 2/Q3 10/Q4 10, 총26)을 `calibration/data/basket/wrist_look/labels_20261013_190126_PARTIAL_20261014.json`로 새로 통합. `calibration/data/basket/pin_layout_measured_PARTIAL_20261014/pin_layout_measured.json`으로 역투영, 중복0/픽셀 범위 정상/26개 전부 유한좌표 확인. 기존 개별 라벨·측정 원본은 보존.
+- `calibration/data/basket/pin_model_comparison_PARTIAL_20261014.json`: 확인된 줄의 y 중앙값과 basket.yaml 모델 줄 y 비교. A줄 Q1은 모델보다−12.1/−13.2mm, Q4는−10.5/−17.2mm; B줄 Q3은+5.8/+16.7mm, Q2 한 줄은−6.5mm. 이는 카메라/hand-eye/높이 가정과 일부 핀만의 표본이 섞인 **부분 진단값**이며 실제 바구니 전체 형상 오차 확정치가 아님.
+- 클립 인접·가림 핀 및 전체 번호 매핑은 미완료. 따라서 TASKBOARD가 지정한 최종 `labels_20261013_190126.json`/`pin_layout_measured_20261013.json`은 생성하지 않았고 E 정확도·80% 달성도 계산하지 않음. D/E는 내일 후속 필요. 로봇·그리퍼 명령/기존 데이터 덮어쓰기 없음.
