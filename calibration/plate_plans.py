@@ -249,16 +249,19 @@ def taught_plan(points, Tbc, q, source):
     """Plan.json from taught joint keyposes: points = {leg: [q_deg, ...]}.  Each leg is densified on the straight
     joint lines between its keyposes (>= 2 deg steps, <= ~90 waypoints for the mover spline) so the smooth spline does
     not swing away from the taught path; FK frame clearance is checked (the basket is NOT in the cell model)."""
-    def dense(pts):
+    def dense(pts, name):
         pts = [np.asarray(p, dtype=float) for p in pts]
         travel = sum(np.abs(b - a).max() for a, b in zip(pts[:-1], pts[1:]))
+        # (10/13) 2-deg steps made the spline ~2x slower than the grasp leg (20-deg steps) at the same set speed: only the
+        # plate's way down keeps them; every other leg is split like the grasp leg
+        step = 2.0 if ('descend' in name or name in ('shift', 'to_policy_start')) else q.get('transport_step_deg', 20.0)
         # >= 3 moves per leg: a 1-waypoint movesj is accepted by the controller but does not move (10/12 real)
-        return np.degrees(split_long_moves([np.radians(p) for p in pts], min(max(2.0, travel / 85), max(travel / 3, 1e-3))))
+        return np.degrees(split_long_moves([np.radians(p) for p in pts], min(max(step, travel / 85), max(travel / 3, 1e-3))))
 
     checks = library_checkers(Tbc, q)
     plan = dict(dry_run=True, source=source, created=time.strftime('%Y-%m-%d %H:%M:%S'), margin_m=0.0, legs={}, reasons=[])
     for name, pts in points.items():
-        wp = dense(pts)
+        wp = dense(pts, name)
         clear = float(checks['frame'][0].path_clearance(polyline_path(np.radians(wp), 0.25)))
         m = checks['frame'][1]
         plan['legs'][name] = dict(waypoints_deg=np.round(wp, 3).tolist(), clearance_m=dict(frame=clear),
