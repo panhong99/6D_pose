@@ -52,11 +52,13 @@ def build_model(model_name: str, mode: str, classes: list[str]):
 
 
 class RealSenseCamera:
-    def __init__(self, width: int, height: int, fps: int):
+    def __init__(self, width: int, height: int, fps: int, serial: str = ''):
         if rs is None:
             raise RuntimeError("pyrealsense2가 설치되어 있지 않음: pip install pyrealsense2")
         self.pipeline = rs.pipeline()
         config = rs.config()
+        if serial:                                   # two D455s: fixed 338122300585, wrist 338122303684
+            config.enable_device(serial)
         config.enable_stream(rs.stream.color, width, height, rs.format.bgr8, fps)
         self.pipeline.start(config)
 
@@ -141,6 +143,7 @@ def main():
         default=["plate", "baseball", "rubik's cube"],
         help="prompt 모드에서 detect할 클래스 이름 리스트",
     )
+    parser.add_argument("--serial", default="", help="realsense serial (empty = first device)")
     parser.add_argument("--conf", type=float, default=0.25, help="confidence threshold")
     parser.add_argument("--width", type=int, default=640, help="realsense color width")
     parser.add_argument("--height", type=int, default=480, help="realsense color height")
@@ -158,7 +161,7 @@ def main():
 
     window_size = (args.window_width, args.window_height)
     if args.source == "realsense":
-        cam = RealSenseCamera(args.width, args.height, args.fps)
+        cam = RealSenseCamera(args.width, args.height, args.fps, args.serial)
         run_on_stream(model, cam, args.conf, "YOLOE D455 test (q to quit)", window_size)
     elif args.source.isdigit():
         cap = cv2.VideoCapture(int(args.source))
