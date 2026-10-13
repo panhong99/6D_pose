@@ -644,3 +644,66 @@ def thin_waypoints(w, tol_deg=0.05):
         if np.abs(np.subtract(p, out[-1])).max() > tol_deg:
             out.append(list(p))
     return out
+
+
+def policy_plan(job, out, Tbc, q, wait_s=240):
+    """(10/13) wait for the sim policy rollout (rl/basket/expert.py realplan), accept it only if the exact case inserted
+    and >= half of the in-hand-noise variants did; -> plan.json (FK frame clearance checked) or None (golden fallback)."""
+    t0 = time.time()
+    while job.poll() is None and time.time() - t0 < wait_s:
+        time.sleep(1)
+    res_path = out / 'realplan.json'
+    if job.poll() is None or not res_path.exists():
+        print(f'   정책 경로 계산이 끝나지 않음 -> 티칭 경로로 넣기 ({out / "realplan.log"})', flush=True)
+        return None
+    r = json.loads(res_path.read_text())
+    if r.get('reason'):
+        print(f"   정책 경로: {r['reason']}", flush=True)
+    print(f"   정책 sim 결과: 정확 {r['sim_success_exact']}, 변형 {r['sim_success_variants']:.2f}, 틈 mm {r['final_gap_mm'][:3]}", flush=True)
+    if not r.get('legs') or not r['sim_success_exact'] or r['sim_success_variants'] < 0.5:
+        print('   정책 경로 기준 미달 -> 티칭 경로로 넣기', flush=True)
+        return None
+    L = r['legs']
+    start, down, up = L['to_policy_start']['waypoints_deg'], L['policy_descend']['waypoints_deg'], L['policy_ascend']['waypoints_deg']
+    extra = q.get('basket_policy_extra_down_m', 0.0)      # (10/13 보스) seat a little deeper before the release: straight down
+    if extra > 0:
+        T = Kinematics().fk(np.radians(down[-1]))
+        T[2, 3] -= extra
+        down = down + [np.degrees(Kinematics().ik(T, np.radians(down[-1]))).round(3).tolist()]
+    thin = thin_waypoints                                  # repeated waypoints: the controller does not move
+    start, down, up = thin(start), thin(down), thin([down[-1]] + up)
+    lo, hi = np.array(__import__('ros2_nodes').joint_limits_deg()).T          # (10/13) controller limits (J5 +-135, the sim rise went past):
+    up = up[:next((i for i, w in enumerate(up) if not ((np.array(w) > lo + 3) & (np.array(w) < hi - 3)).all()), len(up))]   # rise while inside
+    if len(up) < 3:
+        print('   정책 상승 경로가 관절 한계에 걸림 -> 티칭 경로로 넣기', flush=True)
+        return None
+    last = up[-1]
+    try:
+        return taught_plan(dict(to_policy_start=start, policy_descend=down, policy_ascend=up,
+                                to_home=[last, list(HOME_JOINTS_DEG)], policy_abort=[start[-1], start[0], list(HOME_JOINTS_DEG)]),
+                           Tbc, q, 'learned policy (BC + residual RL)')
+    except RuntimeError as e:
+        print(f'   정책 경로 거부({e}) -> 티칭 경로로 넣기', flush=True)
+        return None
+
+
+def merged_plan(parts, name, max_wp=100):
+    """(10/13 보스) one spline over consecutive legs of (possibly different) plan files with no stop between them:
+    parts = [(plan_path, leg), ...] -> plan.json with the single leg `name`, or None (> max_wp waypoints for movesj)."""
+    wp, slack = [], []
+    for path, leg in parts:
+        pl = json.loads(Path(path).read_text())
+        if not pl.get('accepted') or leg not in pl['legs']:
+            return None
+        wp += pl['legs'][leg]['waypoints_deg']
+        slack.append(pl['legs'][leg]['min_clearance_straight_m'] - pl.get('margin_m', 0.0))
+    wp = thin_waypoints(wp)
+    if len(wp) > max_wp or len(wp) < 3:
+        return None
+    plan = dict(dry_run=True, accepted=True, source='merged ' + ' + '.join(f'{lg}' for _, lg in parts), reasons=[], margin_m=0.0,
+                created=time.strftime('%Y-%m-%d %H:%M:%S'), legs={name: dict(waypoints_deg=wp, min_clearance_straight_m=min(slack))})
+    out = DATA / 'rl_plans' / (time.strftime('%Y%m%d_%H%M%S') + f'_{int(time.time() * 1000) % 1000:03d}_merged')
+    out.mkdir(parents=True, exist_ok=True)
+    (out / 'plan.json').write_text(json.dumps(plan, indent=1))
+    print(f'   [merged] {name}: {len(wp)} waypoints ({plan["source"]})', flush=True)
+    return out / 'plan.json'

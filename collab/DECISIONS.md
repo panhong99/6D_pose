@@ -1005,3 +1005,9 @@ Human 지시: Claude와 Human이 실증하는 동안 Codex가 이 문제의 원�
 - 결정: mover 하드 상한 삭제(> 0, 유한값만 검사). 접시가 내려가는 구간만 느리게: 첫 하강(descend_pre, to_policy_start) 1.5 → 1.2, 티칭 넣기 0.25 → 0.35, 정책 넣기 1.2 → 1.5°/s. 나머지 모든 구간(잡기 이동, 들기, 운반, 상승, 홈, 중단 복귀)은 `vel_deg_s` 15°/s 하나로 통일(`vel_transport_deg_s`, `basket_ascend_vel_deg_s` 삭제).
 - 이유: 보스 "접시 하강만 조금 느리게, 나머지는 지금보다 조금 빠르게 통일, limit 해제", "넣는 것도 조금 더 빨라도". 컨트롤러 안전 설정(속도·충돌)은 별개로 유지.
 - 시험: tests.py 상한 거부 → 음수·nan 거부로 수정, 21개 통과.
+
+## 2026-10-13 자동 실행 spline 묶기, 1000줄 제한 해제 (보스)
+- 결정: `--auto --insert policy`에서 그리퍼 정지점 사이 구간을 spline 하나로: to_grasp | lift+to_above(carry) | to_policy_start+policy_descend(insert) | policy_ascend+to_home(retreat). `plate_plans.merged_plan`(연속 계획 파일의 구간을 이어 붙이고 0.05° 중복 제거, 100점 초과면 구간별 실행). 이 모드에서는 들기 후 3 s 정지와 손목 사진 2장 생략. config `auto_merged_legs: true`.
+- 속도 "조금 낮춤": 일반 30, 정책 시작+넣기 5.0, 첫 하강 4.0, 티칭 넣기 1.2°/s.
+- 코드 1000줄 제한 해제(보스). `policy_plan`은 pipeline → plate_plans로 옮김(이미 진행된 정리).
+- 시험: 16:58 실행 데이터로 carry 14점, insert 85점, retreat 22점 모두 mover 검사 통과, 회귀 시험 21개 통과.

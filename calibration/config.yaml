@@ -109,7 +109,8 @@ plate_rl:                          # pipeline.py --task plate: FoundationPose pl
   start_tolerance_deg: 3.0           # robot must be this close to the home joints
   keep_perception: true              # FoundationPose window keeps tracking during the motion (pose logged with the joints)
   export_envs: 8                     # sim rollouts per plan (GPU shared with FoundationPose)
-  vel_deg_s: 40.0                    # (10/13 보스, x2 of 20) every leg except the plate's way down (grasp, lift, carry, ascend, home, aborts); mover has no upper limit
+  vel_deg_s: 30.0                    # (10/13 보스: 40 -> a bit slower) every leg except the plate's way down (grasp, lift, carry, ascend, home, aborts); mover has no upper limit
+  auto_merged_legs: true             # (10/13 보스) --auto --insert policy: 4 splines (to_grasp | lift+to_above | policy start+insert | ascend+home), stops only for the gripper
   transport_step_deg: 20.0           # (10/13) waypoint spacing of those legs, like the grasp leg (2-deg steps ran ~2x slower)
   hold_s: 3.0                        # pause with the plate lifted
 
@@ -135,12 +136,12 @@ plate_ik_bc:                       # --plate_policy ik_bc (overrides plate_rl ke
   basket_pre_up_m: 0.075               # look stop: TCP this far above the taught insert
   basket_insert_up_m: 0.020            # insert end this far above the taught insert
   basket_retreat_up_m: 0.08            # tilted: after release straight up (the highest that reaches, >= 3 cm)
-  basket_pre_vel_deg_s: 5.25           # first descent: above -> pre / policy start (10/13 보스: x3.5 of 1.5)
-  basket_insert_vel_deg_s: 1.6         # taught insert, in the pins (10/13 보스: x3.5 of 0.45)
+  basket_pre_vel_deg_s: 4.0            # first descent: above -> pre / policy start (10/13 보스: 5.25 -> a bit slower)
+  basket_insert_vel_deg_s: 1.2         # taught insert, in the pins (10/13 보스: 1.6 -> a bit slower)
   basket_policy_bc: ../rl/logs/basket/bc_data_basket_v3_20261012/seed3_20261012_215747/best.pt   # --insert policy (10/13)
   basket_policy_rl: ../rl/logs/basket/rl_20261013_003636/best.pt   # residual RL on it: sim 0.913 vs BC 0.786 (1,024 ep)
   basket_policy_range: {x: [1.02, 1.22], y: [-0.39, -0.19], y_sim_checked: [-0.39, 0.20], yaw_deg: [-14, 16]}   # RL start states (10/13); y up to +0.20 only sim-checked
-  basket_policy_vel_deg_s: 7.0         # policy insert (10/13 보스: x3.5 of 2.0; 66 dense waypoints run ~5x below the set speed)
+  basket_policy_vel_deg_s: 5.0         # policy start + insert (merged spline) (10/13 보스: 7.0 -> a bit slower)
   basket_policy_extra_down_m: 0.005    # (10/13 보스 "조금 더 깊이") after the policy descent, 5 mm straight down before the release
   basket_slot_shift_pitches: 2         # real intended gap = sim slot origin + 2 pins (P1 replay 10/12)
   auto_max_plate_move_mm: 15.0         # --auto: do not close if FP saw the plate move more than this since planning

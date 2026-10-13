@@ -37,7 +37,7 @@ import ros2_nodes as nodes
 from calib_core import DATA, check_T, cpath, inv_T, latest_t_base_cam, load_config, load_json, rot_angle_deg, save_json
 from robot_model import HOME_JOINTS_DEG, Kinematics, build_checker, cube_yaw_deg, grasp_frames, polyline_path
 from plate_plans import (export_plan, isaac_cmd, isaac_env, full_plan, golden_slot_plan, library_ok_radii, library_target, next_full, next_slot,
-                         plan_from_library, set_next_full, set_next_slot, slot_plan, teach_full, teach_slot)
+                         merged_plan, plan_from_library, policy_plan, set_next_full, set_next_slot, slot_plan, teach_full, teach_slot)
 from sensors import Receiver, RobotRecorder
 
 HERE = Path(__file__).resolve().parent
@@ -237,47 +237,6 @@ def _die_with_parent():
     get SIGTERM when this process dies.  Not used for the mover, which must finish / stop its own leg."""
     import ctypes
     ctypes.CDLL('libc.so.6', use_errno=True).prctl(1, signal.SIGTERM)     # PR_SET_PDEATHSIG
-
-
-def policy_plan(job, out, Tbc, q, wait_s=240):
-    """(10/13) wait for the sim policy rollout (rl/basket/expert.py realplan), accept it only if the exact case inserted
-    and >= half of the in-hand-noise variants did; -> plan.json (FK frame clearance checked) or None (golden fallback)."""
-    t0 = time.time()
-    while job.poll() is None and time.time() - t0 < wait_s:
-        time.sleep(1)
-    res_path = out / 'realplan.json'
-    if job.poll() is None or not res_path.exists():
-        print(f'   정책 경로 계산이 끝나지 않음 -> 티칭 경로로 넣기 ({out / "realplan.log"})', flush=True)
-        return None
-    r = json.loads(res_path.read_text())
-    if r.get('reason'):
-        print(f"   정책 경로: {r['reason']}", flush=True)
-    print(f"   정책 sim 결과: 정확 {r['sim_success_exact']}, 변형 {r['sim_success_variants']:.2f}, 틈 mm {r['final_gap_mm'][:3]}", flush=True)
-    if not r.get('legs') or not r['sim_success_exact'] or r['sim_success_variants'] < 0.5:
-        print('   정책 경로 기준 미달 -> 티칭 경로로 넣기', flush=True)
-        return None
-    L = r['legs']
-    start, down, up = L['to_policy_start']['waypoints_deg'], L['policy_descend']['waypoints_deg'], L['policy_ascend']['waypoints_deg']
-    extra = q.get('basket_policy_extra_down_m', 0.0)      # (10/13 보스) seat a little deeper before the release: straight down
-    if extra > 0:
-        T = Kinematics().fk(np.radians(down[-1]))
-        T[2, 3] -= extra
-        down = down + [np.degrees(Kinematics().ik(T, np.radians(down[-1]))).round(3).tolist()]
-    from plate_plans import taught_plan, thin_waypoints as thin   # repeated waypoints: the controller does not move
-    start, down, up = thin(start), thin(down), thin([down[-1]] + up)
-    lo, hi = np.array(nodes.joint_limits_deg()).T          # (10/13) controller limits (J5 +-135, the sim rise went past):
-    up = up[:next((i for i, w in enumerate(up) if not ((np.array(w) > lo + 3) & (np.array(w) < hi - 3)).all()), len(up))]   # rise while inside
-    if len(up) < 3:
-        print('   정책 상승 경로가 관절 한계에 걸림 -> 티칭 경로로 넣기', flush=True)
-        return None
-    last = up[-1]
-    try:
-        return taught_plan(dict(to_policy_start=start, policy_descend=down, policy_ascend=up,
-                                to_home=[last, list(HOME_JOINTS_DEG)], policy_abort=[start[-1], start[0], list(HOME_JOINTS_DEG)]),
-                           Tbc, q, 'learned policy (BC + residual RL)')
-    except RuntimeError as e:
-        print(f'   정책 경로 거부({e}) -> 티칭 경로로 넣기', flush=True)
-        return None
 
 
 class Children:
@@ -724,9 +683,11 @@ def run_plate(args):
             choose_gripper('abort')
             leg('from_grasp')
             raise RuntimeError('no grasp: measure how far the plate had to move and set plate_rl.offset_m')
-        leg('lift')
-        rec.event('lifted')
-        time.sleep(q.get('hold_s', 3.0))
+        merge = args.auto and args.insert == 'policy' and q.get('auto_merged_legs', False) and early is not None   # (10/13 보스)
+        if not merge:
+            leg('lift')
+            rec.event('lifted')
+            time.sleep(q.get('hold_s', 3.0))
         lift_end = json.loads(Path(plan).read_text())['legs']['lift']['waypoints_deg'][-1]
         if args.place == 'teach':
             k = args.slot or next_slot()
@@ -754,6 +715,19 @@ def run_plate(args):
                 print(f'\n=== slot {k} {name}: one smooth spline at {v} deg/s ===', flush=True)
                 rec.event('leg_start', leg=f'slot{k}_{name}', vel_deg_s=v, smooth=True)
                 children.run_mover(mover_command(args, cur['plan'], name, 'leg', opening_done=True, smooth=True, vel=v), env)
+                rec.event('leg_end', leg=f'slot{k}_{name}')
+
+            def mleg(parts, name, v):                         # merged legs: one spline, no stop between them
+                mp = merged_plan(parts, name)
+                if mp is None:                                  # too many waypoints: the legs one after another
+                    print(f'   [merged] {name}: 묶을 수 없음 -> 구간별 실행', flush=True)
+                    for pp, lg in parts:
+                        cur['plan'] = pp
+                        sleg(lg)
+                    return
+                print(f'\n=== slot {k} {name}: ONE spline ({len(parts)} legs) at {v} deg/s ===', flush=True)
+                rec.event('leg_start', leg=f'slot{k}_{name}', vel_deg_s=v, smooth=True, merged=[lg for _, lg in parts])
+                children.run_mover(mover_command(args, mp, name, 'leg', opening_done=True, smooth=True, vel=v), env)
                 rec.event('leg_end', leg=f'slot{k}_{name}')
             if 'to_above' in json.loads(Path(splan).read_text())['legs']:     # golden / basket: four stages
                 def look(tag):                                      # read-only wrist photo + model pins (10/12)
@@ -784,8 +758,11 @@ def run_plate(args):
                     while (a_ := input(text).strip().lower()) not in keys:
                         pass
                     return a_
-                sleg('to_above')
-                look('above')
+                if merge:
+                    mleg([(plan, 'lift'), (splan, 'to_above')], 'carry', vel)
+                else:
+                    sleg('to_above')
+                    look('above')
                 if args.stop_at_above:
                     print('[1/4] 바구니 위에서 멈춤 (--stop_at_above). 접시는 잡은 채 그대로입니다.', flush=True)
                     rec.event('done', place=args.place, slot=k, stopped='above')
@@ -799,6 +776,13 @@ def run_plate(args):
                     if ppath is not None:
                         cur['plan'] = ppath
                         rec.event('policy_plan', plan=str(ppath))
+                        if merge:
+                            mleg([(ppath, 'to_policy_start'), (ppath, 'policy_descend')], 'insert', q.get('basket_policy_vel_deg_s', 1.0))
+                            choose_gripper(f'slot{k}_release')
+                            mleg([(ppath, 'policy_ascend'), (ppath, 'to_home')], 'retreat', vel)
+                            rec.event('done', place=args.place, slot=k, insert='policy', merged=True)
+                            print('[5/5] 학습 정책으로 넣기 완료 (spline 4개).', flush=True)
+                            return
                         sleg('to_policy_start')
                         look('pre')
                         if ask('\n[2/4] 학습 정책 시작 자세. d = 넣기(정책 경로), u = 다시 올려 홈 복귀 > ', ('d', 'u')) == 'u':
