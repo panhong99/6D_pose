@@ -1168,7 +1168,8 @@ def _random_one(job):
     t0 = time.time()
     try:
         with contextlib.redirect_stdout(io.StringIO()):
-            gpath = plan_from_library(float(np.hypot(px, py)), float(np.degrees(np.arctan2(py, px))), G['q'], G['Tbc'])
+            r, az = library_target(np.array([px, py, G['plate_z']]), G['q'])     # FP root + offset, azimuth in RADIANS
+            gpath = plan_from_library(r, az, G['q'], G['Tbc'], plate_z=G['plate_z'])
     except Exception as e:                                   # noqa: BLE001
         return dict(row, ok=False, stage='grasp', why=str(e)[:120], s=round(time.time() - t0, 1))
     gl = json.loads(Path(gpath).read_text())['legs']
@@ -1196,7 +1197,7 @@ def random_plans(a):
     out = DATA / 'basket' / f'random_{time.strftime("%Y%m%d_%H%M%S")}'
     out.mkdir(parents=True)
     run = sorted(p_.parent for p_ in (DATA / 'real_pipeline').glob('*/realplan_req.json'))[-1]
-    _RANDOM.update(out=out, plate_z=float(json.loads((run / 'realplan_req.json').read_text())['plate_root_fp'][2]), q=C['plate_ik_bc'], basket_z=a.basket_z, phi_step=a.phi_step,
+    _RANDOM.update(out=out, plate_z=float(json.loads((run / 'realplan_req.json').read_text())['plate_root_fp'][2]), q={**C['plate_rl'], **C['plate_ik_bc']}, basket_z=a.basket_z, phi_step=a.phi_step,
                    Tbc=np.array(__import__('calib_core').load_json(__import__('calib_core').latest_t_base_cam())['T_base_cam']))
     jobs = []
     while len(jobs) < a.n:
