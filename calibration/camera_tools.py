@@ -544,7 +544,6 @@ def pin_layout_measure(labels_path, out):
     """Convert manually checked tip/root pixels to 3D. Labels remain provenance, never inferred ground truth."""
     labels_path, out = Path(labels_path), Path(out)
     labels = json.loads(labels_path.read_text())
-    from calib_core import cpath
     import sys
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'rl'))
     import basket_env as be
@@ -553,7 +552,9 @@ def pin_layout_measure(labels_path, out):
     measured = []
     for photo in labels['photos']:
         path = Path(photo['image'])
-        meta = json.loads(path.with_suffix('.json').read_text())
+        if not path.name.endswith('.raw.png'):
+            raise ValueError(f'Expected original wrist .raw.png: {path}')
+        meta = json.loads(path.with_name(path.name[:-8] + '.json').read_text())
         Tbb = np.asarray(meta['T_base_basket'], float)
         Tbc = np.asarray(meta['T_base_flange'], float) @ np.asarray(meta['T_flange_cam'], float)
         K = np.asarray(meta['K'], float)
