@@ -303,7 +303,9 @@ def run_replay(args):
     print(f'[replay] P1 gate: {gate}/{len(good)} real successes reproduced with sim rate >= 80 % (need >= 9)', flush=True)
     out = Path(args.out or RL / 'logs/basket/replay_20261012.json')
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps(dict(results=res, gate=gate, need=9, names=[rows[i]['name'] for i in who], in_hand=in_hand), indent=1))
+    out.write_text(json.dumps(dict(results=res, gate=gate, need=9, names=[rows[i]['name'] for i in who], in_hand=in_hand,
+                                   final={k: st[k].cpu().numpy().tolist() for k in ('d_bottom', 'low', 'normal_err', 'd_u')},
+                                   gap_err=gap_err.cpu().numpy().tolist(), held=held.tolist()), indent=1))
     env.close()
 
 
