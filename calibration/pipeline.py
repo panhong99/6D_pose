@@ -258,10 +258,16 @@ def policy_plan(job, out, Tbc, q, wait_s=240):
         return None
     L = r['legs']
     start, down, up = L['to_policy_start']['waypoints_deg'], L['policy_descend']['waypoints_deg'], L['policy_ascend']['waypoints_deg']
-    last = (up or down)[-1]
-    from plate_plans import taught_plan
+    extra = q.get('basket_policy_extra_down_m', 0.0)      # (10/13 보스) seat a little deeper before the release: straight down
+    if extra > 0:
+        T = Kinematics().fk(np.radians(down[-1]))
+        T[2, 3] -= extra
+        down = down + [np.degrees(Kinematics().ik(T, np.radians(down[-1]))).round(3).tolist()]
+    from plate_plans import taught_plan, thin_waypoints as thin   # repeated waypoints: the controller does not move
+    start, down, up = thin(start), thin(down), thin([down[-1]] + up)
+    last = up[-1]
     try:
-        return taught_plan(dict(to_policy_start=start, policy_descend=down, policy_ascend=[down[-1]] + up,
+        return taught_plan(dict(to_policy_start=start, policy_descend=down, policy_ascend=up,
                                 to_home=[last, list(HOME_JOINTS_DEG)], policy_abort=[start[-1], start[0], list(HOME_JOINTS_DEG)]),
                            Tbc, q, 'learned policy (BC + residual RL)')
     except RuntimeError as e:

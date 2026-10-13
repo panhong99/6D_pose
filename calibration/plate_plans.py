@@ -631,3 +631,13 @@ def basket_range_note(Tbb, q):
           f'   [범위 주의] {where}: 학습 범위 밖, sim 확인만 된 범위 -> sim 판정을 보고 진행' if base and ok('y_sim_checked', y) else
           f'   [범위 밖] {where}: 학습 범위 x {r.get("x")} y {r.get("y")} 각도 {r.get("yaw_deg")} 밖 -> sim 판정에서 떨어지면 '
           f'티칭 경로 (이 위치는 티칭 경로도 미검증)', flush=True)
+
+
+def thin_waypoints(w, tol_deg=0.05):
+    """(10/13) drop waypoints within tol_deg of the previous one: a spline with repeated points (the sim pause after the
+    release) is accepted by the controller and not executed."""
+    out = [list(w[0])]
+    for p in w[1:]:
+        if np.abs(np.subtract(p, out[-1])).max() > tol_deg:
+            out.append(list(p))
+    return out
