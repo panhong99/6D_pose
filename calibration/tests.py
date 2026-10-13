@@ -301,5 +301,45 @@ class Pipeline(unittest.TestCase):
             node.destroy_node.assert_called_once()
 
 
+class CameraPinTests(unittest.TestCase):
+    def setUp(self):
+        import camera_tools as camera
+        self.camera = camera
+        self.K = np.array([[500., 0, 160], [0, 500., 120], [0, 0, 1]])
+        self.p0, self.p1 = np.array([.06, 0, 1.]), np.array([.06, .10, 1.])
+        self.axis = np.array([1., 0, 0])
+
+    def fixture(self, dx=0):
+        import cv2
+        image = np.full((240, 320, 3), 230, np.uint8)
+        uv, _ = self.camera._pin_project(np.stack([self.p0, self.p1])+self.axis[None]*dx/1000, np.eye(4), self.K)
+        cv2.line(image, tuple(np.rint(uv[0]).astype(int)), tuple(np.rint(uv[1]).astype(int)), (30, 30, 30), 3)
+        return image
+
+    def match(self, image):
+        return self.camera._pin_match(image, self.camera._pin_image_context(image, self.camera.load_config()),
+                                      self.p0, self.p1, np.eye(4), self.K, self.axis)
+
+    def test_known_ridge_shift_and_sign(self):
+        for dx in (-4, 0, 4):
+            r = self.match(self.fixture(dx))
+            self.assertEqual(r['status'], 'detected')
+            self.assertAlmostEqual(r['correction_mm'], dx, delta=0.5)
+
+    def test_blank_floor_holes_not_pin(self):
+        import cv2
+        image = np.full((240, 320, 3), 230, np.uint8)
+        for y in range(128, 176, 10):
+            cv2.circle(image, (190, y), 2, (20, 20, 20), -1)
+        self.assertNotEqual(self.match(image)['status'], 'detected')
+
+    def test_plate_occlusion_is_not_a_measurement(self):
+        image = self.fixture()
+        image[:, 180:210] = (30, 30, 190)
+        r = self.match(image)
+        self.assertEqual(r['status'], 'occluded')
+        self.assertIsNone(r['correction_mm'])
+
+
 if __name__ == '__main__':
     unittest.main()

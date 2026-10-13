@@ -1381,3 +1381,10 @@
 - 18:xx 보스: Claude↔Codex 1시간 주기 운영 → `collab/TASKBOARD.md`(Codex 작업자, Claude 점검·수정, 매시 :07 점검). 1단계(분면별 IK 계획기)는 착수 단계.
 - 18:4x **1단계(분면별 IK 계획기) 오프라인 완료**: `python calibration/plate_plans.py quadrant_plans --basket X Y YAW --plate X Y` (티칭 경로 없음). 바구니 4면 벽(회전 상자, `robot_model` 회전 상자 지원 + `MultiChecker`), 손에 든 접시(지름 26.8 cm 원판 점)를 충돌 검사에 포함. 구간: to_above(직선 실패 시 RRT+tidy) → descend(수직, 13점, +5 mm) → ascend → to_home, abort_home. 바구니 (0.75, +0.15), 접시 (1.05, −0.37)(실기 17:21 잡기를 1번 관절로 −37.8° 회전): **Q1~Q4 모두 계획 성공**(각 4~6 s, 충돌 여유/기준 운반 1.12~1.41, 넣기 1.84~3.5, 놓은 뒤 1.72~4.49, 프레임 검사 승인). 운반 중 접시 최저 높이 0.10~0.14 m, 운반 때 J5가 126~144° 회전(접시를 눕힌 상태 → 세움). RViz(`run.sh viz --plan`)는 계획의 바구니 자세 + 손에 든 접시(놓은 뒤 제자리) 표시.
 - 남은 것: Isaac에서 핀 사이 접촉 확인, 파이프라인 `--quadrant/--gap` 연결(실측 바구니·실제 잡기 사용), 실기.
+
+## 2026-10-13 18:58 Codex — TASKBOARD A/B/C 구현·검증
+- A 오프라인 프로토타입 camera_tools pins: 모델 투영+ridge/Hough, 접시/마커 가림·철망 구멍·모호 대응 거부, 계획기와 같은 분면/화면 위→아래 번호. 최종34장 중33처리/1장 K누락; 기준통과7쌍(7장). 자동보정 정확도 검증은 아직 없음; 실기 미연결. 사진별 표 collab/PIN_MARKER_RESULTS_2026-10-13.md, 출력 calibration/data/basket/pins_codex_verified_20261013/.
+- B basket_stats 구현, 실제98mm(10cm급) 고정카메라200프레임:4마커인식100%,평균/최대잔차7.326/7.819mm. 기준값 calibration/data/basket/marker_stats_codex_baseline_20261013/. 5/2.5cm 실물부착후비교 필요;config불변.
+- C primary-source7편(REFLECT/AHA/Sentinel/FINO-Net/TRANSIC/Recovery RL/Farid RSS2022) collab/FAILURE_DETECTION_REVIEW_2026-10-13.md. 논문사실/우리적용추론 구분.
+- 기존+새 모의테스트24/24, diff whitespace검사통과. 실로봇/그리퍼명령없음,Claude파일/rl수정없음,기존데이터보존.
+- hourly heartbeat automation(id=automation) 활성: TASKBOARD 새 요청·리뷰 확인, 밤 작업 지속,10/14 09:00 KST 보고 후 일시중지. 잔여컨텍스트 토큰% 조회수단이 없어 5%라는 수치는 추정하지 않음.

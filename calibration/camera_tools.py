@@ -4,6 +4,8 @@
   python calibration/camera_tools.py marker [--serial S] [--marker_mm 100]        live ArUco check + averaged report
   python calibration/camera_tools.py probe [--serial S | --image F] [--marker_mm M]   identify an unknown marker board
   python calibration/camera_tools.py locate                                       plate position vs the RL sim spot
+  python calibration/camera_tools.py pins --out NEW_DIR                           saved wrist photos only; numbered diagnostic overlays
+  python calibration/camera_tools.py basket_stats --out NEW_DIR                   fixed camera repeatability; --marker_size_m is actual printed size
 
 preview : one camera (default the first found) with depth colour map and centre depth; S saves to data/real_env/.
           --all / --serial: several cameras side by side (no saving).
@@ -289,7 +291,7 @@ def locate(a, cfg):
         pass
 
 
-def basket_measure(cfg, n_frames=None):
+def basket_measure(cfg, n_frames=None, return_samples=False):
     """Mean base-frame positions of the basket rim markers over n_frames (fixed D455).  Positions only: a single
     small oblique marker can flip its orientation (IPPE), positions stay stable.  Returns {id: xyz}."""
     import cv2
@@ -305,21 +307,25 @@ def basket_measure(cfg, n_frames=None):
     s = b['marker_size_m'] / 2
     obj = np.array([[-s, s, 0], [s, s, 0], [s, -s, 0], [-s, -s, 0]], np.float32)
     cam = ColorCam(cfg['cameras']['fixed_serial'])
-    seen = {}
+    seen, frame_ids = {}, []
     try:
         for _ in range(30):
             cam.read()
         for _ in range(n_frames or b['n_frames']):
             fr = cam.read()
+            detected_ids = []
             corners, ids, _ = det.detectMarkers(cv2.cvtColor(fr.rgb, cv2.COLOR_RGB2GRAY))
             for c, i in zip(corners, [] if ids is None else ids.ravel()):
                 if int(i) in ids_wanted:
                     ok, rv, tv = cv2.solvePnP(obj, c.reshape(4, 2), fr.K, None, flags=cv2.SOLVEPNP_IPPE_SQUARE)
                     if ok:
                         seen.setdefault(int(i), []).append((Tbc @ np.r_[tv.ravel(), 1.0])[:3])
+                        detected_ids.append(int(i))
+            frame_ids.append(detected_ids)
     finally:
         cam.close()
-    return {i: np.median(v, 0) for i, v in seen.items() if len(v) >= 3}
+    positions = {i: np.median(v, 0) for i, v in seen.items() if len(v) >= 3}
+    return (positions, seen, frame_ids) if return_samples else positions
 
 
 def basket_frame_from(P, b):
@@ -508,10 +514,349 @@ def basket(a, cfg):
           f'fit residual {res * 1000:.1f} mm', flush=True)
 
 
+# ---------------------------------------------------------------- offline wrist pin pairs
+
+def _pin_project(points, Tcb, K):
+    xyz = np.asarray(points) @ Tcb[:3, :3].T + Tcb[:3, 3]
+    uv = xyz @ K.T
+    return uv[:, :2] / xyz[:, 2:3], xyz[:, 2]
+
+
+def _pin_image_context(img, cfg):
+    gray = cv2.GaussianBlur(cv2.cvtColor(img, cv2.COLOR_BGR2GRAY), (3, 3), 0.6)
+    hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+    excluded = ((hsv[:, :, 0] < 15) | (hsv[:, :, 0] > 165)) & (hsv[:, :, 1] > 60)
+    excluded = cv2.dilate(excluded.astype(np.uint8), np.ones((9, 9), np.uint8)).astype(bool)
+    dictionary = cv2.aruco.getPredefinedDictionary(getattr(cv2.aruco, cfg['marker']['dictionary']))
+    corners, _, _ = cv2.aruco.ArucoDetector(dictionary).detectMarkers(gray)
+    for c in corners:
+        c = c.reshape(-1, 2)
+        c = (c-c.mean(0))*1.25+c.mean(0)
+        cv2.fillConvexPoly(excluded.view(np.uint8), c.astype(np.int32), 1)
+    edges = cv2.Canny(gray, 45, 110)
+    edges[excluded] = 0
+    lines = cv2.HoughLinesP(edges, 1, np.pi/180, 10, minLineLength=12, maxLineGap=4)
+    return gray.astype(np.float32), excluded, [] if lines is None else lines.reshape(-1, 4)
+
+
+def _pin_longest_run(mask):
+    edges = np.flatnonzero(np.diff(np.r_[False, np.asarray(mask, bool), False]))
+    return int((edges[1::2]-edges[::2]).max()) if len(edges) else 0
+
+
+def _pin_match(img, context, p0, p1, Tcb, K, axis, search_mm=8.0):
+    """Local dark-wire ridge fit. No depth estimate from a guessed plate plane; offsets translate the 3D pin.
+    Evaluate only the exposed upper tine, away from floor mesh and rail. Reject plate/marker occlusion and weak fits."""
+    gray, excluded, lines = context
+    h, w = gray.shape
+    t = np.linspace(0.53, 0.98, 40)
+    points = p0[None]+t[:, None]*(p1-p0)[None]
+    model, depth = _pin_project(points, Tcb, K)
+    tangent = model[-1]-model[0]
+    length = float(np.linalg.norm(tangent))
+    if depth.min() <= 0.05 or length < 12:
+        return dict(status='out_of_view', correction_mm=None)
+    normal = np.array([-tangent[1], tangent[0]])/length
+    half_width = np.clip(float(K[0, 0])*0.00175/depth, 1.1, 5.0)
+    offsets = np.arange(-search_mm, search_mm+0.01, 0.5)
+    scores, supports, visibility, continuous = [], [], [], []
+    def sample(a, xy):
+        return cv2.remap(a, xy[:, 0].astype(np.float32)[None], xy[:, 1].astype(np.float32)[None],
+                         cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT).ravel()
+    for dx in offsets:
+        uv, z = _pin_project(points+axis[None]*dx/1000, Tcb, K)
+        valid = (uv[:, 0] > 8) & (uv[:, 0] < w-9) & (uv[:, 1] > 8) & (uv[:, 1] < h-9) & (z > 0.05)
+        valid &= sample(excluded.astype(np.float32), uv) < 0.1
+        visibility.append(float(valid.mean()))
+        if valid.sum() < 28:
+            scores.append(-1.0); supports.append(0.0); continuous.append(0.0); continue
+        centre = sample(gray, uv)
+        left = sample(gray, uv-normal[None]*(half_width+2.0)[:, None])
+        right = sample(gray, uv+normal[None]*(half_width+2.0)[:, None])
+        contrast = np.minimum(left, right)-centre
+        support = (contrast > 12) & (centre < 145)
+        supports.append(float(support[valid].mean()))
+        continuous.append(_pin_longest_run(support & valid)/len(t))
+        scores.append(float(np.clip(contrast[valid], 0, 80).mean()))
+    peak = int(np.argmax(scores))
+    lo = hi = peak
+    while lo > 0 and scores[lo-1] >= scores[peak]-2.5:
+        lo -= 1
+    while hi < len(scores)-1 and scores[hi+1] >= scores[peak]-2.5:
+        hi += 1
+    # A dark wire has a flat ridge top: use its centre, not the first pixel of the plateau.
+    j = int(round((lo+hi)/2))
+    score, support = scores[j], supports[j]
+    plateau_width = float(offsets[hi]-offsets[lo])
+    status = 'detected'
+    if max(visibility) < 0.7:
+        status = 'occluded'
+    elif score < 14 or support < 0.55 or continuous[j] < 0.45:
+        status = 'weak_line'
+    elif abs(offsets[j]) >= search_mm-0.1 or lo == 0 or hi == len(offsets)-1:
+        status = 'search_boundary'
+    else:
+        competitors = [v for v, dx in zip(scores, offsets) if abs(dx-offsets[j]) >= max(3.0, plateau_width/2+2.0)]
+        if plateau_width > 6.0 or (competitors and score-max(competitors) < 2.5):
+            status = 'ambiguous'
+    fitted, _ = _pin_project(np.stack([p0, p1])+axis[None]*offsets[j]/1000, Tcb, K)
+    if status in ('weak_line', 'search_boundary', 'ambiguous'):
+        fallback = _pin_line_match(context, p0, p1, Tcb, K, axis, search_mm)
+        if fallback is not None:
+            return fallback
+    return dict(status=status, correction_mm=float(offsets[j]) if status == 'detected' else None,
+                candidate_mm=float(offsets[j]), ridge_score=round(score, 3), support=round(support, 3),
+                visible_fraction=round(visibility[j], 3), model_uv=_pin_project(np.stack([p0, p1]), Tcb, K)[0].tolist(),
+                detected_uv=fitted.tolist())
+
+
+def _pin_line_match(context, p0, p1, Tcb, K, axis, search_mm):
+    """Hough fallback for small errors transverse to the x-only model fit. Report unresolved pixel residual explicitly."""
+    gray, excluded, lines = context
+    uv, depth = _pin_project(np.stack([p0+(p1-p0)*0.53, p1]), Tcb, K)
+    tangent = uv[1]-uv[0]
+    length = np.linalg.norm(tangent)
+    direction = tangent/length
+    normal = np.array([-direction[1], direction[0]])
+    J = (_pin_project(p1[None]+axis[None]*0.001, Tcb, K)[0][0]-uv[1])
+    if np.linalg.norm(J) < 0.3:
+        return None
+    candidates = []
+    h, w = gray.shape
+    for line in lines:
+        a, b = line[:2].astype(float), line[2:].astype(float)
+        d = b-a; L = np.linalg.norm(d)
+        if L < 0.55*length or L > 2.5*length or abs(np.dot(d/L, direction)) < 0.90:
+            continue
+        tip = a if np.linalg.norm(a-uv[1]) < np.linalg.norm(b-uv[1]) else b
+        if np.linalg.norm(tip-uv[1]) > 19:
+            continue
+        t = np.linspace(0.12, 0.9, 24)
+        coords = a[None]+t[:, None]*d
+        if (coords[:, 0].min() < 6 or coords[:, 0].max() >= w-6 or coords[:, 1].min() < 6 or coords[:, 1].max() >= h-6):
+            continue
+        def sample(arr, xy):
+            return cv2.remap(arr, xy[:, 0].astype(np.float32)[None], xy[:, 1].astype(np.float32)[None], cv2.INTER_LINEAR).ravel()
+        if (sample(excluded.astype(np.float32), coords) > 0.1).mean() > 0.2:
+            continue
+        best = None
+        for shift in (-2, -1, 0, 1, 2):
+            xy = coords+normal[None]*shift
+            centre = sample(gray, xy)
+            contrast = np.minimum(sample(gray, xy+normal[None]*4), sample(gray, xy-normal[None]*4))-centre
+            score = np.clip(contrast, 0, 80).mean()
+            support = ((contrast > 12) & (centre < 145)).mean()
+            if best is None or score > best[0]:
+                best = (score, support, tip+normal*shift)
+        if best[0] < 20 or best[1] < 0.65:
+            continue
+        xy = coords+normal[None]*np.dot(best[2]-tip, normal)
+        ridge_mask = (np.minimum(sample(gray, xy+normal[None]*4), sample(gray, xy-normal[None]*4))-sample(gray, xy) > 12)
+        if _pin_longest_run(ridge_mask)/len(ridge_mask) < 0.45:
+            continue
+        delta = best[2]-uv[1]
+        dx = float(np.dot(delta, J)/np.dot(J, J))
+        residual = delta-J*dx
+        if abs(dx) >= search_mm or np.linalg.norm(residual) > 12:
+            continue
+        candidates.append((float(best[0]), float(best[1]), dx, residual, best[2]))
+    if not candidates:
+        return None
+    candidates.sort(key=lambda c: -c[0])
+    best = candidates[0]
+    if any(c[0] > best[0]-3 and abs(c[2]-best[2]) > 3 for c in candidates[1:]):
+        return None
+    base_uv = _pin_project(np.stack([p0, p1]), Tcb, K)[0]
+    corrected = base_uv+(best[4]-base_uv[1])[None]
+    return dict(status='detected', method='hough_ridge', correction_mm=round(best[2], 3), candidate_mm=round(best[2], 3),
+                ridge_score=round(best[0], 3), support=round(best[1], 3), visible_fraction=1.0,
+                transverse_residual_px=round(float(np.linalg.norm(best[3])), 3),
+                model_uv=base_uv.tolist(), detected_uv=corrected.tolist())
+
+
+def wrist_pins(req, cfg, out, image=None, rotate='auto', search_mm=8.0):
+    """Stored image only. Pair physical rows by equal model x; display top-to-bottom IDs within each quadrant.
+    Auto rotation aligns the two physical rows left-to-right in the saved display. Raw pixel geometry stays in JSON.
+    Rejected/occluded pins retain their model IDs; no automatic robot correction is performed."""
+    if not 0 < search_mm <= 8:
+        raise ValueError('search_mm must be in (0, 8] to avoid adjacent 20 mm pitch pins')
+    req = Path(req)
+    r = json.loads(req.read_text())
+    png = Path(r['png'])
+    meta_path = png.with_suffix('.json')
+    meta = json.loads(meta_path.read_text()) if meta_path.exists() else {}
+    from calib_core import load_json, cpath
+    handeye = cpath('data/wrist_handeye/20261006_111318_clean/result.json')
+    Tfc = np.array(meta.get('T_flange_cam', load_json(handeye)['T_flange_cam']), float)
+    K = np.asarray(meta.get('K', r.get('K')), float)
+    if K.shape != (3, 3):
+        raise ValueError('Saved camera K required; do not infer intrinsics from image size')
+    raw_path = Path(image) if image else png.with_suffix('.raw.png')
+    img = cv2.imread(str(raw_path))
+    if img is None:
+        raise FileNotFoundError(raw_path)
+    Tbb = np.array(r['T_base_basket'], float)
+    Tcb = np.linalg.inv(np.array(r['T_base_flange'], float) @ Tfc)
+    Tbi = np.linalg.inv(Tbb)
+    axis = Tbb[:3, 0]
+    context = _pin_image_context(img, cfg)
+    pins = []
+    for i, (p0, p1) in enumerate(basket_pins_in_base(Tbb)):
+        local = (Tbi @ np.r_[p0, 1])[:3]
+        match = _pin_match(img, context, p0, p1, Tcb, K, axis, search_mm)
+        pins.append(dict(model_id=i, local_xyz=local.tolist(), **match))
+    # Four rows, two rows per physical pair, independent of pixel nearest-neighbour ambiguity.
+    rows = sorted(set(round(p['local_xyz'][1], 5) for p in pins))
+    groups = []
+    for row0, row1 in zip(rows[::2], rows[1::2]):
+        a = {round(p['local_xyz'][0], 5): p for p in pins if round(p['local_xyz'][1], 5) == row0}
+        b = {round(p['local_xyz'][0], 5): p for p in pins if round(p['local_xyz'][1], 5) == row1}
+        for x in sorted(a.keys() & b.keys()):
+            p, q = a[x], b[x]
+            if 'model_uv' not in p or 'model_uv' not in q:
+                continue
+            yc = (row0+row1)/2
+            # Same basket-frame convention as plate_plans.basket_gaps: +y is left.
+            quadrant = ('Q2' if yc >= 0 else 'Q1') if x >= 0 else ('Q3' if yc >= 0 else 'Q4')
+            confirmed = p['status'] == q['status'] == 'detected'
+            corrections = [p['correction_mm'], q['correction_mm']]
+            if confirmed and abs(corrections[0]-corrections[1]) > 3.0:
+                confirmed = False
+                status = 'pair_disagreement'
+            else:
+                status = 'detected' if confirmed else 'partial_or_occluded'
+            groups.append(dict(quadrant=quadrant, model_pin_ids=[p['model_id'], q['model_id']],
+                               midpoint_uv=np.mean([p['model_uv'][1], q['model_uv'][1]], 0).tolist(),
+                               status=status, correction_mm=float(np.mean(corrections)) if confirmed else None,
+                               local_x_m=x, row_y_m=[row0, row1]))
+    # Display rotation is explicit provenance; no calibration transform changes.
+    if rotate == 'auto':
+        vectors = [np.array(pins[g['model_pin_ids'][1]]['model_uv'][1])-pins[g['model_pin_ids'][0]]['model_uv'][1] for g in groups]
+        rotate = '90' if vectors and np.median([abs(v[1])-abs(v[0]) for v in vectors]) > 0 else '0'
+    rotation = int(rotate)
+    h, w = img.shape[:2]
+    def display(uv):
+        u, v = uv
+        return np.array([u, v]) if rotation == 0 else (np.array([h-1-v, u]) if rotation == 90 else np.array([v, w-1-u]))
+    view = img.copy() if rotation == 0 else cv2.rotate(img, cv2.ROTATE_90_CLOCKWISE if rotation == 90 else cv2.ROTATE_90_COUNTERCLOCKWISE)
+    for quadrant in ('Q1', 'Q2', 'Q3', 'Q4'):
+        visible = [g for g in groups if g['quadrant'] == quadrant and 0 <= display(g['midpoint_uv'])[0] < view.shape[1] and 0 <= display(g['midpoint_uv'])[1] < view.shape[0]]
+        for number, g in enumerate(sorted(visible, key=lambda g: tuple(display(g['midpoint_uv'])[::-1])), 1):
+            g['number'] = number
+            colour = (30, 210, 40) if g['status'] == 'detected' else (0, 140, 255)
+            points = []
+            for pid in g['model_pin_ids']:
+                pin = pins[pid]
+                uv = pin['detected_uv'] if pin['status'] == 'detected' else pin['model_uv']
+                a, b = [tuple(np.rint(display(x)).astype(int)) for x in uv]
+                cv2.line(view, a, b, colour, 2 if pin['status'] == 'detected' else 1)
+                cv2.circle(view, b, 4, colour, 1)
+                points.append(b)
+            midpoint = np.rint(np.mean(points, 0)).astype(int)
+            label = f"{quadrant}/{number} " + (f"{g['correction_mm']:+.1f}mm" if g['status'] == 'detected' else '?')
+            cv2.putText(view, label, tuple(midpoint+np.array([5, -5])), cv2.FONT_HERSHEY_SIMPLEX, 0.38, colour, 1, cv2.LINE_AA)
+    out = Path(out)
+    out.mkdir(parents=True, exist_ok=False)
+    cv2.imwrite(str(out/'pairs.png'), view)
+    result = dict(req=str(req.resolve()), image=str(raw_path.resolve()), handeye=str(handeye),
+                  display_rotation_deg=rotation, numbering='quadrant, top-to-bottom in displayed image; hidden IDs retained',
+                  quadrant_basis='basket frame: +x far, +y left; Q1 far/right, Q2 far/left, Q3 near/left, Q4 near/right',
+                  correction_axis='basket +x; diagnostic only', search_mm=search_mm,
+                  confirmed_pairs=sum(g['status'] == 'detected' and 'number' in g for g in groups),
+                  visible_model_pairs=sum('number' in g for g in groups), pins=pins, pairs=groups,
+                  accuracy_note='No measured 3D ground truth; mm offsets are model-to-image fits, not absolute accuracy.')
+    (out/'pairs.json').write_text(json.dumps(result, indent=2))
+    return result
+
+
+def pins_mode(a, cfg):
+    if a.image and not a.req:
+        raise ValueError('--image requires --req; one image cannot stand in for a batch')
+    reqs = [Path(a.req)] if a.req else sorted((DATA/'real_pipeline').glob('2026101[23]_*/wrist_*.req.json'))
+    out = a.out or DATA/'basket'/f'pins_{time.strftime("%Y%m%d_%H%M%S")}'
+    out = Path(out)
+    if out.exists():
+        raise FileExistsError(out)
+    out.mkdir(parents=True)
+    rows = []
+    for req in reqs:
+        try:
+            r = wrist_pins(req, cfg, out/f'{req.parent.name}_{req.stem}', a.image, a.rotate, a.search_mm)
+            offsets = [g['correction_mm'] for g in r['pairs'] if g['status'] == 'detected' and 'number' in g]
+            rows.append(dict(photo=str(req), detected_pairs=r['confirmed_pairs'], visible_pairs=r['visible_model_pairs'],
+                             median_dx_mm=float(np.median(offsets)) if offsets else None, display_rotation=r['display_rotation_deg']))
+        except (FileNotFoundError, ValueError) as e:
+            rows.append(dict(photo=str(req), error=str(e)))
+    import csv
+    columns = ['photo', 'detected_pairs', 'visible_pairs', 'median_dx_mm', 'display_rotation', 'error']
+    with (out/'summary.csv').open('w', newline='') as f:
+        writer = csv.DictWriter(f, fieldnames=columns); writer.writeheader(); writer.writerows(rows)
+    (out/'summary.json').write_text(json.dumps(rows, indent=2))
+    print(json.dumps(dict(out=str(out), photos=len(rows), detected_pairs=sum(r.get('detected_pairs', 0) for r in rows)), ensure_ascii=False))
+
+
+# ---------------------------------------------------------------- read-only marker-size repeatability experiment
+
+def basket_stats(a, cfg):
+    """Repeat fixed-camera measurements without changing saved calibration or marker layout.
+    The size argument must match the physical black-square edge; hypothetical small sizes on a large print are invalid."""
+    import copy
+    import csv
+    from calib_core import cpath, latest_t_base_cam
+    cfg = copy.deepcopy(cfg)
+    if a.marker_size_m is not None:
+        if not 0.01 <= a.marker_size_m <= 0.15:
+            raise ValueError('marker_size_m must be measured black-square edge, 0.01..0.15 m')
+        cfg['basket']['marker_size_m'] = a.marker_size_m
+    if not 2 <= a.repeats <= 100 or not 3 <= a.frames <= 120:
+        raise ValueError('Use 2..100 repeats and 3..120 frames per measurement')
+    out = a.out or DATA/'basket'/f'marker_stats_{time.strftime("%Y%m%d_%H%M%S")}'
+    out = Path(out); out.mkdir(parents=True, exist_ok=False)
+    wanted = set(cfg['basket']['marker_ids'].values())
+    layout = json.loads(cpath(cfg['basket']['layout']).read_text())
+    samples, repeat_positions, fits, frame_ids = {}, {}, [], []
+    for repeat in range(a.repeats):
+        P, seen, ids = basket_measure(cfg, a.frames, return_samples=True)
+        frame_ids.extend(ids)
+        for i, points in seen.items():
+            samples.setdefault(i, []).extend(points)
+        for i, position in P.items():
+            repeat_positions.setdefault(i, []).append(position.tolist())
+        try:
+            T, residual, used = basket_fit_robust(P, layout)
+            fits.append(dict(repeat=repeat, residual_mm=float(residual*1000), used_ids=used, T_base_basket=T.tolist()))
+        except RuntimeError as e:
+            fits.append(dict(repeat=repeat, error=str(e)))
+        print(f'[basket_stats] {repeat+1}/{a.repeats}: seen {sorted(P)}', flush=True)
+    rows = []
+    for i in sorted(wanted):
+        xyz = np.asarray(samples.get(i, []), float)
+        repeats = np.asarray(repeat_positions.get(i, []), float)
+        std = xyz.std(0, ddof=1)*1000 if len(xyz) > 1 else [None]*3
+        median_std = repeats.std(0, ddof=1)*1000 if len(repeats) > 1 else [None]*3
+        rows.append(dict(marker_id=i, detections=len(xyz), detection_rate=len(xyz)/len(frame_ids),
+                         std_x_mm=std[0], std_y_mm=std[1], std_z_mm=std[2],
+                         repeat_std_x_mm=median_std[0], repeat_std_y_mm=median_std[1], repeat_std_z_mm=median_std[2]))
+    residuals = [r['residual_mm'] for r in fits if 'residual_mm' in r]
+    result = dict(marker_size_m=cfg['basket']['marker_size_m'], fixed_serial=cfg['cameras']['fixed_serial'],
+                  calibration=str(latest_t_base_cam()), layout=str(cpath(cfg['basket']['layout'])),
+                  repeats=a.repeats, frames_per_repeat=a.frames, total_frames=len(frame_ids),
+                  all_four_rate=float(np.mean([wanted.issubset(ids) for ids in frame_ids])),
+                  fit_success_rate=len(residuals)/a.repeats, residual_mean_mm=float(np.mean(residuals)) if residuals else None,
+                  residual_max_mm=max(residuals) if residuals else None, markers=rows, fits=fits,
+                  samples={str(k): np.asarray(v).tolist() for k, v in samples.items()},
+                  frame_detected_ids=frame_ids, accuracy_note='Repeatability only; fixed bias and absolute accuracy need an external reference.')
+    (out/'summary.json').write_text(json.dumps(result, indent=2))
+    with (out/'markers.csv').open('w', newline='') as f:
+        writer = csv.DictWriter(f, fieldnames=list(rows[0])); writer.writeheader(); writer.writerows(rows)
+    print(json.dumps({k: result[k] for k in ('marker_size_m', 'total_frames', 'all_four_rate', 'residual_mean_mm', 'residual_max_mm')}, indent=2))
+    return result
+
+
 if __name__ == '__main__':
     cfg = load_config()
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument('mode', choices=('preview', 'marker', 'probe', 'locate', 'basket', 'wrist_look', 'pre_photo'))
+    p.add_argument('mode', choices=('preview', 'marker', 'probe', 'locate', 'basket', 'wrist_look', 'pre_photo', 'pins', 'basket_stats'))
     p.add_argument('--define', action='store_true', help='basket: define the basket frame / marker layout now')
     p.add_argument('--define_current', action='store_true', help='basket: marker layout in today\'s known basket frame (10/12)')
     p.add_argument('--golden', default=None, help='basket --define: also store this full teaching\'s slot in the basket frame')
@@ -523,6 +868,12 @@ if __name__ == '__main__':
     p.add_argument('--marker_id', type=int, default=None)
     p.add_argument('--marker_mm', type=float, default=None)
     p.add_argument('--dictionary', default=None)
+    p.add_argument('--out', type=Path, help='pins / basket_stats: new output directory')
+    p.add_argument('--rotate', choices=('auto', '0', '90', '270'), default='auto', help='pins: display rotation, raw projection unchanged')
+    p.add_argument('--search_mm', type=float, default=8.0, help='pins: maximum local correction along basket x')
+    p.add_argument('--marker_size_m', type=float, help='basket_stats: actual printed black square side, override for this run only')
+    p.add_argument('--repeats', type=int, default=10, help='basket_stats: repeat measurements')
+    p.add_argument('--frames', type=int, default=20, help='basket_stats: frames in each measurement')
     a = p.parse_args()
     if a.mode == 'preview':
         preview(a)
@@ -534,6 +885,10 @@ if __name__ == '__main__':
         basket(a, cfg)
     elif a.mode == 'wrist_look':
         wrist_look(a, cfg)
+    elif a.mode == 'basket_stats':
+        basket_stats(a, cfg)
+    elif a.mode == 'pins':
+        pins_mode(a, cfg)
     elif a.mode == 'pre_photo':
         pre_photo(a, cfg)
     else:
