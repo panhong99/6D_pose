@@ -995,3 +995,8 @@ Human 지시: Claude와 Human이 실증하는 동안 Codex가 이 문제의 원�
 - 결정: `train.py rl`에 `episode_return`(끝난 에피소드의 할인 없는 보상 합 평균), `episode_len_s`, eval 시 `eval_episode_return` 기록. 기존 `reward`(step당 평균)는 유지하되 판단 지표 아님.
 - 이유: RL 목적함수는 기대 리턴 E[Σ γ^t r_t]이고, 그 표본 추정이 평균 에피소드 리턴. step당 평균(0.2)은 ±10 종료 보상과 비교가 안 돼 읽을 수 없었음.
 - 해석: 리턴은 shaping 보상 포함이라 성공률과 완전히 같지 않음 → 판단은 eval_success + eval_episode_return 함께.
+
+## 2026-10-13 하강 전 운반 속도 2배 (보스)
+- 결정: to_grasp, lift, to_above를 6 → 12°/s(`plate_ik_bc.vel_transport_deg_s`), mover 하드 상한 `VEL_HARD_LIMIT/ACC_HARD_LIMIT` 6 → 12. 하강(정책 1.2, 티칭 1.5/0.25), 상승 1.5, 홈 복귀 등 나머지는 그대로(6 이하).
+- 이유: 보스 "하강 이전에는 3/10 → 6/10". 10/07의 "1/10 → 3/10"(2 → 6°/s)과 같은 척도.
+- 시험: tests.py 상한 거부 값 10/7 → 13으로 수정, 21개 통과.

@@ -118,7 +118,7 @@ class Mover(unittest.TestCase):
         self.assertEqual(self.check(self.plan()), [])
 
     def test_refuses_fast_unaccepted_stale_or_big_moves(self):
-        self.assertTrue(self.check(self.plan(), '--vel_deg_s', '10'))
+        self.assertTrue(self.check(self.plan(), '--vel_deg_s', '13'))
         self.assertTrue(self.check(self.plan(accepted=False)))
         self.assertTrue(self.check(self.plan(created='2020-01-01 00:00:00')))
         big = self.plan()
@@ -173,7 +173,7 @@ class Pipeline(unittest.TestCase):
                     margin_m=.1, legs=dict(approach=dict(waypoints_deg=[[0] * 6, [10] * 6], min_clearance_straight_m=.12)))
         self.assertTrue(nodes.validate(nodes.mover_args(['--plan', 'unused', '--leg', 'approach']), plan)[1])
         for option in ('--vel_deg_s', '--acc_deg_s2'):
-            for value in ('7', 'nan'):                     # cap is 6 deg/s since 2026-10-07 (Human)
+            for value in ('13', 'nan'):                    # cap 12 deg/s since 2026-10-13 (boss; 6 from 10/07)
                 a = nodes.mover_args(['--plan', 'unused', '--leg', 'approach', option, value])
                 self.assertTrue(nodes.validate(a, dict(plan, offline_test=False, execution_allowed=True))[1])
 

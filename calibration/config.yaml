@@ -110,6 +110,7 @@ plate_rl:                          # pipeline.py --task plate: FoundationPose pl
   keep_perception: true              # FoundationPose window keeps tracking during the motion (pose logged with the joints)
   export_envs: 8                     # sim rollouts per plan (GPU shared with FoundationPose)
   vel_deg_s: 6.0                     # joint speed and accel of the smooth legs (cap 6, Human-approved)
+  vel_transport_deg_s: 12.0          # (10/13 보스 "3/10 -> 6/10") legs before the descent: to_grasp, lift, to_above (mover cap 12)
   hold_s: 3.0                        # pause with the plate lifted
 
 plate_ik_bc:                       # --plate_policy ik_bc (overrides plate_rl keys)

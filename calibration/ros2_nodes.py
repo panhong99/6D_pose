@@ -40,7 +40,7 @@ from pathlib import Path
 import numpy as np
 
 URDF = Path('/home/pan/pan/doosan_ws/install/dsr_description2/share/dsr_description2/urdf/m1013.urdf')
-VEL_HARD_LIMIT, ACC_HARD_LIMIT = 6.0, 6.0                  # deg/s, deg/s^2 (Human 2026-10-07 19:3x: 3x the former 2/2,
+VEL_HARD_LIMIT, ACC_HARD_LIMIT = 12.0, 12.0                # deg/s, deg/s^2 (보스 10/13: 2x for the legs before the descent; 10/07: 6/6, 3x the former 2/2,
                                                             # e-stop in hand; the default --vel_deg_s stays 2)
 OPENING = 'area clear, e-stop in hand'
 DR_BASE = 0

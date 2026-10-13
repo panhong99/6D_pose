@@ -660,9 +660,10 @@ def run_plate(args):
         vel = q.get('vel_deg_s', 2.0)
 
         def leg(name):
-            print(f'\n=== {name}: one smooth spline at {vel} deg/s ===', flush=True)
-            rec.event('leg_start', leg=name, vel_deg_s=vel, smooth=True)
-            children.run_mover(mover_command(args, plan, name, 'leg', opening_done=True, smooth=True, vel=vel), env)
+            v = q.get('vel_transport_deg_s', vel) if name in ('to_grasp', 'lift') else vel   # (10/13) before the descent
+            print(f'\n=== {name}: one smooth spline at {v} deg/s ===', flush=True)
+            rec.event('leg_start', leg=name, vel_deg_s=v, smooth=True)
+            children.run_mover(mover_command(args, plan, name, 'leg', opening_done=True, smooth=True, vel=v), env)
             rec.event('leg_end', leg=name)
 
         def choose_gripper(where):
@@ -744,6 +745,8 @@ def run_plate(args):
                     v = q.get('basket_policy_vel_deg_s', 1.0)
                 if name == 'policy_ascend':
                     v = q.get('basket_ascend_vel_deg_s', vel)
+                if name == 'to_above':                           # (10/13) carry to the basket: before the descent
+                    v = q.get('vel_transport_deg_s', vel)
                 print(f'\n=== slot {k} {name}: one smooth spline at {v} deg/s ===', flush=True)
                 rec.event('leg_start', leg=f'slot{k}_{name}', vel_deg_s=v, smooth=True)
                 children.run_mover(mover_command(args, cur['plan'], name, 'leg', opening_done=True, smooth=True, vel=v), env)
@@ -892,9 +895,10 @@ def run_taught(args):
             print('  문구가 다릅니다 (q 로 종료하려면 Ctrl+C)', flush=True)
 
         def leg(name):
-            print(f'\n=== {name}: one smooth spline at {vel} deg/s ===', flush=True)
-            rec.event('leg_start', leg=name, vel_deg_s=vel, smooth=True)
-            children.run_mover(mover_command(args, plan, name, 'leg', opening_done=True, smooth=True, vel=vel), env)
+            v = q.get('vel_transport_deg_s', vel) if name in ('to_grasp', 'lift') else vel   # (10/13) before the descent
+            print(f'\n=== {name}: one smooth spline at {v} deg/s ===', flush=True)
+            rec.event('leg_start', leg=name, vel_deg_s=v, smooth=True)
+            children.run_mover(mover_command(args, plan, name, 'leg', opening_done=True, smooth=True, vel=v), env)
             rec.event('leg_end', leg=name)
         choose_gripper('start (열기 o)')
         leg('to_grasp')
