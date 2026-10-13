@@ -1428,3 +1428,8 @@
 ## 2026-10-13 23:17 Codex — Q4 핀 뿌리 위치 검토
 - Q4 원본을 4배 확대해 봄. 앞선 후보의 왼쪽 줄 `root_uv.x=272`는 철사 고정 끝이 아니라 중간 세로 레일 부근이며, 실제 끝은 화면 x≈293 부근. 이 상태의 root–tip 차이로 계산한 빗살 기울기에는 체계적 오차가 있음.
 - 보이는 끝까지 밝기 능선 추적한 후보 24개를 새 `calibration/data/basket/wrist_look/pin_candidates_q4_codex_20261013_v2.json/.png`로 보존. 오버레이에서 y≈215, 338 및 하단 부근은 바닥 철망 또는 인접 핀으로 선이 넘어감. 자동 추적만으로 root-tip 정답을 만들 수 없다는 반례이며, 이 파일도 모두 `review=candidate`이다. 최종 실측 배치나 E 성능지표에는 사용하지 않음.
+
+## 2026-10-14 00:19 Codex — Q4 부분 수동 라벨 4개
+- Q4 원본 4배 확대에서 가림이 없는 위쪽 핀 2개씩, 두 줄 총4개의 실제 철사 끝과 고정 뿌리를 육안 확인. 부분 라벨 `calibration/data/basket/wrist_look/pin_labels_q4_partial_checked_20261014.json`, 별도 역투영 `calibration/data/basket/pin_layout_q4_partial_checked_20261014/pin_layout_measured.json`. 기존 원본과 후보 파일은 보존.
+- 가정한 rail/tip 높이 평면에서 왼쪽 줄 root x=+13.0,−4.6mm / tip x=−4.2,−21.0mm, 오른쪽 줄 root x=+10.6,−8.6mm / tip x=−7.0,−23.8mm(바구니 중심 기준). 각 줄의 두 핀 간격은 root에서17.6/19.2mm. x방향 기울기12.9~14.9°. 끝점 수동 클릭 불확실성 약2~3px, 높이는 모델 가정이므로 절대 3D 정확도 주장은 아님.
+- Q4 일부만 checked이며 D 전체 정답(4사진/4줄)·클립 위치·모델 차이 표는 아직 미완료. 이 4개로 E의 recall 또는 80% 달성을 계산하지 않음. 로봇/그리퍼 명령 없음.
