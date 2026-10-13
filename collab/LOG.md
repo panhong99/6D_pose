@@ -1438,3 +1438,8 @@
 - Q3 원본 4배 확대에서 pair B 두 줄의 가림 없는 위쪽 핀 3개씩을 수동으로 root/tip 픽셀 표시하고 오버레이를 재검토. 새 라벨 `calibration/data/basket/wrist_look/pin_labels_q3_partial_checked_20261014.json`, 별도 역투영 `calibration/data/basket/pin_layout_q3_partial_checked_20261014/pin_layout_measured.json`. 검토용 오버레이는 `/tmp/q3_partial_checked_overlay.png`.
 - 모델 높이 가정에서 왼쪽 줄 root x=+7.4,−11.0,−28.6mm / tip x=−11.2,−27.9,−43.3mm, 오른쪽 줄 root x=+5.0,−13.4,−31.0mm / tip x=−14.0,−30.0,−46.8mm. root x 인접 피치17.6~18.4mm, x방향 기울기12.5~16.0°. 일부 끝점 클릭 오차2~3px, 높이 모델 가정, 카메라/hand-eye 오차는 별도다.
 - Q3/Q4 지금까지 일부 핀 총10개만 checked. Q1/Q2, 나머지 핀, 클립 주변 및 모델과의 전체 차이는 아직 확인 중이며 D/E 완료 또는 검출 성능으로 보고하지 않음. 실로봇/그리퍼 명령 없음.
+
+## 2026-10-14 02:21 Codex — Q1 부분 라벨, Q2 회전 좌표 후보
+- Q1 확대와 원본 오버레이에서 pair A 위쪽 2개×2줄 root/tip 4개를 수동 확인. 라벨 `calibration/data/basket/wrist_look/pin_labels_q1_partial_checked_20261014.json`, 역투영 `calibration/data/basket/pin_layout_q1_partial_checked_20261014/pin_layout_measured.json`. 모델 높이 가정에서 root x=184.9/164.8mm 및184.1/163.2mm, tip x=196.9/179.4mm 및194.8/177.3mm. x방향 기울기−9.2~−12.4°, 끝점 클릭 약2~3px 불확실. Q4의 반대편에서 본 동일 pair A 구간이라 x 위치가 다름.
+- Q2 사진은 표시상 90° 회전이며 원본은1280×720. 회전 표시에서 보인 아래 레일 핀 2개의 픽셀을 원본 좌표로 되돌려 `calibration/data/basket/wrist_look/pin_labels_q2_partial_candidate_20261014.json`에 저장. 줄 이름과 뿌리 대응을 확정하지 못해 `candidate` 유지, 역투영/정답 수에 넣지 않음.
+- 확인된 일부 핀은 Q1/Q3/Q4 합계14개. D 전체 목표인 Q1~Q4 모든 줄, 클립 인접 핀과 모델 차이 표는 아직 미완료. 이 부분 라벨로 E의 precision/recall을 계산하지 않음. 실로봇·그리퍼 명령 없음.
