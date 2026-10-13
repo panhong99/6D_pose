@@ -259,6 +259,12 @@ def run_replay(args):
     drive(env, L('lift', 'grasp'), ~open_, args.speed, hold=60)
     lift = env.scene['plate'].data.root_pos_w[:, 2] - env.scene.env_origins[:, 2] - pe.REST_Z
     held = (lift > 0.05).cpu().numpy()
+    ti = robot.find_bodies('tcp')[0][0]                        # (10/13) the plate in the hand after the lift, world poses
+    in_hand = dict(tcp_pos=(robot.data.body_pos_w[:, ti] - env.scene.env_origins).cpu().numpy().tolist(),
+                   tcp_quat=robot.data.body_quat_w[:, ti].cpu().numpy().tolist(),
+                   plate_pos=(env.scene['plate'].data.root_pos_w - env.scene.env_origins).cpu().numpy().tolist(),
+                   plate_quat=env.scene['plate'].data.root_quat_w.cpu().numpy().tolist(),
+                   joints=robot.data.joint_pos[:, :6].cpu().numpy().tolist())
     if args.attach:                                            # rigid in-hand plate (see attach), no extra noise
         attach(env, torch.as_tensor(held, device=dev))
     drive(env, L('to_above', 'slot'), ~open_, args.speed)
@@ -297,7 +303,7 @@ def run_replay(args):
     print(f'[replay] P1 gate: {gate}/{len(good)} real successes reproduced with sim rate >= 80 % (need >= 9)', flush=True)
     out = Path(args.out or RL / 'logs/basket/replay_20261012.json')
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps(dict(results=res, gate=gate, need=9), indent=1))
+    out.write_text(json.dumps(dict(results=res, gate=gate, need=9, names=[rows[i]['name'] for i in who], in_hand=in_hand), indent=1))
     env.close()
 
 
