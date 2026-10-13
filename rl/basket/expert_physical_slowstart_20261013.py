@@ -350,6 +350,7 @@ def grasped_start_slow(env, args, rng):
             sim_steps(env)
         else:
             print('[physical] tracking timeout at library step', t, flush=True)
+            print('[physical] target_deg', torch.rad2deg(q[:, aj]).cpu().tolist(), 'actual_deg', torch.rad2deg(robot.data.joint_pos[:, aj]).cpu().tolist(), 'velocity_deg_s', torch.rad2deg(robot.data.joint_vel[:, aj]).cpu().tolist(), flush=True)
             break
     for _ in range(30):                                        # 1 s hold
         sim_steps(env)
