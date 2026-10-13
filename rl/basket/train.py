@@ -2,6 +2,7 @@
 
     python rl/basket/train.py bc --data IL/data_basket_v2_<date> [--seed 1] [--preflight-only]
     python rl/basket/train.py rl --bc <bc.pt>           (residual PPO, Isaac; added after env.py / expert.py)
+    python rl/basket/train.py rl --bc <bc.pt> --starts <dir> --envs 9 --view <rl best.pt | bc>   (GUI, real time)
 
 bc: behaviour cloning of the sim feedback expert (model.BCPolicy, MSE on the 6 TCP steps + BCE on 'open', AdamW,
 cosine lr).  Safeguards (config.yaml preflight / bc): data check, tiny-batch overfit test, early stop on the
@@ -337,7 +338,7 @@ def run_rl(args):
     """Residual PPO on the frozen BC from saved start states.  Safeguards (config rl): iteration-0 deterministic eval =
     BC baseline, eval every eval_every, patience, one rollback, value-loss / KL / std / NaN stops, wall-clock cap."""
     from isaaclab.app import AppLauncher
-    app = AppLauncher(headless=True).app
+    app = AppLauncher(headless=not args.view).app
     from isaaclab.envs import ManagerBasedRLEnv
     sys.path.insert(0, str(HERE.parent))
     import expert as X
@@ -353,8 +354,9 @@ def run_rl(args):
     rng = np.random.default_rng(args.seed)
     runner = RLRunner(env, StartBank(args.starts, dev), rng)
     out = ROOT / 'rl' / 'logs' / 'basket' / f'rl_{time.strftime("%Y%m%d_%H%M%S")}'
-    out.mkdir(parents=True, exist_ok=True)
-    run = start_wandb(f'rl_seed{args.seed}', 'rl_residual', dict(rl=c, reward=CFG['reward'], bc=args.bc))
+    if not (args.view or args.eval_ckpt):                   # no folder / W&B run for viewing or re-evaluation
+        out.mkdir(parents=True, exist_ok=True)
+    run = None if (args.view or args.eval_ckpt) else start_wandb(f'rl_seed{args.seed}', 'rl_residual', dict(rl=c, reward=CFG['reward'], bc=args.bc))
     T, n = c['num_steps_per_env'], env.num_envs
 
     def evaluate(n_ep=None):
@@ -371,6 +373,25 @@ def run_rl(args):
             runner.reset(torch.nonzero(d).squeeze(1))
         return succ_n / max(done_n, 1)
 
+    if args.view:                                              # GUI: BC (+ residual) episodes at real time, until closed
+        if args.view != 'bc':
+            ac.load_state_dict(torch.load(args.view, map_location=dev)['state'])
+        runner.reset(torch.arange(n, device=env.device))
+        done_n, succ_n = 0, 0
+        while app.is_running():
+            t_s = time.time()
+            o, _ = runner.obs()
+            with torch.no_grad():
+                a = ac.mean(o)
+            r, d, s_ = runner.step(a)
+            for k in torch.nonzero(d).squeeze(1).tolist():
+                done_n += 1; succ_n += int(s_[k])
+                print(f'[view] env {k}: {"성공" if s_[k] else "실패"}  (누적 {succ_n}/{done_n} = {succ_n / done_n:.2f})', flush=True)
+            runner.reset(torch.nonzero(d).squeeze(1))
+            time.sleep(max(0.0, env.step_dt - (time.time() - t_s)))
+        env.close()
+        app.close()
+        return
     if args.eval_ckpt:                                         # re-evaluate a saved residual policy (and the BC) only
         bc_rate = evaluate()
         ac.load_state_dict(torch.load(args.eval_ckpt, map_location=dev)['state'])
@@ -508,6 +529,7 @@ def parse_args():
     p.add_argument('--init_ckpt', default=None, help='rl: continue from this residual checkpoint')
     p.add_argument('--lr', type=float, default=None)
     p.add_argument('--patience', type=int, default=None)
+    p.add_argument('--view', default=None, help="rl: GUI at real time with this residual checkpoint ('bc' = BC only)")
     p.add_argument('--eval_ckpt', default=None, help='rl: only re-evaluate this residual checkpoint against the BC')
     p.add_argument('--max_steps', type=int, default=None, help='bc: override config (tests)')
     return p.parse_args()

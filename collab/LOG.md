@@ -1323,3 +1323,35 @@
 - 밤에 고친 sim 문제: 그립이 접시를 못 잡아 진자처럼 흔들림 → 손 안 고정(±5 mm/±5° 오차 주입); 고정 중 손가락이 접시와 밀어냄 → 고정 중 열기; shield가 넣기 구간 팔을 멈춤 → 넣기 구간만 끔; 그리퍼 라벨 버그; sim TCP 좌표계 90° 차이; 체인 셸 대기 버그 2건, value loss 정지 기준 2회 조정.
 - 남은 위험: (1) sim 손 안 고정은 실제 미끄러짐을 반영하지 못함, (2) 실기 손 안 자세는 FP 잡기 기반 추정, (3) 정책 하강은 관절이 자잘하게 37° 움직임(1.0°/s, 약 40 s), (4) 실기 미검증.
 - 03:4x realplan: 정책 시작 자세 IK 실패 시 크래시 대신 `reason`이 담긴 결과 JSON 기록 → 파이프라인이 이유 출력 후 티칭 경로로 대체(13:04 조건으로 확인: 'policy start pose unreachable ... [1.151, -0.229, 0.506]').
+
+## 2026-10-13 04:11 Codex — 저속재생 실패 위치 / 독립 재평가 완료
+- slowstart8envexit0,library step0에서tracking10초상한에걸림,파지0/8.제한을풀지않고목표/실측관절·속도를출력하는추가진단준비.구동기속도상한·힘·성공조건유지.안전완료시연아님.
+- Codex가복구한독립재평가128env/1024episodes/seed11exit0:BC0.800,RL0.904;로그codex_surrogate_reeval_128.log,W&B run5wt9ja3e.이는attach/shield해제실험내부성과로물리성공주장과분리.
+- Claude는실기정책연결코드및아침요약을추가함.그새설정을Codex가수정하거나실기실행하지않음.qualified物理demo는아직없고surrogatev3수량1260/1326으로목표부족240/174.저속진단은유휴GPU에서8env1batch만실행.
+
+## 2026-10-13 05:12 Codex — 재생 배치 전체 중단 버그 수정 후보
+- trackingdiagnosticexit0:env1 j4목표89.43deg/실제97.02deg로미도달,나머지7env오차약0.001deg이내.기존maxerror검사가한환경때문에전체재생을step0에서break하여파지0/8로만들었음.
+- 별도asyncstart후보는per-env reached/failed마스크로도달못한환경만실패기록하고나머지재생진행.실패환경은분모8에유지,지우거나성공으로세지않음.허용오차0.15deg/속도6deg/s/실드/noattach/성공조건유지.8env1batch/900초상한.
+- 호스트GPUidle확인,launcher의다음진단결과를확인.원본library/shared코드/config보존,물리qualified목표완료아님.
+
+## 2026-10-13 06:14 Codex — 파지복구 / 실측상한여유 후보
+- asyncstart 정상exit0,파지7/8/계획7,raw삽입2/7이나속도gate통과0.성공env0/3 TCPpeak0.08936/0.07040m/s,관절6.7286/7.8657deg/s.구동기명목6deg/s만으로실측6deg/s보장못함.원본실패와측정치보존.
+- 후보margin은구동기·피드백관절cap3deg/s,home/transport2.5deg/s,process내TCPtarget2.5cm/s·회전5deg/s로더낮춤.합격상한5cm/s·6deg/s는유지(완화없음).shield/힘/noattach/성공조건유지,8env,90s,wall900초.원본공유source/config미수정.입력shape/실행label/실측속도기록유지.
+- 현재물리저속완료시연아직0;기존surrogatev3수량1260/1326과분리하여보고.
+
+## 2026-10-13 07:15 Codex — 삽입단계 속도통과1 / 검증항목추가
+- margin8envexit0,파지7/8,raw삽입2,삽입구간TCP/joint속도통과1(env0:TCP0.040932m/s,joint3.000885deg/s).전체path/회전/접촉gate미계측이므로완료qualified시연으로승격안함.
+- 별도verified후보는TCP목표2cm/s로더낮추고회전실측<=10deg/s/arm접촉<=1Ngate추가,release후1초매stepplate속도<1cm/s검사로정지조건엄격화.속도/성공/충돌여유완화없음.8env2batch,900초상한,원본sharedsource/config데이터보존.새output data_basket_physical_verified_20261013.
+- 호스트GPUidle,활성작업없음.이시험도삽입단계진단이며전체파지/운반속도안전승인과별개.전체clean1500/DART1500목표는아직미달.
+
+## 2026-10-13 08:16 Codex — 최종검증결과 / 오전보고 준비
+- verified8env×2batchexit0,파지15/16,계획14/16,raw삽입1/14,삽입단계속도·회전·접촉·연속1초정지gate통과0.첫batchraw삽입env3에서arm contact50.20N,다른env7은147.56N;센서대상link1~6/gripper_base(손가락은제외).접촉상대객체까지는미확인.미달결과를성공데모로저장하지않음.
+- 현재유효물리/저속완료시연을대량수집할전제미충족.원본surrogatev3는clean1260/DART1326(1205610maskframes),목표부족240/174.별도qualification마커추가;첨부고정/실드해제/실행action·실측속도provenance부재를명시.
+- 오전summary JSON rl/reports/codex_basket_night_20261013/summary.json.독립surrogateRL128env/1024episode결과BC80.0%/RL90.4%를물리gate와분리.실기승인아님.현재GPUidle/활성수집없음;09시최종상태확인후automation정지예정.
+
+## 2026-10-13 09:17 Codex — 야간 최종보고 / 자동점검 일시중지
+- 목표미완료:surrogatev3 clean1260/DART1326(각1500대비240/174부족),물리·실측저속·접촉·연속정지진단통과0/16.데이터/모델원본보존;물리시연으로대체보고하지않음.
+- 최종호스트GPU정상,활성basket수집/학습PID없음.독립surrogate평가BC80.0%/RL90.4%(128env,1024episodes)로그보존.
+- 지정시각마감에따라automation bc를PAUSED로변경완료.중지사유는작업완료가아닌야간점검기한종료.후속필수작업:전체운반path안전성·physical그립/손안회전·시뮬접촉모델을고치고검증된전문가로clean/DART수집재개.
+- 최종summary rl/reports/codex_basket_night_20261013/summary.json,세부감사rl/logs/basket/codex_audit_20261012_2203.json,물리계측codex_physical_verified.log.실기명령실행없음.
+- 10/13 오전: 보스 W&B 질문 → 지표 정의 문서 `collab/METRICS_basket.md`. GUI 확인용 `train.py rl ... --view <ckpt|bc>` 추가(9 env, 실시간, 에피소드마다 성공/실패 출력, W&B/폴더 생성 안 함). 확인된 로그 문제: (1) rollout_success가 50 it마다 0 = eval 직후 전 env 리셋으로 그 iteration에 끝난 에피소드가 0개(실패 아님), (2) reward는 step당 평균이라 에피소드 리턴이 아님, (3) RL W&B run이 재시작마다 새로 생김(rl_seed1 3개) + 재평가도 run 생성 → 재평가는 이제 run 안 만듦, (4) 최종 RL eval이 it 350 0.925 → 550 0.759로 하락(best.pt는 350 사용).
