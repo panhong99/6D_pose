@@ -1457,3 +1457,8 @@
 - Q3 중간 구간 4배 크롭(`/tmp/q3_mid_candidate_zoom.png`)에서 pair B 각 줄의 후보 2개씩, 총4개 원본 철사와 오버레이 선이 일치함을 육안 확인. 기존 Q3 6개와 합친 새 `calibration/data/basket/wrist_look/pin_labels_q3_partial_checked_20261014_v2.json`(10개), 역투영 `calibration/data/basket/pin_layout_q3_partial_checked_20261014_v2/pin_layout_measured.json` 저장. 기존 부분 결과는 보존.
 - 추가 4개 root x는 왼쪽−37.4/−61.5mm, 오른쪽−43.9/−64.7mm. 선이 부채꼴이라 root 간격이 tip 간격처럼 일정하지 않으며, 이 값은 라벨과 모델 높이 가정에 따른 추정치다. 다음 핀들은 자동 능선이 인접 핀/격자로 넘어가는 장면이 보여 제외.
 - 현재 checked는 Q1 4 + Q3 10 + Q4 4 = 18개. 전체 D 라벨/클립/모델 비교와 E 평가는 미완료. 로봇/그리퍼 명령 없음.
+
+## 2026-10-14 06:24 Codex — Q4 중간 핀 6개 추가 확인
+- Q4 중간 구간 4배 확대에서 양쪽 줄 각3개, 총6개 철사의 끝–뿌리 선 연결을 원본과 오버레이로 수동 확인. 이전 Q4 4개와 합친 새 `calibration/data/basket/wrist_look/pin_labels_q4_partial_checked_20261014_v2.json`(10개), 역투영 `calibration/data/basket/pin_layout_q4_partial_checked_20261014_v2/pin_layout_measured.json` 저장. 격자와 겹친 인접 후보는 제외.
+- rail 높이 가정에서 추가 root x: plus 줄 −56.7/−73.5/−93.5mm, minus 줄 −54.3/−78.3/−96.7mm. Q1/Q4 교차 사진의 같은 줄 root y는 plus 164.4/166.0mm, minus 68.3/64.3mm로 약1.6/4.0mm 차이. 이는 일부 좌표 일관성 검산일 뿐 전체 3D 정확도 검증 아님.
+- 현재 checked Q1 4 + Q3 10 + Q4 10 = 24개. Q2 줄 배정, 남은 핀/클립 및 모델 차이 표가 남아 D/E 미완료. 실로봇·그리퍼 명령 없음.
