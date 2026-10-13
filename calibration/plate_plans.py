@@ -1170,10 +1170,11 @@ def _random_one(job):
         return dict(row, ok=False, stage='grasp', why=str(e)[:120], s=round(time.time() - t0, 1))
     gl = json.loads(Path(gpath).read_text())['legs']
     grasp = {n: gl[n]['waypoints_deg'] for n in ('to_grasp', 'lift')}
+    H, tool = hand_plate(grasp['to_grasp'][-1], [px, py, G['plate_z']])   # this grasp's plate in the hand
     model_qd = robot_quadrants(Tbb)[qd]
     try:
         with contextlib.redirect_stdout(io.StringIO()):
-            path, rep = quadrant_plan(Tbb, model_qd, gap, G['H'], G['tool'], grasp['lift'][-1], G['Tbc'], G['q'], grasp_legs=grasp,
+            path, rep = quadrant_plan(Tbb, model_qd, gap, H, tool, grasp['lift'][-1], G['Tbc'], G['q'], grasp_legs=grasp,
                                       phi_step=G['phi_step'])
     except Exception as e:                                   # noqa: BLE001
         return dict(row, ok=False, stage='place', why=str(e)[:120], s=round(time.time() - t0, 1))
@@ -1191,19 +1192,19 @@ def random_plans(a):
     rng = np.random.default_rng(a.seed)
     out = DATA / 'basket' / f'random_{time.strftime("%Y%m%d_%H%M%S")}'
     out.mkdir(parents=True)
-    H, tool, run = plate_in_hand(a.run)
-    _RANDOM.update(out=out, H=H, tool=tool, q=C['plate_ik_bc'], basket_z=a.basket_z, phi_step=a.phi_step,
+    run = sorted(p_.parent for p_ in (DATA / 'real_pipeline').glob('*/realplan_req.json'))[-1]
+    _RANDOM.update(out=out, plate_z=float(json.loads((run / 'realplan_req.json').read_text())['plate_root_fp'][2]), q=C['plate_ik_bc'], basket_z=a.basket_z, phi_step=a.phi_step,
                    Tbc=np.array(__import__('calib_core').load_json(__import__('calib_core').latest_t_base_cam())['T_base_cam']))
     jobs = []
     while len(jobs) < a.n:
         bx, by = rng.uniform(*a.x), rng.uniform(*a.y)
         yaw = rng.uniform(-a.yaw_range, a.yaw_range)
-        r, az = rng.uniform(0.86, 1.30), rng.uniform(-40, 40)
+        r, az = rng.uniform(*a.plate_r), rng.uniform(-40, 40)
         px, py = r * np.cos(np.radians(az)), r * np.sin(np.radians(az))
         if abs(py) > 0.42 or np.hypot(px - bx, py - by) < 0.37 + PLATE_R + 0.05:   # plate not on / against the basket (53 cm square)
             continue
         jobs.append((len(jobs), bx, by, yaw, px, py, rng.choice(list(QUADRANTS)), int(rng.integers(0, 10))))
-    print(f'{len(jobs)} random setups (basket x {a.x} y {a.y} yaw +-{a.yaw_range}, plate r 0.86-1.30 az +-40 |y|<=0.42) '
+    print(f'{len(jobs)} random setups (basket x {a.x} y {a.y} yaw +-{a.yaw_range}, plate r {a.plate_r} az +-40 |y|<=0.42) '
           f'with {a.workers} workers -> {out}', flush=True)
     rows = []
     with mp.get_context('fork').Pool(a.workers) as pool, (out / 'rows.jsonl').open('w') as f:
@@ -1214,7 +1215,7 @@ def random_plans(a):
             if len(rows) % 20 == 0:
                 print(f'  {len(rows)}/{len(jobs)}: success {np.mean([r_["ok"] for r_ in rows]):.2f}', flush=True)
     ok = np.array([r_['ok'] for r_ in rows])
-    summ = dict(n=len(rows), success=float(ok.mean()), grasp_run=run, args={k: v for k, v in vars(a).items() if k != 'mode'},
+    summ = dict(n=len(rows), success=float(ok.mean()), plate_z_from=run.name, args={k: v for k, v in vars(a).items() if k != 'mode'},
                 by_quadrant={qd: float(np.mean([r_['ok'] for r_ in rows if r_['quadrant'] == qd] or [0])) for qd in QUADRANTS},
                 fails={})
     for r_ in rows:
@@ -1269,6 +1270,7 @@ if __name__ == '__main__':
     p.add_argument('--random_seeds', type=int, default=4)
     p.add_argument('--workers', type=int, default=16)
     p.add_argument('--n', type=int, default=300, help='random_plans: setups')
+    p.add_argument('--plate_r', type=float, nargs=2, default=(0.86, 1.15), help='random_plans: plate radius range [m] (library path clears the frame up to ~1.15)')
     p.add_argument('--yaw_range', type=float, default=15.0, help='random_plans: basket yaw uniform in +-this [deg]')
     p.add_argument('--seed', type=int, default=0)
     p.add_argument('--measure', action='store_true', help='look_plans: basket from the fixed camera markers (read-only)')
