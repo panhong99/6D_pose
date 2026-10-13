@@ -12,7 +12,7 @@ publisher : /sixd/dryrun/target_pose (PoseStamped), target_joints_deg, waypoints
             the Doosan driver does not read these topics.
 mover     : executes one leg of a plan as single MoveJoint calls.  Safety (each item can only refuse / stop):
             * without --execute it only validates and prints the table (works without ROS);
-            * speed / accel capped at VEL_HARD_LIMIT / ACC_HARD_LIMIT = 6 deg/s, 6 deg/s^2 (higher is refused; default 2);
+            * speed / accel must be > 0 and finite (10/13 보스: no upper limit; default 2);
             * the plan must be accepted, a real (non-offline) dry-run plan, younger than --max_plan_age_min, every move
               <= --max_step_deg, every waypoint >= 2 deg inside the URDF joint limits;
             * the robot's CURRENT joints must match the previous waypoint (--max_start_error_deg), re-checked after the
@@ -40,8 +40,7 @@ from pathlib import Path
 import numpy as np
 
 URDF = Path('/home/pan/pan/doosan_ws/install/dsr_description2/share/dsr_description2/urdf/m1013.urdf')
-VEL_HARD_LIMIT, ACC_HARD_LIMIT = 12.0, 12.0                # deg/s, deg/s^2 (보스 10/13: 2x for the legs before the descent; 10/07: 6/6, 3x the former 2/2,
-                                                            # e-stop in hand; the default --vel_deg_s stays 2)
+# (10/13 보스) speed hard limit removed; speeds come from calibration/config.yaml plate_ik_bc (only > 0 and finite checked)
 OPENING = 'area clear, e-stop in hand'
 DR_BASE = 0
 
@@ -207,10 +206,10 @@ def joint_limits_deg():
 def validate(args, plan):
     """Return (waypoints Nx6 deg, list of problems).  Never raises on a bad plan."""
     problems = []
-    if not np.isfinite(args.vel_deg_s) or args.vel_deg_s <= 0 or args.vel_deg_s > VEL_HARD_LIMIT:
-        problems.append(f'--vel_deg_s {args.vel_deg_s} outside (0, {VEL_HARD_LIMIT}] (hard limit)')
-    if not np.isfinite(args.acc_deg_s2) or args.acc_deg_s2 <= 0 or args.acc_deg_s2 > ACC_HARD_LIMIT:
-        problems.append(f'--acc_deg_s2 {args.acc_deg_s2} outside (0, {ACC_HARD_LIMIT}] (hard limit)')
+    if not np.isfinite(args.vel_deg_s) or args.vel_deg_s <= 0:
+        problems.append(f'--vel_deg_s {args.vel_deg_s} must be > 0')
+    if not np.isfinite(args.acc_deg_s2) or args.acc_deg_s2 <= 0:
+        problems.append(f'--acc_deg_s2 {args.acc_deg_s2} must be > 0')
     if not plan.get('accepted'):
         problems.append('plan is not accepted: ' + '; '.join(plan.get('reasons', [])))
     if not plan.get('dry_run'):

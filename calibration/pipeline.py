@@ -660,7 +660,7 @@ def run_plate(args):
         vel = q.get('vel_deg_s', 2.0)
 
         def leg(name):
-            v = q.get('vel_transport_deg_s', vel) if name in ('to_grasp', 'lift') else vel   # (10/13) before the descent
+            v = vel
             print(f'\n=== {name}: one smooth spline at {v} deg/s ===', flush=True)
             rec.event('leg_start', leg=name, vel_deg_s=v, smooth=True)
             children.run_mover(mover_command(args, plan, name, 'leg', opening_done=True, smooth=True, vel=v), env)
@@ -736,17 +736,10 @@ def run_plate(args):
             cur = dict(plan=splan)                                  # the pre-stop correction swaps in a shifted plan
 
             def sleg(name):
-                v = q.get('basket_insert_vel_deg_s', vel) if name in ('descend', 'shift') else vel   # in the pins: slow
-                if name == 'ascend':                            # (10/12) released: the open fingers only leave the rim
-                    v = q.get('basket_ascend_vel_deg_s', vel)
-                if name in ('descend_pre', 'pre_up', 'to_policy_start', 'policy_abort'):   # (10/12 Human) first descent: slow
-                    v = q.get('basket_pre_vel_deg_s', vel)
-                if name == 'policy_descend':                     # dense corrective path: ~2 mm of TCP per joint degree
-                    v = q.get('basket_policy_vel_deg_s', 1.0)
-                if name == 'policy_ascend':
-                    v = q.get('basket_ascend_vel_deg_s', vel)
-                if name == 'to_above':                           # (10/13) carry to the basket: before the descent
-                    v = q.get('vel_transport_deg_s', vel)
+                # (10/13 보스) only the plate's way down is slow; every other leg runs at the one speed vel_deg_s
+                v = {'descend_pre': q.get('basket_pre_vel_deg_s', vel), 'to_policy_start': q.get('basket_pre_vel_deg_s', vel),
+                     'descend': q.get('basket_insert_vel_deg_s', vel), 'shift': q.get('basket_insert_vel_deg_s', vel),
+                     'policy_descend': q.get('basket_policy_vel_deg_s', 1.0)}.get(name, vel)
                 print(f'\n=== slot {k} {name}: one smooth spline at {v} deg/s ===', flush=True)
                 rec.event('leg_start', leg=f'slot{k}_{name}', vel_deg_s=v, smooth=True)
                 children.run_mover(mover_command(args, cur['plan'], name, 'leg', opening_done=True, smooth=True, vel=v), env)
@@ -895,7 +888,7 @@ def run_taught(args):
             print('  문구가 다릅니다 (q 로 종료하려면 Ctrl+C)', flush=True)
 
         def leg(name):
-            v = q.get('vel_transport_deg_s', vel) if name in ('to_grasp', 'lift') else vel   # (10/13) before the descent
+            v = vel
             print(f'\n=== {name}: one smooth spline at {v} deg/s ===', flush=True)
             rec.event('leg_start', leg=name, vel_deg_s=v, smooth=True)
             children.run_mover(mover_command(args, plan, name, 'leg', opening_done=True, smooth=True, vel=v), env)
