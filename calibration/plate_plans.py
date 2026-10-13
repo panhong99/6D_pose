@@ -1,6 +1,7 @@
 """Plate task plans that need no Isaac at run time (pipeline.py --task plate): the per-radius sim plan library
 (any direction by turning joint 1) and the taught basket-slot paths (teach / replay).  Conda foundationpose Python."""
 import json
+import os
 import socket
 import subprocess
 from pathlib import Path
