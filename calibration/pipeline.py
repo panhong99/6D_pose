@@ -600,7 +600,8 @@ def run_plate(args):
             from plate_plans import hand_plate, pin_gap, quadrant_plan, robot_quadrants
             H, tool = hand_plate(legs0['to_grasp']['waypoints_deg'][-1], p)
             mq = robot_quadrants(basket_T)[args.quadrant]
-            early, rep = quadrant_plan(basket_T, mq, pin_gap(basket_T, mq, args.pin), H, tool, legs0['lift']['waypoints_deg'][-1], Tbc, q)
+            early, rep = quadrant_plan(basket_T, mq, pin_gap(basket_T, mq, args.pin), H, tool, legs0['lift']['waypoints_deg'][-1], Tbc, q,
+                                       centre_h=q.get('basket_quadrant_centre_h_m', 0.18))
             if early is None:
                 raise RuntimeError(f'{args.quadrant} pin {args.pin}: no insert plan from this grasp ({rep["tried"][:4]})')
             print(f'   {args.quadrant} (바구니 모델 {mq}) 핀 {args.pin}: 넣기 계획 OK, 운반 {rep["carry"]}, '
