@@ -707,3 +707,183 @@ def merged_plan(parts, name, max_wp=100):
     (out / 'plan.json').write_text(json.dumps(plan, indent=1))
     print(f'   [merged] {name}: {len(wp)} waypoints ({plan["source"]})', flush=True)
     return out / 'plan.json'
+
+
+# ---------------------------------------------------------------- basket reach map (10/13 보스: basket anywhere in reach, 4 quadrants)
+QUADRANTS = {'Q1': ('far', 'right'), 'Q2': ('far', 'left'), 'Q3': ('near', 'left'), 'Q4': ('near', 'right')}   # top view, robot at the bottom
+
+
+def basket_gaps():
+    """{quadrant: [gap centre on the basket floor (basket frame), ...]} ordered robot side -> far side.  Basket frame: x robot
+    side -> far side, y to the blue handle (= left seen from the robot).  Pair A (y +0.129) left, pair B (y -0.110) right."""
+    import sys
+    sys.path.insert(0, str(ROOT / 'rl'))
+    import basket_env as be
+    r, floor = be.B['full']['pin_r'], be.B['full']['floor_z']
+    pins = [p0 for kind, p0, p1, *rest in be.full_basket_parts() if kind == 'cyl' and rest and abs(rest[0] - r) < 1e-9]
+    out = {}
+    for qd, (fn, lr) in QUADRANTS.items():
+        yc = be.B['full']['pair_centres_y'][0 if lr == 'left' else 1]
+        xs = sorted({round(float(p[0]), 4) for p in pins if abs(p[1] - yc) < 0.06 and ((p[0] > 0) == (fn == 'far'))})
+        out[qd] = [np.array([(a + b) / 2, yc, floor]) for a, b in zip(xs[:-1], xs[1:])]
+    return out
+
+
+def plate_in_hand(run_dir=None):
+    """H = plate (centre, z = normal, x = toward the grasp point) in the TCP frame, from a real run's grasp (FP + joints)."""
+    d = Path(run_dir) if run_dir else sorted(p.parent for p in (DATA / 'real_pipeline').glob('*/realplan_req.json'))[-1]
+    req = json.loads((d / 'realplan_req.json').read_text())
+    kin, tool = Kinematics(), np.eye(4)
+    tool[2, 3] = C['plate_ik_bc'].get('tool_length_m', 0.165)
+    T_tcp = kin.fk(np.radians(req['grasp_deg'])) @ tool
+    c = np.asarray(req['plate_root_fp'][:3]) + [0, 0, 0.01]
+    a = T_tcp[:3, 3] - c
+    a[2] = 0.0
+    x = a / np.linalg.norm(a)
+    T_pl = np.eye(4)
+    T_pl[:3, :3] = np.stack([x, np.cross([0, 0, 1.0], x), [0, 0, 1.0]], 1)
+    T_pl[:3, 3] = c
+    return np.linalg.inv(T_tcp) @ T_pl, tool, d.name
+
+
+def _reach_one(job):
+    """One basket pose x quadrant -> (ok, best phi, why).  Runs in a forked worker (globals set by basket_reach)."""
+    bx, by, yaw, qd = job
+    G = _REACH
+    c, s = np.cos(np.radians(yaw)), np.sin(np.radians(yaw))
+    Tb = np.eye(4)
+    Tb[:2, :2] = [[c, -s], [s, c]]
+    Tb[:3, 3] = [bx, by, G['basket_z']]
+    gap = (Tb @ np.r_[G['gaps'][qd][G['gap_index']], 1.0])[:3]
+    n = Tb[:3, 0]                                             # slot axis = basket x; concave side to +n
+    t = np.radians(G['tilt_deg'])
+    zt = n * np.cos(t) + np.array([0, 0, 1.0]) * np.sin(t)
+    v = -n * np.sin(t) + np.array([0, 0, 1.0]) * np.cos(t)
+    why = 'ik'
+    for phi in G['phis']:                                     # grasp point turned about the plate normal (round plate)
+        ph = np.radians(phi)
+        x = v * np.cos(ph) + np.cross(zt, v) * np.sin(ph)
+        Tp = np.eye(4)
+        Tp[:3, :3] = np.stack([x, np.cross(zt, x), zt], 1)
+        Tp[:3, 3] = gap + v * G['centre_h'] / np.cos(t)
+        qs = []
+        for lift in (0.0, G['above_m']):
+            T6 = (Tp @ np.linalg.inv(G['H'])) @ np.linalg.inv(G['tool'])
+            T6[2, 3] += lift
+            q = None
+            for seed in ([qs[-1]] if qs else []) + G['seeds']:
+                try:
+                    q = G['kin'].ik(T6, seed)
+                    if ((np.degrees(q) > G['lo'] + 3) & (np.degrees(q) < G['hi'] - 3)).all():
+                        break
+                    q, why = None, 'limit'
+                except RuntimeError:
+                    q = None
+            if q is None:
+                break
+            qs.append(q)
+        if len(qs) < 2:
+            continue
+        if np.abs(np.degrees(qs[1] - qs[0])).max() > 60:
+            why = 'branch'
+            continue
+        path = polyline_path(np.array([qs[1], qs[0]]), 0.25)
+        if any(chk.path_clearance(path) < m for chk, m in G['checks']):
+            why = 'frame'
+            continue
+        return True, phi, 'ok'
+    return False, None, why
+
+
+def basket_reach(a):
+    """Map of basket centre positions (table grid) where the plate can be put upright into each quadrant's gap: IK for
+    the insert and the start 11 cm above, controller limits (J5 +-135), frame/table clearance, phi = grasp point about
+    the plate normal.  Not checked: the arm vs the basket walls, carrying the plate there, grasping elsewhere."""
+    import multiprocessing as mp
+    import ros2_nodes
+    global _REACH
+    q = C['plate_ik_bc']
+    H, tool, run = plate_in_hand(a.run)
+    gold = json.loads((DATA / 'basket' / 'slot_01_in_basket.json').read_text())['posj_at_teach']
+    rng = np.random.default_rng(0)
+    kin = Kinematics()
+    lo, hi = np.array(ros2_nodes.joint_limits_deg()).T
+    seeds = [np.radians(gold['insert']), np.radians(gold['above']), np.radians(HOME_JOINTS_DEG)]
+    seeds += [np.radians(rng.uniform(np.maximum(lo, -170), np.minimum(hi, 170))) for _ in range(a.random_seeds)]
+    from calib_core import latest_t_base_cam, load_json
+    ch = library_checkers(np.array(load_json(latest_t_base_cam())['T_base_cam']), q)
+    _REACH = dict(H=H, tool=tool, kin=kin, lo=lo, hi=hi, seeds=seeds, gaps=basket_gaps(), gap_index=a.gap, tilt_deg=a.tilt,
+                  centre_h=a.centre_h, above_m=a.above, basket_z=a.basket_z, phis=sorted(range(-90, 91, a.phi_step), key=abs),
+                  checks=[ch['frame'], ch['table']])
+    xs = np.round(np.arange(a.x[0], a.x[1] + 1e-9, a.step), 3)
+    ys = np.round(np.arange(a.y[0], a.y[1] + 1e-9, a.step), 3)
+    jobs = [(x, y, a.yaw, qd) for qd in QUADRANTS for y in ys for x in xs]
+    t0 = time.time()
+    with mp.get_context('fork').Pool(a.workers) as pool:
+        res = pool.map(_reach_one, jobs, chunksize=4)
+    grid = {qd: np.zeros((len(ys), len(xs)), int) for qd in QUADRANTS}
+    why = {qd: np.empty((len(ys), len(xs)), object) for qd in QUADRANTS}
+    for (x, y, _, qd), (ok, phi, w) in zip(jobs, res):
+        i, j = list(ys).index(y), list(xs).index(x)
+        grid[qd][i, j], why[qd][i, j] = int(ok), w
+    out = DATA / 'basket' / f'reach_{time.strftime("%Y%m%d_%H%M%S")}'
+    out.mkdir(parents=True, exist_ok=True)
+    meta = dict(run=run, xs=xs.tolist(), ys=ys.tolist(), yaw_deg=a.yaw, gap_index=a.gap, tilt_deg=a.tilt, centre_h_m=a.centre_h,
+                above_m=a.above, basket_z=a.basket_z, phi_step=a.phi_step, seconds=round(time.time() - t0))
+    (out / 'reach.json').write_text(json.dumps(dict(meta, grid={k: v.tolist() for k, v in grid.items()},
+                                                    why={k: v.tolist() for k, v in why.items()}), indent=0))
+    sym = dict(ok='#', ik='.', limit='j', branch='b', frame='f')
+    print(f'basket reach ({time.time() - t0:.0f} s, H from {run}, yaw {a.yaw} deg, gap {a.gap}, tilt {a.tilt} deg)\n'
+          f'# = reachable, . = no IK, j = joint limit, b = insert/above on different branches, f = frame/table')
+    print('rows: basket centre y (top = +y, left of the robot); columns: x (right = far)')
+    for qd in QUADRANTS:
+        print(f'\n{qd} {QUADRANTS[qd]}: {grid[qd].sum()}/{grid[qd].size}')
+        print('       ' + ''.join(f'{x:5.2f}' for x in xs))
+        for i in range(len(ys) - 1, -1, -1):
+            print(f'  {ys[i]:+.2f}' + ''.join(f'    {sym[w]}' for w in why[qd][i]))
+    all4 = np.prod([grid[qd] for qd in QUADRANTS], 0)
+    print(f'\nall four quadrants: {all4.sum()} positions')
+    _reach_figure(xs, ys, grid, all4, out / 'reach.png')
+    print(f'-> {out}')
+
+
+def _reach_figure(xs, ys, grid, all4, path):
+    import matplotlib
+    matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+    fig, axs = plt.subplots(1, 5, figsize=(19, 4.2), sharey=True)
+    ext = [xs[0] - (xs[1] - xs[0]) / 2, xs[-1] + (xs[1] - xs[0]) / 2, ys[0] - (ys[1] - ys[0]) / 2, ys[-1] + (ys[1] - ys[0]) / 2]
+    for ax, (name, g) in zip(axs, list(grid.items()) + [('all four', all4)]):
+        ax.imshow(g, origin='lower', extent=ext, cmap='Greens', vmin=0, vmax=1.4, aspect='equal')
+        ax.set_xlabel('basket centre x [m]  (far ->)')
+        ax.text(0.03, 0.95, f'{name} {QUADRANTS.get(name, "")}  {int(g.sum())}', transform=ax.transAxes, va='top')
+        ax.plot([0], [0], 'k^') if ext[0] <= 0 else None
+        for sp in ('top', 'right'):
+            ax.spines[sp].set_visible(False)
+    axs[0].set_ylabel('basket centre y [m]  (left of the robot ->)')
+    fig.tight_layout()
+    fig.savefig(path, dpi=120)
+    plt.close(fig)
+
+
+_REACH = {}
+
+if __name__ == '__main__':
+    import argparse
+    p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument('mode', choices=('basket_reach',))
+    p.add_argument('--x', type=float, nargs=2, default=(0.50, 1.25), help='basket centre x range [m]')
+    p.add_argument('--y', type=float, nargs=2, default=(-0.35, 0.35), help='basket centre y range [m]')
+    p.add_argument('--step', type=float, default=0.05)
+    p.add_argument('--yaw', type=float, default=0.0, help='basket yaw [deg]')
+    p.add_argument('--gap', type=int, default=4, help='gap index in the quadrant (0 = robot side)')
+    p.add_argument('--tilt', type=float, default=0.0, help='plate tilt, top toward the far side [deg] (policy: 0)')
+    p.add_argument('--centre_h', type=float, default=0.18, help='plate centre above the basket floor at the insert [m]')
+    p.add_argument('--above', type=float, default=0.11, help='start pose above the insert [m]')
+    p.add_argument('--basket_z', type=float, default=0.1442, help='basket frame (marker plane) height in base [m]')
+    p.add_argument('--phi_step', type=int, default=15)
+    p.add_argument('--random_seeds', type=int, default=4)
+    p.add_argument('--workers', type=int, default=16)
+    p.add_argument('--run', default=None, help='real run folder for the in-hand plate (default: newest with realplan_req)')
+    a = p.parse_args()
+    basket_reach(a)
