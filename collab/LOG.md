@@ -2131,3 +2131,19 @@
 - 실패는 거의 ±1칸(Q4 +1 2~3회)과 Q2 칸 밖 1회. 최저점 중앙값 47~51 mm(레일 49 mm).
 - 재현: `rl/basket/run_quadrant_final_20261015.sh <replay.jsonl> <out.json>`(이번 커밋, 경로 생성 명령은 주석). 결과 `rl/logs/basket/replay_final_v3_{6014,7014}.json`, 표·그림 `rl/logs/basket/report_final_v3/`.
 - 판정은 Codex U/U2 검토 뒤 정한 엄격 판정(앉음 < 60 mm + 똑바로 + 목표 칸)이다. 여전히 sim 결과이며, 실기 적용 전제(손에 든 접시 자세 측정)는 Codex W/Z에서 정리 중이다.
+
+## 2026-10-15 00:44 Codex — U4 최종 v3 재집계 및 V 범례 수정
+- 원본 `rl/logs/basket/replay_final_v3_6014.json`(398 episode, 199 layout×2)과 `replay_final_v3_7014.json`(600 episode, 300 layout×2)을 배열에서 재집계했다. 결과 JSON의 run별 `seated_exact`와 `seated && quadrant_ok`가 각각 199/199, 300/300 run에서 일치했다.
+
+| 분면 | seed 6014 exact | seed 7014 exact |
+|---|---:|---:|
+| Q1 | 96/96 = 100.0% | 175/176 = 99.4% |
+| Q2 | 96/98 = 98.0% | 156/160 = 97.5% |
+| Q3 | 104/104 = 100.0% | 134/134 = 100.0% |
+| Q4 | 98/100 = 98.0% | 125/130 = 96.2% |
+| 전체 | 394/398 = 99.0% | 590/600 = 98.3% |
+
+- **시드 분리의 한계:** `stage3_pinsweep.train`은 seed 4014 경로(`random_20261014_213328`)를 학습/탐색 입력으로 적는다. `random_20261014_224608/summary.json`은 seed 5014이며 `stage2_q1notop.sh`가 이 Q1 조정 경로에서 no-top + 기울기 0.5 + dx 2.5 cm를 비교해 130/130을 얻었다. 따라서 기울기 0.5라는 수치 선택의 직접 근거는 5014다. 그러나 no-top 가설은 앞선 6014 결과(Q1 0.51→0.62)가 계기가 됐고, `stage2_q1final.sh`가 같은 최종 Q1 설정을 6014(96/96)와 7014(175/176)에서 먼저 재평가한 뒤 `stage2_final_v3.sh`가 같은 두 경로를 전체 분면으로 다시 돌렸다. 그러므로 최종 v3의 두 분모를 Q1까지 포함해 완전히 untouched한 독립 홀드아웃으로 표현하면 안 된다. 7014도 Q1 설정의 확인에 한 번 사용된 뒤 전체 재생에 재사용됐다. 나머지 분면 파라미터는 4014/5014 조정 결과에서 정했다.
+- 평가는 분면별 핀을 균일 표집하지 않은 유효 생성 배치에 한정된다(예: Q1 6014 48 layouts, Q1 7014 88 layouts). 6014/7014 계획은 basket/plate 상대 위치 유효성 필터를 통과한 샘플이며 요청 흔들기 상자의 모든 조합을 대표하지 않는다. 또 이 값은 Isaac 재생 결과이지 실기 성공률이 아니다. `strict sim_rate`는 구형 단일 슬롯 기준이라 분면 목표 평가에는 부적절하며 별도 보조값으로만 둔다.
+- **V 그림 수정:** `calibration/goal1_offline.py::basket_replay_report` 범례를 축 내부 우측에서 Figure 아래 2열로 옮겼다. 네 replay를 모은 새 보고서 `rl/logs/basket/report_final_6014/r4/basket_replay_report.md`와 `basket_replay_quadrant.png`를 생성해 막대 수치와 범례가 겹치지 않음을 시각 확인했다. 기존 r3 파일은 보존했다.
+- `bash calibration/run.sh tests`: **38/38 통과**. 초기 sandbox 실행은 import 중 UDP socket 생성이 권한 거부되어 시작하지 못했고, 권한 허용 재실행에서 전체 회귀가 통과했다. robot/GPU/Isaac 실행은 하지 않았다.

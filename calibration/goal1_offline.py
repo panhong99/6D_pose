@@ -634,8 +634,10 @@ def basket_replay_report(replay_paths, output_dir):
     ax.grid(False)
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
-    ax.legend(frameon=False, fontsize=8)
-    fig.tight_layout()
+    handles, labels = ax.get_legend_handles_labels()
+    fig.legend(handles, labels, frameon=False, fontsize=8, loc='lower center',
+               bbox_to_anchor=(0.5, 0.01), ncol=2)
+    fig.tight_layout(rect=(0, 0.16, 1, 1))
     fig.savefig(png_path, dpi=170, bbox_inches='tight')
     plt.close(fig)
     return {'markdown': str(md_path), 'plot': str(png_path), 'rows': reports}
