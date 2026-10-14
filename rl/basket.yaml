@@ -52,11 +52,11 @@ full:                                       # whole basket (10/8 17:xx), basket 
   centre_gap_x: 0.0                         # (10/14 보스) Q3 has 13 tines per row; counted from the far (clip) side the plate
                                             # went into 7-8 where the model said 5-6 -> the model lacked 2 tines at the clip (was 0.025)
   tines_from_clip: {Q1: 7, Q2: 9, Q3: 13, Q4: 13}   # (10/14 보스, counted) tines per row in each quadrant, from the centre clip
-  tine_pitch: {Q1: 0.030, Q2: 0.018, Q3: 0.0192, Q4: 0.0198}   # (10/14) Q1 보스 3 cm (5 labels only); Q2-Q4 Codex K fit of 보스-checked labels (보스 '<= 2 cm')
+  tine_pitch: {Q1: 0.030, Q2: 0.01756, Q3: 0.01740, Q4: 0.01787}   # (10/14 15:5x) Q2-Q4 fit of the 보스-numbered, Codex-verified wrist labels (both rows, rms 1.8-2.9 mm; was Q2 0.018, Q3 0.0192, Q4 0.0198); Q1 보스 3 cm, not yet measured
   tine_lean_deg: {Q1: -12.5, Q2: -12.5, Q3: 12.5, Q4: 12.5}   # (10/14 Codex D2: rail root -> tip of 59 보스-checked labels:
                                             # Q1 -12.4, Q2 -14.1, Q3 +13.5, Q4 +12.8 deg) tips lean away from the clip on both halves
                                             # (+ = top toward the robot); replaces Claude's eyeballed straight Q1/Q3
-  clip_first_m: 0.010                       # (10/14 보스) centre clip -> first tine, every row
+  clip_first_m: {Q1: 0.010, Q2: 0.0098, Q3: 0.0114, Q4: 0.0150}   # (10/14 15:5x) clip -> first tine base, same fit (was 0.010 all, 보스); Q1 not yet measured
   clip_x: 0.035                             # (10/14) Codex K fit 35.7 mm (photo back-projection 27-37 mm)
                                             # to the rail height -> x +0.027..+0.037 (the insert-based guess 0.0 put Q2 tines over Q3, 보스)
   slot_axis_from_basket: true               # (10/8 19:xx) slot axis n = basket x (rows), not the taught-normal yaw

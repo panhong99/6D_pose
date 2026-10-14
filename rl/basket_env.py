@@ -103,7 +103,8 @@ def full_basket_parts():
             if count:
                 half = half[:count[qd]]
             if "tine_pitch" in f:                                          # (10/14 보스, measured) clip + 1 cm, then the pitch
-                half = f.get("clip_first_m", 0.01) + f["tine_pitch"][qd] * np.arange(count[qd])
+                cf = f.get("clip_first_m", 0.01)                              # scalar or per quadrant (10/14 fit)
+                half = (cf[qd] if isinstance(cf, dict) else cf) + f["tine_pitch"][qd] * np.arange(count[qd])
             hx_ = f.get("clip_x", 0.0) + (half if far else -half)
             if not len(hx_):
                 continue

@@ -404,7 +404,8 @@ def run_replay(args):
         x = c[0] - (m[2] * (zh - c[2])) / m[0]                # y = the plate centre's
         far, left = {'Q1': (1, 0), 'Q2': (1, 1), 'Q3': (0, 1), 'Q4': (0, 0)}[r['model_qd']]
         yc = f_['pair_centres_y'][0 if left else 1]
-        half = f_.get('clip_first_m', 0.01) + f_['tine_pitch'][r['model_qd']] * np.arange(f_['tines_from_clip'][r['model_qd']])
+        cf = f_.get('clip_first_m', 0.01)
+        half = (cf[r['model_qd']] if isinstance(cf, dict) else cf) + f_['tine_pitch'][r['model_qd']] * np.arange(f_['tines_from_clip'][r['model_qd']])
         xs = np.sort(f_.get('clip_x', 0.0) + (half if far else -half))      # tine bases, robot side -> far (basket_gaps order)
         xs = xs - np.tan(np.radians(f_['tine_lean_deg'][r['model_qd']])) * (zh - f_['floor_z'])   # + lean = top toward the robot
         g = int(np.searchsorted(xs, x)) - 1
