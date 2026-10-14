@@ -412,6 +412,17 @@ def run(args):
 
 # ================================================================ plate task (RL policy rollout, 2026-10-07)
 
+_PLATE_BOUNDS = []
+
+
+def plate_bounds():
+    """Plate mesh bounding box (lo, hi), loaded once."""
+    if not _PLATE_BOUNDS:
+        import trimesh
+        _PLATE_BOUNDS.append(trimesh.load(cpath(C['paths']['plate_obj']), force='mesh').bounds)
+    return _PLATE_BOUNDS[0]
+
+
 def plate_upright(T_base_obj):
     """(10/14 실기) FoundationPose sometimes returns the round plate upside down (z down, 'tilt 179 deg') from the far
     fixed camera although it lies right side up: turn such a pose 180 deg about the mesh x axis through the bounding-box
@@ -419,8 +430,7 @@ def plate_upright(T_base_obj):
     T_base_obj = np.asarray(T_base_obj, float)
     if T_base_obj[2, 2] >= 0:
         return T_base_obj
-    import trimesh
-    lo, hi = trimesh.load(cpath(C['paths']['plate_obj']), force='mesh').bounds
+    lo, hi = plate_bounds()
     c, F = np.eye(4), np.diag([1.0, -1.0, -1.0, 1.0])
     c[:3, 3] = (lo + hi) / 2
     return T_base_obj @ c @ F @ np.linalg.inv(c)
@@ -429,9 +439,8 @@ def plate_upright(T_base_obj):
 def plate_root_in_base(T_base_obj):
     """Sim plate root (mesh bounding-box bottom centre) from a FoundationPose mesh pose in base (upside-down poses
     turned upright first, see plate_upright)."""
-    import trimesh
     T_base_obj = plate_upright(T_base_obj)
-    lo, hi = trimesh.load(cpath(C['paths']['plate_obj']), force='mesh').bounds
+    lo, hi = plate_bounds()
     p = (T_base_obj @ np.array([(lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2, lo[2], 1.0]))[:3]
     yaw = float(np.degrees(np.arctan2(T_base_obj[1, 0], T_base_obj[0, 0])))
     tilt = float(np.degrees(np.arccos(np.clip(T_base_obj[2, 2], -1, 1))))
@@ -544,7 +553,8 @@ def run_plate(args):
             if res > C['basket'].get('max_fit_residual_m', 0.008) or len(seen) < 3:
                 raise RuntimeError(f'basket pose unreliable: {len(seen)} markers, residual {res * 1000:.1f} mm')
         from sensors import FpStream
-        fp = FpStream(udp['fp_pose'], st['n'], st['mm'], st['deg'], symmetric_z=True)   # round plate: yaw is noise
+        fp = FpStream(udp['fp_pose'], st['n'], st['mm'], st['deg'], symmetric_z=True,   # round plate: yaw is noise
+                      normalize=lambda T_: inv_T(Tbc) @ plate_upright(Tbc @ T_))       # (10/14) flips 179 deg <-> 1 deg
         vision_env = {k: v for k, v in os.environ.items() if k not in ('PYTHONPATH', 'PYTHONHOME')}
         perception = children.start('perception', [sys.executable, '-u', str(ROOT / 'real_time_project/main.py'),
                                                     '--detector', 'yoloe', '--width', '640', '--height', '480',

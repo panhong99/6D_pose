@@ -112,8 +112,9 @@ class PoseStream:
 class FpStream:
     """FoundationPose poses (mesh-to-camera 4x4 + timestamp) from main.py; stable() = median of n agreeing poses."""
 
-    def __init__(self, port, n, mm, deg, symmetric_z=False):
+    def __init__(self, port, n, mm, deg, symmetric_z=False, normalize=None):
         self.symmetric_z = symmetric_z                     # round object: compare only the mesh z axis (yaw is arbitrary)
+        self.normalize = normalize                         # (10/14) e.g. turn an upside-down plate pose upright before the stability check
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sock.bind(('127.0.0.1', port))
         self.sock.setblocking(False)
@@ -137,7 +138,7 @@ class FpStream:
             if self.last and stamp - self.last > 1.0:
                 self.hist.clear()
             self.last, self.last_rx = stamp, time.time()
-            self.hist.append(T)
+            self.hist.append(self.normalize(T) if self.normalize else T)
 
     def _angle(self, a, b):
         if self.symmetric_z:
