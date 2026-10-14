@@ -46,6 +46,7 @@ def parse_args():
     p.add_argument('--cl_dx', type=float, default=0.0, help='--closed_loop: move the aim along the basket rows (+x) [m]')
     p.add_argument('--cl_iter', type=int, default=1, help='--closed_loop: measure + re-aim this many times at the above stop')
     p.add_argument('--cl_heights', default='', help='--closed_loop: re-aim height above the insert per iteration [m], e.g. "0.11,0.07"')
+    p.add_argument('--cl_dz_q', default='', help='--closed_loop: per model quadrant release height offset [m], e.g. "Q3:0.01,Q4:0.01"')
     p.add_argument('--cl_lean_q', default='', help='--closed_loop: per model quadrant tine-lean factor, e.g. "Q1:-1,Q2:0" (overrides --cl_lean)')
     p.add_argument('--cl_dx_q', default='', help='--closed_loop: per model quadrant aim, e.g. "Q3:-0.03,Q4:-0.035" (overrides --cl_dx)')
     p.add_argument('--cl_top', action='store_true', help='--closed_loop: turn the plate about its normal so the grip is at its top')
@@ -223,7 +224,7 @@ def make_cfg(n, viewer, torsion_m):
     return cfg
 
 
-def closed_loop_paths(env, rows, who, above_m=0.11, extra=0.005, dz=0.0, lean=1.0, dx=0.0, top=False, dx_q=None, lean_q=None):
+def closed_loop_paths(env, rows, who, above_m=0.11, extra=0.005, dz=0.0, lean=1.0, dx=0.0, top=False, dx_q=None, lean_q=None, dz_q=None):
     """(10/14) per env (above, descend) joint paths (deg) from the plate actually in the hand now: the plate turns ~9 deg
     in the grip on the carry (Isaac), so the planned descent lands it 3-4 gaps off.  Keeps the plate's turn about the
     vertical small: shortest rotation of its normal onto the row axis, centre on the row's target_centre (base)."""
@@ -252,7 +253,7 @@ def closed_loop_paths(env, rows, who, above_m=0.11, extra=0.005, dz=0.0, lean=1.
         Tb = np.asarray(r['Tb'])
         path = []
         for lf in (1.0, 0.5, 0.0):                             # (10/14 night) far quadrants: no IK at the full lean -> lean less
-            path = _cl_one(kin, tool, be, r, Tb, Rp, H, qs[k], (lean_q or {}).get(r['model_qd'], lean) * lf, above_m, extra, dz, (dx_q or {}).get(r['model_qd'], dx), top)
+            path = _cl_one(kin, tool, be, r, Tb, Rp, H, qs[k], (lean_q or {}).get(r['model_qd'], lean) * lf, above_m, extra, (dz_q or {}).get(r['model_qd'], dz), (dx_q or {}).get(r['model_qd'], dx), top)
             if len(path) == 13:
                 break
         out.append((np.array(path[:1]), np.array(path[1:])) if len(path) == 13 else (None, None))
@@ -269,6 +270,14 @@ def _cl_one(kin, tool, be, r, Tb, Rp, H, q0, lean, above_m, extra, dz, dx, top):
     up = Tb[:3, :3] @ np.array([-np.sin(ln), 0.0, np.cos(ln)])   # tine axis (+ lean = top toward basket -x)
     nt = Tb[:3, :3] @ np.array([np.cos(ln), 0.0, np.sin(ln)])    # plate normal parallel to the tines
     nt = nt if nt @ Rp[:, 2] >= 0 else -nt
+    f_ = be.B['full']                                       # (10/14 night) keep the shifted aim inside the quadrant's gaps:
+    cf = f_['clip_first_m'][r['model_qd']] if isinstance(f_['clip_first_m'], dict) else f_['clip_first_m']
+    hx = cf + f_['tine_pitch'][r['model_qd']] * np.arange(f_['tines_from_clip'][r['model_qd']])
+    xs = np.sort(f_.get('clip_x', 0.0) + (hx if r['model_qd'] in ('Q1', 'Q2') else -hx))
+    gx = (xs[:-1] + xs[1:]) / 2                              # gap centres (basket x); +3.5 cm put Q2 pins 1-2 past the last tine
+    t_b = np.linalg.inv(Tb) @ np.r_[np.asarray(r['target_centre']), 1.0]
+    if r['model_qd'] in ('Q1', 'Q2'):                       # far rows only: the near rows need the bias shift past their end gap
+        dx = float(np.clip(t_b[0] + dx, gx.min(), gx.max()) - t_b[0])   # (clamping there gave +2 gaps at the robot-side pins)
     gap_b = np.asarray(r['target_centre']) - [0, 0, 0.165] + Tb[:3, 0] * dx   # gap centre on the floor (base)
     rot, _ = R.align_vectors([nt], [Rp[:, 2]])
     R0 = rot.as_matrix() @ Rp
@@ -366,7 +375,8 @@ def run_replay(args):
             hs = [float(h) for h in args.cl_heights.split(',')] if args.cl_heights else [0.11]
             prev_fix, fix = fix, closed_loop_paths(env, rows, who, above_m=hs[min(it, len(hs) - 1)], dz=args.cl_dz, lean=args.cl_lean, dx=args.cl_dx, top=args.cl_top,
                                     dx_q={k: float(v) for k, v in (x.split(':') for x in args.cl_dx_q.split(',') if x)},
-                                    lean_q={k: float(v) for k, v in (x.split(':') for x in args.cl_lean_q.split(',') if x)})
+                                    lean_q={k: float(v) for k, v in (x.split(':') for x in args.cl_lean_q.split(',') if x)},
+                                    dz_q={k: float(v) for k, v in (x.split(':') for x in args.cl_dz_q.split(',') if x)})
             if prev_fix is not None:                         # no IK now: keep the previous re-aim (the robot is there)
                 fix = [f_ if f_[0] is not None else p_ for f_, p_ in zip(fix, prev_fix)]
             if it == 0:
