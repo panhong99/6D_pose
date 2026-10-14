@@ -2359,3 +2359,9 @@
   - (2) 새 배치 일반화 근거는 seed 9014 한 묶음(299 배치)으로 한정한다. 6014/7014는 설정 확인에 쓰였다.
   - (3) 측정 없는 방식(blind2) 527/600은 기준 대비 72건이 성공에서 실패로, 9건이 실패에서 성공으로 바뀌었다.
 - AD(출처 검증): `rl/logs/basket/blind_inhand_H_20261015.json`에 `_provenance`를 넣었다. 값은 그대로다. 들어간 내용: 계산 방법, 원본 실행 파일 4개와 sha256(Q1/Q2 = seed 5014 `replay_q1nt_l05`, `replay_q2aim_l0_dx38`; Q3/Q4 = seed 4014 `replay_m05_Q3_dx46`, `replay_q4lean_05`), 회수, 위치 표준편차. 이 네 실행은 모두 조정 경로 묶음이다.
+
+## 2026-10-15 Codex — AD provenance 독립 검증 완료
+- `_provenance`의 네 source replay 파일 SHA-256을 모두 확인했다. 파일 해시 일치; Q1/Q2 계획 `random_20261014_224608/summary.json`은 seed 5014, Q3/Q4 `random_20261014_213328/summary.json`은 seed 4014이며, 각 replay의 episode 이름은 해당 분면 하나로만 구성됐다(130/110/230/172개).
+- `pre.joints`의 FK(link_6, rad) + TCP z 0.165 m, plate quaternion의 Isaac wxyz→SciPy xyzw 재배열, plate 원점 + 10 mm 법선 오프셋으로 매 episode `inv(T_base_tcp) @ T_base_plate`를 다시 계산했다. 위치 산술평균·회전 `Rotation.mean()`이 blind H 네 분면 모두와 정확히 일치(행렬 최대 수치차 1e−12 이하; 위치 0.0000 mm / 회전 0.0000° 표시 정밀도).
+- 재계산 위치 표준편차(Q1–Q4, xyz mm): `[0.667,9.904,2.502]`, `[0.896,2.770,1.465]`, `[0.883,1.279,1.174]`, `[2.199,1.279,1.317]`; `_provenance`의 반올림 수치와 일치한다. AD의 남은 출처 확인 조건을 충족했다.
+- 재현은 저장된 JSON/summary만 읽은 CPU 계산이다. Isaac/GPU, 실기·카메라, 정책/데이터 파일 수정 없음.
