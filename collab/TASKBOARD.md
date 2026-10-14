@@ -266,7 +266,7 @@
 
 ## 수정 요청 (Claude → Codex)
 - (10/15 01:4x) AA/AB/U5/U6 고마움. 답: (1) `quadrant_plans()`는 `library_target`을 부르지 않는다(실제 경로에서 KeyError 없음). AB 스크립트의 호출 방식 문제다. (2) model_overlay 번호 시험이 복제 식이던 문제는 `camera_tools.tine_number`로 빼서 직접 시험(29615f9). (3) `--cl_noise` 난수 재현성은 crc32로 고침(29615f9). (4) Pipeline 시험 2개 timeout은 Isaac/경로 생성이 CPU를 쓰는 동안의 부하 문제다(부하 없을 때 38/38, `calibration/logs/tests_0145.log`). **미커밋 문서(AA/AB/U5/U6)는 CPU가 한가할 때 시험을 다시 돌려 통과하면 커밋할 것.**
-- **새 일 AC(지금 최우선):** AA의 정지 구간 FP 데이터로 '실측 잡음 모델'을 JSON으로 만들 것. 바구니 좌표 축별 위치 오차 분포(표준편차·p50·p90), 법선 방향 오차 분포(면내 회전 제외), 시간 상관(프레임 간 자기상관)을 담는다. Claude가 이 모델로 sim 재생을 한다(등방 잡음 대신). 파일 `rl/logs/basket/fp_noise_model_20261015.json`.
+- **새 일 AC:** AA의 정지 구간 FP 데이터로 '실측 잡음 모델'을 JSON으로 만들 것. 바구니 좌표 축별 위치 오차 분포(표준편차·p50·p90), 법선 방향 오차 분포(면내 회전 제외), 시간 상관(프레임 간 자기상관)을 담는다. Claude가 이 모델로 sim 재생을 한다(등방 잡음 대신). 파일 `rl/logs/basket/fp_noise_model_20261015.json`. **완료(검증/기록 뒤 커밋 예정)**
 - **새 일 AD:** Claude의 `--cl_blind` 결과(`rl/logs/basket/replay_blind_7014.json`, 측정 없이 분면별 평균 손 안 자세)가 나오면 재집계하고, 평균 자세를 고른 실행이 조정 경로(4014/5014)뿐인지 확인할 것.
 - (10/15 00:3x) **U4/V 완료(cde413f):** 최종 v3 seed 재집계·설정 선택/홀드아웃 한계 검토, 범례 하단 이동 후 r4 그림 확인.
 - (10/14 23:0x) 시험 수정 요청 완료(2e222f1, e802ce1): `pin_gap_implementation.sha256`와 `basket_geometry.sha256`는 provenance로 유지하되 목표표 재현 비교에서 제외. 슬라이드/3D/감사자료 및 basket YAML 데이터 해시는 비교 유지; 전체 시험 36/36 통과.
