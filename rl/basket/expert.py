@@ -49,6 +49,7 @@ def parse_args():
     p.add_argument('--cl_edge_q', default='', help='--closed_loop: clamp the shifted aim to the quadrant gaps, this far inside the far-end gap [m], e.g. "Q2:0.018" (unlisted: no clamp)')
     p.add_argument('--cl_noise', type=float, nargs=2, default=None, metavar=('MM', 'DEG'), help='--closed_loop: rms noise added to the measured in-hand plate pose (position mm, rotation deg) - real FP robustness')
     p.add_argument('--cl_noise_fp', default='', help='--closed_loop: Codex AC empirical FP noise model json (heavy-tailed, basket axes)')
+    p.add_argument('--cl_gate', type=float, default=None, help='--closed_loop with --cl_blind: use the measured in-hand pose unless it is more than this [mm] from the mean (outlier gate)')
     p.add_argument('--cl_blind', default='', help='--closed_loop: json {model quadrant: 4x4 plate-in-TCP} used instead of measuring the plate (no in-hand sensing)')
     p.add_argument('--cl_top_q', default='', help='--closed_loop: per model quadrant top re-grip on/off, e.g. "Q1:0" (overrides --cl_top; Q1 rolled along its 3 cm rows)')
     p.add_argument('--cl_pin_dx', default='', help='--closed_loop: json {model quadrant: {pin: aim dx [m]}} (overrides --cl_dx_q for the listed pins)')
@@ -230,7 +231,7 @@ def make_cfg(n, viewer, torsion_m):
     return cfg
 
 
-def closed_loop_paths(env, rows, who, above_m=0.11, extra=0.005, dz=0.0, lean=1.0, dx=0.0, top=False, dx_q=None, lean_q=None, dz_q=None, edge_q=None, pin_dx=None, top_q=None, noise=None, blind_h=None, noise_fp=None):
+def closed_loop_paths(env, rows, who, above_m=0.11, extra=0.005, dz=0.0, lean=1.0, dx=0.0, top=False, dx_q=None, lean_q=None, dz_q=None, edge_q=None, pin_dx=None, top_q=None, noise=None, blind_h=None, noise_fp=None, gate=None):
     """(10/14) per env (above, descend) joint paths (deg) from the plate actually in the hand now: the plate turns ~9 deg
     in the grip on the carry (Isaac), so the planned descent lands it 3-4 gaps off.  Keeps the plate's turn about the
     vertical small: shortest rotation of its normal onto the row axis, centre on the row's target_centre (base)."""
@@ -244,7 +245,7 @@ def closed_loop_paths(env, rows, who, above_m=0.11, extra=0.005, dz=0.0, lean=1.
     qs = robot.data.joint_pos[:, :6].cpu().numpy()
     pp = (plate.data.root_pos_w - env.scene.env_origins).cpu().numpy()
     pq = plate.data.root_quat_w.cpu().numpy()
-    out, lean_used = [], []
+    out, lean_used, gated = [], [], []
     for k, i in enumerate(who):
         r = rows[i]
         if 'target_centre' not in r:
@@ -274,8 +275,11 @@ def closed_loop_paths(env, rows, who, above_m=0.11, extra=0.005, dz=0.0, lean=1.
         Tt = kin.fk(qs[k]) @ tool
         H = np.linalg.inv(Tt) @ Tpl                          # plate in the TCP frame as it is now
         if blind_h and r['model_qd'] in blind_h:            # (10/15) no measurement: the quadrant's mean in-hand pose (tuning runs)
-            H = np.asarray(blind_h[r['model_qd']])
-            Rp = (Tt @ H)[:3, :3]
+            Hm = np.asarray(blind_h[r['model_qd']])          # with a gate: keep the measurement unless it is an outlier
+            if gate is None or np.linalg.norm(H[:3, 3] - Hm[:3, 3]) * 1000 > gate:
+                H = Hm
+                Rp = (Tt @ H)[:3, :3]
+                gated.append(1)
         import basket_env as be
         Tb = np.asarray(r['Tb'])
         path = []
@@ -290,7 +294,8 @@ def closed_loop_paths(env, rows, who, above_m=0.11, extra=0.005, dz=0.0, lean=1.
         if len(path) < 13:
             print(f"[replay] closed loop: {r['name']} env {k} no IK at step {len(path)}", flush=True)
     import collections
-    print(f"[replay] closed loop lean used (1.01 = full lean, wider turn): {sorted(collections.Counter(lean_used).items())}", flush=True)
+    print(f"[replay] closed loop lean used (1.01 = full lean, wider turn): {sorted(collections.Counter(lean_used).items())}"
+          f"{f'; mean in-hand pose used for {len(gated)}/{len(who)}' if blind_h else ''}", flush=True)
     return out
 
 
@@ -413,7 +418,7 @@ def run_replay(args):
                                     pin_dx=json.loads(Path(args.cl_pin_dx).read_text()) if args.cl_pin_dx else None,
                                     top_q={k: bool(int(v)) for k, v in (x.split(':') for x in args.cl_top_q.split(',') if x)},
                                     noise=args.cl_noise, blind_h=json.loads(Path(args.cl_blind).read_text()) if args.cl_blind else None,
-                                    noise_fp=json.loads(Path(args.cl_noise_fp).read_text()) if args.cl_noise_fp else None)
+                                    noise_fp=json.loads(Path(args.cl_noise_fp).read_text()) if args.cl_noise_fp else None, gate=args.cl_gate)
             if prev_fix is not None:                         # no IK now: keep the previous re-aim (the robot is there)
                 fix = [f_ if f_[0] is not None else p_ for f_, p_ in zip(fix, prev_fix)]
             if it == 0:
