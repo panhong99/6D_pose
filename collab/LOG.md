@@ -1,5 +1,12 @@
 # LOG
 
+## 2026-10-14 Codex — N 실제 Q2/Q3/Q4 라벨의 조건부 3D 역투영 및 모델 비교
+- 보스가 시각 확인한 realQ2/Q3/Q4 픽셀 라벨을 저장 K, `T_base_flange @ T_flange_cam`, `T_base_basket`와 rail/tip 높이평면으로 역투영했다. Q2는 뿌리 y를 바로잡은 최신 `labels_full_realQ2_codex_verified_20261014_v2.json` 사용. Q3/Q4는 각 Codex 검증본을 사용했다. 모델 비교는 현재 `rl/basket.yaml`의 번호 방향·분면별 pitch/clip/lean을 반영했다.
+- **70개 핀 항목** 중 root 68, tip 66, 완전 root-tip 66쌍, root-only 2, 완전 가림 2. 6개 사진줄의 모델 대비 root x MAE는 가중 평균 **1.69 mm**, tip x MAE **2.96 mm**. 추정 피치 root/tip (mm): Q2 `17.62/17.28`, `17.47/17.12` (모델 17.56); Q3 `17.34/17.18`, `17.15/16.78` (모델 17.40); Q4 `17.46/16.68`, `17.26/16.61` (모델 17.87). 모델 줄 y 대비 median offset: Q2 −12.13/−13.15 mm, Q3 −8.94/−11.76 mm, Q4 +1.75/+16.73 mm.
+- 파일: `calibration/data/basket/realQ_verified_3d_model_audit_20261014_v5/verified_pin_3d_model_comparison.json`, `row_summary.csv`, `pin_residuals.csv`, `model_residuals.png`. 검증: 소스 개수(18/26/26), 가시성 합계(66쌍+2 root-only+2 가림), 모든 역투영 좌표 유한값 확인.
+- **해석 제한:** 이 값은 저장 변환과 가정된 rail/tip 높이에서 나온 조건부 ray-plane 추정이지 독립 3D 정답이 아니다. Q2의 화면 좌우 줄은 모델 y 위치보다 약 12–13 mm, Q3 두 줄은 9–12 mm 벗어난다. Q4 한 줄은 약 16.7 mm 차이가 남는다. 높이·hand-eye·라벨 불확실성이 섞일 수 있어 보정값으로 즉시 쓰지 않는다. 실제 Q1(+x,−y) 전체 핀을 담은 calibrated 사진은 여전히 필요하다.
+- 작성자: Codex
+
 ## 2026-10-14 Codex — P BC 시연 데이터셋 변환기 완료
 - 구현: `calibration/demo_dataset.py` 및 `calibration/test_demo_dataset.py`, 커밋 **7daafd5**. `bc_demos.json` manifest의 분면/핀/layout/unsafe 태그를 우선하고 full_11~14의 7 키자세와 `robot_state.jsonl` 전체 관절 표본을 M1013 FK → 0.165 m 툴 길이 TCP → `T_base_basket⁻¹` 바구니 좌표로 저장한다. 출력은 새 경로만 허용하며 기존 경로 덮어쓰기를 거부한다.
 - 산출물: `calibration/data/teach/bc_dataset_full_11_14_20261014_v6/`의 시연별 `.npz`/`.json`, `summary.csv`, `summary.json`. 4개 demo, 28 keypose, 총 **26,102 joint samples** (시연별 6,846/6,544/5,949/6,763; 기록 간격 중앙값 19.43~19.44 Hz). 모든 trajectory와 keypose에 관절값·base/basket TCP 행렬이 있고 기록 posx 및 이벤트/phase 정보도 보존했다.
@@ -1671,6 +1678,11 @@
 - 상태 차분(약 51 ms 간격)으로 계산한 시연 중 최고 관절 속도는 데모별 **16.0, 16.1, 16.0, 16.1 deg/s**, TCP 최고 속도는 **133.6, 133.4, 133.2, 138.9 mm/s**다. 움직임 샘플만(최대 관절축 속도 >0.5 deg/s) 본 p95도 15.8~15.9 deg/s다. 이는 티칭 중 관측한 속도이지 후속 정책 재생 속도나 컨트롤러 상한은 아니다. 재생 전에 별도의 느린 속도 제한과 프레임 충돌 검사를 확인해야 한다.
 - 파일별 바구니 중심/피팅 잔차: full_11 `(1.074,+0.174)m / 2.32mm`, full_12 `(.930,+.201)m / 7.17mm`, full_13 `(.928,+.201)m / 6.69mm`, full_14 `(.929,+.203)m / 6.78mm`. 각 녹화는 306~352 s지만 대부분 정지·사람 조작 대기이므로 전체 시간을 이동 속도로 해석하지 않는다. 기존 데모나 로그는 수정하지 않았다.
 - 결론: 현재 네 파일은 분면·삽입 틈·키자세 기준의 오프라인 티칭 자료로 보존 가능하지만, 새 목표 배치의 안전한 BC 데이터셋으로 바로 합칠 수 없다. 새 배치에서 재수집하고, full_14는 unsafe 사건 태그/제외를 먼저 결정해야 한다. 속도는 기록 차분값이며 재생 경로 제한의 검증은 별도다.
+
+## 2026-10-14 Codex — N 실제 Q1 손목 사진 가용성 검증
+- `labels_20261013_190126_PARTIAL_20261014_v9.json`의 photo Q1 14개 보스 확인 라벨을 저장 K/hand-eye와 높이평면으로 역투영했다. 파일 `20261013_190126_Q1.raw.png`의 카메라 이름만으로 실제 분면을 정하면 안 된다. 두 줄의 root basket 좌표는 각각 x=+75~+188 mm, y=+169.2 mm / x=+75~+187 mm, y=+71.5 mm로, 실제 위치는 **Q2(+x,+y, 먼쪽/왼쪽)** 이다. 기존 Q2 3D 행(left_x295/right_x415)과 가장 가까운 번호 매칭은 두 줄 모두 2~8번이다. 두 행 median x pitch는 20.0 mm, mean lean은 −12.3°/−12.45°(높이평면 가정값). 이들은 Q1 빗살 라벨로 재사용하면 안 된다.
+- 새로 만든 3D 검산 파일: `calibration/data/basket/pin_layout_q1_3d_codex_20261014/pin_layout_measured.json`(PARTIAL v9 59개 전체 높이평면 역투영; absolute ground truth 아님), `photo_Q1_mapping_audit.json`, `photo_Q1_labels_vs_model.png`, `four_photo_model_quadrant_audit.png`. 원본 사진·라벨·모델 파일은 수정하지 않았다. 네 저장 사진 전체에 현재 모델을 투영해 확인한 결과, actual Q1(+x,−y) 녹색 핀 줄은 각각 종이 가림 또는 화면 가장자리 절단 때문에 두 줄 전체가 확인되는 보정 사진이 없다. 이는 현재 모델 투영 기반의 촬영 범위 점검이지 새 실물 라벨/정확도 주장은 아니다.
+- N의 남은 선행 입력은 actual Q1(+x,−y) 두 줄 전체와 가림 여부가 보이는 **새 calibrated 손목 사진**이다. 보스가 카메라 촬영 가능할 때 이 사진을 추가하면 Codex가 model overlay/번호를 확대 검증하고 3D 변환을 이어간다. 상태는 막힘이 아니라 입력 대기; 같은 파일명 Q1을 실제 Q1 GT로 오인하지 않도록 작업판에 반영했다.
 - 16:1x~16:5x 보스 전체 티칭(BC 시연, `pipeline.py --task teach --quadrant Qn`, 29cec95): full_11 Q4 틈 9(바구니 1.074, 당기기 전; 파일 분면은 Q3로 잘못 입력 → `data/teach/bc_demos.json`에서 Q4로 정정), full_12 Q1 틈 5, full_13 Q2 틈 4, full_14 Q3 틈 6(바구니 0.93, +0.20, 맞춤 6.7~7.2 mm). 넣기 TCP를 바구니 좌표로 바꿔 분면 모두 확인.
 - **보스 16:5x 배치 규칙:** full_14(Q3) 시연 중 로봇 몸체가 프레임에 닿음 → 앞으로 시연·실행 때 **바구니는 로봇 정면 가운데(y ≈ 0), 접시는 바구니 앞(로봇 쪽)**에 둔다. 지금까지 시연(접시 −y 쪽 받침, 바구니 +y 0.2)은 배치가 달라 BC 학습 시 구분.
 
