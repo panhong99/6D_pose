@@ -48,6 +48,7 @@ def parse_args():
     p.add_argument('--cl_heights', default='', help='--closed_loop: re-aim height above the insert per iteration [m], e.g. "0.11,0.07"')
     p.add_argument('--cl_edge_q', default='', help='--closed_loop: clamp the shifted aim to the quadrant gaps, this far inside the far-end gap [m], e.g. "Q2:0.018" (unlisted: no clamp)')
     p.add_argument('--cl_noise', type=float, nargs=2, default=None, metavar=('MM', 'DEG'), help='--closed_loop: rms noise added to the measured in-hand plate pose (position mm, rotation deg) - real FP robustness')
+    p.add_argument('--cl_noise_fp', default='', help='--closed_loop: Codex AC empirical FP noise model json (heavy-tailed, basket axes)')
     p.add_argument('--cl_blind', default='', help='--closed_loop: json {model quadrant: 4x4 plate-in-TCP} used instead of measuring the plate (no in-hand sensing)')
     p.add_argument('--cl_top_q', default='', help='--closed_loop: per model quadrant top re-grip on/off, e.g. "Q1:0" (overrides --cl_top; Q1 rolled along its 3 cm rows)')
     p.add_argument('--cl_pin_dx', default='', help='--closed_loop: json {model quadrant: {pin: aim dx [m]}} (overrides --cl_dx_q for the listed pins)')
@@ -229,7 +230,7 @@ def make_cfg(n, viewer, torsion_m):
     return cfg
 
 
-def closed_loop_paths(env, rows, who, above_m=0.11, extra=0.005, dz=0.0, lean=1.0, dx=0.0, top=False, dx_q=None, lean_q=None, dz_q=None, edge_q=None, pin_dx=None, top_q=None, noise=None, blind_h=None):
+def closed_loop_paths(env, rows, who, above_m=0.11, extra=0.005, dz=0.0, lean=1.0, dx=0.0, top=False, dx_q=None, lean_q=None, dz_q=None, edge_q=None, pin_dx=None, top_q=None, noise=None, blind_h=None, noise_fp=None):
     """(10/14) per env (above, descend) joint paths (deg) from the plate actually in the hand now: the plate turns ~9 deg
     in the grip on the carry (Isaac), so the planned descent lands it 3-4 gaps off.  Keeps the plate's turn about the
     vertical small: shortest rotation of its normal onto the row axis, centre on the row's target_centre (base)."""
@@ -256,6 +257,18 @@ def closed_loop_paths(env, rows, who, above_m=0.11, extra=0.005, dz=0.0, lean=1.
             rng_ = np.random.default_rng(zlib.crc32(f"{r['name']}|{k}|{noise}".encode()) + 7919 * len(lean_used))
             pk = pk + rng_.normal(0, noise[0] / 1000 / np.sqrt(3), 3)
             Rp = R.from_rotvec(rng_.normal(0, np.radians(noise[1]) / np.sqrt(3), 3)).as_matrix() @ Rp
+        if noise_fp:                                         # (10/15) Codex AC empirical FP model: basket-axis heavy-tailed position
+            import zlib                                      # (inliers p50, 15 % outliers matching p90/p95) + small normal tilt
+            rng_ = np.random.default_rng(zlib.crc32(f"fp|{r['name']}|{k}".encode()) + 7919 * len(lean_used))
+            Rb = np.asarray(r['Tb'])[:3, :3]
+            e = []
+            for ax in ('x', 'y', 'z'):
+                st = noise_fp['position_noise_model']['pooled'][ax]
+                e.append(rng_.normal(0, st['p95_abs'] / 0.967) if rng_.random() < 0.15 else rng_.normal(0, st['p50_abs'] / 0.6745))
+            pk = pk + Rb @ np.array(e) / 1000
+            nn = noise_fp['plate_normal_noise_model']['pooled']
+            rv = np.radians([rng_.normal(0, nn[f'normal_{a}_deg']['std_sample']) for a in ('x', 'y', 'z')])
+            Rp = R.from_rotvec(Rb @ rv).as_matrix() @ Rp
         Tpl = np.eye(4)
         Tpl[:3, :3], Tpl[:3, 3] = Rp, pk + 0.01 * Rp[:, 2]
         Tt = kin.fk(qs[k]) @ tool
@@ -399,7 +412,8 @@ def run_replay(args):
                                     edge_q={k: float(v) for k, v in (x.split(':') for x in args.cl_edge_q.split(',') if x)},
                                     pin_dx=json.loads(Path(args.cl_pin_dx).read_text()) if args.cl_pin_dx else None,
                                     top_q={k: bool(int(v)) for k, v in (x.split(':') for x in args.cl_top_q.split(',') if x)},
-                                    noise=args.cl_noise, blind_h=json.loads(Path(args.cl_blind).read_text()) if args.cl_blind else None)
+                                    noise=args.cl_noise, blind_h=json.loads(Path(args.cl_blind).read_text()) if args.cl_blind else None,
+                                    noise_fp=json.loads(Path(args.cl_noise_fp).read_text()) if args.cl_noise_fp else None)
             if prev_fix is not None:                         # no IK now: keep the previous re-aim (the robot is there)
                 fix = [f_ if f_[0] is not None else p_ for f_, p_ in zip(fix, prev_fix)]
             if it == 0:
