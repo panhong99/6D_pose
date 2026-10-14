@@ -1909,3 +1909,8 @@
 - 기울기 관계: Q3 exact-perched lean median 8.2°(p10–p90 3.5–10.4°), exact-seated 1.1°(0.3–2.5°), 비exact 12.3°(11.7–16.5°). final low와 lean Pearson r=0.794 (n=117). 높은 기울기와 높은 perch height가 강하게 동반되지만, 상관만으로 인과를 확정하지 않는다. Q3 특정 gap의 핀 기하/접촉이 개입할 수 있어 후속 분리 실험이 필요하다.
 - 60 mm 판정: 기존 설정과 레일 높이에 근거해 합리적인 proxy이나 실물 착좌 판정으로 검증 완료된 건 아니다. strict insertion success 정의(기존 `inserted()`의 30-step 정지·8.5 mm gap 오차·중심·기울기)와 relaxed seated/exact 결과를 구분해 보고한다. 코드는 수정하지 않았다.
 - R 병행 진행은 22:25 기준 4,480/6,480 (69.1%), session 76551, CPU-only; final JSON/PNG 미완성.
+
+
+### U2 후속: 새 Q1/Q2 시뮬 원시 결과 (22:42)
+- `rl/logs/basket/replay_seat1_Q12_l1.json`은 분면별 episode 기준 Q1 194, Q2 204를 재집계했다. low<60 mm만 적용하면 Q1 177/194 (91.2%), Q2 120/204 (58.8%)지만 목표 gap/orientation을 포함한 `quadrant_ok & seated`는 Q1 0/194, Q2 1/204다. Q1 최저점 분포 p10/median/p90 −15.6/51.0/55.9 mm로 일부가 바닥 아래로 관통; Q2 33.4/54.1/87.7 mm다. 따라서 `<60 mm`는 높이 보조조건이지 성공 단독 판정이 될 수 없다. 이 run은 새 Q1/Q2 설정을 시험한 replay이며 완전 독립 일반화 평가로 보지 않는다.
+- R은 22:42 기준 5,160/6,480(79.6%), session 76551, CPU-only; final outputs not yet written.
