@@ -2163,6 +2163,7 @@
 - **척도 비교 주의:** `rl/basket/expert.py::closed_loop_paths`는 위치·회전 각각에 3축 등방 Gaussian을 넣고 축별 표준편차를 입력값/√3로 둔다. 즉 `--cl_noise 14 27`은 대략 14 mm 및 27°의 3D RMS 벡터 크기이지 p90이 아니다(등방 Gaussian의 벡터 p90은 약 1.44×RMS). W에서 얻은 위치 14 mm/회전 26.69°는 run별 **p90**이며, 더구나 회전의 대부분은 원형 접시 면내 회전이었다. AA에서 유효 삽입 관련 plate-normal 편차는 약 **0.65° p90**였다. 따라서 noise sweep은 W의 실제 오차와 정량적으로 맞춘 시험이 아니며, 특히 2/2·5/5·10/10 수치를 실기 FoundationPose 허용 한계로 읽으면 안 된다.
 - 주입 오차는 매 re-aim 호출에서 다시 뽑는 독립·등방 Gaussian으로, 실제 FP의 시간 상관, 고정 extrinsic 편향, 접시 미끄럼은 모델링하지 않는다. 난수 seed가 Python `hash((name,k,...))`를 쓰고 실행 환경의 `PYTHONHASHSEED` 기록을 찾지 못해 프로세스 간 재현성도 확인되지 않았다.
 - 14/27은 최초 확인 때 JSON 파일이 없었지만, 같은 `.json.log`가 뒤이어 끝까지 기록되고 `replay_noise_14_27_7014.json`이 생성되어 재집계했다. 300/300 run 요약과 episode 수치가 맞았고 exact는 **75/600 (12.5%)**. 기준 통과 590개 중 516개가 noise에서 실패하고, noise에서만 통과한 것은 1개였다. 두 re-aim 각각 IK 재해결은 572/600; IK 성립 자체가 안정 착좌를 보장하지 않는다.
+- V 보고서 생성기(`calibration/goal1_offline.py basket_report`)로 기준+4조건 표/PNG를 `rl/logs/basket/report_noise_7014_codex/`에 생성하고 그림을 확인했다. 분면별 막대와 범례가 겹치지 않고, grid·위/오른쪽 spine·제목은 없다.
 - 다음에 실측과 비교하려면 위치 p90에 맞춘 RMS 변환(등방 3D 가정이면 약 9.7 mm), plate-normal 축 회전 잡음 별도 모델, 반복 seed·반복 수 확대, 바이어스/상관오차 조건을 분리해야 한다. 원자료: `rl/logs/basket/replay_noise_{2_2,5_5,10_10,14_27}_7014.json[.log]`; 기준 `replay_final_v3_7014.json`. GPU/Isaac 재실행 및 source 변경 없음.
 
 ## 2026-10-15 Codex — U5: 최신 robustness·untouched replay 독립 재집계
@@ -2177,7 +2178,7 @@
 - 재현한 성공식은 `seated && in_quadrant && landed_gap == target_gap`이다. 9014 불일치 2회는 Q2의 칸 밖 1회와 Q4의 +1칸 1회. wide 4회는 Q2 두 번, Q4 두 번 실패. pin radius 조건에서는 600회 거의 모두 `landed_gap == target_gap`(594/600)이며, 큰 하락은 주로 앉음 실패: Q3 5/134(최저 rim `low` 중앙값 67.9 mm), Q2 52.4 mm, Q4 50.2 mm. 따라서 이 결과는 번호/칸 겨냥보다 빗살 두께에서의 안착 민감도를 드러낸다.
 - **범위 한계:** seed 9014의 생성 summary는 요청 300개 중 299개 유효, 1개가 `Bad CRC-32 for file 'q_deg.npy'`로 실패. 생성 args는 바구니 x `[0.757,0.857]`, y `[-0.242,-0.142]`, yaw ±10°; 접시 x `[0.808,0.928]`, y `[0.259,0.359]` (SYSTEM_SPEC 기준으로 각각 목표 범위에 대응). 실제 유효 replay 배치 행은 바구니 y가 `−0.242…−0.175 m`, 접시 y가 `0.296…0.359 m`만 포함해 바구니의 +y 절반과 접시 y 하단을 충분히 덮지 않았다. 9014는 설정 고정 뒤 한 번만 실행된 unseen seed이지만, **요청된 전체 Cartesian 흔들기 영역을 포괄하는 홀드아웃은 아니다.**
 - wide8014 생성은 200 중 190 plan(95%)이 유효했다. 요청 x/y±10 cm 및 yaw±15° 조건에서 exact 376/380이지만, 실제 유효 배치의 바구니 y는 `−0.292…−0.168 m`에 집중되어 기준 `−0.192 m`의 +y 큰 편차를 시험하지 않았다. 접시 위치/배치 타당성 필터가 만든 표본이므로 임의 배치 전체 성능으로 일반화하지 않는다.
-- pinr175는 seed7014의 동일 300 layout을 2회 replay한 조건 비교라 유용하나, 그립 강성·실측 철사 형상/휨/마찰까지 바뀐 실물 검증은 아니다. 현재 global config의 반경은 1.00 mm; 1.75 mm 실험은 replay JSON의 마지막 자세 수치만으로 설정 자체를 독립 증명할 수 없고 Claude의 실행 기록/명령이 근거다. 최근 sim JSON에서 새 `--cl_noise` 결과는 아직 생성되지 않아 실제 FP 잡음(14 mm/27°) 내성은 미확인.
+- pinr175는 seed7014의 동일 300 layout을 2회 replay한 조건 비교라 유용하나, 그립 강성·실측 철사 형상/휨/마찰까지 바뀐 실물 검증은 아니다. 현재 global config의 반경은 1.00 mm; 1.75 mm 실험은 replay JSON의 마지막 자세 수치만으로 설정 자체를 독립 증명할 수 없고 Claude의 실행 기록/명령이 근거다. U5 확인 시점에는 `--cl_noise` 결과가 없었다. 후속 U6에서 noise 결과는 나왔으나 실제 FP 잡음 내성 검증으로는 부적합한 척도임을 기록했다.
 - 원자료/보고서: `calibration/data/basket/random_20261015_004935/summary.json`, `random_20261015_003713/summary.json`, `random_20261015_000501/summary.json`; `rl/logs/basket/replay_untouched_9014.json`, `replay_robust_wide8014.json`, `replay_robust_pinr175_7014.json`; 표 `rl/logs/basket/report_untouched_9014/basket_replay_report.md`. 회귀 시험·GPU/Isaac 재실행 없음. 소스/데이터 설정은 변경하지 않음.
 
 ## 2026-10-15 Codex — AA: FP 정지 자세 temporal filtering 감사
@@ -2246,3 +2247,8 @@
 - **결론: 지금 방식을 실기에 쓰려면 바구니 위 손에 든 접시 자세를 대략 1~2 mm / 1~2° 안으로 재야 한다.** 원시 FP(W: p90 14 mm / 27°)로는 안 된다. Codex AA(거르기로 얻는 정확도)가 이 기준에 닿는지가 관건이다.
 - 대안 시험(예약): **측정 없이** 분면별 평균 손 안 접시 자세(조정 실행에서 계산, `rl/logs/basket/blind_inhand_H_20261015.json`)로 다시 겨냥(`--cl_blind`). sim에서 바구니 위 손 안 자세 퍼짐은 위치 표준편차 1.5~3.6 mm(Q1 x는 13.6 mm), 법선 p50 0.6~1.3° / p90 1.4~3°.
 - 위치 잡음 / 회전 잡음 분리 시험(2/0, 0/2, 5/0, 0/1) 예약. 두꺼운 빗살 Q3 시험 진행 중.
+
+## 2026-10-15 01:3x Claude — 두꺼운 빗살에서 Q3는 68 mm에서 걸림 (기하 한계로 보임)
+- 빗살 반지름 1.75 mm(단단함) + Q3 조정 경로(seed 4014, 115 × 2): 기울기 0 → 앉음 & exact 0.01(최저점 69 mm), 0.5 → 0.16(68), −0.5 + 1 cm 더 깊게 → 0.13(68, 목표 칸 228/230). 놓는 자세를 바꿔도 68 mm에서 멈춘다.
+- Codex X(정적 기하): 접시 최대 두께 25.4 mm, Q2 빗살 사이 빈 폭 ~15.6 mm(반지름 1 mm 기준) → 정적 최초 접촉 높이 Q2 86 / Q3 85 / Q4 69 mm. 동적 sim은 기울기를 조절하면 Q2/Q3도 48 mm까지 내려가므로, 앉음은 접시가 기울며 빠져 들어가는 동작과 빗살 굵기에 크게 달려 있다.
+- **실기 위험:** 실제 빗살은 3.5 mm이지만 휜다(10/8: 실제 접시는 들어갔음). 실제 바구니에서 접시가 레일까지 내려가는지, 몇 mm에서 멈추는지를 보스 시연 한 번으로 확인할 필요가 있다(60 mm 기준이 실기에서도 맞는지).
