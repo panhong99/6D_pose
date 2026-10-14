@@ -23,6 +23,7 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 
+import demo_data
 import pipeline
 import ros2_nodes as nodes
 from calib_core import DATA, inv_T, latest_t_base_cam, load_json, make_T, posx_to_T, solve_eye_to_hand, T_to_posx
@@ -501,6 +502,44 @@ class SlotTargetGenerationTests(unittest.TestCase):
             with self.assertRaises(FileExistsError):
                 camera_tools.slot_targets(output)
 
+
+
+class DemoDataTests(unittest.TestCase):
+    def test_full_11_to_14_only_known_contact_demo_is_unsafe(self):
+        manifest = json.loads((demo_data.TEACH_DIR / "bc_demos.json").read_text())
+        reports = [demo_data.demo_audit(demo_data.TEACH_DIR / d["file"]) for d in manifest["demos"]]
+        by_name = {r["demo"]: r for r in reports}
+        self.assertEqual(set(by_name), {"full_11.json", "full_12.json", "full_13.json", "full_14.json"})
+        self.assertEqual([name for name, r in by_name.items() if not r["safe"]], ["full_14.json"])
+        self.assertTrue(by_name["full_14.json"]["wrench"]["tool_force"]["events"])
+        self.assertTrue(by_name["full_14.json"]["wrench"]["ext_torque"]["events"])
+        self.assertTrue(by_name["full_14.json"]["collision"]["frame"]["violation_events"])
+        self.assertLess(by_name["full_14.json"]["collision"]["frame"]["minimum_clearance_m"],
+                        by_name["full_14.json"]["collision"]["frame"]["margin_m"])
+        self.assertTrue(all("collision" in r and "speed" in r for r in reports))
+        self.assertGreater(by_name["full_14.json"]["speed"]["max_joint_axis_deg_s"], 0)
+        self.assertGreater(by_name["full_14.json"]["speed"]["max_tcp_speed_mm_s_fk"], 0)
+
+    def test_keyposes_export_tcp_in_basket_frame(self):
+        kin = Kinematics()
+        q = np.array([-5.98, -14.75, 117.74, -3.92, 7.46, -85.07])
+        flange = kin.fk(np.radians(q))
+        posx = np.r_[flange[:3, 3] * 1000., [0., 0., 0.]]
+        poses = {name: {"posj": q.tolist(), "posx": posx.tolist()} for name in demo_data.KEYPOSES}
+        Tbb = make_T(R.from_euler("z", 0.3).as_matrix(), [0.9, 0.2, 0.15])
+        result = demo_data.transform_keyposes(poses, Tbb, kin)
+        expected_tcp = demo_data._tcp_from_flange(flange, demo_data.DEFAULT_TOOL_LENGTH_M)
+        expected_basket = np.linalg.inv(Tbb) @ expected_tcp
+        np.testing.assert_allclose(result["keypose_T_basket_tcp"][0], expected_basket, atol=1e-10)
+        self.assertLess(float(result["keypose_fk_flange_xyz_error_mm"].max()), 1.0)
+
+    def test_manifest_layout_and_unsafe_flags_exclude(self):
+        old_layout = "old: basket y +0.17~+0.20, plate on the -y stand"
+        common = {"layout": old_layout, "quadrant": "Q1", "landed_pin": 5}
+        reasons = demo_data.default_exclusion_reasons(common, demo_data.DEFAULT_TARGET_LAYOUT)
+        self.assertEqual(reasons, ["layout_mismatch_or_unknown"])
+        reasons = demo_data.default_exclusion_reasons(common | {"unsafe": True}, old_layout)
+        self.assertEqual(reasons, ["manifest_unsafe"])
 
 if __name__ == '__main__':
     unittest.main()
