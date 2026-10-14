@@ -462,6 +462,7 @@ def run_replay(args):
     loose = ((yaw_err < 15.0) & (lean < lean_ok) & (st['low'] < 0.095)).cpu().numpy() & held   # the any-gap error (2 cm pitch) does not hold per quadrant
     face_ok = np.where(target >= 0, loose & pin_ok, face_ok)
     in_quadrant = loose & (landed >= 0)                       # (10/14 night, stage 2) standing in SOME gap of its quadrant
+    seated = (st['low'] < 0.060).cpu().numpy()                # (10/14 night, Codex U) down on the 49 mm rail, not perched on the tines
     np.set_printoptions(precision=1, suppress=True)
     print('[replay] final d_bottom mm', (st['d_bottom'] * 1000).cpu().numpy()[::args.per_run], flush=True)
     print('[replay] final gap err mm  ', (gap_err * 1000).cpu().numpy()[::args.per_run], flush=True)
@@ -471,11 +472,12 @@ def run_replay(args):
     res = []
     for i, r in enumerate(rows):
         m = who == i
-        res.append(dict(run=r['name'], real=r['outcome'], sim_rate=float(ok[m].mean()), any_gap=float(any_gap[m].mean()), quadrant_ok=float(face_ok[m].mean()), in_quadrant=float(in_quadrant[m].mean()), held=float(held[m].mean()),
+        res.append(dict(run=r['name'], real=r['outcome'], sim_rate=float(ok[m].mean()), any_gap=float(any_gap[m].mean()), quadrant_ok=float(face_ok[m].mean()), in_quadrant=float(in_quadrant[m].mean()), seated_in_quadrant=float((in_quadrant & seated)[m].mean()),
+                        seated_exact=float((face_ok & seated)[m].mean()), held=float(held[m].mean()),
                         landed_gaps=landed[m].tolist(), target_gap=int(target[m][0]),
                         pre_d_bottom_mm=float(st_pre['d_bottom'][torch.as_tensor(m)].mean() * 1000),
                         pre_normal_err=float(st_pre['normal_err'][torch.as_tensor(m)].mean())))
-        print(f"[replay] {r['name']:32s} {r['outcome'][:8]:8s}  {ok[m].mean():5.0%} any gap {any_gap[m].mean():4.0%} quadrant ok {face_ok[m].mean():4.0%} in quadrant {in_quadrant[m].mean():4.0%} ({held[m].mean():4.0%})  "
+        print(f"[replay] {r['name']:32s} {r['outcome'][:8]:8s}  {ok[m].mean():5.0%} any gap {any_gap[m].mean():4.0%} quadrant ok {face_ok[m].mean():4.0%} in quadrant {in_quadrant[m].mean():4.0%} seated exact {(face_ok & seated)[m].mean():4.0%} ({held[m].mean():4.0%})  "
               f"{res[-1]['pre_d_bottom_mm']:+7.1f}        {res[-1]['pre_normal_err']:5.1f}  landed {landed[m].tolist()} target {int(target[m][0])}", flush=True)
     good = [x for x in res if x['real'] == 'success']
     gate = sum(x['sim_rate'] >= 0.8 for x in good)
@@ -486,7 +488,7 @@ def run_replay(args):
                                    final_pose=dict(plate_pos=pc.tolist(), plate_quat=pq.tolist()), trace=trace,
                                    final={k: st[k].cpu().numpy().tolist() for k in ('d_bottom', 'low', 'normal_err', 'd_u')},
                                    gap_err=gap_err.cpu().numpy().tolist(), held=held.tolist(), yaw_err=yaw_err.cpu().numpy().tolist(),
-                                   lean=lean.cpu().numpy().tolist(), quadrant_ok=face_ok.tolist(), in_quadrant=in_quadrant.tolist(), landed_gap=landed.tolist(), target_gap=target.tolist()), indent=1))
+                                   lean=lean.cpu().numpy().tolist(), quadrant_ok=face_ok.tolist(), in_quadrant=in_quadrant.tolist(), seated=seated.tolist(), landed_gap=landed.tolist(), target_gap=target.tolist()), indent=1))
     if args.hold_view:                                         # (10/14 보스) look at the result in the GUI
         print('[replay] done - close the window to quit', flush=True)
         import omni.kit.app
