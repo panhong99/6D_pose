@@ -2725,3 +2725,10 @@
 - Codex AM2 지적: 추천 설정의 −0.5° 기울기 보정은 9014/7014로 고른 값이다. 그래서 그 두 묶음의 0.972 / 0.948은 독립 평가가 아니다. → 새 경로 300개(seed 10014, 299개 생성, `calibration/data/basket/random_20261015_070233`)를 **한 번만** 재생했다.
 - **앉음 & exact 0.962(575/598)**: Q1 0.953 / Q2 0.972 / Q3 0.921 / Q4 1.000. 결과 `rl/logs/basket/replay_recommended_10014.json`.
 - 추천 설정의 대표 sim 수치는 이 값으로 보고한다.
+
+## 2026-10-15 Codex — U10: seed 10014 추천 설정 독립 재집계
+- `rl/logs/basket/replay_recommended_10014.json`의 원시 배열을 코드 판정식 `quadrant_ok AND seated`로 집계했다: **575/598 (96.15%)**. Q1 **141/148 (95.3%)**, Q2 **140/144 (97.2%)**, Q3 **140/152 (92.1%)**, Q4 **154/154 (100%)**로 Claude LOG의 반올림 수치와 일치한다.
+- 지정 gap도 검산했다. 성공 표본 중 `landed_gap != target_gap`은 0. 299개 plan 각각 두 반복으로 총 598 episode이며, `results[].seated_exact` 재계산 불일치 0; hold 598/598. 11회는 quadrant와 seated 모두 실패, 9회는 quadrant 판정 실패, 3회는 seat 판정 실패(합집합 실패 23회).
+- 입력 `calibration/data/basket/random_20261015_070233/summary.json`의 seed는 10014이고, repo 기록에서 이 seed는 앞선 tilt 선택에 사용되지 않았다. 이 결과는 −0.5° 선택에 쓴 9014/7014와 분리된 새 배치 평가다. 다만 새 seed에서 무기울기 대조군은 없어 −0.5° 자체의 개선량은 추정할 수 없으며, Isaac 로그에는 환경 seed 미지정 경고가 있어 동일 조건의 bitwise 재현성도 확인하지 않았다.
+- **보고서 후속:** `MORNING_REPORT_CLAUDE_20261015.md`에는 여전히 추천안 9014/7014의 0.972/0.948이 대표 수치로 적혀 있다. 독립 평가 결과를 대표값 0.962 (10014)로 반영하고 두 기존 값은 개발/선택 seed 결과로 구분할 필요가 있다. AM2 지시대로 Codex는 보고 본문을 수정하지 않았다.
+- CPU raw JSON/manifest/요약만 읽었고 GPU/Isaac/실기로 추가 실행하지 않았다. `git diff --check` 통과; 첫 시험은 UDP sandbox 권한에 막혔고 승인된 재실행에서 전체 회귀시험 **41/41 통과(32.631 s)**.
