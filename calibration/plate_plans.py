@@ -312,7 +312,7 @@ def set_next_full(k):
     (TEACH_DIR / 'next_full.json').write_text(json.dumps(dict(slot=k, updated=time.strftime('%Y-%m-%d %H:%M:%S'))))
 
 
-def teach_full(k, last_joints, choose_gripper, event):
+def teach_full(k, last_joints, choose_gripper, event, meta=None):
     """Human jogs through FULL_POSES with the pendant; Enter stores the live joints (read only).  The plate must lie
     at the same marked spot whenever this teaching is replayed."""
     print(f'\n=== 전체 티칭 {k} (접시는 표시한 고정 위치) ===\n펜던트로 로봇을 움직이세요. PC는 관절값만 읽습니다.\n'
@@ -336,11 +336,15 @@ def teach_full(k, last_joints, choose_gripper, event):
             event('teach_pose', slot=k, pose=name, **poses[name])
             print(f'     저장: posj {np.round(msg["posj"], 1).tolist()}', flush=True)
             break
+    meta = dict(meta or {})
+    if meta.get('quadrant'):                                 # (10/14 보스) BC label: where the plate actually went
+        ans = input(f'  [{meta["quadrant"]}] 접시가 들어간 틈 번호 (N = N번과 N+1번 빗살 사이, 1 = 로봇에서 가장 먼 빗살; 모르면 Enter) > ').strip()
+        meta['landed_pin'] = int(ans) if ans.isdigit() else None
     TEACH_DIR.mkdir(parents=True, exist_ok=True)
     path = TEACH_DIR / f'full_{k:02d}.json'
     if path.exists():
         path.replace(path.with_name(f'full_{k:02d}_{time.strftime("%Y%m%d_%H%M%S")}.json'))
-    path.write_text(json.dumps(dict(slot=k, created=time.strftime('%Y-%m-%d %H:%M:%S'), poses=poses, gripper_force=64),
+    path.write_text(json.dumps(dict(slot=k, created=time.strftime('%Y-%m-%d %H:%M:%S'), poses=poses, gripper_force=64, **meta),
                                indent=1))
     print(f'저장: {path}\n펜던트로 홈 복귀 → 자동 모드 → run.sh connect 재실행 후 replay 하세요.', flush=True)
     return path

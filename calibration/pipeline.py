@@ -991,8 +991,20 @@ def run_taught(args):
             gripper(['activate'], env)
         print(f'Mode: {args.task.upper()} {k}  logs {out}', flush=True)
         if args.task == 'teach':
+            meta = dict(run=str(out), quadrant=args.quadrant)
+            try:                                               # (10/14 보스) BC demos: the basket pose with every teaching
+                from camera_tools import basket_fit_robust, basket_measure
+                layout = json.loads(cpath(C['basket']['layout']).read_text())
+                Tb, res, seen = basket_fit_robust(basket_measure(C), layout, C['basket'].get('max_fit_residual_m', 0.010))
+                meta.update(T_base_basket=np.asarray(Tb).tolist(), basket_fit_mm=round(res * 1000, 2), basket_markers=list(map(int, seen)))
+                print(f'[basket] markers {seen}, fit {res * 1000:.1f} mm, centre ({Tb[0, 3]:.3f}, {Tb[1, 3]:+.3f}) '
+                      f'yaw {np.degrees(np.arctan2(Tb[1, 0], Tb[0, 0])):+.1f} deg', flush=True)
+            except Exception as e:                             # teaching still goes on; the pose is missing from this demo
+                print(f'[basket] 측정 실패 ({e}): 이 시연에는 바구니 자세 없이 저장', flush=True)
             choose_gripper(f'teach{k}_start (열기 o 권장)')
-            teach_full(k, lambda: rec.last, choose_gripper, rec.event)
+            teach_full(k, lambda: rec.last, choose_gripper, rec.event, meta=meta)
+            if not args.slot:                                 # (10/14) one file per demonstration
+                set_next_full(k + 1)
             return
         err = np.abs(np.array(rec.last['posj']) - np.array(HOME_JOINTS_DEG)).max()
         if err > q['start_tolerance_deg']:
