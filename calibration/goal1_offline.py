@@ -518,15 +518,142 @@ def correct_basket_lift_clearance(source_json,output,workers=12):
     return source
 
 
+def basket_replay_report(replay_paths, output_dir):
+    """Aggregate saved basket replay JSONs into a Markdown table and quadrant chart.
+
+    This is a read-only report: it uses the replay's existing quadrant and strict
+    success fields and does not change any task thresholds. The 60 mm seated
+    proxy is reported alongside, never as a replacement for strict sim_rate.
+    """
+    import re
+    import statistics
+
+    import matplotlib
+    matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+
+    output_dir = Path(output_dir)
+    md_path = output_dir / 'basket_replay_report.md'
+    png_path = output_dir / 'basket_replay_quadrant.png'
+    if md_path.exists() or png_path.exists():
+        raise FileExistsError(f'report output exists: {md_path} or {png_path}')
+    output_dir.mkdir(parents=True, exist_ok=True)
+    reports = []
+    for source_path in map(Path, replay_paths):
+        data = json.loads(source_path.read_text())
+        results = data.get('results')
+        names = data.get('names')
+        if not isinstance(results, list) or not isinstance(names, list) or not results:
+            raise ValueError(f'{source_path}: expected non-empty results and names arrays')
+        n_obs = len(names)
+        required = ('final', 'quadrant_ok', 'in_quadrant', 'landed_gap', 'target_gap', 'gap_err')
+        if any(key not in data for key in required):
+            raise ValueError(f'{source_path}: missing replay metric arrays')
+        arrays = [data[key] for key in ('quadrant_ok', 'in_quadrant', 'landed_gap', 'target_gap', 'gap_err')]
+        arrays.append(data['final'].get('low'))
+        if any(not isinstance(a, list) or len(a) != n_obs for a in arrays):
+            raise ValueError(f'{source_path}: metric array length does not match names')
+        if 'seated' in data and (not isinstance(data['seated'], list) or len(data['seated']) != n_obs):
+            raise ValueError(f'{source_path}: seated array length does not match names')
+
+        label = source_path.stem
+        for q in range(1, 5):
+            pattern = re.compile(rf'(?:^|_)Q{q}(?:_|$)')
+            plan_rows = [row for row in results if pattern.search(str(row.get('run', '')))]
+            indices = [i for i, name in enumerate(names) if pattern.search(str(name))]
+            if not plan_rows:
+                continue
+            if not indices:
+                raise ValueError(f'{source_path}: Q{q} result rows have no matching episode names')
+            lows = [float(data['final']['low'][i]) * 1000.0 for i in indices]
+            qok = [bool(data['quadrant_ok'][i]) for i in indices]
+            inq = [bool(data['in_quadrant'][i]) for i in indices]
+            seated = [bool(data['seated'][i]) if 'seated' in data else lows_at_i < 60.0
+                      for i, lows_at_i in zip(indices, lows)]
+            landed = [data['landed_gap'][i] for i in indices]
+            target = [data['target_gap'][i] for i in indices]
+            gap_errors = [abs(float(data['gap_err'][i])) * 1000.0 for i in indices
+                          if data['gap_err'][i] is not None]
+            seated_exact = [seated[k] and qok[k] and landed[k] is not None and target[k] is not None
+                            and int(landed[k]) >= 0 and int(landed[k]) == int(target[k])
+                            for k in range(len(indices))]
+            valid_delta = [int(landed[k]) - int(target[k]) for k in range(len(indices))
+                           if landed[k] is not None and target[k] is not None and int(landed[k]) >= 0]
+            gap_counts = {}
+            for delta in sorted(set(valid_delta)):
+                gap_counts[str(delta)] = valid_delta.count(delta)
+            reports.append({
+                'dataset': label, 'source': str(source_path), 'quadrant': f'Q{q}',
+                'plans': len(plan_rows), 'episodes': len(indices),
+                'repeats_per_plan': len(indices) / len(plan_rows),
+                'in_quadrant_rate': statistics.mean(inq),
+                'exact_rate': statistics.mean(qok),
+                'seated_exact_rate': statistics.mean(seated_exact),
+                'strict_sim_rate': statistics.mean(float(row.get('sim_rate', 0.0)) for row in plan_rows),
+                'low_median_mm': statistics.median(lows),
+                'abs_gap_error_median_mm': statistics.median(gap_errors) if gap_errors else None,
+                'abs_gap_error_p90_mm': float(np.percentile(gap_errors, 90)) if gap_errors else None,
+                'abs_gap_error_max_mm': max(gap_errors) if gap_errors else None,
+                'landed_minus_target_counts': gap_counts,
+            })
+
+    if not reports:
+        raise ValueError('no quadrant result rows found')
+    datasets = list(dict.fromkeys(row['dataset'] for row in reports))
+    lines = [
+        '# Basket replay summary', '',
+        'Rates are episode means over recorded repeats. `seated & exact` = seated (stored flag, or `final.low < 60 mm` for older files) AND `quadrant_ok` AND valid `landed_gap == target_gap`. Strict `sim_rate` is reported separately. Gap error is absolute mm; slot delta excludes `landed_gap=-1` (no landing).', '',
+        '| Replay | Q | Plans | Repeats/plan | In quadrant | Exact | Seated & exact | Strict sim | Low median (mm) | |gap error| median / p90 / max (mm) | Slot delta counts |',
+        '|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|',
+    ]
+    for row in reports:
+        gap_summary = '—' if row['abs_gap_error_median_mm'] is None else (
+            f"{row['abs_gap_error_median_mm']:.2f} / {row['abs_gap_error_p90_mm']:.2f} / {row['abs_gap_error_max_mm']:.2f}")
+        delta_summary = ', '.join(f"{int(k):+}:{v}" for k, v in row['landed_minus_target_counts'].items()) or '—'
+        lines.append(f"| {row['dataset']} | {row['quadrant']} | {row['plans']} | {row['repeats_per_plan']:.1f} | "
+                     f"{row['in_quadrant_rate']:.1%} | {row['exact_rate']:.1%} | {row['seated_exact_rate']:.1%} | "
+                     f"{row['strict_sim_rate']:.1%} | {row['low_median_mm']:.1f} | {gap_summary} | {delta_summary} |")
+    md_path.write_text('\n'.join(lines) + '\n')
+
+    quadrants = [f'Q{i}' for i in range(1, 5)]
+    x = np.arange(len(quadrants), dtype=float)
+    width = .8 / max(1, len(datasets))
+    fig, ax = plt.subplots(figsize=(max(8, 2.0 * len(quadrants)), 4.4))
+    for j, dataset in enumerate(datasets):
+        lookup = {r['quadrant']: r['seated_exact_rate'] for r in reports if r['dataset'] == dataset}
+        vals = [lookup.get(q, np.nan) for q in quadrants]
+        pos = x - .4 + width * (j + .5)
+        bars = ax.bar(pos, vals, width, label=dataset)
+        for bar, val in zip(bars, vals):
+            if np.isfinite(val):
+                ax.annotate(f'{val:.0%}', (bar.get_x() + bar.get_width()/2, bar.get_height()),
+                            xytext=(0, 3), textcoords='offset points', ha='center', va='bottom', fontsize=8)
+    ax.set_xticks(x, quadrants)
+    ax.set_ylim(0, 1.12)
+    ax.set_ylabel('Seated & exact rate')
+    ax.grid(False)
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    ax.legend(frameon=False, fontsize=8)
+    fig.tight_layout()
+    fig.savefig(png_path, dpi=170, bbox_inches='tight')
+    plt.close(fig)
+    return {'markdown': str(md_path), 'plot': str(png_path), 'rows': reports}
+
+
 if __name__=='__main__':
-    p=argparse.ArgumentParser(description=__doc__);p.add_argument('mode',choices=['optimize','map','basket_map','correct_basket_lift'])
+    p=argparse.ArgumentParser(description=__doc__);p.add_argument('mode',choices=['optimize','map','basket_map','correct_basket_lift','basket_report'])
     p.add_argument('--library',type=Path);p.add_argument('--output',type=Path,required=True)
     p.add_argument('--step',type=float,default=.05);p.add_argument('--rrt_nodes',type=int,default=600)
     p.add_argument('--radius_tolerance',type=float,default=.004)
     p.add_argument('--workers',type=int,default=12);p.add_argument('--smoke',action='store_true')
     p.add_argument('--source_json',type=Path)
+    p.add_argument('--replay',type=Path,nargs='+')
     a=p.parse_args()
     if a.mode=='basket_map':r=basket_reach_map(a.output,a.workers,a.smoke)
+    elif a.mode=='basket_report':
+        if not a.replay:p.error('--replay required for basket_report')
+        r=basket_replay_report(a.replay,a.output)
     elif a.mode=='correct_basket_lift':
         if not a.source_json:p.error('--source_json required for correct_basket_lift')
         r=correct_basket_lift_clearance(a.source_json,a.output,a.workers)

@@ -548,5 +548,48 @@ class DemoDataTests(unittest.TestCase):
         reasons = demo_data.default_exclusion_reasons(common | {"unsafe": True}, old_layout)
         self.assertEqual(reasons, ["manifest_unsafe"])
 
+
+class BasketReplayReportTests(unittest.TestCase):
+    def test_replay_report_uses_stored_gates_and_refuses_overwrite(self):
+        import goal1_offline
+
+        payload = {
+            "results": [
+                {"run": "r1_Q1_pin1", "sim_rate": 0.0},
+                {"run": "r2_Q1_pin2", "sim_rate": 0.5},
+                {"run": "r3_Q2_pin1", "sim_rate": 0.0},
+            ],
+            "names": ["r1_Q1_pin1", "r1_Q1_pin1", "r2_Q1_pin2", "r2_Q1_pin2", "r3_Q2_pin1", "r3_Q2_pin1"],
+            "final": {"low": [0.050, 0.070, 0.050, 0.050, 0.055, 0.065]},
+            "quadrant_ok": [True, True, True, False, True, True],
+            "in_quadrant": [True, True, True, True, True, False],
+            "seated": [True, False, True, True, True, False],
+            "landed_gap": [1, 1, 2, 2, 3, 2],
+            "target_gap": [1, 1, 2, 2, 3, 2],
+            "gap_err": [0.001, 0.002, 0.003, 0.004, 0.005, 0.006],
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            replay = root / "replay_fixture.json"
+            replay.write_text(json.dumps(payload))
+            out = root / "report"
+            result = goal1_offline.basket_replay_report([replay], out)
+            q1 = next(row for row in result["rows"] if row["quadrant"] == "Q1")
+            q2 = next(row for row in result["rows"] if row["quadrant"] == "Q2")
+            self.assertEqual(q1["plans"], 2)
+            self.assertEqual(q1["episodes"], 4)
+            self.assertAlmostEqual(q1["in_quadrant_rate"], 1.0)
+            self.assertAlmostEqual(q1["exact_rate"], 0.75)
+            self.assertAlmostEqual(q1["seated_exact_rate"], 0.5)
+            self.assertAlmostEqual(q1["strict_sim_rate"], 0.25)
+            self.assertAlmostEqual(q2["seated_exact_rate"], 0.5)
+            self.assertTrue(Path(result["markdown"]).is_file())
+            self.assertTrue(Path(result["plot"]).is_file())
+            report = Path(result["markdown"]).read_text()
+            self.assertIn("50.0%", report)
+            self.assertIn("2.50 / 3.70 / 4.00", report)
+            with self.assertRaises(FileExistsError):
+                goal1_offline.basket_replay_report([replay], out)
+
 if __name__ == '__main__':
     unittest.main()
