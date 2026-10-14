@@ -1207,21 +1207,28 @@ def _random_one(job):
         return dict(row, ok=False, stage='grasp', why=str(e)[:120], s=round(time.time() - t0, 1))
     gl = json.loads(Path(gpath).read_text())['legs']
     grasp = {n: gl[n]['waypoints_deg'] for n in ('to_grasp', 'lift')}
-    H, tool = hand_plate(grasp['to_grasp'][-1], [px, py, G['plate_z']])   # this grasp's plate in the hand
+    H, tool = hand_plate(grasp['to_grasp'][-1], [px, py, G['plate_z']], tilt_deg=G.get('hand_tilt'))   # this grasp's plate in the hand
     model_qd = robot_quadrants(Tbb)[qd]
     gap = int(gap * len(basket_gaps()[model_qd]))                # 6 / 8 / 12 / 12 gaps (10/14 measured basket)
     row['gap'] = gap + 1
     try:
         with contextlib.redirect_stdout(io.StringIO()):
             path, rep = quadrant_plan(Tbb, model_qd, gap, H, tool, grasp['lift'][-1], G['Tbc'], G['q'], grasp_legs=grasp,
-                                      phi_step=G['phi_step'])
+                                      phi_step=G['phi_step'], **G.get('plan_kw', {}))
     except Exception as e:                                   # noqa: BLE001
         return dict(row, ok=False, stage='place', why=str(e)[:120], s=round(time.time() - t0, 1))
     if path is None:
         why = sorted({w if w == 'ik/limit' else w.split(' ')[0] for _, w in rep['tried']})
         return dict(row, ok=False, stage='place', why=','.join(why), s=round(time.time() - t0, 1))
-    return dict(row, ok=True, stage='done', why='', phi=rep['phi_deg'], face=rep.get('face', 1), clearance=rep['clearance_ratio'], plan=str(path),
-                s=round(time.time() - t0, 1))
+    n_gap = len(basket_gaps()[model_qd])
+    pin = next(p_ for p_ in range(1, n_gap + 1) if pin_gap(Tbb, model_qd, p_) == gap)
+    c_ = np.array(basket_gaps()[model_qd][gap], float)
+    c_[1] += rep['y_shift_m']
+    c_[0] += rep['x_shift_m']
+    replay = dict(name=f'r{k}_{model_qd}_pin{pin}', quadrant=qd, plate=[px, py, G['plate_z']], Tb=Tbb.tolist(), plan=str(path),
+                  model_qd=model_qd, gap=gap, pin=pin, target_centre=((Tbb @ np.r_[c_, 1.0])[:3] + [0, 0, 0.165]).tolist())
+    return dict(row, ok=True, stage='done', why='', pin=pin, phi=rep['phi_deg'], face=rep.get('face', 1), clearance=rep['clearance_ratio'],
+                plan=str(path), replay=replay, s=round(time.time() - t0, 1))
 
 
 def random_plans(a):
@@ -1232,6 +1239,8 @@ def random_plans(a):
     out = DATA / 'basket' / f'random_{time.strftime("%Y%m%d_%H%M%S")}'
     out.mkdir(parents=True)
     run = sorted(p_.parent for p_ in (DATA / 'real_pipeline').glob('*/realplan_req.json'))[-1]
+    if a.sim:                                                # (10/14) plans for the Isaac replay: no real-robot x trim,
+        _RANDOM.update(plan_kw=dict(x_shift_m=0.0, centre_h=0.165), hand_tilt=(-12.9, 4.9))   # plate centre 16.5 cm, sim in-hand sag
     _RANDOM.update(out=out, plate_z=float(json.loads((run / 'realplan_req.json').read_text())['plate_root_fp'][2]), q={**C['plate_rl'], **C['plate_ik_bc']}, basket_z=a.basket_z, phi_step=a.phi_step,
                    Tbc=np.array(__import__('calib_core').load_json(__import__('calib_core').latest_t_base_cam())['T_base_cam']))
     jobs = []
@@ -1257,6 +1266,10 @@ def random_plans(a):
             f.flush()
             if len(rows) % 20 == 0:
                 print(f'  {len(rows)}/{len(jobs)}: success {np.mean([r_["ok"] for r_ in rows]):.2f}', flush=True)
+    with (out / 'replay.jsonl').open('w') as f:             # rl/basket/expert.py replay --plans
+        for r_ in sorted(rows, key=lambda r_: r_['k']):
+            if r_['ok']:
+                f.write(json.dumps(r_['replay']) + '\n')
     ok = np.array([r_['ok'] for r_ in rows])
     summ = dict(n=len(rows), success=float(ok.mean()), plate_z_from=run.name, args={k: v for k, v in vars(a).items() if k != 'mode'},
                 by_quadrant={qd: float(np.mean([r_['ok'] for r_ in rows if r_['quadrant'] == qd] or [0])) for qd in QUADRANTS},
@@ -1316,6 +1329,7 @@ if __name__ == '__main__':
     p.add_argument('--plate_r', type=float, nargs=2, default=(0.86, 1.15), help='random_plans: plate radius range [m] (library path clears the frame up to ~1.15)')
     p.add_argument('--plate_x', type=float, nargs=2, default=None, help='random_plans: plate x range [m] (with --plate_y; replaces --plate_r)')
     p.add_argument('--plate_y', type=float, nargs=2, default=None, help='random_plans: plate y range [m]')
+    p.add_argument('--sim', action='store_true', help='random_plans: plans for the Isaac replay (no x trim, centre 0.165, sim sag)')
     p.add_argument('--yaw_range', type=float, default=15.0, help='random_plans: basket yaw uniform in +-this [deg]')
     p.add_argument('--seed', type=int, default=0)
     p.add_argument('--measure', action='store_true', help='look_plans: basket from the fixed camera markers (read-only)')
