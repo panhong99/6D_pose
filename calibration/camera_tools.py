@@ -1231,6 +1231,14 @@ def slot_targets(out, slide_path=None, tines_path=None, audit_path=None):
     return result
 
 
+def tine_number(pins, p0, cx):
+    """보스 numbering of the tine at base p0 in its row: 1 = farthest from the robot in every quadrant (far rows Q1/Q2 run
+    outward from the centre clip, near rows Q3/Q4 toward the robot).  pins: [(base, tip)] in the basket frame."""
+    far = bool(p0[0] > cx)
+    row = sorted((abs(q0[0] - cx) for q0, _ in pins if (q0[0] > cx) == far and abs(q0[1] - p0[1]) < 1e-6), reverse=far)
+    return row.index(abs(p0[0] - cx)) + 1
+
+
 def model_overlay(req, out=None):
     """Saved wrist photo + current basket tines; numbers follow the boss's far-to-near rule."""
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'rl'))
@@ -1251,13 +1259,12 @@ def model_overlay(req, out=None):
     for p0, p1 in pins:
         far, left = p0[0] > cx, p0[1] > 0
         qd = {(True, False): 'Q1', (True, True): 'Q2', (False, True): 'Q3', (False, False): 'Q4'}[(far, left)]
-        row = sorted(abs(q0[0] - cx) for q0, _ in pins if (q0[0] > cx) == far and abs(q0[1] - p0[1]) < 1e-6)
         a, b = (Tcb @ Tb @ np.r_[p0, 1])[:3], (Tcb @ Tb @ np.r_[p1, 1])[:3]
         if a[2] < 0.05 or b[2] < 0.05:
             continue
         ua, ub = K @ (a / a[2]), K @ (b / b[2])
         cv2.line(img, (int(ua[0]), int(ua[1])), (int(ub[0]), int(ub[1])), colours[qd], 2)
-        cv2.putText(img, str(row.index(abs(p0[0] - cx)) + 1), (int(ua[0]) + 3, int(ua[1]) + 4), cv2.FONT_HERSHEY_SIMPLEX, 0.45, colours[qd], 1)
+        cv2.putText(img, str(tine_number(pins, p0, cx)), (int(ua[0]) + 3, int(ua[1]) + 4), cv2.FONT_HERSHEY_SIMPLEX, 0.45, colours[qd], 1)
     out = Path(out) if out else req.with_name(req.stem.replace('.req', '') + '_model.png')
     cv2.imwrite(str(out), img)
     print(f'model overlay -> {out}', flush=True)
@@ -1433,7 +1440,7 @@ def plate_angle(req, out, radius_m=0.134):
 if __name__ == '__main__':
     cfg = load_config()
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument('mode', choices=('preview', 'marker', 'probe', 'locate', 'basket', 'wrist_look', 'pre_photo', 'pins', 'basket_stats', 'pin_layout', 'plate_angle', 'plate_plane', 'model_overlay'))
+    p.add_argument('mode', choices=('preview', 'marker', 'probe', 'locate', 'basket', 'wrist_look', 'pre_photo', 'pins', 'basket_stats', 'pin_layout', 'plate_angle', 'plate_plane', 'model_overlay', 'slot_targets'))
     p.add_argument('--define', action='store_true', help='basket: define the basket frame / marker layout now')
     p.add_argument('--define_current', action='store_true', help='basket: marker layout in today\'s known basket frame (10/12)')
     p.add_argument('--golden', default=None, help='basket --define: also store this full teaching\'s slot in the basket frame')

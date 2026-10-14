@@ -252,7 +252,8 @@ def closed_loop_paths(env, rows, who, above_m=0.11, extra=0.005, dz=0.0, lean=1.
         Rp = R.from_quat(pq[k][[1, 2, 3, 0]]).as_matrix()
         pk = pp[k].copy()
         if noise:                                            # (10/15) measurement noise of the in-hand plate pose (real: FP)
-            rng_ = np.random.default_rng(hash((r['name'], k, len(out))) % 2**32)
+            import zlib                                      # reproducible across processes (Codex U6: hash() is salted)
+            rng_ = np.random.default_rng(zlib.crc32(f"{r['name']}|{k}|{noise}".encode()) + 7919 * len(lean_used))
             pk = pk + rng_.normal(0, noise[0] / 1000 / np.sqrt(3), 3)
             Rp = R.from_rotvec(rng_.normal(0, np.radians(noise[1]) / np.sqrt(3), 3)).as_matrix() @ Rp
         Tpl = np.eye(4)

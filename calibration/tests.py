@@ -384,6 +384,18 @@ class CameraPinTests(unittest.TestCase):
 
 
 class ModelOverlayTests(unittest.TestCase):
+    def test_tine_numbering_is_far_to_near_for_all_quadrants(self):
+        """(10/15, Codex AA review) the overlay's own numbering function: 1 = farthest from the robot in every quadrant."""
+        import camera_tools as camera
+        cx = 0.035
+        pins = [(np.array([cx + x, y, 0.0]), np.array([cx + x, y, 0.1]))
+                for y in (-0.1, 0.1) for x in (-0.3, -0.2, -0.1, 0.1, 0.2, 0.3)]
+        for y in (-0.1, 0.1):
+            self.assertEqual(camera.tine_number(pins, np.array([cx + 0.3, y, 0.0]), cx), 1)    # far rows: outer end = 1
+            self.assertEqual(camera.tine_number(pins, np.array([cx + 0.1, y, 0.0]), cx), 3)    # next to the clip = last
+            self.assertEqual(camera.tine_number(pins, np.array([cx - 0.1, y, 0.0]), cx), 1)    # near rows: next to the clip = 1
+            self.assertEqual(camera.tine_number(pins, np.array([cx - 0.3, y, 0.0]), cx), 3)    # robot-side end = last
+
     def test_overlay_draws_model_tines(self):
         """(10/14) model_overlay: tines projected onto a saved wrist photo (camera 0.42 m above the basket, looking down)."""
         import cv2
