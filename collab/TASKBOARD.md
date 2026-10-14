@@ -34,9 +34,9 @@
 | U | **Claude sim 결과 검증 (Critic)** | 아래 '새 일 U' | 완료(df83cc9: heldout v3, flip2, Q3/Q4 lean 재집계·한계 기록) |
 | V | **아침 보고 표·그림 생성기** (10/14 23:4x, 지금 최우선) | 아래 '새 일 V' | 완료(b1d72c5: `basket_report`, 표·PNG·3개 sumseat 대조, 37/37 시험) |
 | X | **Q2 걸침 기하 검사 (numpy, 빗살 vs 접시 메시)** | 아래 '새 일 X' | 완료(2ed663f: 900조건, JSON/표/PNG, Q2 tines 제한 분석; 38/38 시험) |
-| W | **실기 선행 조건: 바구니 위 정지 상태에서 손에 든 접시 자세 측정 잡음 (기존 실기 로그)** | 아래 '새 일 W' | 진행 중(10/15 01:xx): 기존 real_pipeline 로그 정지 구간/pose 필드 조사, read-only |
-| Y | **최종 평가 독립 검증 (U3)** (10/14 23:5x, 지금 최우선) | 아래 '새 일 Y' | 대기 |
-| Z | **sim 설정 → 실기 분면 넣기 이식 설계 (문서, 코드 수정 없음)** | 아래 '새 일 Z' | 대기 |
+| W | **실기 선행 조건: 바구니 위 정지 상태에서 손에 든 접시 자세 측정 잡음 (기존 실기 로그)** | 아래 '새 일 W' | 완료 분석(미커밋): 7개 정지구간, 위치 p90 중앙 14.13 mm·회전 p90 중앙 26.69°; 전체시험 36/38, Claude pipeline 안정자세 timeout 2건으로 커밋 보류 |
+| Y | **최종 평가 독립 검증 (U3)** (10/14 23:5x, 지금 최우선) | 아래 '새 일 Y' | 분석 완료(미커밋): seed6014 517/597 재현 + seed7014 530/600 재집계. 7014는 Q1 111/176, Q2 160/160, Q3 134/134, Q4 125/130; 핀 표본 불균등·요청 교란범위 일부 미포함. 전체시험 36/38로 커밋 보류 |
+| Z | **sim 설정 → 실기 분면 넣기 이식 설계 (문서, 코드 수정 없음)** | 아래 '새 일 Z' | 완료 분석(미커밋): `collab/SIM_TO_REAL_QUADRANT_INSERT_2026-10-15.md`; W FP 잡음·재겨냥 gate와 면 우선순위 차이 기록. 전체시험 36/38 오류로 커밋 보류 |
 | S | **시연 도구 파일 정리: demo_audit+demo_dataset 한 역할 파일, 시험은 tests.py로** (R과 독립 병행) | 아래 '새 일 S' | 완료(449a056) |
 | P | **BC 데이터셋 변환기: 시연 → 바구니 좌표 키자세·궤적** (O 다음) | 아래 '새 일 P' | 완료(7daafd5) |
 | Q | **observe_now2 사진에 Goal 1 BC 파지 라이브러리 범위 overlay** | 고정 카메라 K/T 투영, 라이브러리 표본·가정·한계를 그림에 표시 | 완료(3ec2b71) |
@@ -191,7 +191,7 @@
 - 완료 조건: `collab/` 문서 한 개(짧게, 표 위주) + LOG 요약. 로봇·코드 수정 없음.
 
 ## Codex 상태
-- 10/15 01:xx 살아 있음: R/T/U/S 완료; V 보고기 `b1d72c5`; X geometry sweep 2ed663f (Q2 zero-tilt median first-contact 86.1mm, 217/225 >60mm, 225/225 tines-limited; v3 JSON/MD/PNG). 전체 시험 38/38. 현재 W 기존 로그의 pose 반복잡음/들기 후 회전 분석을 read-only로 진행 중.
+- 10/15 alive: Y seed7014 독립 재집계 완료: 530/600=88.3%(300 layouts×2), Q1 111/176, Q2 160/160, Q3 134/134, Q4 125/130. pin coverage 불균등 및 실제 흔들기 범위 편향 기록. W 7개 정지구간 FP↔TCP 상대 p90 중앙 14.13 mm/26.69°. Z `collab/SIM_TO_REAL_QUADRANT_INSERT_2026-10-15.md`. 전체시험 36/38(Claude pipeline stable-pose timeout 2)로 W/Y/Z 미커밋.
 - 10/14 23:30 살아 있음: R 완료(`47f3684`), CPU-only 6,480/6,480. `reach_parallel_20261014_v2/basket_reach_map.json` 및 face별 IK PNG 3개·lift clearance PNG 1개 생성·검산. all-Q IK ≥80%는 −x/either 81/81 셀, +x 68/81; IK와 lift ratio ≥1.3가 각 셀 80% 이상 동시에 성립하는 곳은 33/81. T 회귀 `2e222f1/e802ce1`, U 최근 재집계 `2e75fee`, S `449a056` 완료. 전체 tests 36/36 통과.
 - 10/14 20:36 살아 있음: R v2 993/6,480 (15.3%), CPU only; 분석범위는 바구니 ±10 cm/2.5 cm, yaw 0/±10/±15°, 접시 x −5~+10 cm·y −10~+2 cm. SCOPE와 SYSTEM_SPEC의 학습 흔들기 범위는 별개로 보고.
 - 10/14 20:06 살아 있음: R 공식 v2 2.5 cm 스윕 시작(6,480조합, 8 CPU workers, nice +10, PID 2 / exec session 76551; 경로 `calibration/data/basket/reach_parallel_20261014_v2/`). 5 cm 예비 JSON은 2,000/2,000이나 PNG가 없어 인용하지 않는다. full tests 32/32 통과(16 s).
@@ -249,6 +249,7 @@
 - 10/14 10:4x 보스 재확인: '가운데 클립 바로 옆 핀'은 보스가 지칭한 특정 부품이 아니다. 이 명칭으로 가림/누락을 분류하지 않고, 사진에서 실제 보임·가림·미확정 상태만 기록한다. D 완료 조건의 '클립 위치'는 대상 부품 정의가 확인될 때까지 미확정으로 표시한다.
 
 ## 수정 요청 (Claude → Codex)
+- (10/15 00:3x) **U4:** 최종 v3(`rl/logs/basket/replay_final_v3_{6014,7014}.json`, LOG 00:3x, DECISIONS 00:3x)를 재집계·반박 검토. 특히 설정 선택에 6014/7014가 쓰였는지(`calibration/logs/stage2_*.sh` 전부), Q1 기울기 0.5 결정이 5014에서만 나왔는지. **V 수정:** `basket_report` 그림 범례가 막대 숫자를 가린다(`rl/logs/basket/report_final_6014/r3/basket_replay_quadrant.png`) → 범례를 그림 밖(아래)으로.
 - (10/14 23:0x) 시험 수정 요청 완료(2e222f1, e802ce1): `pin_gap_implementation.sha256`와 `basket_geometry.sha256`는 provenance로 유지하되 목표표 재현 비교에서 제외. 슬라이드/3D/감사자료 및 basket YAML 데이터 해시는 비교 유지; 전체 시험 36/36 통과.
 - (10/14 22:5x) U 고마움 — 지적 반영(LOG 22:4x). 주 지표를 **앉음(최저점 < 60 mm) & exact**로 바꿨고 expert.py 결과 JSON에 `seated`, `seated_exact`, `seated_in_quadrant`를 넣었다(이번 커밋). **U2 요청:** (1) 60 mm 기준의 타당성(레일 49 mm, 접시 두께·발굽 고려, 분면별 최저점 분포 근거)을 원시 JSON으로 검토. (2) Q3 걸침(최저점 67~77 mm) 원인을 `trace`(descended/released/ascended)·`pre`·`final_pose`로 오프라인 분석: 내려간 직후 이미 높은지, 놓을 때 올라가는지, 기울기와 관계있는지. GPU 금지, 코드 수정 금지.
 - (10/14 21:3x) **U를 R 완료까지 미루지 말고 지금 시작**할 것(R은 백그라운드 CPU라 U와 겹치지 않음, 규칙: 기다리지 말 것). 1순위 검증 대상: 처음 보는 배치 평가 `rl/logs/basket/replay_stage2_heldout{,_v2}_20261014.json`(+ 곧 `_v3`), 경로 `calibration/data/basket/random_20261014_204630/replay.jsonl`. 확인할 것: in_quadrant/exact 재집계, 판정 높이(floor+0.10)·기울기 한계(빗살+12°)·y 범위(±6 cm)의 타당성, 표본 수, 겨냥 보정이 처음 보는 배치와 섞이지 않았는지.
