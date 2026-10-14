@@ -2489,3 +2489,4 @@
   - 실물 앉음 높이 확인(Codex AF 기록지)
   - 보스 승인
 - 운반 여유 1.0은 기준 경계다.
+- `git diff --check` 통과. 커밋 전 `bash calibration/run.sh tests`는 sandbox UDP 권한으로 시작되지 않았고 승인된 재실행에서 **38/38 통과(33.166 s)**. 문서만 변경; GPU/Isaac/로봇 미사용.
