@@ -384,6 +384,48 @@ class CameraPinTests(unittest.TestCase):
 
 
 class ModelOverlayTests(unittest.TestCase):
+    def test_pin_quadrant_uses_centre_clip_boundary(self):
+        import camera_tools as camera
+        clip_x = 0.035
+        self.assertEqual(camera._pin_quadrant(0.020, -0.110, clip_x), 'Q4')
+        self.assertEqual(camera._pin_quadrant(0.050, -0.110, clip_x), 'Q1')
+        self.assertEqual(camera._pin_quadrant(0.020, 0.129, clip_x), 'Q3')
+        self.assertEqual(camera._pin_quadrant(0.050, 0.129, clip_x), 'Q2')
+
+    def test_partial_photo_slot_number_keeps_global_model_id(self):
+        import camera_tools as camera
+        from plate_plans import basket_gaps, pin_gap
+
+        gaps = basket_gaps()
+        for yaw_deg in (0.1, 180.1):
+            Tbb = np.eye(4)
+            a = np.radians(yaw_deg)
+            Tbb[:2, :2] = [[np.cos(a), -np.sin(a)], [np.sin(a), np.cos(a)]]
+            Tbb[:3, 3] = [0.807, -0.192, 0.1442]
+            for quadrant, slots in gaps.items():
+                # Model only a cropped subset; global numbers must not restart at 1.
+                target_numbers = sorted({1, max(2, len(slots) // 2), len(slots)})
+                groups = [dict(quadrant=quadrant,
+                               local_x_m=float(slots[pin_gap(Tbb, quadrant, n)][0]))
+                          for n in target_numbers]
+                camera._assign_gap_numbers(Tbb, groups, gaps)
+                self.assertEqual([g['number'] for g in groups], target_numbers)
+                self.assertEqual(len({g['number'] for g in groups}), len(groups))
+
+    def test_competing_partial_slot_matches_remain_unaddressed(self):
+        import camera_tools as camera
+        from plate_plans import basket_gaps, pin_gap
+
+        Tbb = np.eye(4)
+        Tbb[:3, 3] = [0.807, -0.192, 0.1442]
+        gaps = basket_gaps()
+        quadrant, number = 'Q2', 6
+        x = float(gaps[quadrant][pin_gap(Tbb, quadrant, number)][0])
+        groups = [dict(quadrant=quadrant, local_x_m=x), dict(quadrant=quadrant, local_x_m=x)]
+        camera._assign_gap_numbers(Tbb, groups, gaps)
+        self.assertEqual([g['number'] for g in groups], [None, None])
+        self.assertEqual([g['number_candidate'] for g in groups], [number, number])
+
     def test_tine_numbering_is_far_to_near_for_all_quadrants(self):
         """(10/15, Codex AA review) the overlay's own numbering function: 1 = farthest from the robot in every quadrant."""
         import camera_tools as camera

@@ -765,6 +765,50 @@ def _pin_line_match(context, p0, p1, Tcb, K, axis, search_mm):
                 model_uv=base_uv.tolist(), detected_uv=corrected.tolist())
 
 
+def _gap_number_candidate(Tbb, quadrant, x_m, gaps=None):
+    """Find a globally numbered model gap candidate and its Voronoi-cell tolerance."""
+    from plate_plans import basket_gaps, pin_gap
+
+    gaps = basket_gaps() if gaps is None else gaps
+    candidates = []
+    for number in range(1, len(gaps[quadrant]) + 1):
+        index = pin_gap(Tbb, quadrant, number)
+        candidates.append((abs(float(gaps[quadrant][index][0]) - x_m), number,
+                           float(gaps[quadrant][index][0])))
+    candidates.sort()
+    error, number, expected_x = candidates[0]
+    # Refuse an address when the measured/model x has crossed a nearest-slot boundary.
+    neighbours = [abs(expected_x - x) for _, _, x in candidates[1:]]
+    tolerance = 0.5 * min(neighbours) if neighbours else 0.0
+    if error >= tolerance:
+        return None, error, tolerance
+    return number, error, tolerance
+
+
+def _assign_gap_numbers(Tbb, groups, gaps=None):
+    """Assign stable global IDs; duplicate measurements competing for one gap remain unnumbered."""
+    by_candidate = {}
+    for group in groups:
+        candidate, error, tolerance = _gap_number_candidate(
+            Tbb, group['quadrant'], group['local_x_m'], gaps)
+        group.update(number=None, number_candidate=candidate,
+                     number_source='nearest_parametric_gap_x',
+                     number_match_error_mm=round(error * 1000, 3),
+                     number_tolerance_mm=round(tolerance * 1000, 3))
+        if candidate is not None:
+            by_candidate.setdefault((group['quadrant'], candidate), []).append(group)
+    for (_, candidate), matched in by_candidate.items():
+        if len(matched) == 1:
+            matched[0]['number'] = candidate
+
+
+def _pin_quadrant(x_m, y_m, clip_x):
+    """Classify basket-frame rows around the modeled centre clip, not the basket origin."""
+    if x_m > clip_x:
+        return 'Q2' if y_m >= 0 else 'Q1'
+    return 'Q3' if y_m >= 0 else 'Q4'
+
+
 def wrist_pins(req, cfg, out, image=None, rotate='auto', search_mm=8.0, layout=None):
     """Stored image only. Pair model rows by equal x or checked measured rows by nearby x.
     Display top-to-bottom IDs within each quadrant.
@@ -791,6 +835,11 @@ def wrist_pins(req, cfg, out, image=None, rotate='auto', search_mm=8.0, layout=N
     Tcb = np.linalg.inv(np.array(r['T_base_flange'], float) @ Tfc)
     Tbi = np.linalg.inv(Tbb)
     axis = Tbb[:3, 0]
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'rl'))
+    import basket_env as be
+    clip_x = float(be.B['full'].get('clip_x', 0.0))
+    from plate_plans import basket_gaps
+    numbered_gaps = basket_gaps()
     context = _pin_image_context(img, cfg)
     pins = []
     pin_tops_base = []
@@ -845,7 +894,7 @@ def wrist_pins(req, cfg, out, image=None, rotate='auto', search_mm=8.0, layout=N
             continue
         yc = (row0+row1)/2
         # Same basket-frame convention as plate_plans.basket_gaps: +y is left.
-        quadrant = ('Q2' if yc >= 0 else 'Q1') if x >= 0 else ('Q3' if yc >= 0 else 'Q4')
+        quadrant = _pin_quadrant(x, yc, clip_x)
         confirmed = p['status'] == q['status'] == 'detected'
         corrections = [p['correction_mm'], q['correction_mm']]
         if confirmed and abs(corrections[0]-corrections[1]) > 3.0:
@@ -856,13 +905,17 @@ def wrist_pins(req, cfg, out, image=None, rotate='auto', search_mm=8.0, layout=N
         dx_mm = float(np.mean(corrections)) if confirmed else None
         # The observed correction is along basket +x only. Rejected pairs have no
         # usable target; do not silently return an uncorrected model point.
-        gap_centre = ((pin_tops_base[p['model_id']] + pin_tops_base[q['model_id']]) / 2
-                      + axis * (dx_mm / 1000)).tolist() if confirmed else None
         groups.append(dict(quadrant=quadrant, model_pin_ids=[p['model_id'], q['model_id']],
                            midpoint_uv=np.mean([p['model_uv'][1], q['model_uv'][1]], 0).tolist(),
                            status=status, correction_mm=dx_mm,
-                           gap_centre_base_xyz=gap_centre,
+                           gap_centre_base_xyz=None,
                            local_x_m=x, row_y_m=[row0, row1]))
+    _assign_gap_numbers(Tbb, groups, numbered_gaps)
+    for g in groups:
+        if g['status'] == 'detected' and g['number'] is not None:
+            p, q = (pins[i] for i in g['model_pin_ids'])
+            g['gap_centre_base_xyz'] = ((pin_tops_base[p['model_id']] + pin_tops_base[q['model_id']]) / 2
+                                        + axis * (g['correction_mm'] / 1000)).tolist()
     # Display rotation is explicit provenance; no calibration transform changes.
     if rotate == 'auto':
         vectors = [np.array(pins[g['model_pin_ids'][1]]['model_uv'][1])-pins[g['model_pin_ids'][0]]['model_uv'][1] for g in groups]
@@ -873,10 +926,13 @@ def wrist_pins(req, cfg, out, image=None, rotate='auto', search_mm=8.0, layout=N
         u, v = uv
         return np.array([u, v]) if rotation == 0 else (np.array([h-1-v, u]) if rotation == 90 else np.array([v, w-1-u]))
     view = img.copy() if rotation == 0 else cv2.rotate(img, cv2.ROTATE_90_CLOCKWISE if rotation == 90 else cv2.ROTATE_90_COUNTERCLOCKWISE)
+    for g in groups:
+        u, v = display(g['midpoint_uv'])
+        g['visible_in_image'] = bool(0 <= u < view.shape[1] and 0 <= v < view.shape[0])
     for quadrant in ('Q1', 'Q2', 'Q3', 'Q4'):
-        visible = [g for g in groups if g['quadrant'] == quadrant and 0 <= display(g['midpoint_uv'])[0] < view.shape[1] and 0 <= display(g['midpoint_uv'])[1] < view.shape[0]]
-        for number, g in enumerate(sorted(visible, key=lambda g: tuple(display(g['midpoint_uv'])[::-1])), 1):
-            g['number'] = number
+        visible = [g for g in groups if g['quadrant'] == quadrant and g['visible_in_image']]
+        for g in sorted(visible, key=lambda g: tuple(display(g['midpoint_uv'])[::-1])):
+            number = g['number']
             colour = (30, 210, 40) if g['status'] == 'detected' else (0, 140, 255)
             points = []
             for pid in g['model_pin_ids']:
@@ -887,10 +943,10 @@ def wrist_pins(req, cfg, out, image=None, rotate='auto', search_mm=8.0, layout=N
                 cv2.circle(view, b, 4, colour, 1)
                 points.append(b)
             midpoint = np.rint(np.mean(points, 0)).astype(int)
-            label = f"{quadrant}/{number} " + (f"{g['correction_mm']:+.1f}mm" if g['status'] == 'detected' else '?')
+            label = f"{quadrant}/{number if number is not None else '?'} " + (f"{g['correction_mm']:+.1f}mm" if g['status'] == 'detected' else '?')
             cv2.putText(view, label, tuple(midpoint+np.array([5, -5])), cv2.FONT_HERSHEY_SIMPLEX, 0.38, colour, 1, cv2.LINE_AA)
     for g in groups:
-        if 'number' not in g:
+        if g['number'] is None or not g['visible_in_image']:
             g['gap_centre_base_xyz'] = None  # Off-image match is not an addressable gap.
     out = Path(out)
     out.mkdir(parents=True, exist_ok=False)
@@ -901,10 +957,14 @@ def wrist_pins(req, cfg, out, image=None, rotate='auto', search_mm=8.0, layout=N
                   correction_axis='basket +x; diagnostic only', search_mm=search_mm,
                   gap_centre_definition=('midpoint of two measured pin tips, shifted by confirmed basket +x image correction; diagnostic only'
                                          if layout else 'midpoint of two model pin tips, shifted by confirmed basket +x image correction; diagnostic only'),
-                  confirmed_pairs=sum(g['status'] == 'detected' and 'number' in g for g in groups),
-                  visible_model_pairs=sum('number' in g for g in groups) if layout is None else None,
-                  visible_layout_pairs=sum('number' in g for g in groups), pins=pins, pairs=groups,
+                  visually_detected_pairs=sum(g['status'] == 'detected' and g['visible_in_image'] for g in groups),
+                  confirmed_pairs=sum(g['status'] == 'detected' and g['number'] is not None
+                                      and g['visible_in_image'] for g in groups),
+                  visible_model_pairs=sum(g['visible_in_image'] and g['number'] is not None for g in groups) if layout is None else None,
+                  visible_layout_pairs=sum(g['visible_in_image'] and g['number'] is not None for g in groups),
+                  visible_pairs=sum(g['visible_in_image'] for g in groups), pins=pins, pairs=groups,
                   layout_source=str(Path(layout).resolve()) if layout else 'parametric_model',
+                  number_assignment='nearest global model gap by basket-frame x; partial visibility does not restart numbering; competing groups for one slot stay unnumbered',
                   accuracy_note=('Measured layout comes from manually labelled images and assumed height planes; '
                                  'using its source image for detection is in-sample and not an independent accuracy test.'
                                  if layout else 'No measured 3D ground truth; mm offsets are model-to-image fits, not absolute accuracy.'))

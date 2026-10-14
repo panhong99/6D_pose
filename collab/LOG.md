@@ -2521,3 +2521,10 @@
 
 - TCP y축 회전은 손 안 접시 면의 기울기를 바꾼다. 실기 평균 손 안 자세에서 이 성분은 **1°보다 훨씬 정확해야** 한다. 위치는 약 2 mm 안(LOG 03:1x). Codex AC의 FP 법선 흔들림은 p90 0.6°로 작지만, FP 법선이 한쪽으로 치우쳤는지(편향)는 모른다. → 실기에서는 들어 올린 직후 손 안 접시 기울기를 독립적으로 확인하는 방법(손목 카메라 또는 알려진 자세에서 접촉 확인)이 필요하다. 보스 결정 항목.
 - Q2 겨냥 다시 맞추기(측정 없음, 조정 경로 seed 5014): +0 → 0.955, +4 mm → 0.800, +8 mm → 0.518. 지금 값 유지.
+
+## 2026-10-15 Codex — E 전역 분면·핀 번호 수정
+- E의 기존 same-photo 부분 배치 진단을 다시 읽다가 출력 주소 버그를 확인했다. `wrist_pins`는 Q1/Q2와 Q3/Q4를 basket x=0으로 갈랐지만 model centre clip은 x=35 mm다. 또한 사진에 들어온 첫 visible gap부터 1을 매겨 crop에 따라 번호가 달라졌고, 부분 실측 행의 인접한 두 그룹이 같은 global slot에 매칭될 수 있었다.
+- `camera_tools.py`를 고쳤다: 분면 경계는 `rl/basket.yaml`의 clip_x 사용; gap 번호는 `basket_gaps`/`pin_gap` 전역 번호에 x를 맞춤; 모델 Voronoi 경계를 벗어나거나 같은 슬롯을 두 그룹이 경쟁하면 번호와 `gap_centre_base_xyz`를 null로 둔다. JSON에 `number_candidate`, 모델 매칭 잔차·허용폭, `visible_in_image`, `visually_detected_pairs`를 나눠 기록한다. crop의 가시 순서로 번호를 새로 매기지 않는다.
+- 추가 회귀 3개: 35 mm clip 양쪽의 Q 분류, yaw 0.1°/180.1° 및 crop된 번호 구간의 전역 ID 유지, 중복 측정의 주소 거부. 최종 전체 회귀 **41/41 통과 (33.442 s)**. `git diff --check` 통과.
+- 부분 v9 같은 사진 네 장을 재실행한 산출물: `calibration/data/basket/pins_partial_v9_globalids_20261015_codex_v3/Q{1,2,3,4}/pairs.{json,png}`. Q1~Q4 사진 순서로 visible 16/23/12/13, 자동 검출 0/0/6/7, 전역 번호가 있고 이미지 안에 있는 쌍 12/17/10/9, 그중 번호 주소가 가능한 자동 검출 쌍 0/0/5/5. Q2/Q3 겹침 위치에서 같은 번호 후보가 경쟁해 2개를 미주소로 남겼고, clip 경계/모델 x 범위를 벗어난 그룹도 임의 주소를 주지 않았다. JSON 가시 수·검출 수·전역 ID 중복 없음·주소 가능한 좌표 유한성 검증 통과.
+- 제한: 이 4장은 D의 부분 라벨을 만든 원본과 동일하므로 in-sample 진단이다. `0/0/5/5`는 분면별 정답 recall/precision이 아니고, 전체 D visible-pair 분모와 독립 사진도 아직 없다. 따라서 E 완료/80% 달성으로 표시하지 않는다. 다음은 전체 라벨 및 새 독립 손목 사진이 생긴 뒤 재평가다. CPU/offline만 사용; GPU/Isaac·로봇·카메라 접근 없음; 데이터/config/checkpoint 미수정.
