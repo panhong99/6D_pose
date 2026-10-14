@@ -934,7 +934,7 @@ def quadrant_checkers(Tbc, q, Tbb, H, tool):
 
 
 def quadrant_plan(Tbb, quadrant, gap, H, tool, start_deg, Tbc, q, grasp_legs=None, tilt_deg=0.0, centre_h=0.18, above_m=0.11,
-                  phi_step=10, seeds=None):
+                  phi_step=10, seeds=None, yaw_trim_deg=0.0):
     """Plan.json for one quadrant gap from the plate in the hand: to_above (carry, straight or RRT), descend (straight
     down, plate upright, +basket_policy_extra_down_m), ascend (straight up), to_home, abort_home.  -> (path, report)."""
     import ros2_nodes
@@ -944,6 +944,9 @@ def quadrant_plan(Tbb, quadrant, gap, H, tool, start_deg, Tbc, q, grasp_legs=Non
     held, inserting, free = quadrant_checkers(Tbc, q, Tbb, H, tool)
     gap_b = (np.asarray(Tbb) @ np.r_[basket_gaps()[quadrant][gap], 1.0])[:3]
     n, t = np.asarray(Tbb)[:3, 0], np.radians(tilt_deg)
+    if yaw_trim_deg:                                         # (10/14 실기) plate face turned about the vertical, + = CCW seen from above
+        c_, s_ = np.cos(np.radians(yaw_trim_deg)), np.sin(np.radians(yaw_trim_deg))
+        n = np.array([c_ * n[0] - s_ * n[1], s_ * n[0] + c_ * n[1], n[2]])
     zt = n * np.cos(t) + np.array([0, 0, 1.0]) * np.sin(t)
     v = -n * np.sin(t) + np.array([0, 0, 1.0]) * np.cos(t)
     extra = q.get('basket_policy_extra_down_m', 0.0)
