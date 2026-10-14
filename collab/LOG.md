@@ -1715,6 +1715,8 @@
 - 전체 배치 계산 시작: `calibration/data/basket/reach_parallel_20261014_v1/`, 진행 로그 `/tmp/reach_parallel_20261014_v1.log`; 이 디렉터리에 결과 JSON/PNG를 기록한다. 현재 2,000 중 진행 중. 구버전 범위 결과는 비교용으로만 보존되고 이번 결론에는 사용하지 않는다.
 - 19:35 진행: 5 cm coarse v1이 740/2,000 (37%). 작업판 상세 해상도 2.5 cm에 맞추기 위해 authoritative v2를 6,480점(9×9 basket xy × 5 yaw × 16 dish poses) corrected-start로 실행할 예정이다. 보정 기준 smoke v4는 Q1–Q4 양면 하강 IK 100%, dish 이동 반영 lift IK 성공, clearance ratio 1.40. 별도 32 경계점 smoke도 완료했으며 일부 dish 경계는 여유비 <1.3.
 - `bash calibration/run.sh tests` 전체 시도는 32개 중 2개 pipeline fake-stream stability timeout으로 실패(약 390초, R CPU worker 부하 중). 동시 계산 부하에 따른 타임아웃 가능성이 있어 회귀로 단정하지 않고 R 완료 뒤 전체 재실행한다. 수정한 clearance 재집계는 lift pose뿐 아니라 dish별 올바른 lift 자세에서 하강 IK도 다시 계산하도록 보강했다.
+- 20:05 진행: 5 cm 예비 스윕 v1은 2,000/2,000 JSON 완료(로그 `/tmp/reach_parallel_20261014_v1.log`, watcher session 30726/PID 10). JSON은 25 basket XY cells × 80 dish/yaw combinations; x/y 해상도가 작업판 요구 2.5 cm보다 거칠고 lift 시작 자세가 구버전이라 최종 지표에 쓰지 않는다. 출력 폴더에 PNG가 없어 v1 그림으로도 인용하지 않는다. 부하 종료 후 full suite 재실행, 이후 2.5 cm/6,480점 corrected-start v2를 시작한다.
+- 20:06 `bash calibration/run.sh tests` 재실행 **32/32 통과 (16 s)**, v1 CPU 부하가 끝난 뒤 pipeline timeout 없이 종료. 공식 R v2 시작: 9×9 basket x/y at 2.5 cm × 5 yaw × 16 dish poses = 6,480조합, corrected dish-specific lift 시작 자세 및 13-point descent IK, 8 workers/nice+10, PID 2 (exec session 76551). 진행 산출물 `calibration/data/basket/reach_parallel_20261014_v2/`; PNG+JSON은 완료 후 확인.
 
 ## 2026-10-14 19:3x Claude — 오늘 밤 1단계 완료, 2단계 시작 (30분 기록)
 - **1단계(경로) 완료 — 종료 조건 통과.** `plate_plans.py random_plans`(6bffbd7: 접시 x·y 범위 추출) 800개, 새 배치 흔들기(바구니 x 0.757~0.857, y −0.242~−0.142, 회전 ±10°, 접시 x 0.808~0.928, y 0.259~0.359): 잡기 → 운반 → 넣기 → 복귀 전체 경로 **798/800 (99.75%)**, 분면별 Q1 198/199, Q2 202/202, Q3 200/200, Q4 198/199. 실패 2개는 같은 라이브러리 파일을 동시에 읽다 난 CRC 오류이고, 경로 실패는 0개다. 접시 면 −x(손목 뒤집힘)는 40개에서 사용. 한 개 계산 중앙값 28.6 s(16 worker). 결과 `calibration/data/basket/random_20261014_190130/{rows.jsonl,summary.json,random.png}`, 로그 `calibration/logs/stage1_random_20261014.log`.
@@ -1741,3 +1743,18 @@
   - **Q1 문제는 칸이 아니라 기울기다.** 도착한 칸은 59/85가 정확히 목표 칸인데, 접시가 36~39°로 누워 판정(빗살 12.5° + 12°)을 넘는다. Q1 빗살 간격이 3 cm로 넓기 때문이다(다른 분면은 1.7~1.8 cm). → 놓는 자세 변형(기울기 1.5·2.0·반대, 더 깊게) 시험 중. 판정 기준을 바꾸는 것은 보스 결정이 필요하다(접시가 맞는 칸에 기대어 서 있는 상태를 성공으로 볼지).
   - Q2는 아직 −1칸 치우침 → 겨냥 +1.2 cm 시험 중.
   - 결과 `rl/logs/basket/replay_stage2_r100{,_aim1}_20261014.json`, 경로 `calibration/data/basket/random_20261014_192905/replay.jsonl`.
+
+## 2026-10-14 20:3x Claude — 2단계: 바구니 위에서 두 번 다시 겨냥하면 Q3/Q4 거의 해결 (30분 기록)
+- `--cl_iter 2`(바구니 위에서 접시 측정 → 다시 겨냥을 2번, 이번 커밋): 99경로 × 4회, 분면별 겨냥 같음.
+
+| 분면 | in_quadrant 1회 → 2회 | exact 1회 → 2회 | 도착 − 목표 (2회) |
+|---|---|---|---|
+| Q3 | 0.84 → **0.98** | 0.66 → **0.79** | 0: 92, −1: 22 |
+| Q4 | 0.93 → **0.97** | 0.57 → **0.83** | 0: 63, −1: 10 |
+| Q2 | 0.57 → 0.46 | 0.29 → 0.03 | −1: 33, −2: 18 (치우침 생김) |
+| Q1 | 0.10 → 0.10 | 0.03 → 0.04 | −1: 53 (치우침 생김) |
+
+  - 근거: 1회 겨냥 뒤 남은 접시 자세(바구니 위 정지 상태)와 도착 칸 오차의 상관이 Q4 0.68, Q3 0.5였다. 두 번째 측정이 그 잔여분을 줄인다.
+  - Q1/Q2는 2회에서 −1~−2칸 치우침이 새로 생겼다 → 겨냥 다시 맞춤(Q1 +2.0, Q2 +1.8, Q3 −2.4, Q4 −3.2 cm) 재생 중.
+- Q1/Q2 변형 시험(sweep1, 1회 겨냥): Q1 기울기 ×1.5/×2/반대, 1 cm 더 깊게 → in_quadrant 0.09~0.17로 변화 없음. Q1은 칸 안에 들어가도(85/112) 기울기 중앙값 41°(다른 분면 2~11°), 비틀림 1°, 최저점 49 mm로 일정하게 옆 빗살에 기대 멈춘다. 빗살 간격 3 cm(미실측 모델)의 결과로 보인다. **보스 결정 필요:** Q1에서 맞는 칸에 기대어 선 것을 성공으로 볼지. Q2 겨냥 +1.2 cm는 지나침(+1칸).
+- 결과 `rl/logs/basket/replay_stage2_r100_iter2_20261014.json`, `replay_s2_Q1_*.json`, `replay_s2_Q2_dx12.json`.
