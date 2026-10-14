@@ -97,6 +97,7 @@
 - 출력: `calibration/data/basket/wrist_look/labels_full_<분면>_<날짜>.json`(사진, 줄, 번호, root_px, tip_px, 가림 여부) + 번호 붙인 겹침 PNG(보스 확인용) → `camera_tools.py pin_layout_measure`로 3D.
 - 완료 조건: 분면 빗살 전부(가림 제외) 번호 라벨 + 보스 시각 확인 'OK' + 3D 결과(간격·기울기·클립 거리) LOG 표. 모델(`rl/basket.yaml`, `rl/basket_env.py`) 반영은 Claude.
 
+- **번호 정답 = 보스 슬라이드(전 분면 완료)**: `calibration/data/basket/boss_slide_20261014/tine_numbering_boss.pdf`, 300 dpi 그림 `slide-1.png`(확대 `crop_Q1Q4.png`, `crop_Q2Q3.png`). 빨강 Q3, 연두 Q2, 보라 Q1, 하늘 Q4, 노란 선 = 빗살, 색 선 = 두 줄의 같은 번호 빗살 쌍. Codex는 이 슬라이드를 직접 보고 번호를 판단할 것(Claude 설명보다 우선).
 - **N-1 (10/14 16:xx Claude) 검증 요청 — 사진 이름 ≠ 실제 분면 주의:** 모델 줄(쌍 A +y = Q2 먼/Q3 가까운, 쌍 B −y = Q1 먼/Q4 가까운)을 각 손목 사진에 투영해 실제 분면을 정함. 10/13 사진 `20261013_190126_*`:
   - `labels_full_realQ4_claude_20261014.json` = 'Q3' 사진의 x 870/975 줄(쌍 B 가까운). 이미 Codex 검증 f9ab287과 같은 좌표(분면 이름만 정정).
   - `labels_full_realQ3_claude_20261014.json(.png 는 labels_full_Q4_claude_draft_20261014.png)` = 'Q4' 사진의 x 292/413 줄(쌍 A 가까운). 왼쪽 13개 보임, 오른쪽 11개 + 12 일부 + 13 가림. 오른쪽 뿌리 x: Claude 413~415(빗살이 끝나는 곳) vs Codex 기존 420(바깥 레일) → 보스 정의(접합점)로 판정해 주세요.
