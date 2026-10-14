@@ -412,6 +412,24 @@ class CameraPlaneTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'Insufficient red-plate depth'):
             camera_tools.plate_plane(rgb, np.zeros((240, 320)), np.eye(3), np.eye(4), np.eye(4))
 
+    def test_fixed_camera_horizontal_dish_with_occlusion(self):
+        import camera_tools
+        K = np.array([[600., 0, 160.], [0, 600., 120.], [0, 0, 1.]])
+        Tbc = np.diag([1., -1., -1., 1.])  # optical axis looks down
+        yy, xx = np.indices((240, 320))
+        radius = ((xx - 160.) / 85.) ** 2 + ((yy - 120.) / 70.) ** 2
+        rgb = np.zeros((240, 320, 3), np.uint8)
+        rgb[radius < 1.] = (0, 0, 220)
+        rgb[85:155, 155:165] = 0  # gripper or basket occlusion
+        depth = 1.20 + 0.006 * radius + np.random.default_rng(8).normal(0, .002, radius.shape)
+        depth[::12, ::11] = 0
+        result = camera_tools.plate_plane(rgb, depth, K, Tbc, np.eye(4),
+                                          depth_range_m=(1.0, 1.4), surface_tolerance_m=.015)
+        self.assertLess(result['tilt_from_horizontal_deg'], 1.)
+        self.assertGreater(result['inlier_fraction'], .8)
+        self.assertFalse(result['yaw_observable'])
+        self.assertIsNone(result['yaw_error_deg'])
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -1003,7 +1003,8 @@ def _red_plate_mask(rgb):
     return components == largest
 
 
-def plate_plane(rgb, depth, K, T_base_cam, T_base_basket, depth_range_m=(0.20, 0.45)):
+def plate_plane(rgb, depth, K, T_base_cam, T_base_basket, depth_range_m=(0.20, 0.45),
+                surface_tolerance_m=0.005):
     """Diagnostic normal of a red plate from colour-aligned metric depth.
 
     All transforms must describe the *same captured frame*. No robot command or
@@ -1023,6 +1024,8 @@ def plate_plane(rgb, depth, K, T_base_cam, T_base_basket, depth_range_m=(0.20, 0
     near, far = map(float, depth_range_m)
     if not (0 < near < far <= 3.0):
         raise ValueError('Depth range must satisfy 0 < near < far <= 3 m')
+    if not (0.001 <= surface_tolerance_m <= 0.02):
+        raise ValueError('Surface tolerance must be between 1 and 20 mm')
     mask = _red_plate_mask(rgb)
     valid = mask & (depth >= near) & (depth <= far)
     if valid.sum() < 200 or valid.sum() / mask.sum() < 0.20:
@@ -1034,7 +1037,7 @@ def plate_plane(rgb, depth, K, T_base_cam, T_base_basket, depth_range_m=(0.20, 0
     rng = np.random.default_rng(20261014)
     sample = points[rng.choice(len(points), min(len(points), 6000), replace=False)]
     best = np.zeros(len(sample), bool)
-    threshold = 0.005  # 2 mm depth noise plus oblique incidence; fixed for tests/live review
+    threshold = float(surface_tolerance_m)  # curved dishes need a declared larger approximation tolerance
     for _ in range(300):
         tri = sample[rng.choice(len(sample), 3, replace=False)]
         normal = np.cross(tri[1] - tri[0], tri[2] - tri[0])
@@ -1058,14 +1061,20 @@ def plate_plane(rgb, depth, K, T_base_cam, T_base_basket, depth_range_m=(0.20, 0
         normal_cam, normal_base, normal_basket = -normal_cam, -normal_base, -normal_basket
     normal_basket /= np.linalg.norm(normal_basket)
     residual = np.abs((points - centre) @ normal_cam)
-    return dict(yaw_error_deg=float(np.degrees(np.arctan2(normal_basket[1], normal_basket[0]))),
+    # A nearly horizontal plate has no observable in-plane yaw from its normal.
+    yaw_observable = bool(np.hypot(normal_basket[0], normal_basket[1]) >= 0.1)
+    return dict(yaw_error_deg=(float(np.degrees(np.arctan2(normal_basket[1], normal_basket[0])))
+                               if yaw_observable else None),
+                yaw_observable=yaw_observable,
                 tilt_error_deg=float(np.degrees(np.arcsin(np.clip(normal_basket[2], -1, 1)))),
+                tilt_from_horizontal_deg=float(np.degrees(np.arccos(np.clip(abs(normal_base[2]), 0, 1)))),
                 normal_basket=normal_basket.tolist(), normal_base=normal_base.tolist(),
                 normal_camera=normal_cam.tolist(), red_pixels=int(mask.sum()),
                 valid_red_depth_pixels=int(valid.sum()), valid_red_depth_fraction=float(valid.sum() / mask.sum()),
                 inlier_fraction=float(np.mean(residual <= threshold)),
                 inlier_rmse_mm=float(1000 * np.sqrt(np.mean(residual[residual <= threshold] ** 2))),
                 median_depth_m=float(np.median(z)), depth_range_m=[near, far],
+                surface_tolerance_m=threshold,
                 note='Saved RGB-D and synchronized poses only; diagnostic, not a wrist motion command')
 
 
@@ -1082,13 +1091,14 @@ def plate_plane_mode(a):
         raise FileNotFoundError(a.rgb)
     depth = np.load(a.depth)
     result = plate_plane(rgb, depth, meta['K'], Tbc, meta['T_base_basket'],
-                         (a.depth_min_m, a.depth_max_m))
+                         (a.depth_min_m, a.depth_max_m), a.surface_tolerance_mm / 1000)
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=False)
     view = rgb.copy()
     view[_red_plate_mask(rgb)] = (0.55 * view[_red_plate_mask(rgb)] +
                                   0.45 * np.array([220, 20, 220])).astype(np.uint8)
-    cv2.putText(view, f"yaw {result['yaw_error_deg']:+.2f} deg  tilt {result['tilt_error_deg']:+.2f} deg",
+    yaw_text = f"{result['yaw_error_deg']:+.2f}" if result['yaw_observable'] else 'unobservable'
+    cv2.putText(view, f"yaw {yaw_text}  tilt {result['tilt_error_deg']:+.2f} deg",
                 (20, 36), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (255, 255, 255), 2, cv2.LINE_AA)
     cv2.imwrite(str(out / 'plate_plane.png'), view)
     (out / 'plate_plane.json').write_text(json.dumps(result, indent=2))
@@ -1258,6 +1268,8 @@ if __name__ == '__main__':
     p.add_argument('--meta', type=Path, help='plate_plane: same-frame K, T_base_basket and T_base_cam or flange+hand-eye')
     p.add_argument('--depth_min_m', type=float, default=.20, help='plate_plane: nearest accepted metric depth')
     p.add_argument('--depth_max_m', type=float, default=.45, help='plate_plane: farthest accepted metric depth')
+    p.add_argument('--surface_tolerance_mm', type=float, default=5.0,
+                   help='plate_plane: allowed distance to fitted plane; declare larger tolerance for curved dish')
     p.add_argument('--rotate', choices=('auto', '0', '90', '270'), default='auto', help='pins: display rotation, raw projection unchanged')
     p.add_argument('--search_mm', type=float, default=8.0, help='pins: maximum local correction along basket x')
     p.add_argument('--marker_size_m', type=float, help='basket_stats: actual printed black square side, override for this run only')
