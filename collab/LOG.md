@@ -1843,3 +1843,25 @@
 - Q2 바깥 끝 제한(sweep9, 처음 보는 배치 Q2): 안쪽 1.8 cm → 0.64 / 0.42, 3.5 cm → 0.70 / 0.34. 칸 밖은 줄지만 핀 1~2가 −2~−3칸으로 간다. in_quadrant와 exact가 맞바뀐다.
 - 다음(3단계 학습): 조정 전용 경로 400개(seed 4014)에서 분면 × 핀별 겨냥을 몇 단계로 돌려 핀마다 가장 좋은 값을 고르고, 처음 보는 배치(seed 3014)로만 검증한다.
 - 결과 `rl/logs/basket/replay_stage2_heldout_v3_20261014.json`, `replay_s9_Q2_edge{18,35}.json`.
+
+
+## 2026-10-14 22:xx Codex — U sim 결과 원시 JSON 재집계/비판 검토
+- 재집계 대상: `rl/logs/basket/replay_stage2_heldout{,_v2,_v3}_20261014.json`, Stage-2 Q2 edge sweeps, `replay_s10_train_d*.json`; 경로 표본은 `calibration/data/basket/random_20261014_204630/replay.jsonl`(seed 3014, 160 경로×3 반복=480 결과).
+
+| 평가 | Q1 inQ/exact | Q2 | Q3 | Q4 | 전체 |
+|---|---:|---:|---:|---:|---:|
+| heldout v1 | 35/90, 38.9% / 35/90 | 79/138, 57.2% / 73/138 | 113/117, 96.6% / 80/117 | 128/135, 94.8% / 113/135 | 355/480, 74.0% / 301/480, 62.7% |
+| heldout v2 | 30/90, 33.3% / 28/90 | 84/138, 60.9% / 68/138 | 115/117, 98.3% / 87/117 | 128/135, 94.8% / 112/135 | 357/480, 74.4% / 295/480, 61.5% |
+| heldout v3 | 29/90, 32.2% / 29/90 | 106/138, 76.8% / 70/138 | 115/117, 98.3% / 95/117 | 130/135, 96.3% / 113/135 | 380/480, 79.2% / 307/480, 64.0% |
+
+- 수치는 `in_quadrant`/`quadrant_ok` episode boolean을 원시 결과 배열에서 합산한 것과 일치한다. 다만 `quadrant_ok`는 이름과 달리 엄격한 stable/seated 성공이 아니다. `rl/basket/expert.py`에서 strict `sim_rate`=`inserted()`는 30-step 안정 유지, 기울기 보정 gap-bottom 오차 <8.5 mm, 중심·높이 조건 등을 적용한다. 반면 `in_quadrant`는 held + yaw<15° + lean<약24.5° + low<95 mm + 분면 내 landed만 본다. 접시 바닥이 틈에 안정 안착했는지(엄격한 gap error/still/max height)를 요구하지 않고, 약 60 mm rail seating보다 높은 상태도 통과 가능하다. 따라서 79.2%/64.0%는 명시된 완화 지표이지 strict insertion success가 아니다. v3 결과 JSON의 엄격 `sim_rate`는 480개 중 2개(0.42%; Q3 2/117, 타 분면 0)로 재집계됐다. 이 값도 현재 expert.py 판정 기준에 따른 sim proxy다.
+- v3 target-gap raw count는 Q1 86/90인데 `in_quadrant`는 29/90. 86개 중 yaw 조건 86, low<95 mm 85, lean<한계 약 24.5°는 30만 통과해, Q1 실패의 주된 요인이 위치보다 기울기라는 설명과 맞는다. strict height/gap 기준으로는 별도 검증이 필요하다.
+- 데이터 독립성: v1은 seed3014를 조정에 사용하지 않았다는 기록과 부합한다. 단, `calibration/logs/stage2_sweep9.sh`의 Q2 edge 후보(+1.8/+3.5 cm)는 같은 `replay_Q2.jsonl`(random_20261014_204630)로 평가되었고, final v3에서 +1.8 cm가 재사용됐다. 그러므로 전체 v3를 완전한 독립 holdout으로 부르기 어렵다(적어도 Q2 누수). Q1/Q3/Q4 결과는 이 특정 설정선택 누수와 구분해 기술하되 동일 seed의 표본이다.
+- Stage-3 per-pin offset 현재 원시 결과는 train seed4014 400건/offset, 4개 파일(d−15, −10, −5, 0 mm)이다. d=0 aggregate inQ/exact=310/400(77.5%)/282/400(70.5%), d=−5=294/400(73.5%)/213/400(53.3%), d=−10=318/400(79.5%)/120/400(30.0%), d=−15=272/400(68.0%)/41/400(10.3%). 이 중 −5/−10/−15는 overall exact에서 baseline d=0보다 낮으며, 아직 +5/+10/+15 결과가 없고 모두 조정용 train seed라 선택 성과/일반화 결론을 낼 수 없다. 대상 3단계가 ‘핀별 겨냥 학습’이어도 이 파일들은 정적 `--cl_dx_q` offset sweep이지 학습된 정책 평가가 아니다.
+- 변동 범위: stage1/2 args는 새 기준점 대비 SYSTEM_SPEC perturbation 범위에 맞는다. 800 plan 중 798개 생성(두 CRC 읽기 오류; 경로 실패로 세지 않음), stage2 train plans 99/100, heldout plans 160/160. 유한 표본에서 heldout basket y는 −49.8…+3.6 mm, dish y −46.8…+19.6 mm까지 관측되어 선언된 극한 전부를 덮지 않는다. 배치 필터가 바구니/접시 충돌 상황을 reject하므로 범위 전역의 성공을 증명하지 않는다.
+- 추가 비교: sweep9 Q2 edge 1.8 cm는 89/138 inQ(64.5%)/58/138 exact(42.0%), 3.5 cm는 97/138(70.3%)/47/138(34.1%). Q2는 inQ와 exact 간 tradeoff다. 소표본 sweep7의 Q3/Q4 0.83 exact(48 paths×4)은 heldout가 아닌 설정선택 자료다.
+- 결론/누락: Claude의 v3 산술은 재현됐지만 ‘처음 보는 배치’는 완전 독립 test가 아니며, inQ/exact는 loose proxy다. 다음 보고에는 strict `sim_rate`, relaxed inQ, exact를 별도 열로 병기하고, Q2를 새 seed로 재검증하며 seated-height/gap/stability 판정을 보고해야 한다. 코드 수정은 하지 않았다.
+- R CPU 지도는 U와 병행 유지. 마지막 진행 확인 `progress.jsonl` 3,926/6,480; 최종 PNG/JSON은 아직 없음.
+
+## 2026-10-14 22:1x Claude — 3단계 핀별 겨냥 학습 진행 (30분 기록)
+- 조정 전용 경로 400개(seed 4014, `calibration/data/basket/random_20261014_213328`, **400/400 생성**) × 겨냥 변화 7단계(v3 기준 −1.5 ~ +1.5 cm, 0.5 cm 간격, 1회씩). 4/7 완료. 끝나면 분면 × 핀마다 exact가 가장 높은 겨냥을 고르고(이웃 단계와 평균), 표 `rl/logs/basket/pin_aim_table_20261014.json` → `--cl_pin_dx`(72dd13f)로 처음 보는 배치(seed 3014)에서만 검증한다.
