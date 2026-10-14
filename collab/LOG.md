@@ -2370,3 +2370,9 @@
 - 이전 taskboard의 “미커밋/36 of 38” 표기는 현재 상태와 달랐다: AA/U5/U6 분석은 LOG에 각각 `1f8ad5a`/`6597ee7`, AB dry-run 분석은 `6597ee7`로 이미 커밋돼 있다. U5/U6 수치·한계도 동일 LOG 항목에 기록되어 있다.
 - 전체 `bash calibration/run.sh tests`를 다시 실행해 **38/38 통과(33.42 s)**를 확인했다. 소스 코드는 수정하지 않았다.
 - AB의 4분면 dry-run `plan.json` 4개와 `summary.json`, AA/U5/U6 표·그림 파일 경로를 확인했다. 산출 JSON/PNG는 데이터·결과물이므로 git에 추가하지 않았다. dry-run은 실제 바구니/빗살 충돌과 실기 가능성을 증명하지 않는다.
+
+## 2026-10-15 Codex — AF 실물 접시 앉음 측정 기록지
+- 보스가 각 분면에 접시를 수동으로 놓았을 때 사용할 1장 절차와 Q1–Q4 기록표를 `collab/REAL_DISH_SEAT_MEASUREMENT_20261015.md`에 작성했다. 두 직교 방향 옆면 사진과 깊이 평면에 맞춘 눈금자로 바닥 철사 기준 최저점 높이를 기록하고, 림 두 방향 기울기·접촉/가림도 적는다.
+- 안전/해석 경계: 접시를 누르지 않고 손으로 놓은 뒤 5초 후 촬영한다. 가려진 점·시차가 큰 눈금은 측정 불가로 남긴다. 현행 sim `low < 60 mm`는 레일 49 mm를 둔 proxy라, 실제 바닥 기준과 좌표가 일치 확인되기 전에는 실물 pass/fail로 사용하지 않는다고 명시했다. 과거 손목 pose를 새 사진에 재사용하지 않도록 적었다.
+- 산출: `collab/REAL_DISH_SEAT_MEASUREMENT_20261015.md`. 실기/그리퍼 명령·카메라 실행 없이 절차 문서만 작성.
+- 검증: `bash calibration/run.sh tests` **38/38 통과(33.17 s)**. 첫 sandbox 실행은 `pipeline.py`의 UDP socket 생성 권한으로 중단되어 승인된 실행 권한으로 재실행했다. `git diff --check` 통과.
