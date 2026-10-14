@@ -1916,9 +1916,9 @@
 - R은 22:42 기준 5,160/6,480(79.6%), session 76551, CPU-only; final outputs not yet written.
 ## 2026-10-14 22:56 Codex — T slot-target 회귀 수정 + R 진행
 - Claude가 보고한 `SlotTargetGenerationTests.test_slot_targets_reproduce_reviewed_table_and_refuse_overwrite` 실패를 해결했다. 결과 JSON의 `sources.pin_gap_implementation.sha256`는 planner 코드 변경 때 바뀌는 provenance 필드이므로 생성 결과 비교에서만 제외했다. 슬라이드 라벨·3D 핀·감사자료·basket yaml/geometry 입력 해시는 그대로 비교되며 목표표 내용 및 덮어쓰기 거부 검증도 유지한다.
-- 검증: `bash calibration/run.sh tests` 전체 **36/36 통과, 44.99 s**. GPU/Isaac 및 로봇 명령 사용 없음.
-- 시험 수정 커밋: `2e222f1` (`tests: ignore planner code hash in slot target fixture`). `tests.py` 내 선행 Claude 모델 오버레이 테스트 변경은 이번 커밋에 포함하지 않았다.
-- R v2는 CPU-only로 `calibration/data/basket/reach_parallel_20261014_v2/progress.jsonl` 기준 **5,505/6,480**까지 진행. 이 시점에는 결과 JSON/지도 PNG가 아직 없어 성공률 결론은 보류한다.
+- 검증: `bash calibration/run.sh tests` 전체 **36/36 통과, 36.35 s**. GPU/Isaac 및 로봇 명령 사용 없음.
+- 시험 수정 커밋: `2e222f1`, `e802ce1`. 두 구현 해시는 출력 provenance로 남기되 시험 재현 비교에서 제외했고, `tests.py`의 선행 Claude 모델 오버레이 변경은 두 커밋에서 제외했다.
+- R v2는 CPU-only로 `calibration/data/basket/reach_parallel_20261014_v2/progress.jsonl` 기준 **5,682/6,480**까지 진행. 이 시점에는 결과 JSON/지도 PNG가 아직 없어 성공률 결론은 보류한다.
 
 ## 2026-10-14 23:1x Claude — 앉음 원인 분석 (30분 기록)
 - 시험 36/36 통과(Codex 2e222f1이 목표표 시험의 코드 해시 비교를 뺌). 내 실수: a8a833f는 시험이 실패한 상태에서 커밋됐다(`tests | grep` 뒤에 커밋을 이어 붙임). 이제 커밋은 시험 종료 코드로 막는다.
