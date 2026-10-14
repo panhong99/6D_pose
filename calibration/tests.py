@@ -591,5 +591,18 @@ class BasketReplayReportTests(unittest.TestCase):
             with self.assertRaises(FileExistsError):
                 goal1_offline.basket_replay_report([replay], out)
 
+
+class BasketGeometryClearanceTests(unittest.TestCase):
+    def test_vertical_descent_capsule_contact_matches_analytic_cases(self):
+        import goal1_offline
+
+        point = np.array([[0.0, 0.0, 0.0]])
+        vertical = goal1_offline._vertical_capsule_contact_ceiling(point, [0, 0, 0], [0, 0, 1], .01)
+        horizontal = goal1_offline._vertical_capsule_contact_ceiling(point, [-1, 0, .5], [1, 0, .5], .01)
+        missing = goal1_offline._vertical_capsule_contact_ceiling(point, [-1, .02, .5], [1, .02, .5], .01)
+        self.assertAlmostEqual(vertical, 1.01, places=9)
+        self.assertAlmostEqual(horizontal, .51, places=9)
+        self.assertIsNone(missing)
+
 if __name__ == '__main__':
     unittest.main()

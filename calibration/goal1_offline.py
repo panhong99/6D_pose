@@ -641,8 +641,226 @@ def basket_replay_report(replay_paths, output_dir):
     return {'markdown': str(md_path), 'plot': str(png_path), 'rows': reports}
 
 
+def _vertical_capsule_contact_ceiling(points, p0, p1, radius):
+    """Highest vertical translation where sampled surface points touch a capsule."""
+    points = np.asarray(points, dtype=float)
+    p0, p1 = np.asarray(p0, float), np.asarray(p1, float)
+    u = p1 - p0
+    u2 = float(u @ u)
+    best = -np.inf
+    if u2 > 1e-15:
+        v = points - p0
+        vu = v @ u
+        a = float((u[0] * u[0] + u[1] * u[1]) / u2)
+        if a > 1e-12:
+            b = v[:, 2] - vu * u[2] / u2
+            d = np.einsum('ij,ij->i', v, v) - vu * vu / u2
+            disc = b * b - a * (d - radius * radius)
+            valid = disc >= 0
+            ceiling = np.full(len(points), -np.inf)
+            ceiling[valid] = (-b[valid] + np.sqrt(np.maximum(disc[valid], 0))) / a
+            t = (vu + np.where(valid, ceiling, 0.0) * u[2]) / u2
+            valid &= (t >= 0.0) & (t <= 1.0)
+            if valid.any():
+                best = max(best, float(np.max(ceiling[valid])))
+    # Spherical end caps make the approximation conservative at rod ends.
+    for endpoint in (p0, p1):
+        dxy2 = (points[:, 0] - endpoint[0]) ** 2 + (points[:, 1] - endpoint[1]) ** 2
+        valid = dxy2 <= radius * radius
+        if valid.any():
+            z_top = endpoint[2] - points[valid, 2] + np.sqrt(np.maximum(radius * radius - dxy2[valid], 0))
+            best = max(best, float(np.max(z_top)))
+    return None if not np.isfinite(best) else best
+
+
+def _obj_surface_points(path, subdivisions=4):
+    """Read an OBJ triangle mesh and deterministically sample its surface."""
+    vertices, faces = [], []
+    for line in Path(path).read_text().splitlines():
+        if line.startswith('v '):
+            vertices.append([float(x) for x in line.split()[1:4]])
+        elif line.startswith('f '):
+            ids = [int(token.split('/')[0]) for token in line.split()[1:]]
+            ids = [i - 1 if i > 0 else len(vertices) + i for i in ids]
+            faces.extend([[ids[0], ids[j], ids[j + 1]] for j in range(1, len(ids) - 1)])
+    vertices, faces = np.asarray(vertices, float), np.asarray(faces, int)
+    if not len(vertices) or not len(faces) or subdivisions < 1:
+        raise ValueError(f'{path}: expected a non-empty triangulated OBJ')
+    bary = np.asarray([(i / subdivisions, j / subdivisions, 1 - (i + j) / subdivisions)
+                       for i in range(subdivisions + 1) for j in range(subdivisions + 1 - i)])
+    tri = vertices[faces]
+    samples = (bary[None, :, 0, None] * tri[:, None, 0, :] +
+               bary[None, :, 1, None] * tri[:, None, 1, :] +
+               bary[None, :, 2, None] * tri[:, None, 2, :]).reshape(-1, 3)
+    return vertices, samples
+
+
+def basket_tine_clearance_map(output_dir, smoke=False):
+    """Offline plate-mesh vs full-basket tine/comb-rail descent contact sweep (CPU only).
+
+    At each angle and XY offset, find the highest plate-center Z at first sampled
+    surface/capsule contact while descending; report the corresponding lowest
+    rim height above the basket floor. This is geometric contact, not dynamics.
+    """
+    import hashlib
+    import os
+    import sys
+
+    import matplotlib
+    matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+    import yaml
+
+    if os.environ.get('BASKET_PIN_R'):
+        raise RuntimeError('unset BASKET_PIN_R to use the checked-in basket.yaml geometry')
+    output_dir = Path(output_dir)
+    json_path = output_dir / 'basket_tine_clearance.json'
+    png_path = output_dir / 'basket_tine_clearance.png'
+    md_path = output_dir / 'basket_tine_clearance.md'
+    if any(p.exists() for p in (json_path, png_path, md_path)):
+        raise FileExistsError(f'geometry output exists in {output_dir}')
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    basket_yaml = ROOT / 'rl' / 'basket.yaml'
+    mesh_path = ROOT / 'rl' / 'assets' / 'plate029_simplified.obj'
+    cfg = yaml.safe_load(basket_yaml.read_text())
+    f, pin, slot = cfg['full'], cfg['pins'], cfg['slot']
+    sys.path.insert(0, str(ROOT / 'rl'))
+    try:
+        import basket_env
+        parts = basket_env.full_basket_parts()
+    finally:
+        sys.path.pop(0)
+
+    vertices, samples = _obj_surface_points(mesh_path, subdivisions=4)
+    mesh_center = (vertices.min(axis=0) + vertices.max(axis=0)) / 2
+    samples = samples - mesh_center
+    # local plate x->basket y, local y->basket z, local z->basket x.
+    upright = np.array([[0., 0., 1.], [1., 0., 0.], [0., 1., 0.]])
+    floor_z, pin_r, rod_r = float(f['floor_z']), float(f['pin_r']), float(f['rod_r'])
+    rows_u = np.asarray(pin['rows_u'], float)
+    pair_y = np.asarray(f['pair_centres_y'], float)
+    q_spec = {'Q1': (1, True), 'Q2': (0, True), 'Q3': (0, False), 'Q4': (1, False)}
+    # full_basket_parts stores exact model capsules; select only comb tines and their row rails.
+    all_tines = [(np.asarray(a), np.asarray(b), float(rest[0])) for kind, a, b, *rest in parts
+                 if kind == 'cyl' and rest and abs(float(rest[0]) - pin_r) < 1e-9]
+    all_rails = [(np.asarray(a), np.asarray(b), float(rest[0])) for kind, a, b, *rest in parts
+                 if kind == 'cyl' and rest and abs(float(rest[0]) - rod_r) < 1e-9]
+
+    if smoke:
+        angles = (-20., 0., 20.)
+        offsets = ((-10., -10.), (0., 0.), (10., 10.))
+    else:
+        angles = tuple(float(x) for x in range(-20, 21, 5))
+        offsets = tuple((float(x), float(y)) for x in range(-10, 11, 5) for y in range(-10, 11, 5))
+    rows, contact_by_q = [], {}
+    base_center_z = float(slot['plate_centre'][2] - f['pose_base'][2])
+    for quadrant, (pair_i, far) in q_spec.items():
+        yc = float(pair_y[pair_i])
+        count = int(f['tines_from_clip'][quadrant])
+        half = float(f['clip_first_m'][quadrant]) + float(f['tine_pitch'][quadrant]) * np.arange(count)
+        expected_x = float(f['clip_x']) + (half if far else -half)
+        expected_x = np.asarray(expected_x, float)
+        expected_x_set = np.round(expected_x, 9)
+        y_rows = [yc + float(v) for v in rows_u]
+        q_tines = [(a, b, r) for a, b, r in all_tines
+                   if np.min(np.abs(expected_x_set - round(float(a[0]), 9))) < 1e-8 and
+                   any(abs(a[1] - y) < 1e-6 for y in y_rows)]
+        xs = sorted(float(x) for x in expected_x)
+        if len(q_tines) != 2 * count or len(xs) < 2:
+            raise ValueError(f'{quadrant}: expected {2 * count} modeled tine segments, found {len(q_tines)}')
+        gap_centers = [(a + b) / 2 for a, b in zip(xs[:-1], xs[1:])]
+        target_gap_index = len(gap_centers) // 2
+        gap_x = gap_centers[target_gap_index]
+        q_rails = [(a, b, r) for a, b, r in all_rails
+                   if abs(a[2] - (floor_z + float(pin['rail_z']))) < 1e-6 and
+                   any(abs(a[1] - y) < 1e-6 for y in y_rows) and
+                   abs(min(a[0], b[0]) - min(xs)) < 1e-6 and
+                   abs(max(a[0], b[0]) - max(xs)) < 1e-6]
+        obstacles = [(a, b, r, 'tine') for a, b, r in q_tines] + [(a, b, r, 'rail') for a, b, r in q_rails]
+        if not obstacles:
+            raise ValueError(f'{quadrant}: no tine/rail obstacles selected')
+        # Far quadrants use the same face flip tested by the replay planner; near quadrants face +x.
+        face = -1.0 if quadrant in ('Q1', 'Q2') else 1.0
+        contact_by_q[quadrant] = []
+        for angle in angles:
+            tilt = np.radians(angle)
+            Ry = np.array([[np.cos(tilt), 0., -np.sin(tilt)], [0., 1., 0.],
+                           [np.sin(tilt), 0., np.cos(tilt)]])
+            Rface = np.diag([face, face, 1.]) @ upright
+            Rplate = Ry @ Rface
+            points = samples @ Rplate.T
+            low_rel_z = float(points[:, 2].min())
+            angle_contacts = []
+            for ox, oy in offsets:
+                positioned = points + np.array([gap_x + ox / 1000., yc + oy / 1000., 0.])
+                best_z, best_kind = -np.inf, None
+                for a, b, radius, kind in obstacles:
+                    z_contact = _vertical_capsule_contact_ceiling(positioned, a, b, radius)
+                    if z_contact is not None and z_contact > best_z:
+                        best_z, best_kind = z_contact, kind
+                if np.isfinite(best_z):
+                    bottom = (best_z + low_rel_z - floor_z) * 1000.
+                    angle_contacts.append({'offset_xy_mm': [ox, oy], 'bottom_contact_mm': float(bottom),
+                                           'limiting_geometry': best_kind})
+            bottoms = [r['bottom_contact_mm'] for r in angle_contacts]
+            summary = {'quadrant': quadrant, 'gap_index_x_order_one_based': target_gap_index + 1,
+                       'gap_index_zero_based': target_gap_index, 'gap_centre_x_m': float(gap_x),
+                       'pair_centre_y_m': yc, 'face_normal_x': face, 'tilt_deg': angle,
+                       'tested_xy_offsets_mm': len(offsets), 'contacts_found': len(bottoms),
+                       'bottom_contact_min_mm': float(min(bottoms)) if bottoms else None,
+                       'bottom_contact_median_mm': float(np.median(bottoms)) if bottoms else None,
+                       'bottom_contact_max_mm': float(max(bottoms)) if bottoms else None,
+                       'offset_results': angle_contacts}
+            rows.append(summary)
+            contact_by_q[quadrant].append(summary)
+
+    result = {'scope': 'sampled mesh-surface first contact during vertical descent against full_basket_parts tine and comb-row capsules; static geometry only, no dynamics or robot/GPU.',
+              'model': {'basket_yaml': str(basket_yaml), 'basket_yaml_sha256': hashlib.sha256(basket_yaml.read_bytes()).hexdigest(),
+                        'plate_obj': str(mesh_path), 'plate_obj_sha256': hashlib.sha256(mesh_path.read_bytes()).hexdigest(),
+                        'pin_radius_mm': pin_r * 1000., 'comb_rail_radius_mm': rod_r * 1000.,
+                        'surface_samples': int(len(samples)), 'surface_subdivisions_per_triangle': 4,
+                        'geometry_source': 'rl/basket_env.py::full_basket_parts (read-only)'},
+              'sweep': {'tilt_deg': list(angles), 'tilt_convention': 'absolute elevation of plate normal from basket horizontal; far quadrants Q1/Q2 face -x (wrist-flip orientation), near Q3/Q4 face +x; sign controls normal z component.',
+                        'xy_offset_mm': [list(v) for v in offsets],
+                        'plate_center_z_from_golden_slot_m': base_center_z,
+                        'method': 'for each mesh sample and capsule, solve first descending vertical contact; capsule end caps are spherical/conservative; report mesh lowest point at contact; floor excluded.'},
+              'rows': rows}
+    json_path.write_text(json.dumps(result, indent=2))
+    lines = ['# Basket tine / comb rail first-contact sweep', '',
+             'Tilt is the plate-normal elevation from basket horizontal (−20°…+20°); far quadrants Q1/Q2 face −x, near quadrants Q3/Q4 face +x. Bottom rim height is at first sampled mesh/capsule contact while descending; lower means the plate can travel farther. This is static geometry, not proof of stable seating. Mesh sampling is finite-resolution and capsules use conservative spherical end caps. YAML pin radius is 1 mm (sim compliance proxy; the real wire is about 3–4 mm), and the dish OBJ bounding thickness is 25.4 mm. Basket floor, dynamics, friction, and carrying path are excluded.', '',
+             '| Quadrant | Tilt (deg) | Central gap | Contact offsets | Lowest / median / highest rim height above floor (mm) |',
+             '|---|---:|---:|---:|---:|']
+    for row in rows:
+        values = '—' if row['bottom_contact_median_mm'] is None else (
+            f"{row['bottom_contact_min_mm']:.1f} / {row['bottom_contact_median_mm']:.1f} / {row['bottom_contact_max_mm']:.1f}")
+        lines.append(f"| {row['quadrant']} | {row['tilt_deg']:+.0f} | {row['gap_index_x_order_one_based']} | "
+                     f"{row['contacts_found']}/{row['tested_xy_offsets_mm']} | {values} |")
+    md_path.write_text('\n'.join(lines) + '\n')
+    fig, ax = plt.subplots(figsize=(8.2, 4.6))
+    for quadrant, items in contact_by_q.items():
+        valid = [r for r in items if r['bottom_contact_median_mm'] is not None]
+        if valid:
+            x = np.asarray([r['tilt_deg'] for r in valid])
+            med = np.asarray([r['bottom_contact_median_mm'] for r in valid])
+            lo = np.asarray([r['bottom_contact_min_mm'] for r in valid])
+            hi = np.asarray([r['bottom_contact_max_mm'] for r in valid])
+            ax.plot(x, med, marker='o', label=quadrant)
+            ax.fill_between(x, lo, hi, alpha=.12)
+    ax.set_xlabel('Plate tilt parameter (deg)')
+    ax.set_ylabel('Lowest rim height at first contact (mm above basket floor)')
+    ax.grid(False)
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    ax.legend(frameon=False)
+    fig.tight_layout()
+    fig.savefig(png_path, dpi=170, bbox_inches='tight')
+    plt.close(fig)
+    return {'json': str(json_path), 'markdown': str(md_path), 'plot': str(png_path), 'rows': rows}
+
+
 if __name__=='__main__':
-    p=argparse.ArgumentParser(description=__doc__);p.add_argument('mode',choices=['optimize','map','basket_map','correct_basket_lift','basket_report'])
+    p=argparse.ArgumentParser(description=__doc__);p.add_argument('mode',choices=['optimize','map','basket_map','correct_basket_lift','basket_report','basket_clearance'])
     p.add_argument('--library',type=Path);p.add_argument('--output',type=Path,required=True)
     p.add_argument('--step',type=float,default=.05);p.add_argument('--rrt_nodes',type=int,default=600)
     p.add_argument('--radius_tolerance',type=float,default=.004)
@@ -654,6 +872,7 @@ if __name__=='__main__':
     elif a.mode=='basket_report':
         if not a.replay:p.error('--replay required for basket_report')
         r=basket_replay_report(a.replay,a.output)
+    elif a.mode=='basket_clearance':r=basket_tine_clearance_map(a.output,a.smoke)
     elif a.mode=='correct_basket_lift':
         if not a.source_json:p.error('--source_json required for correct_basket_lift')
         r=correct_basket_lift_clearance(a.source_json,a.output,a.workers)
