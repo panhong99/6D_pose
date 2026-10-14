@@ -719,12 +719,12 @@ def basket_gaps():
     import sys
     sys.path.insert(0, str(ROOT / 'rl'))
     import basket_env as be
-    r, floor = be.B['full']['pin_r'], be.B['full']['floor_z']
+    r, floor, cx = be.B['full']['pin_r'], be.B['full']['floor_z'], be.B['full'].get('clip_x', 0.0)   # quadrants split at the clip
     pins = [p0 for kind, p0, p1, *rest in be.full_basket_parts() if kind == 'cyl' and rest and abs(rest[0] - r) < 1e-9]
     out = {}
     for qd, (fn, lr) in QUADRANTS.items():
         yc = be.B['full']['pair_centres_y'][0 if lr == 'left' else 1]
-        xs = sorted({round(float(p[0]), 4) for p in pins if abs(p[1] - yc) < 0.06 and ((p[0] > 0) == (fn == 'far'))})
+        xs = sorted({round(float(p[0]), 4) for p in pins if abs(p[1] - yc) < 0.06 and ((p[0] > cx) == (fn == 'far'))})
         out[qd] = [np.array([(a + b) / 2, yc, floor]) for a, b in zip(xs[:-1], xs[1:])]
     return out
 
@@ -928,13 +928,13 @@ def quadrant_checkers(Tbc, q, Tbb, H, tool):
         ch2.tool = np.vstack([ch.tool, plate]) if ch.tool is not None else plate
         return ch2
     held = [with_plate(lib['frame'][0]), with_plate(lib['table'][0]), with_plate(basket)]
-    insert = [held[0], held[1], basket]                     # the plate itself goes into the basket by design
+    insert = held                                            # (10/14 실기) the plate rim vs the walls too (pins are not boxes)
     free = [lib['frame'][0], lib['table'][0], basket]
     return MultiChecker(held), MultiChecker(insert), MultiChecker(free)
 
 
 def quadrant_plan(Tbb, quadrant, gap, H, tool, start_deg, Tbc, q, grasp_legs=None, tilt_deg=0.0, centre_h=0.18, above_m=0.11,
-                  phi_step=10, seeds=None, yaw_trim_deg=0.0):
+                  phi_step=10, seeds=None, yaw_trim_deg=0.0, y_shift_m=None):
     """Plan.json for one quadrant gap from the plate in the hand: to_above (carry, straight or RRT), descend (straight
     down, plate upright, +basket_policy_extra_down_m), ascend (straight up), to_home, abort_home.  -> (path, report)."""
     import ros2_nodes
@@ -942,7 +942,15 @@ def quadrant_plan(Tbb, quadrant, gap, H, tool, start_deg, Tbc, q, grasp_legs=Non
     kin = Kinematics()
     lo, hi = np.array(ros2_nodes.joint_limits_deg()).T
     held, inserting, free = quadrant_checkers(Tbc, q, Tbb, H, tool)
-    gap_b = (np.asarray(Tbb) @ np.r_[basket_gaps()[quadrant][gap], 1.0])[:3]
+    g_ = np.array(basket_gaps()[quadrant][gap], float)
+    if y_shift_m is None:                                    # (10/14 실기) keep the rim off the side wall: 26.8 cm plate,
+        import sys                                           # pair A at y +0.129 put the rim on the +y wall
+        sys.path.insert(0, str(ROOT / 'rl'))
+        import basket_env as be
+        room = be.B['full']['size_xy'][1] / 2 - 0.012 - q.get('basket_wall_margin_m', 0.01) - PLATE_R - 0.005
+        y_shift_m = float(np.clip(0.0, -room - g_[1], room - g_[1])) if abs(g_[1]) > room else 0.0
+    g_[1] += y_shift_m
+    gap_b = (np.asarray(Tbb) @ np.r_[g_, 1.0])[:3]
     n, t = np.asarray(Tbb)[:3, 0], np.radians(tilt_deg)
     if yaw_trim_deg:                                         # (10/14 실기) plate face turned about the vertical, + = CCW seen from above
         c_, s_ = np.cos(np.radians(yaw_trim_deg)), np.sin(np.radians(yaw_trim_deg))
@@ -997,7 +1005,7 @@ def quadrant_plan(Tbb, quadrant, gap, H, tool, start_deg, Tbc, q, grasp_legs=Non
             legs = dict(grasp_legs, **legs)
         path = taught_plan(legs, Tbc, q, f'quadrant {quadrant} gap {gap + 1}')
         plan = json.loads(Path(path).read_text())
-        rep = dict(quadrant=quadrant, gap=gap + 1, phi_deg=phi, carry=how, home=how_h, tried=tried, accepted=plan['accepted'],
+        rep = dict(quadrant=quadrant, gap=gap + 1, phi_deg=phi, y_shift_m=round(y_shift_m, 4), carry=how, home=how_h, tried=tried, accepted=plan['accepted'],
                    clearance_ratio=dict(carry=round(held.path_clearance(pp(np.array(carry), 0.5)), 2), insert=round(c_ins, 2),
                                         after=round(free.path_clearance(pp(np.array(home), 0.5)), 2)))
         plan.update(basket_T=np.asarray(Tbb).tolist(), plate_in_tcp=np.asarray(H).tolist(), quadrant_plan=rep)

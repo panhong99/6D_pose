@@ -93,6 +93,8 @@ def parse_args(argv=None):
     g.add_argument('--wrist_serial', default='', help='also show this colour-only D455 (wrist) on the right; its newest '
                    'rectified frame is shared at --wrist_share for the pipeline photos (one owner of the camera)')
     g.add_argument('--wrist_share', type=Path, default=Path('/dev/shm/wrist_latest.npz'))
+    g.add_argument('--fixed_share', type=Path, default=Path('/dev/shm/fixed_latest.npz'),
+                   help='(10/14) the fixed D455 RGB-D frame (rgb, depth m, K, t) every 0.5 s, for the pipeline (plate angle)')
     g.add_argument('--width', type=int, default=640)
     g.add_argument('--height', type=int, default=480)
     g.add_argument('--fps', type=int, default=30)
@@ -210,10 +212,16 @@ def main():
     print(f'{args.detector} + FoundationPose + Cutie/Kalman ready ({mode} recovery) | '
           f'Pose UDP -> {args.udp_host}:{args.udp_port} | S: re-detect | Q/ESC: quit', flush=True)
     stage_ms, frames, loop_start, previous_status = np.zeros(3), 0, time.perf_counter(), None
+    fixed_saved = 0.0
     try:
         while True:
             t0 = time.perf_counter()
             frame = camera.read()
+            if args.fixed_share and time.time() - fixed_saved > 0.5:     # one owner of the camera: share the frame
+                fixed_saved = time.time()
+                tmp = args.fixed_share.with_name(args.fixed_share.stem + '.tmp.npz')
+                np.savez(tmp, rgb=frame.rgb, depth=frame.depth, K=frame.K, t=fixed_saved)
+                os.replace(tmp, args.fixed_share)
             t1 = time.perf_counter()
             out = recovery.process(frame)
             t2 = time.perf_counter()
