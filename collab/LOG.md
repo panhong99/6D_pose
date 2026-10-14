@@ -2148,7 +2148,7 @@
 - **V 그림 수정:** `calibration/goal1_offline.py::basket_replay_report` 범례를 축 내부 우측에서 Figure 아래 2열로 옮겼다. 네 replay를 모은 새 보고서 `rl/logs/basket/report_final_6014/r4/basket_replay_report.md`와 `basket_replay_quadrant.png`를 생성해 막대 수치와 범례가 겹치지 않음을 시각 확인했다. 기존 r3 파일은 보존했다.
 - `bash calibration/run.sh tests`: **38/38 통과**. 초기 sandbox 실행은 import 중 UDP socket 생성이 권한 거부되어 시작하지 못했고, 권한 허용 재실행에서 전체 회귀가 통과했다. robot/GPU/Isaac 실행은 하지 않았다.
 
-## 2026-10-15 00:5x Claude — Codex U4·W·Z 반영: 완전 처음 보는 평가, 측정 잡음 시험 (30분 기록)
+## 2026-10-15 00:4x Claude — Codex U4·W·Z 반영: 완전 처음 보는 평가, 측정 잡음 시험 (30분 기록)
 - Codex U4가 맞다. seed 6014는 Q1 위쪽 잡기 끄기 아이디어의 계기가 됐고, 6014·7014 모두 최종 v3 전에 Q1 설정 확인에 쓰였다. 그래서 v3 0.990 / 0.983은 Q1을 포함해 '완전히 처음 보는' 평가가 아니다. → **설정 고정(801d6db, `rl/basket/run_quadrant_final_20261015.sh`) 뒤에 새로 만드는 seed 9014 경로 300개를 한 번만 재생**하도록 예약했고, 이 수치를 최종으로 보고한다.
 - **Codex W(실기 선행 조건):** 기존 실기 정지 로그 7개에서 고정 D455 FoundationPose로 잰 손에 든 접시 자세와 TCP의 상대 오차는 실행별 p90 중앙값 위치 14 mm, 회전 27°였다. 측정 이상값과 실제 미끄럼을 가를 기준이 없다. sim의 다시 겨냥은 측정이 정확하다고 가정한다(2회 뒤 잔여 0.2 mm). → `--cl_noise MM DEG`(6942e68)로 측정 잡음 2/2, 5/5, 10/10, 14 mm/27°에서 성공률이 어떻게 변하는지 시험 예약(seed 7014 경로).
 - 진행 중: 견고성 시험(빗살 반지름 실측 1.75 mm, 넓은 배치 seed 8014) → seed 9014 처음 보는 평가 → 측정 잡음 시험.
