@@ -47,6 +47,7 @@ def parse_args():
     p.add_argument('--cl_iter', type=int, default=1, help='--closed_loop: measure + re-aim this many times at the above stop')
     p.add_argument('--cl_heights', default='', help='--closed_loop: re-aim height above the insert per iteration [m], e.g. "0.11,0.07"')
     p.add_argument('--cl_edge_q', default='', help='--closed_loop: clamp the shifted aim to the quadrant gaps, this far inside the far-end gap [m], e.g. "Q2:0.018" (unlisted: no clamp)')
+    p.add_argument('--cl_pin_dx', default='', help='--closed_loop: json {model quadrant: {pin: aim dx [m]}} (overrides --cl_dx_q for the listed pins)')
     p.add_argument('--cl_dz_q', default='', help='--closed_loop: per model quadrant release height offset [m], e.g. "Q3:0.01,Q4:0.01"')
     p.add_argument('--cl_lean_q', default='', help='--closed_loop: per model quadrant tine-lean factor, e.g. "Q1:-1,Q2:0" (overrides --cl_lean)')
     p.add_argument('--cl_dx_q', default='', help='--closed_loop: per model quadrant aim, e.g. "Q3:-0.03,Q4:-0.035" (overrides --cl_dx)')
@@ -225,7 +226,7 @@ def make_cfg(n, viewer, torsion_m):
     return cfg
 
 
-def closed_loop_paths(env, rows, who, above_m=0.11, extra=0.005, dz=0.0, lean=1.0, dx=0.0, top=False, dx_q=None, lean_q=None, dz_q=None, edge_q=None):
+def closed_loop_paths(env, rows, who, above_m=0.11, extra=0.005, dz=0.0, lean=1.0, dx=0.0, top=False, dx_q=None, lean_q=None, dz_q=None, edge_q=None, pin_dx=None):
     """(10/14) per env (above, descend) joint paths (deg) from the plate actually in the hand now: the plate turns ~9 deg
     in the grip on the carry (Isaac), so the planned descent lands it 3-4 gaps off.  Keeps the plate's turn about the
     vertical small: shortest rotation of its normal onto the row axis, centre on the row's target_centre (base)."""
@@ -254,7 +255,7 @@ def closed_loop_paths(env, rows, who, above_m=0.11, extra=0.005, dz=0.0, lean=1.
         Tb = np.asarray(r['Tb'])
         path = []
         for lf in (1.0, 0.5, 0.0):                             # (10/14 night) far quadrants: no IK at the full lean -> lean less
-            path = _cl_one(kin, tool, be, r, Tb, Rp, H, qs[k], (lean_q or {}).get(r['model_qd'], lean) * lf, above_m, extra, (dz_q or {}).get(r['model_qd'], dz), (dx_q or {}).get(r['model_qd'], dx), top, (edge_q or {}).get(r['model_qd']))
+            path = _cl_one(kin, tool, be, r, Tb, Rp, H, qs[k], (lean_q or {}).get(r['model_qd'], lean) * lf, above_m, extra, (dz_q or {}).get(r['model_qd'], dz), (pin_dx or {}).get(r['model_qd'], {}).get(str(r.get('pin')), (dx_q or {}).get(r['model_qd'], dx)), top, (edge_q or {}).get(r['model_qd']))
             if len(path) == 13:
                 break
         out.append((np.array(path[:1]), np.array(path[1:])) if len(path) == 13 else (None, None))
@@ -378,7 +379,8 @@ def run_replay(args):
                                     dx_q={k: float(v) for k, v in (x.split(':') for x in args.cl_dx_q.split(',') if x)},
                                     lean_q={k: float(v) for k, v in (x.split(':') for x in args.cl_lean_q.split(',') if x)},
                                     dz_q={k: float(v) for k, v in (x.split(':') for x in args.cl_dz_q.split(',') if x)},
-                                    edge_q={k: float(v) for k, v in (x.split(':') for x in args.cl_edge_q.split(',') if x)})
+                                    edge_q={k: float(v) for k, v in (x.split(':') for x in args.cl_edge_q.split(',') if x)},
+                                    pin_dx=json.loads(Path(args.cl_pin_dx).read_text()) if args.cl_pin_dx else None)
             if prev_fix is not None:                         # no IK now: keep the previous re-aim (the robot is there)
                 fix = [f_ if f_[0] is not None else p_ for f_, p_ in zip(fix, prev_fix)]
             if it == 0:
