@@ -19,7 +19,7 @@
 |---|---|---|---|
 | O | BC 티칭 데모 오프라인 안전·일관성 점검 | full_11~14 JSON/상태기록·분면 manifest 대조, 배치 일관성 및 recorded joint/TCP 속도와 wrench 이벤트 확인 | 완료(c8ee663) |
 | N | **빗살 전수 번호 라벨링 — Codex는 검증·수정 담당 (보스 10/14 15:xx, 지금 Codex 최우선)** | 아래 '새 일 N' | 2D 번호 전수 기준 완료. Q2/Q3/Q4 **조건부 3D 역투영 66쌍**과 현 모델 비교 완료(`realQ_verified_3d_model_audit_20261014_v5`; LOG 참고). 사진 Q1 14개 확인점은 실제 Q2 줄. 실제 Q1은 가림/프레임 절단; calibrated 사진 입력 대기 |
-| O | **티칭 시연 충돌·안전 자동 판정기** (10/14 17:1x, N 다음 최우선) | 아래 '새 일 O' | 진행 중(Codex, `demo_audit.py` 미커밋 확인 18:xx) |
+| O | **티칭 시연 충돌·안전 자동 판정기** (10/14 17:1x, N 다음 최우선) | 아래 '새 일 O' | 완료(6f2d618): full_14만 unsafe, 시험 31/31. 보고서 분면은 파일값(full_11 Q3) — manifest 정정(Q4) 우선으로 S에서 같이 고칠 것 |
 | R | **바구니 배치 도달 지도 (IK만, 접시 면 양방향)** (O 다음) | 아래 '새 일 R' | 대기 |
 | S | **시연 도구 파일 정리: demo_audit+demo_dataset 한 역할 파일, 시험은 tests.py로** (R 다음) | 아래 '새 일 S' | 대기 |
 | P | **BC 데이터셋 변환기: 시연 → 바구니 좌표 키자세·궤적** (O 다음) | 아래 '새 일 P' | 완료(7daafd5) |
@@ -138,6 +138,7 @@
 
 ### 새 일 S: 시연 도구 파일 정리 (10/14 18:xx Claude)
 - 보스 규칙: 역할 파일 몇 개에 함수로, 1000줄 넘는 파일 금지. `demo_audit.py`(O)와 `demo_dataset.py`(P)를 한 역할 파일(예: `demo_data.py`, 모드 `audit`/`convert`)로 합치고, `test_demo_*.py`는 `tests.py`에 넣을 것. 동작·출력 경로 그대로.
+- 추가: audit 보고서의 분면·틈도 `bc_demos.json` manifest 값을 우선(full_11은 Q4).
 - 완료 조건: 기존 출력과 같은 결과(변환 npz/json 해시 또는 수치 비교), `bash calibration/run.sh tests` 전체 통과.
 
 ## Codex 상태
