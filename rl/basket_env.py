@@ -294,7 +294,7 @@ def basket_state(env):
     bottom = W[torch.arange(len(p)), k]
     low = bottom[:, 2] - B["slot"]["floor_z"]                           # lowest mesh point above the floor
     d_bottom = ((bottom - s[:, :3]) * n).sum(1)                         # ... from the slot line along n (pins at +-pitch/2)
-    return dict(up=up, n=n, u=u, rel=rel, d_plane=d_plane, d_u=d_u, normal_err=normal_err, low=low, d_bottom=d_bottom)
+    return dict(up=up, n=n, u=u, rel=rel, d_plane=d_plane, d_u=d_u, normal_err=normal_err, low=low, d_bottom=d_bottom, bottom=bottom)
 
 
 if __name__ == "__main__":

@@ -39,6 +39,7 @@ def parse_args():
     p.add_argument('--residual', default=None, help='realplan: residual RL checkpoint on top of --policy (BC)')
     p.add_argument('--policy', default=None, help='collect: a BC checkpoint drives instead of the expert (evaluation)')
     p.add_argument('--attach', action='store_true', help='replay: rigid in-hand plate after the lift')
+    p.add_argument('--hold_view', action='store_true', help='replay with the viewer: keep the window open at the end until it is closed')
     p.add_argument('--rot_sign', type=float, default=1.0)
     p.add_argument('--batches', type=int, default=1, help='collect: batches of config expert.envs envs')
     p.add_argument('--dart', action='store_true', help='collect: noisy execution, clean labels')
@@ -222,7 +223,8 @@ def run_replay(args):
     rows = []
     for r in ([json.loads(l) for l in open(args.plans)] if args.plans else []):   # planned, not run: 'outcome' = planned
         legs = json.loads(Path(r['plan']).read_text())['legs']
-        rows.append(dict(name=r['name'], outcome='planned', plate=r['plate'], Tb=r['Tb'], grasp=legs, slot=legs))
+        rows.append(dict(name=r['name'], outcome='planned', plate=r['plate'], Tb=r['Tb'], grasp=legs, slot=legs,
+                         **{k: r[k] for k in ('model_qd', 'gap', 'pin') if k in r}))
     for r in runs:
         d = Path(r['run']) if Path(r['run']).is_absolute() else ROOT / 'calibration/data/real_pipeline' / r['run']
         ev = [json.loads(x) for x in open(d / 'robot_state.jsonl') if '"event"' in x]
@@ -271,6 +273,11 @@ def run_replay(args):
     if all('descend_pre' in rows[i]['slot'] for i in who):    # taught slot paths only (quadrant plans: to_above -> descend)
         drive(env, L('descend_pre', 'slot'), ~open_, args.speed / 4)
     st_pre = be.basket_state(env)
+    pre = dict(tcp_pos=(robot.data.body_pos_w[:, ti] - env.scene.env_origins).cpu().numpy().tolist(),   # (10/14) plate + TCP before the descent
+               tcp_quat=robot.data.body_quat_w[:, ti].cpu().numpy().tolist(),
+               plate_pos=(env.scene['plate'].data.root_pos_w - env.scene.env_origins).cpu().numpy().tolist(),
+               plate_quat=env.scene['plate'].data.root_quat_w.cpu().numpy().tolist(),
+               joints=robot.data.joint_pos[:, :6].cpu().numpy().tolist())
     drive(env, L('descend', 'slot'), ~open_, args.speed / 20, hold=30)
     if args.attach:
         detach(env, torch.ones(n, dtype=torch.bool, device=dev))
@@ -292,6 +299,28 @@ def run_replay(args):
     lean_ok = torch.tensor([abs(be.B['full'].get('tine_lean_deg', {}).get(next((qd for qd in ('Q1', 'Q2', 'Q3', 'Q4') if f'_{qd}_' in rows[i]['name']), 'Q3'), 12.5)) + 12.0
                             for i in who], device=dev)
     face_ok = ((yaw_err < 15.0) & (lean < lean_ok) & (st['low'] < 0.095) & (gap_err < sc['bottom_tol_m'])).cpu().numpy() & held
+    # (10/14 보스) planned rows carrying their target gap (model quadrant + gap index): the plate must stand in THAT gap of
+    # its quadrant (lowest rim point between the two tine bases, within the pair's rows), not just in some gap
+    landed = np.full(n, -1)
+    bot = st['bottom'].cpu().numpy()
+    f_ = be.B['full']
+    for k, i in enumerate(who):
+        r = rows[i]
+        if 'model_qd' not in r:
+            continue
+        T = np.asarray(r['Tb'])
+        pb = np.linalg.inv(T) @ np.r_[bot[k], 1.0]
+        far, left = {'Q1': (1, 0), 'Q2': (1, 1), 'Q3': (0, 1), 'Q4': (0, 0)}[r['model_qd']]
+        yc = f_['pair_centres_y'][0 if left else 1]
+        half = f_.get('clip_first_m', 0.01) + f_['tine_pitch'][r['model_qd']] * np.arange(f_['tines_from_clip'][r['model_qd']])
+        xs = np.sort(f_.get('clip_x', 0.0) + (half if far else -half))      # tine bases, robot side -> far (basket_gaps order)
+        g = int(np.searchsorted(xs, pb[0])) - 1
+        if 0 <= g < len(xs) - 1 and abs(pb[1] - yc) < 0.06:
+            landed[k] = g
+    target = np.array([rows[i].get('gap', -1) if 'model_qd' in rows[i] else -1 for i in who])
+    pin_ok = np.where(target >= 0, landed == target, True)
+    loose = ((yaw_err < 15.0) & (lean < lean_ok) & (st['low'] < 0.095)).cpu().numpy() & held   # the any-gap error (2 cm pitch) does not hold per quadrant
+    face_ok = np.where(target >= 0, loose & pin_ok, face_ok)
     np.set_printoptions(precision=1, suppress=True)
     print('[replay] final d_bottom mm', (st['d_bottom'] * 1000).cpu().numpy()[::args.per_run], flush=True)
     print('[replay] final gap err mm  ', (gap_err * 1000).cpu().numpy()[::args.per_run], flush=True)
@@ -302,6 +331,7 @@ def run_replay(args):
     for i, r in enumerate(rows):
         m = who == i
         res.append(dict(run=r['name'], real=r['outcome'], sim_rate=float(ok[m].mean()), any_gap=float(any_gap[m].mean()), quadrant_ok=float(face_ok[m].mean()), held=float(held[m].mean()),
+                        landed_gaps=landed[m].tolist(), target_gap=int(target[m][0]),
                         pre_d_bottom_mm=float(st_pre['d_bottom'][torch.as_tensor(m)].mean() * 1000),
                         pre_normal_err=float(st_pre['normal_err'][torch.as_tensor(m)].mean())))
         print(f"[replay] {r['name']:32s} {r['outcome'][:8]:8s}  {ok[m].mean():5.0%} any gap {any_gap[m].mean():4.0%} quadrant ok {face_ok[m].mean():4.0%} ({held[m].mean():4.0%})  "
@@ -311,10 +341,15 @@ def run_replay(args):
     print(f'[replay] P1 gate: {gate}/{len(good)} real successes reproduced with sim rate >= 80 % (need >= 9)', flush=True)
     out = Path(args.out or RL / 'logs/basket/replay_20261012.json')
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps(dict(results=res, gate=gate, need=9, names=[rows[i]['name'] for i in who], in_hand=in_hand,
+    out.write_text(json.dumps(dict(results=res, gate=gate, need=9, names=[rows[i]['name'] for i in who], in_hand=in_hand, pre=pre,
                                    final={k: st[k].cpu().numpy().tolist() for k in ('d_bottom', 'low', 'normal_err', 'd_u')},
                                    gap_err=gap_err.cpu().numpy().tolist(), held=held.tolist(), yaw_err=yaw_err.cpu().numpy().tolist(),
-                                   lean=lean.cpu().numpy().tolist(), quadrant_ok=face_ok.tolist()), indent=1))
+                                   lean=lean.cpu().numpy().tolist(), quadrant_ok=face_ok.tolist(), landed_gap=landed.tolist(), target_gap=target.tolist()), indent=1))
+    if args.hold_view:                                         # (10/14 보스) look at the result in the GUI
+        print('[replay] done - close the window to quit', flush=True)
+        import omni.kit.app
+        while omni.kit.app.get_app().is_running():
+            env.sim.render()
     env.close()
 
 
