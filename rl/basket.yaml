@@ -37,7 +37,7 @@ success:                                    # (10/8 S3) judged at the plate BOTT
   still_s: 1.0                              # plate speed < 1 cm/s for this long with the gripper open
 full:                                       # whole basket (10/8 17:xx), basket frame = marker frame (calibration
                                             # camera_tools.py basket): origin = mean of the 4 rim markers (rail top),
-                                            # x = robot side -> far side, y -> blue handle, z up.  Human: 53 x 52 x 15 cm,
+                                            # x = robot side -> far side, y = left seen from the robot (the blue handle is at -y, marker 4), z up.  Human: 53 x 52 x 15 cm,
                                             # pins 3-4 mm, pin pitch 2 cm, rows of a plate pair 9.5 cm apart.
   pose_base: [1.2296, -0.2467, 0.1442, 1.1]   # measured basket frame in base (x, y, z, yaw deg), 10/8 16:40
   size_xy: [0.53, 0.52]
@@ -46,7 +46,7 @@ full:                                       # whole basket (10/8 17:xx), basket 
   rod_r: 0.002
   floor_grid: 0.060
   rail_w_h: [0.020, 0.030]                  # gray side rails (x = +-size/2), along y
-  handle_w_h: [0.025, 0.025]                # blue handle (y = +size/2), along x
+  handle_w_h: [0.025, 0.025]                # blue handle (y = -size/2, 10/14 Codex I: marker 4 at y -0.267), along x
   pair_centres_y: [0.129, -0.110]           # plate pair A (slot 1, from the golden teaching) and pair B (top-view photo)
   pin_x_span: [-0.245, 0.245]
   centre_gap_x: 0.0                         # (10/14 보스) Q3 has 13 tines per row; counted from the far (clip) side the plate

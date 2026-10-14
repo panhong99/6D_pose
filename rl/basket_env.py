@@ -80,7 +80,7 @@ def full_basket_parts():
     for x in (-hx, hx):
         parts.append(("box", np.array([x, 0.0, -rh / 2]), np.array([rw, 2 * hy, rh])))
     hw, hh = f["handle_w_h"]
-    parts.append(("box", np.array([0.0, hy, -hh / 2]), np.array([2 * hx, hw, hh])))
+    parts.append(("box", np.array([0.0, -hy, -hh / 2]), np.array([2 * hx, hw, hh])))   # (10/14 Codex I) handle marker 4 at y -0.267
     # pins: slot-1 bottom line from the golden slot frame, expressed in the basket frame
     o, yaw, tilt = slot_frame()
     Tb = basket_nominal_T()

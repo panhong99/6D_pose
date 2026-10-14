@@ -715,7 +715,7 @@ QUADRANTS = {'Q1': ('far', 'right'), 'Q2': ('far', 'left'), 'Q3': ('near', 'left
 
 def basket_gaps():
     """{quadrant: [gap centre on the basket floor (basket frame), ...]} ordered robot side -> far side.  Basket frame: x robot
-    side -> far side, y to the blue handle (= left seen from the robot).  Pair A (y +0.129) left, pair B (y -0.110) right."""
+    side -> far side, y = left seen from the robot (the blue handle is at -y, 10/14 Codex I).  Pair A (y +0.129) left, pair B (y -0.110) right."""
     import sys
     sys.path.insert(0, str(ROOT / 'rl'))
     import basket_env as be
@@ -900,7 +900,7 @@ def basket_boxes(Tbb, wall=0.012, top=0.03):
     zc, h = (z0 + z1) / 2, z1 - z0
     R = np.asarray(Tbb)[:3, :3]
     loc = [('wall_robot', [-sx / 2 + wall / 2, 0, zc], [wall, sy, h]), ('wall_far', [sx / 2 - wall / 2, 0, zc], [wall, sy, h]),
-           ('wall_right', [0, -sy / 2 + wall / 2, zc], [sx, wall, h]), ('wall_handle', [0, sy / 2 - wall / 2, zc], [sx, wall, h])]
+           ('wall_right', [0, -sy / 2 + wall / 2, zc], [sx, wall, h]), ('wall_left', [0, sy / 2 - wall / 2, zc], [sx, wall, h])]
     return [(n, (np.asarray(Tbb) @ np.r_[c, 1.0])[:3].tolist(), sz, R) for n, c, sz in loc]
 
 
