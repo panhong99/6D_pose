@@ -44,6 +44,7 @@ def parse_args():
     p.add_argument('--cl_dz', type=float, default=0.0, help='--closed_loop: raise the insert end by this [m] (plate bottom vs the rail)')
     p.add_argument('--cl_lean', type=float, default=1.0, help='--closed_loop: plate lean as a fraction of its quadrant\'s tine lean (1 = parallel to the tines)')
     p.add_argument('--cl_dx', type=float, default=0.0, help='--closed_loop: move the aim along the basket rows (+x) [m]')
+    p.add_argument('--cl_top', action='store_true', help='--closed_loop: turn the plate about its normal so the grip is at its top')
     p.add_argument('--hold_view', action='store_true', help='replay with the viewer: keep the window open at the end until it is closed')
     p.add_argument('--rot_sign', type=float, default=1.0)
     p.add_argument('--batches', type=int, default=1, help='collect: batches of config expert.envs envs')
@@ -218,7 +219,7 @@ def make_cfg(n, viewer, torsion_m):
     return cfg
 
 
-def closed_loop_paths(env, rows, who, above_m=0.11, extra=0.005, dz=0.0, lean=1.0, dx=0.0):
+def closed_loop_paths(env, rows, who, above_m=0.11, extra=0.005, dz=0.0, lean=1.0, dx=0.0, top=False):
     """(10/14) per env (above, descend) joint paths (deg) from the plate actually in the hand now: the plate turns ~9 deg
     in the grip on the carry (Isaac), so the planned descent lands it 3-4 gaps off.  Keeps the plate's turn about the
     vertical small: shortest rotation of its normal onto the row axis, centre on the row's target_centre (base)."""
@@ -251,24 +252,32 @@ def closed_loop_paths(env, rows, who, above_m=0.11, extra=0.005, dz=0.0, lean=1.
         nt = nt if nt @ Rp[:, 2] >= 0 else -nt
         gap_b = np.asarray(r['target_centre']) - [0, 0, 0.165] + Tb[:3, 0] * dx   # gap centre on the floor (base)
         rot, _ = R.align_vectors([nt], [Rp[:, 2]])
-        Td = np.eye(4)
-        Td[:3, :3] = rot.as_matrix() @ Rp
-        path, prev = [], qs[k]
-        for lift in np.linspace(above_m, -extra, 13):
-            Td[:3, 3] = gap_b + up * 0.165 + [0, 0, lift + dz]   # bottom over the gap, centre along the tine
-            sol = None
-            for sd in ([prev] if path else [prev, np.radians(r.get('above_deg', np.degrees(prev)))]):
-                try:
-                    cand = kin.ik(Td @ np.linalg.inv(H) @ np.linalg.inv(tool), sd)
-                except RuntimeError:
-                    continue
-                if np.degrees(np.abs(cand - prev)).max() < (45 if not path else 8):
-                    sol = cand
+        R0 = rot.as_matrix() @ Rp
+        g = R0 @ np.linalg.inv(H)[:3, 3]                        # grip (TCP) from the plate centre, turned with the plate
+        g -= (g @ nt) * nt
+        a0 = np.arctan2(np.cross(g, up) @ nt, g @ up) if top else 0.0   # (10/14) turn the plate about its normal: grip at its top
+        path = []                                              # (a side grip lets the plate spin 30-40 deg on release)
+        for dphi in ((0, 10, -10, 20, -20) if top else (0,)):
+            Td = np.eye(4)
+            Td[:3, :3] = R.from_rotvec(nt * (a0 + np.radians(dphi))).as_matrix() @ R0
+            path, prev = [], qs[k]
+            for lift in np.linspace(above_m, -extra, 13):
+                Td[:3, 3] = gap_b + up * 0.165 + [0, 0, lift + dz]   # bottom over the gap, centre along the tine
+                sol = None
+                for sd in ([prev] if path else [prev, np.radians(r.get('above_deg', np.degrees(prev)))]):
+                    try:
+                        cand = kin.ik(Td @ np.linalg.inv(H) @ np.linalg.inv(tool), sd)
+                    except RuntimeError:
+                        continue
+                    if np.degrees(np.abs(cand - prev)).max() < (45 if not path else 8):
+                        sol = cand
+                        break
+                if sol is None:
                     break
-            if sol is None:
+                path.append(np.degrees(sol))
+                prev = sol
+            if len(path) == 13:
                 break
-            path.append(np.degrees(sol))
-            prev = sol
         out.append((np.array(path[:1]), np.array(path[1:])) if len(path) == 13 else (None, None))
         if len(path) < 13:
             print(f"[replay] closed loop: {r['name']} env {k} no IK at step {len(path)}", flush=True)
@@ -334,12 +343,13 @@ def run_replay(args):
     drive(env, L('to_above', 'slot'), ~open_, args.speed)
     if all('descend_pre' in rows[i]['slot'] for i in who):    # taught slot paths only (quadrant plans: to_above -> descend)
         drive(env, L('descend_pre', 'slot'), ~open_, args.speed / 4)
-    descend = L('descend', 'slot')
+    descend, ascend = L('descend', 'slot'), L('ascend', 'slot')
     if args.closed_loop:                                       # (10/14) re-aim from the plate actually in the hand
-        fix = closed_loop_paths(env, rows, who, dz=args.cl_dz, lean=args.cl_lean, dx=args.cl_dx)
+        fix = closed_loop_paths(env, rows, who, dz=args.cl_dz, lean=args.cl_lean, dx=args.cl_dx, top=args.cl_top)
         print(f"[replay] closed loop: re-solved {sum(a is not None for a, _ in fix)}/{n}", flush=True)
         drive(env, [a for a, _ in fix], ~open_, args.speed / 4, hold=30)
         descend = [b if b is not None else d for (_, b), d in zip(fix, descend)]
+        ascend = [np.vstack([b[::-1], a]) if b is not None else u for (a, b), u in zip(fix, L('ascend', 'slot'))]   # straight back up
     st_pre = be.basket_state(env)
     pre = dict(tcp_pos=(robot.data.body_pos_w[:, ti] - env.scene.env_origins).cpu().numpy().tolist(),   # (10/14) plate + TCP before the descent
                tcp_quat=robot.data.body_quat_w[:, ti].cpu().numpy().tolist(),
@@ -347,10 +357,13 @@ def run_replay(args):
                plate_quat=env.scene['plate'].data.root_quat_w.cpu().numpy().tolist(),
                joints=robot.data.joint_pos[:, :6].cpu().numpy().tolist())
     drive(env, descend, ~open_, args.speed / 20, hold=30)
+    trace = dict(descended=dict(pos=(env.scene['plate'].data.root_pos_w - env.scene.env_origins).cpu().numpy().tolist(), quat=env.scene['plate'].data.root_quat_w.cpu().numpy().tolist()))   # (10/14) where the plate moves after the descent
     if args.attach:
         detach(env, torch.ones(n, dtype=torch.bool, device=dev))
     drive(env, [None] * n, open_, args.speed, hold=45)         # release
-    drive(env, L('ascend', 'slot'), open_, args.speed / 4)
+    trace['released'] = dict(pos=(env.scene['plate'].data.root_pos_w - env.scene.env_origins).cpu().numpy().tolist(), quat=env.scene['plate'].data.root_quat_w.cpu().numpy().tolist())
+    drive(env, ascend, open_, args.speed / 4)
+    trace['ascended'] = dict(pos=(env.scene['plate'].data.root_pos_w - env.scene.env_origins).cpu().numpy().tolist(), quat=env.scene['plate'].data.root_quat_w.cpu().numpy().tolist())
     ok, st = inserted(env)
     ok = ok.cpu().numpy() & held
     # the real plates did not always go into the taught gap (tilt + 4 cm along the rows): judge "in A gap" too
@@ -376,7 +389,7 @@ def run_replay(args):
     pc = (env.scene['plate'].data.root_pos_w - env.scene.env_origins).cpu().numpy()
     pq = env.scene['plate'].data.root_quat_w.cpu().numpy()
     f_ = be.B['full']
-    zh = f_['floor_z'] + 0.06
+    zh = f_['floor_z'] + 0.10                               # near the tine tips (11.5 cm): where 보스 counts from above
     for k, i in enumerate(who):
         r = rows[i]
         if 'model_qd' not in r:
@@ -422,7 +435,7 @@ def run_replay(args):
     out = Path(args.out or RL / 'logs/basket/replay_20261012.json')
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(dict(results=res, gate=gate, need=9, names=[rows[i]['name'] for i in who], in_hand=in_hand, pre=pre,
-                                   final_pose=dict(plate_pos=pc.tolist(), plate_quat=pq.tolist()),
+                                   final_pose=dict(plate_pos=pc.tolist(), plate_quat=pq.tolist()), trace=trace,
                                    final={k: st[k].cpu().numpy().tolist() for k in ('d_bottom', 'low', 'normal_err', 'd_u')},
                                    gap_err=gap_err.cpu().numpy().tolist(), held=held.tolist(), yaw_err=yaw_err.cpu().numpy().tolist(),
                                    lean=lean.cpu().numpy().tolist(), quadrant_ok=face_ok.tolist(), landed_gap=landed.tolist(), target_gap=target.tolist()), indent=1))
