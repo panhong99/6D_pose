@@ -17,6 +17,7 @@
 ## Codex 할 일 (위에서부터)
 | # | 일 | 자세한 내용 | 상태 |
 |---|---|---|---|
+| N | **빗살 전수 번호 라벨링 (보스 10/14 15:xx, 지금 Codex 최우선): Codex = Q1·Q2, Claude = Q3·Q4** | 아래 '새 일 N' | 대기: 보스 분면 사진 촬영 |
 | A | 손목 카메라 핀 쌍 검출 + 번호(위→아래) | `CODEX_BRIEF_2026-10-13.md` A | 완료(382a53d, 오프라인 프로토타입; 정확도/실기 연결 미검증) |
 | B | 바구니 마커 크기 실험 측정 모드 + 10 cm 기준값 | 같은 문서 B | 완료(382a53d, 98mm 기준값; 작은 실물 마커 비교 대기) |
 | C | failure detection 선행 연구 요약 | 같은 문서 C | 완료(382a53d, 7편) |
@@ -86,6 +87,15 @@
 - 지금 성적: 새 사진 4장에서 확정 쌍 Q3 1 / Q4 4 / Q1 0 / Q2 2 (`camera_tools pins`). 목표: 분면마다 보이는 쌍의 80% 이상 확정, 번호(화면 위→아래, Q2는 회전 후) 정답과 일치.
 - D의 라벨로 precision/recall, 보정 오차(mm) 표. 모델 대신 D의 실측 배치를 투영 출발점으로 쓰는 옵션.
 - 결과: `pins` 모드 개선 + 표(LOG). 출력 json에 `pairs[k] = {number, gap_centre_base_xyz, correction_mm}` (Claude가 파이프라인 `--pin k`에 연결).
+
+## 새 일 N — 빗살 전수 번호 라벨링 (보스 10/14 15:xx)
+- 왜: 바구니 모델(빗살 위치·기울기·간격)이 정확해야 핀 번호 넣기가 됨. 지금 라벨은 PARTIAL(Q1 4/Q2 5/Q3 18/Q4 22, Q3·Q4 로봇 쪽 10~13번 없음).
+- 분담: **Codex = Q1·Q2, Claude = Q3·Q4.** 같은 규칙·같은 형식. 서로 결과를 교차 확인.
+- 입력: 보스가 분면마다 손목 사진 촬영(`bash calibration/run.sh wrist_look`, 카메라 거의 수직 아래, 분면 전체 + 클립 + 로봇 쪽 끝이 보이게) 후 분면 이름(로봇 기준 Q1 먼 오른쪽, Q2 먼 왼쪽, Q3 가까운 왼쪽, Q4 가까운 오른쪽)을 알려 줌. 파일 `calibration/data/basket/wrist_look/<시각>.raw.png` + `.json`(K, T_base_flange, T_flange_cam, T_base_basket).
+- 방법(10/14 오전 D2 방식 그대로): 확대 잘라 보기 → 빗살마다 **뿌리 = 세로 레일 접합점(노란 점, 보스 정의)**, **끝 = 빗살 끝** 픽셀 → 원본에 겹쳐 그려 확인 반복.
+- 번호: 줄마다 **클립 쪽부터 1, 2, …**(보스 개수: Q1 7, Q2 9, Q3 13, Q4 13). 한 쌍의 두 줄 모두. 가려진 빗살은 '가림'으로 표시하고 번호는 건너뛰지 않음.
+- 출력: `calibration/data/basket/wrist_look/labels_full_<분면>_<날짜>.json`(사진, 줄, 번호, root_px, tip_px, 가림 여부) + 번호 붙인 겹침 PNG(보스 확인용) → `camera_tools.py pin_layout_measure`로 3D.
+- 완료 조건: 분면 빗살 전부(가림 제외) 번호 라벨 + 보스 시각 확인 'OK' + 3D 결과(간격·기울기·클립 거리) LOG 표. 모델(`rl/basket.yaml`, `rl/basket_env.py`) 반영은 Claude.
 
 ## Codex 상태
 - 10/14 11:4x (보스 전달) Codex 토큰 소진 → L·M Claude 인수.
