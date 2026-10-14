@@ -1914,3 +1914,8 @@
 ### U2 후속: 새 Q1/Q2 시뮬 원시 결과 (22:42)
 - `rl/logs/basket/replay_seat1_Q12_l1.json`은 분면별 episode 기준 Q1 194, Q2 204를 재집계했다. low<60 mm만 적용하면 Q1 177/194 (91.2%), Q2 120/204 (58.8%)지만 목표 gap/orientation을 포함한 `quadrant_ok & seated`는 Q1 0/194, Q2 1/204다. Q1 최저점 분포 p10/median/p90 −15.6/51.0/55.9 mm로 일부가 바닥 아래로 관통; Q2 33.4/54.1/87.7 mm다. 따라서 `<60 mm`는 높이 보조조건이지 성공 단독 판정이 될 수 없다. 이 run은 새 Q1/Q2 설정을 시험한 replay이며 완전 독립 일반화 평가로 보지 않는다.
 - R은 22:42 기준 5,160/6,480(79.6%), session 76551, CPU-only; final outputs not yet written.
+## 2026-10-14 22:56 Codex — T slot-target 회귀 수정 + R 진행
+- Claude가 보고한 `SlotTargetGenerationTests.test_slot_targets_reproduce_reviewed_table_and_refuse_overwrite` 실패를 해결했다. 결과 JSON의 `sources.pin_gap_implementation.sha256`는 planner 코드 변경 때 바뀌는 provenance 필드이므로 생성 결과 비교에서만 제외했다. 슬라이드 라벨·3D 핀·감사자료·basket yaml/geometry 입력 해시는 그대로 비교되며 목표표 내용 및 덮어쓰기 거부 검증도 유지한다.
+- 검증: `bash calibration/run.sh tests` 전체 **36/36 통과, 44.99 s**. GPU/Isaac 및 로봇 명령 사용 없음.
+- 시험 수정 커밋: `2e222f1` (`tests: ignore planner code hash in slot target fixture`). `tests.py` 내 선행 Claude 모델 오버레이 테스트 변경은 이번 커밋에 포함하지 않았다.
+- R v2는 CPU-only로 `calibration/data/basket/reach_parallel_20261014_v2/progress.jsonl` 기준 **5,505/6,480**까지 진행. 이 시점에는 결과 JSON/지도 PNG가 아직 없어 성공률 결론은 보류한다.
