@@ -493,11 +493,13 @@ class SlotTargetGenerationTests(unittest.TestCase):
             # tie difference between the serialized review JSON and refit.
             generated_cmp = json.loads(json.dumps(generated))
             reference_cmp = json.loads(json.dumps(reference))
-            # The planner implementation hash is provenance only. Planner code
+            # Implementation hashes are provenance only. Planner/geometry code
             # can change while the reviewed input data and target table remain
             # identical; data-source hashes below still detect stale inputs.
             generated_cmp['sources']['pin_gap_implementation'].pop('sha256', None)
             reference_cmp['sources']['pin_gap_implementation'].pop('sha256', None)
+            generated_cmp['sources']['basket_geometry'].pop('sha256', None)
+            reference_cmp['sources']['basket_geometry'].pop('sha256', None)
             for actual, expected in zip(generated_cmp['targets'], reference_cmp['targets']):
                 for arow, erow in zip(actual['rows_used'], expected['rows_used']):
                     axy = arow.pop('row_gap_centre_xy_m')
