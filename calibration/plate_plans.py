@@ -1052,7 +1052,16 @@ def quadrant_plans(a):
     out = {}
     for qd in a.quadrants:
         t0 = time.time()
-        path, rep = quadrant_plan(Tbb, qd, a.gap, H, tool, grasp['lift'][-1], Tbc, q, grasp_legs=grasp, tilt_deg=a.tilt)
+        kw = dict(tilt_deg=a.tilt)
+        if a.sim_q:                                          # (10/15 night) the Isaac per-quadrant settings (no in-hand sensing),
+            import sys                                       # for an RViz preview only - candidate values, not approved real ones
+            sys.path.insert(0, str(ROOT / 'rl'))
+            import basket_env as be
+            sq = C['basket_quadrant_sim'][qd]
+            kw = dict(tilt_deg=sq['lean'] * be.B['full']['tine_lean_deg'][qd], x_shift_m=sq['aim_m'], centre_h=sq['centre_h'],
+                      faces=(-1.0, 1.0) if sq['flip'] else (1.0, -1.0))
+            print(f'{qd}: sim settings {sq} -> tilt {kw["tilt_deg"]:+.2f} deg', flush=True)
+        path, rep = quadrant_plan(Tbb, qd, a.gap, H, tool, grasp['lift'][-1], Tbc, q, grasp_legs=grasp, **kw)
         out[qd] = path
         print(f'{qd} gap {a.gap + 1}: ' + (f'OK phi {rep["phi_deg"]:+d}, carry {rep["carry"]}, home {rep["home"]}, '
                                           f'clearance/margin {rep["clearance_ratio"]}, accepted {rep["accepted"]} ({time.time() - t0:.0f} s) -> {path}'
@@ -1331,6 +1340,7 @@ if __name__ == '__main__':
     p.add_argument('--plate_r', type=float, nargs=2, default=(0.86, 1.15), help='random_plans: plate radius range [m] (library path clears the frame up to ~1.15)')
     p.add_argument('--plate_x', type=float, nargs=2, default=None, help='random_plans: plate x range [m] (with --plate_y; replaces --plate_r)')
     p.add_argument('--plate_y', type=float, nargs=2, default=None, help='random_plans: plate y range [m]')
+    p.add_argument('--sim_q', action='store_true', help='quadrant_plans: apply config basket_quadrant_sim (Isaac per-quadrant lean/aim/wrist flip) - preview only')
     p.add_argument('--far_flip', action='store_true', help='random_plans: Q1/Q2 try the plate facing -x first (wrist flipped, like 보스 taught Q2)')
     p.add_argument('--only_quadrants', nargs='+', default=None, help='random_plans: sample only these (robot) quadrants')
     p.add_argument('--sim', action='store_true', help='random_plans: plans for the Isaac replay (no x trim, centre 0.165, sim sag)')

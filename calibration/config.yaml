@@ -153,3 +153,11 @@ plate_ik_bc:                       # --plate_policy ik_bc (overrides plate_rl ke
   basket_slot_shift_pitches: 2         # real intended gap = sim slot origin + 2 pins (P1 replay 10/12)
   auto_max_plate_move_mm: 15.0         # --auto: do not close if FP saw the plate move more than this since planning
   workspace_mm: {x: [-80, 140], y: [-180, 180], z: [-15, 15]}   # FP + offset - rl plate_xy (no-library mode)
+
+basket_quadrant_sim:               # (10/15 night, Claude) Isaac per-quadrant insert settings, no in-hand sensing (sim seated & exact 0.953 / 0.952,
+                                   # LOG 10/15 02:5x). CANDIDATES for an RViz preview (plate_plans.py quadrant_plans --sim_q); not approved for the robot.
+                                   #   lean = factor of the quadrant's tine lean at the release, aim_m = basket-x shift of the target, flip = wrist flipped
+  Q1: {flip: true,  lean: 0.5,  aim_m: 0.029,   centre_h: 0.165}
+  Q2: {flip: true,  lean: 0.0,  aim_m: 0.038,   centre_h: 0.165}
+  Q3: {flip: false, lean: -0.5, aim_m: -0.0384, centre_h: 0.165}
+  Q4: {flip: false, lean: 0.5,  aim_m: -0.035,  centre_h: 0.165}
