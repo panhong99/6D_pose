@@ -630,7 +630,7 @@ def run_plate(args):
                                        centre_h=q.get('basket_quadrant_centre_h_m', 0.18),
                                        yaw_trim_deg=args.yaw_trim if args.yaw_trim is not None else q.get('basket_quadrant_yaw_trim_deg', 0.0),
                                        tilt_deg=-(args.tilt_trim if args.tilt_trim is not None else q.get('basket_quadrant_tilt_trim_deg', 0.0)),
-                                       y_shift_m=args.y_shift)
+                                       y_shift_m=args.y_shift, x_shift_m=args.x_shift)
             if early is None:
                 raise RuntimeError(f'{args.quadrant} pin {args.pin}: no insert plan from this grasp ({rep["tried"][:4]})')
             print(f'   {args.quadrant} (바구니 모델 {mq}) 핀 {args.pin}: 넣기 계획 OK, 운반 {rep["carry"]}, '
@@ -753,7 +753,7 @@ def run_plate(args):
                                             centre_h=q.get('basket_quadrant_centre_h_m', 0.18),
                                        yaw_trim_deg=args.yaw_trim if args.yaw_trim is not None else q.get('basket_quadrant_yaw_trim_deg', 0.0),
                                        tilt_deg=-(args.tilt_trim if args.tilt_trim is not None else q.get('basket_quadrant_tilt_trim_deg', 0.0)),
-                                       y_shift_m=args.y_shift)
+                                       y_shift_m=args.y_shift, x_shift_m=args.x_shift)
                 if again is not None:
                     early = again
                     rec.event('replan_after_lift', plan=str(again), tilt_deg=tilt_now, plate_root=[float(v) for v in root],
@@ -1021,6 +1021,8 @@ def parse_args(argv=None):
                    'insert [deg], + = plate top toward the far side (default config basket_quadrant_tilt_trim_deg)')
     p.add_argument('--y_shift', type=float, default=None, help='--insert quadrant: plate centre along the pin rows\' normal '
                    '(basket y, + = left seen from the robot) [m]; default: automatic, keeps the 26.8 cm rim off the side wall')
+    p.add_argument('--x_shift', type=float, default=None, help='--insert quadrant: plate along the pin rows (basket x, + = away '
+                   'from the robot) [m]; default config basket_quadrant_x_trim_m')
     p.add_argument('--pin', type=int, default=5, help='--insert quadrant: pin-pair number in the quadrant, 1 = farthest from '
                    'the robot (wrist image top -> bottom); the plate goes into the gap just robot-side of that pair')
     p.add_argument('--auto', action='store_true', help='plate: no Human answers after the opening phrase: gripper '

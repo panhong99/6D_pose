@@ -934,7 +934,7 @@ def quadrant_checkers(Tbc, q, Tbb, H, tool):
 
 
 def quadrant_plan(Tbb, quadrant, gap, H, tool, start_deg, Tbc, q, grasp_legs=None, tilt_deg=0.0, centre_h=0.18, above_m=0.11,
-                  phi_step=10, seeds=None, yaw_trim_deg=0.0, y_shift_m=None):
+                  phi_step=10, seeds=None, yaw_trim_deg=0.0, y_shift_m=None, x_shift_m=None):
     """Plan.json for one quadrant gap from the plate in the hand: to_above (carry, straight or RRT), descend (straight
     down, plate upright, +basket_policy_extra_down_m), ascend (straight up), to_home, abort_home.  -> (path, report)."""
     import ros2_nodes
@@ -950,6 +950,9 @@ def quadrant_plan(Tbb, quadrant, gap, H, tool, start_deg, Tbc, q, grasp_legs=Non
         room = be.B['full']['size_xy'][1] / 2 - 0.012 - q.get('basket_wall_margin_m', 0.01) - PLATE_R - 0.005
         y_shift_m = float(np.clip(0.0, -room - g_[1], room - g_[1])) if abs(g_[1]) > room else 0.0
     g_[1] += y_shift_m
+    if x_shift_m is None:                                    # (10/14 실기) the plate lands 2-3 cm farther (+x) than planned
+        x_shift_m = q.get('basket_quadrant_x_trim_m', 0.0)
+    g_[0] += x_shift_m
     gap_b = (np.asarray(Tbb) @ np.r_[g_, 1.0])[:3]
     n, t = np.asarray(Tbb)[:3, 0], np.radians(tilt_deg)
     if yaw_trim_deg:                                         # (10/14 실기) plate face turned about the vertical, + = CCW seen from above
@@ -1005,7 +1008,7 @@ def quadrant_plan(Tbb, quadrant, gap, H, tool, start_deg, Tbc, q, grasp_legs=Non
             legs = dict(grasp_legs, **legs)
         path = taught_plan(legs, Tbc, q, f'quadrant {quadrant} gap {gap + 1}')
         plan = json.loads(Path(path).read_text())
-        rep = dict(quadrant=quadrant, gap=gap + 1, phi_deg=phi, y_shift_m=round(y_shift_m, 4), carry=how, home=how_h, tried=tried, accepted=plan['accepted'],
+        rep = dict(quadrant=quadrant, gap=gap + 1, phi_deg=phi, y_shift_m=round(y_shift_m, 4), x_shift_m=round(x_shift_m, 4), carry=how, home=how_h, tried=tried, accepted=plan['accepted'],
                    clearance_ratio=dict(carry=round(held.path_clearance(pp(np.array(carry), 0.5)), 2), insert=round(c_ins, 2),
                                         after=round(free.path_clearance(pp(np.array(home), 0.5)), 2)))
         plan.update(basket_T=np.asarray(Tbb).tolist(), plate_in_tcp=np.asarray(H).tolist(), quadrant_plan=rep)
