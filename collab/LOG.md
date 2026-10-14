@@ -1925,3 +1925,18 @@
 - Q1/Q2 전체 기울기(+더 돌리기, seat1, 조정 경로): 최저점 중앙값 Q1 51 / Q2 54 mm로 앉는 쪽으로 바뀌었다. 하지만 앉은 접시가 Q1 −43°, Q2 −29°로 바깥쪽(빗살 −12.5°보다 더)으로 누워 판정에서 빠진다. Q3/Q4에서 앉은 접시는 −1°(거의 수직). Codex U2: 60 mm만으로는 성공 판정이 안 된다(Q1 일부는 바닥 아래로 관통, p10 −16 mm).
   - 가설: 접시가 모든 분면에서 같은 면(앞면 로봇 쪽)으로 들려 있어 좌우 대칭이 깨진다. 보스는 Q2를 티칭할 때 손목을 뒤집었다(J4 −180). → `random_plans --far_flip`(a8a833f): Q1/Q2는 면 −x(손목 뒤집힘) 경로를 먼저 찾는다. 경로 120개(seed 5014) → 재생 중.
 - Q3 걸침 원인(seat1 Q3, 기울기 1.0만 사용): 앉은 것과 걸친 것은 내려간 높이(+42 mm)와 놓을 때 기울기(+15°)가 같다. 놓은 뒤 앉은 것은 수직(−1°)으로 서며 26 mm 내려가고, 걸친 것은 +10°에 멈춘다. → Q3 기울기 0 / 0.5 / −0.5로 놓기 시험 예약.
+## 2026-10-14 23:12 Codex — U3 Q1/Q2 flip 및 Q3 lean sim 원시결과 재집계 (read-only)
+- Q1/Q2 flip JSON 2개는 같은 120개 run 이름(65 Q1, 55 Q2)을 사용하며 각 run에 2개 sim replica가 기록됐다. `results`의 지표는 replica 평균이므로 분모는 run 수, 최저점 표본은 2×run이다.
+
+| 재생 | 분면 | low 중앙값 mm | low<60 mm | in-quadrant | seated_exact | strict sim_rate |
+|---|---|---:|---:|---:|---:|---:|
+| flip l1 | Q1 | 47.7 | 86/130 | 23.5/65 (36.2%) | 0/65 | 0/65 |
+| flip l1 | Q2 | 76.7 | 20/110 | 37/55 (67.3%) | 0/55 | 0/55 |
+| flip l1 + dx10 | Q1 | 47.8 | 80/130 | 30/65 (46.2%) | 6/65 (9.2%) | 0/65 |
+| flip l1 + dx10 | Q2 | 76.7 | 2/110 | 47/55 (85.5%) | 0/55 | 0/55 |
+
+- dx10에서 Q2의 relaxed quadrant/exact 배치는 늘었지만 실제 `<60 mm` 바닥 근접 표본은 20→2/110으로 줄고 `seated_exact`/strict 성공은 여전히 0이다. 따라서 Q2의 ‘안정 착좌 성공’으로 해석하면 안 된다. Claude 로그의 Q2 low 중앙값 54 mm는 전체 raw `final.low`에서 재현되지 않는다(76.7 mm); 별도 조건부 집계라면 조건을 명시해야 한다. 저장 `lean`은 unsigned 각도이므로 Q1 −43°/Q2 −29°처럼 부호가 있는 기울기 주장은 이 JSON 필드만으로 확인 불가.
+- Q3 lean 비교(`replay_seat1_Q3_l1.json` 대 `replay_q3lean_0.json`)는 이름·115개 경로가 완전히 일치해 paired sample이다. lean=1→0에서 low<60은 87/230 (37.8%) → 208/230 (90.4%), median low 69.2→49.7 mm, `seated_exact` 40.5/115 (35.2%) → 83/115 (72.2%)로 증가했으나 strict `sim_rate`는 1/115 (0.9%) → 0/115. `seated_exact`는 안정 정지 검사가 포함된 `inserted()`와 동일 지표가 아니다.
+- `trace`의 600개 mesh-vertex 재구성은 최종 저장 low와 최대 0.00005 mm 차이로 일치. Q3 lean=1에서 descended/released low 중앙값은 seated/perched 그룹 모두 84.3/84.7 mm, unsigned lean 15.1/15.4° 및 15.3/15.5°였다. Ascended에서 seated는 48.0 mm·1.8°, perched는 72.2 mm·10.1°로 갈라진다. 방향성(후퇴 중 두 그룹의 자세/높이 분리)은 trace가 지지하지만 seated의 84.7→48.0 변화는 36.7 mm라 Claude 기록의 ‘26 mm’는 재현되지 않았다. lean=0 결과는 분리가 이미 descended 단계(55.8 vs 98.0 mm)에서 나타난다.
+- 결과 파일: `rl/logs/basket/replay_flip_Q12_l1.json`, `replay_flip_Q12_l1_dx10.json`, `replay_seat1_Q3_l1.json`, `replay_q3lean_0.json`. 이는 Isaac sim 지표이며 실기 성능이나 새로운 독립 분할을 뜻하지 않는다. 코드 변경 없음.
+- R은 CPU-only 계속 실행 중; 마지막 진행 확인 5,700/6,480, `calibration/data/basket/reach_parallel_20261014_v2/`.

@@ -31,7 +31,7 @@
 | O | **티칭 시연 충돌·안전 자동 판정기** (10/14 17:1x, N 다음 최우선) | 아래 '새 일 O' | 완료(6f2d618): full_14만 unsafe, 시험 31/31. 보고서 분면은 파일값(full_11 Q3) — manifest 정정(Q4) 우선으로 S에서 같이 고칠 것 |
 | R | **바구니 배치 도달 지도 (IK만, 접시 면 양방향) — 10/14 19시 새 배치 기준으로 범위 변경** | 아래 '새 일 R' | 진행 중(22:42 5,160/6,480 CPU-only, session 76551) |
 | T | **빗살 정답 → 칸 목표표 (3단계 입력)** | 아래 '새 일 T' | 완료(4ed87bc + 2e222f1/e802ce1: 코드 해시 비교 제외) |
-| U | **Claude sim 결과 검증 (Critic)** | 아래 '새 일 U' | 완료(2abf61e; U2 분석 e72ac49, Q1/Q2 후속 재집계 9330f83) |
+| U | **Claude sim 결과 검증 (Critic)** | 아래 '새 일 U' | 완료(2abf61e, e72ac49, 9330f83; 최신 flip/Q3 결과 재집계는 LOG 23:xx) |
 | S | **시연 도구 파일 정리: demo_audit+demo_dataset 한 역할 파일, 시험은 tests.py로** (R과 독립 병행) | 아래 '새 일 S' | 완료(449a056) |
 | P | **BC 데이터셋 변환기: 시연 → 바구니 좌표 키자세·궤적** (O 다음) | 아래 '새 일 P' | 완료(7daafd5) |
 | Q | **observe_now2 사진에 Goal 1 BC 파지 라이브러리 범위 overlay** | 고정 카메라 K/T 투영, 라이브러리 표본·가정·한계를 그림에 표시 | 완료(3ec2b71) |
@@ -162,7 +162,7 @@
 - Claude가 LOG에 단계 1~3 결과를 올리면 결과 JSON을 직접 다시 집계해 수치를 확인한다. 성공 판정(칸 판정 높이, 기울기 반영), 표본 수, 흔들기 범위가 SYSTEM_SPEC과 같은지 확인하고, 반박할 점·누락된 검증을 LOG에 적는다. 코드는 고치지 않는다.
 
 ## Codex 상태
-- 10/14 23:10 살아 있음: T 후속 회귀 수정 커밋 `2e222f1`, `e802ce1` — slot-target 시험은 데이터 입력 해시를 비교하고 `plate_plans.py`/`basket_env.py` 코드 해시는 출처정보로만 남겨 비교에서 제외. 전체 36/36 통과(36.35 s). R v2 CPU-only 진행 5,682/6,480; JSON/PNG 미완성.
+- 10/14 23:12 살아 있음: Claude 새 flip/Q3 재생 JSON U 비판 검증 완료(read-only; 상세 LOG 23:xx). T 해시 회귀 `2e222f1`/`e802ce1`, 전체 36/36 통과. R v2 CPU-only 진행 확인값 5,700/6,480; 최종 JSON/PNG 미완성.
 - 10/14 20:36 살아 있음: R v2 993/6,480 (15.3%), CPU only; 분석범위는 바구니 ±10 cm/2.5 cm, yaw 0/±10/±15°, 접시 x −5~+10 cm·y −10~+2 cm. SCOPE와 SYSTEM_SPEC의 학습 흔들기 범위는 별개로 보고.
 - 10/14 20:06 살아 있음: R 공식 v2 2.5 cm 스윕 시작(6,480조합, 8 CPU workers, nice +10, PID 2 / exec session 76551; 경로 `calibration/data/basket/reach_parallel_20261014_v2/`). 5 cm 예비 JSON은 2,000/2,000이나 PNG가 없어 인용하지 않는다. full tests 32/32 통과(16 s).
 - 10/14 11:4x (보스 전달) Codex 토큰 소진 → L·M Claude 인수.
