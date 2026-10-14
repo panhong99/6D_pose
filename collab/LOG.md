@@ -2424,12 +2424,12 @@
 - Joined all 65 Q1 plan names in `calibration/data/basket/random_20261014_224608/replay.jsonl` to their plan JSONs, and both matching observations per name in `rl/logs/basket/replay_q1nt_l05.json` (130 episodes). Recomputed H from logged joint radians using `FK + 0.165 m TCP`; this reproduces AG's Q1 standard deviations: H-y 1.55 mm at `in_hand`, 9.90 mm at `pre`.
 - Per plan, transport path metric uses the same scalar arc definition as `expert.drive`: sum over segments of the maximum absolute joint waypoint increment, across `lift` and `to_above`. J4/J5/J6 travel is cumulative absolute waypoint rotation; maximum segment step is a waypoint proxy, not a measured peak velocity. Outcomes are pair-mean absolute change in H-y and pair-mean absolute H-y difference from `in_hand` to `pre`.
 
-| Plan feature | Range / typical | Spearman ρ with abs H-y change | p | Spearman ρ with pre-vs-in-hand abs H-y delta | p |
+| Plan feature | Range / typical | ρ with deviation from mean pre H-y | p | ρ with `|pre − in_hand|` H-y | p |
 |---|---:|---:|---:|---:|---:|
 | lift + carry scalar arc (°) | median 194.7; p10–p90 184.5–196.3 | −0.019 | .878 | −0.345 | .005 |
 | carry (`to_above`) scalar arc (°) | median 185.2; p10–p90 174.9–187.0 | −0.003 | .982 | −0.392 | .001 |
 | cumulative J4 travel (°) | median 185.6; p10–p90 175.0–187.0 | −0.005 | .969 | −0.407 | <.001 |
-| cumulative J5 travel (°) | median 62.7; p10–p90 51.0–71.6 | +0.311 | .012 | +0.260 | .037 |
+| cumulative J5 travel (°) | median 62.7; p10–p90 57.2–71.6 | +0.311 | .012 | +0.260 | .037 |
 | cumulative J6 travel (°) | median 21.4; p10–p90 13.2–29.7 | +0.116 | .359 | +0.314 | .011 |
 | max J4 waypoint step (°) | median 17.4; p10–p90 13.5–19.5 | +0.017 | .893 | +0.099 | .430 |
 | max J6 waypoint step (°) | median 1.88; p10–p90 1.20–2.75 | +0.153 | .223 | +0.358 | .003 |
