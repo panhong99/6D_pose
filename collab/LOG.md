@@ -2055,3 +2055,38 @@
 - 처음 보는 경로(seed 6014)의 Q1 48개로 확인: **0.51 → 0.62**(줄 밖 70 → 14, 칸에 든 130 중 120이 목표 칸).
 - `--cl_top_q`(a04f930): 분면별 위쪽 다시 잡기 켜기/끄기.
 - 진행 중: 두 번째 처음 보는 경로 300개(seed 7014) 생성 → 분면별 최종 설정을 한 번에(Q1 위쪽 잡기 끔) 재생.
+- W 문서 커밋 전 전체 시험 `bash calibration/run.sh tests` 결과: **38개 중 36개 통과, 2개 오류, 419.9 s**. 실패는 `test_default_live_flow_plans_publishes_and_cleans_up_without_mover`, `test_execute_routes_both_legs_through_existing_supervised_mover`; 둘 다 `pipeline.run()` stable pose/live joints timeout. 현재 Claude 소유 `calibration/pipeline.py`와 테스트 파일을 수정하지 않았고, 분석은 read-only라 이 실패를 W 계산의 오류 증거로 보지 않는다. 사용자 지시의 전체시험 통과 조건에 따라 W 기록은 아직 커밋하지 않았다. 실패 수정을 위해 Claude 파일을 덮어쓰지 않고 다음 독립 업무로 이동한다.
+
+## 2026-10-15 Codex — Y 최종 평가 독립 검증 (U3, read-only)
+- `rl/logs/basket/replay_final_6014_20261014.json`의 597 episode 배열을 `calibration/data/basket/random_20261014_230916/replay.jsonl` 199개 unique layout에 이름으로 매칭해 직접 재집계했다. 기준은 `seated && quadrant_ok && landed_gap == target_gap`; 목표 gap은 replay JSON의 `gap`과 **199/199 일치**한다. quadrant별 결과:
+
+| Q | unique layouts | episodes | seated & exact |
+|---|---:|---:|---:|
+| Q1 | 48 | 144 | 73/144 = 50.7% |
+| Q2 | 49 | 147 | 145/147 = 98.6% |
+| Q3 | 52 | 156 | 156/156 = 100.0% |
+| Q4 | 50 | 150 | 143/150 = 95.3% |
+| 전체 | 199 | 597 | 517/597 = 86.6% |
+
+- 원 LOG의 반올림 수치(Q1 0.51/Q2 0.99/Q3 1.00/Q4 0.95/전체 0.87)는 재현된다. 다만 597회는 같은 199 layout을 각 3회 재생한 것이므로 독립적인 새 배치 수는 199개다. 생성 summary는 200 setup, 경로 생성 성공 199/200; 실패 1은 `grasp: Bad CRC-32 for file 'q_deg.npy'`로 기록되어 replay에서 제외됐다.
+- **Q1 문제 분포 수정:** `in_quadrant=false`는 71/144 episode다. 그중 **70회는 target pin 1–4(핀별 36/18/13/3), landed_gap=-1**로 24 unique layouts에서 발생(23개 layout은 3회 전부, 1개는 1회). 나머지 1회 `r100_Q1_pin5`는 landed_gap=target_gap=1이지만 seated/quadrant_ok는 false라 `in_quadrant`도 false다. 그러므로 “70회 전부 단순 바깥으로 굴러남”은 pin1–4 sentinel 70회만을 뜻하도록 한정해야 하고, `in_quadrant=false` 전체는 71회로 구분한다.
+- Q4 `landed_gap-target_gap=+1`은 **7 episode / 7 unique layout**, target pin {2,5,8,10,11,11,12}: `r52_Q4_pin11`, `r56_Q4_pin8`, `r107_Q4_pin12`, `r152_Q4_pin10`, `r191_Q4_pin11`, `r194_Q4_pin5`, `r199_Q4_pin2`. 한 끝 핀에만 몰린 현상은 아니다.
+- **seed 분리:** `stage2_final_6014.sh`는 tuning seeds 4014/5014의 quadrant별 설정을 정하고 seed6014 replay를 실행한다. `stage3_pinsweep.train`은 `random_20261014_213328`을 training set으로 기록하며 해당 `summary.json`의 seed는 **4014**다. stage2/3 shell 전체에서 최종 replay 경로를 결과 생성/설정 선택 입력으로 읽는 다른 명령은 확인되지 않았다. 단, 후속 `stage2_final_q1.sh`는 주석에 “tuning set 5014: no-top 0.49→0.75”를 적고 `random_20261014_230916/replay_Q1.jsonl`(같은 seed6014 heldout)을 다시 평가한다. 이는 기존 0.87 점수를 만든 네 설정을 사후 변경하지는 않았지만, seed6014는 그 후 Q1 no-top 비교에 재사용되었으므로 더는 새로운 설정 비교의 untouched holdout이라고 부를 수 없다. 후속 `stage2_final_7014.sh`는 별 seed7014 데이터다.
+- **실제 교란 범위(199 replay layouts, 기준 배치 basket .807/−.192 m, plate .848/.339 m):** basket Δx −4.98…+4.97 cm(±5 전체), Δy −4.99…+0.79 cm(요청 ±5 중 +y 쪽 대부분 미포함), yaw −9.80…+9.94°(거의 ±10 전체); plate Δx −3.91…+7.98 cm(요청 −4…+8 전체), Δy −3.36…+1.99 cm(요청 −8…+2 중 −y 쪽 약 4.6 cm 미포함). 쿼드런트 layout 수는 48/49/52/50. `plate_plans.random_plans`는 tray와 접시 중심 거리가 `0.37 + PLATE_R + 0.05 m`보다 가까운 조합을 먼저 거부하고 다시 샘플하므로 유효 replay는 입력 박스의 균일한 전 범위를 대표하지 않는다. 따라서 성공률 86.6%는 기록된 valid-plan 조건부 표본 성능이지, 명시한 교란 box 전체에 대한 86.6% 성능으로 일반화할 수 없다.
+- 빗살 번호는 이 데이터에서 Q별로 `gap = n_gaps - pin`(Q1 n=6, Q2 n=8, Q3/Q4 n=12)이고 `target_gap==gap` 0 mismatch라 역방향/0-based gap mapping은 일관된다.
+- 결론/반박: 점수 산술은 맞고 seed6014는 원 설정 선정에 쓰이지 않았다는 근거가 있다. 다만 같은 heldout을 Q1 no-top 사후 비교에 재사용했고, valid-plan 필터로 basket +y와 plate −y 교란영역이 크게 빠져 실제 커버리지가 좁다. 86.6%는 이 제약에 맞춰 해석해야 한다. 원본 JSON/계획, 셸·summary만 읽었고 코드·GPU·로봇은 사용하지 않았다.
+- 커밋 전 `bash calibration/run.sh tests` 전체 결과는 W 기록에 적은 **38개 중 36개 통과, Claude pipeline stable-pose timeout 2개 오류**와 동일하다. Claude 소유 파일을 수정하지 않아 이 문서 기록의 커밋은 보류한다.
+
+## 2026-10-15 00:1x Claude — **두 번째 처음 보는 배치(seed 7014)에서 앉음 & exact 0.88 (Q2 1.00 / Q3 1.00 / Q4 0.96 / Q1 0.63)**
+- 경로 300개(생성 300/300) × 2회 = 600회. 분면별 최종 설정을 한 번에 적용: `--closed_loop --cl_top --cl_top_q Q1:0 --cl_iter 2 --cl_dx_q "Q1:0.025,Q2:0.038,Q3:-0.0464,Q4:-0.035" --cl_lean_q "Q1:0,Q2:0,Q3:-0.5,Q4:0.5"`, Q1/Q2 손목 뒤집기 경로.
+
+| 분면 | 경로 | 앉음 & exact (seed 7014) | seed 6014 | 칸 오차 (7014) |
+|---|---|---|---|---|
+| Q1 | 88 | 0.63 | 0.51 (위쪽 잡기 끄고 0.62) | 0칸 141, −1칸 14, 줄 밖 20 |
+| Q2 | 80 | **1.00** | 0.99 | 0칸 160 |
+| Q3 | 67 | **1.00** | 1.00 | 0칸 134 |
+| Q4 | 65 | **0.96** | 0.95 | 0칸 125, +1~2칸 5 |
+| 전체 | 300 | **0.88** | 0.87 | |
+
+- 표·그림(두 평가 나란히): `rl/logs/basket/report_final_6014/r2/basket_replay_report.md`, `basket_replay_quadrant.png`. 결과 `rl/logs/basket/replay_final_7014_20261015.json`, 경로 `calibration/data/basket/random_20261015_000501/`.
+- 남은 것: Q1(빗살 간격 3 cm, 실측 전 모델). 칸에 든 156회 중 141회가 목표 칸이지만 똑바로 선 판정에서 일부 빠지고, 줄 밖 20회가 있다.
