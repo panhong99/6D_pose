@@ -103,10 +103,14 @@ def full_basket_parts():
             hx_ = f.get("clip_x", 0.0) + (half if far else -half)
             if not len(hx_):
                 continue
+            ax_ = axis
+            if "tine_lean_deg" in f:                                       # (10/14 보스) straight pins vs leaning tines per quadrant
+                ln = math.radians(f["tine_lean_deg"][qd])
+                ax_ = np.array([-math.sin(ln), 0.0, math.cos(ln)])
             for dy in p["rows_u"]:
                 for x in hx_:
                     base = np.array([x, yc + dy, z0])
-                    parts.append(("cyl", base, base + axis * h, f["pin_r"]))
+                    parts.append(("cyl", base, base + ax_ * h, f["pin_r"]))
                 if "rail_z" in p:                                            # (10/12 Human) the comb rail at 4.9 cm
                     parts.append(("cyl", np.array([hx_.min(), yc + dy, z0 + p["rail_z"]]), np.array([hx_.max(), yc + dy, z0 + p["rail_z"]]), r))
     return parts
