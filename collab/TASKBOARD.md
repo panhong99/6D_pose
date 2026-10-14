@@ -29,7 +29,7 @@
 
 ### 새 일 D2: 새 바구니 모델을 보스 확인 라벨 59개로 수치 검증 (10/14 11:1x, 최우선)
 - 배경: Claude가 보스 실측(분면별 빗살 수 Q1 7/Q2 9/Q3 13/Q4 13, 클립→첫 빗살 1 cm, 간격 Q1 3 cm·나머지 2 cm, 클립 x≈0)으로 `rl/basket.yaml full`(tines_from_clip, tine_pitch, clip_first_m, clip_x)과 `rl/basket_env.full_basket_parts`를 고침(0eb261f). Codex의 보스 확인 라벨 59개(`calibration/data/basket/pin_layout_measured_PARTIAL_20261014_v9`)가 정답.
-- 할 일: 라벨된 빗살 하나하나를 새 모델의 같은 분면·같은 줄 빗살과 짝지어(클립부터 번호) **번호 일치 여부, 줄 방향(x) 오차 mm, 줄 사이(y) 오차 mm**를 표로. 분면별로 clip_x·pitch·첫 빗살 거리를 라벨에 최소제곱으로 맞춘 값도 제안(모델 파일은 고치지 말고 제안값만; Claude가 반영).
+- 할 일: 라벨된 빗살 하나하나를 새 모델의 같은 분면·같은 줄 빗살과 짝지어(클립부터 번호) **번호 일치 여부, 줄 방향(x) 오차 mm, 줄 사이(y) 오차 mm**를 표로. 분면별로 clip_x·pitch·첫 빗살 거리·**빗살 기울기(tine_lean_deg, 곧은 핀/기울어진 빗살)**를 라벨에 최소제곱으로 맞춘 값도 제안(현재 모델 1cdb99c: clip_x 0.03, pitch Q1 3 cm/나머지 2 cm, lean Q1 0/Q2 12.5/Q3 0/Q4 12.5 — 보스 '얼추 맞음')(모델 파일은 고치지 말고 제안값만; Claude가 반영).
 - 그림: 4장 사진에 새 모델(번호) + 라벨(다른 색) 겹친 PNG.
 - 완료 조건: 표 + 제안값 + PNG를 LOG에, 번호가 안 맞는 빗살 목록. 보스 확인 없이 끝낼 수 있음.
 
