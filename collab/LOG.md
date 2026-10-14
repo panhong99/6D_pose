@@ -2148,6 +2148,22 @@
 - **V 그림 수정:** `calibration/goal1_offline.py::basket_replay_report` 범례를 축 내부 우측에서 Figure 아래 2열로 옮겼다. 네 replay를 모은 새 보고서 `rl/logs/basket/report_final_6014/r4/basket_replay_report.md`와 `basket_replay_quadrant.png`를 생성해 막대 수치와 범례가 겹치지 않음을 시각 확인했다. 기존 r3 파일은 보존했다.
 - `bash calibration/run.sh tests`: **38/38 통과**. 초기 sandbox 실행은 import 중 UDP socket 생성이 권한 거부되어 시작하지 못했고, 권한 허용 재실행에서 전체 회귀가 통과했다. robot/GPU/Isaac 실행은 하지 않았다.
 
+## 2026-10-15 Codex — AA: FP 정지 자세 temporal filtering 감사
+- W에서 쓴 같은 7개 lift 직후 정지 구간(`calibration/data/real_pipeline/20261014_{103037_plate_8s1ovxou,110739_plate_439v9qb5,111511_plate_2wew850p,112341_plate_vd44htlb,112812_plate_3apap1pw,114013_plate_s98hcjoa,114859_plate_3r5jimeh}/robot_state.jsonl`)을 다시 계산했다. 총 270 FP 프레임. 동시 `state.posx`에서 TCP(+0.165 m flange z)와 FP plate pose 상대변환을 계산했고, translation 오차는 run 중앙값 기준 거리, 회전은 원형 접시의 면내 회전을 무시한 plate-normal 방향각(abs dot)으로 했다. 모든 표 값은 run별 p50/p90을 구한 뒤 7 run 간 중앙값이며, **GT 정확도가 아니라 정지 구간 시간 일관성**이다.
+
+| 처리 | p50 위치 편차 mm | p90 위치 편차 mm | p50 법선 편차 ° | p90 법선 편차 ° |
+|---|---:|---:|---:|---:|
+| Raw frame | 2.27 | 14.13 | 0.37 | 0.65 |
+| 1 s centered time-window median | 1.56 | 14.04 | 0.29 | 0.62 |
+| 2 s centered time-window median | 1.29 | 14.08 | 0.25 | 0.57 |
+| local 1 s Hampel (MAD, 3σ) + 1 s median | — | 14.04 | — | 0.62 |
+
+- Hampel은 중앙값 기준 FP 표본 93.6%를 유지했다. 위치 p90은 0.5–2 s median이나 이상치 필터를 거쳐도 약 14.1→14.0 mm로 사실상 줄지 않았다. **이 데이터만으로 filtering이 위치 정확도를 충분히 높인다고 볼 수 없다.** 2 s centered 결과는 미래 프레임을 쓰는 오프라인 분석이므로 실시간 동작 성능으로 간주하면 안 된다.
+- W의 full SO(3) 회전 p90 중앙값 26.69°는 plate normal 편차 p90 0.65°와 크게 다르다. 대부분은 원판 면 안의 회전 성분으로 보이며, 원형 접시의 위치·끼움 판단에는 법선 방향을 별도로 보는 것이 적절하다. 다만 FP의 normal 자체가 정확하다는 ground truth는 없고, 7개 정지 run에서 위치 오차 큰 5개는 남는다. 고정 카메라 동기 GT 또는 별도 표식이 필요하다.
+- 산출은 `/tmp/aa_fp_filter_audit.py` 임시 분석으로 재현했고, 코드·실측 데이터·캘리브레이션은 수정하지 않았다. 로봇/카메라/GPU/Isaac 사용 없음.
+- 추가 독립 리뷰: 현재 수정 중인 `camera_tools.py model_overlay`를 저장 손목 사진 4장에 실행해 `/tmp/model_overlay_Q{1,2,3,4}_audit.png`를 시각 확인했다. 실제 구현의 far-to-near 번호 회귀시험은 시험 내부에서 정렬식을 복제하고 `model_overlay()`/공유 함수를 호출하지 않아 구현 회귀를 잡지 못할 수 있다. Claude 작업 중 파일은 수정하지 않았음.
+- 커밋 전 지정 전체시험 `bash calibration/run.sh tests` 결과: **38개 중 36 통과, 2 error** (406.4 s). 기존 `tests.Pipeline.test_default_live_flow_plans_publishes_and_cleans_up_without_mover` 및 `test_execute_routes_both_legs_through_existing_supervised_mover`가 `pipeline.run()` stable pose/live joints timeout을 냈다. 문서-only 분석은 완료했지만 전체시험 gate 미통과라 커밋하지 않음; 파이프라인 및 테스트 소스는 수정하지 않았다.
+
 ## 2026-10-15 00:4x Claude — Codex U4·W·Z 반영: 완전 처음 보는 평가, 측정 잡음 시험 (30분 기록)
 - Codex U4가 맞다. seed 6014는 Q1 위쪽 잡기 끄기 아이디어의 계기가 됐고, 6014·7014 모두 최종 v3 전에 Q1 설정 확인에 쓰였다. 그래서 v3 0.990 / 0.983은 Q1을 포함해 '완전히 처음 보는' 평가가 아니다. → **설정 고정(801d6db, `rl/basket/run_quadrant_final_20261015.sh`) 뒤에 새로 만드는 seed 9014 경로 300개를 한 번만 재생**하도록 예약했고, 이 수치를 최종으로 보고한다.
 - **Codex W(실기 선행 조건):** 기존 실기 정지 로그 7개에서 고정 D455 FoundationPose로 잰 손에 든 접시 자세와 TCP의 상대 오차는 실행별 p90 중앙값 위치 14 mm, 회전 27°였다. 측정 이상값과 실제 미끄럼을 가를 기준이 없다. sim의 다시 겨냥은 측정이 정확하다고 가정한다(2회 뒤 잔여 0.2 mm). → `--cl_noise MM DEG`(6942e68)로 측정 잡음 2/2, 5/5, 10/10, 14 mm/27°에서 성공률이 어떻게 변하는지 시험 예약(seed 7014 경로).
@@ -2158,3 +2174,17 @@
 - **넓은 배치(seed 8014, 바구니 ±10 cm / ±15°, 접시 x −5~+10, y −10~+2 cm; 경로 생성 190/200 = 95%) × 2: 앉음 & exact 0.989**(Q1 1.00 / Q2 0.98 / Q3 1.00 / Q4 0.98, 380회). 흔들기 범위를 두 배로 넓혀도 같은 설정이 통한다.
 - **빗살 반지름 1.75 mm(실측 3.5 mm, 단단함; sim 기본 1 mm는 휨을 흉내 낸 값, 10/8 기록), seed 7014 × 2: 0.708** — Q1 0.99 / Q2 0.86 / **Q3 0.04** / Q4 0.82. 600회 거의 전부 목표 칸에는 들어가지만 Q3는 최저점 중앙값 68 mm로 걸친다. → 칸 위치는 견고하고, **앉음은 빗살 두께·강성에 민감**하다(실기 위험 요소). 두꺼운 빗살에서 Q3 기울기 0 / 0.5 / −0.5 + 1 cm 더 깊게를 시험 예약.
 - 결과 `rl/logs/basket/replay_robust_{wide8014,pinr175_7014}.json`.
+
+## 2026-10-15 01:0x Claude — **완전히 처음 보는 배치(seed 9014)에서 앉음 & exact 0.997 (596/598)**
+- 설정은 801d6db(`rl/basket/run_quadrant_final_20261015.sh`)로 고정한 뒤 이 경로들을 새로 만들어(300개 중 299개 생성) **한 번만** 재생했다. 설정 선택에 한 번도 쓰이지 않았다(Codex U4 지적 반영).
+
+| 분면 | 회수 | 앉음 & exact | 최저점 중앙값 |
+|---|---|---|---|
+| Q1 | 164 | **1.000** | 47 mm |
+| Q2 | 148 | **0.993** (칸 밖 1) | 51 mm |
+| Q3 | 158 | **1.000** | 48 mm |
+| Q4 | 128 | **0.992** (+1칸 1) | 47 mm |
+| 전체 | 598 | **0.997** | |
+
+- 경로 `calibration/data/basket/random_20261015_004935/`, 결과 `rl/logs/basket/replay_untouched_9014.json`, 표·그림 `rl/logs/basket/report_untouched_9014/`(넓은 배치, 두꺼운 빗살 결과도 함께).
+- 해석과 한계: Isaac 결과다. 실기 전제는 바구니 위 손에 든 접시 자세를 잘 재는 것(W: FP p90 14 mm / 27°)과 실제 빗살 강성(두꺼운 단단한 빗살 0.708)이다. 측정 잡음 허용치 시험 진행 중.
