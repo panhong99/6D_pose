@@ -44,6 +44,7 @@ def parse_args():
     p.add_argument('--cl_dz', type=float, default=0.0, help='--closed_loop: raise the insert end by this [m] (plate bottom vs the rail)')
     p.add_argument('--cl_lean', type=float, default=1.0, help='--closed_loop: plate lean as a fraction of its quadrant\'s tine lean (1 = parallel to the tines)')
     p.add_argument('--cl_dx', type=float, default=0.0, help='--closed_loop: move the aim along the basket rows (+x) [m]')
+    p.add_argument('--cl_dx_q', default='', help='--closed_loop: per model quadrant aim, e.g. "Q3:-0.03,Q4:-0.035" (overrides --cl_dx)')
     p.add_argument('--cl_top', action='store_true', help='--closed_loop: turn the plate about its normal so the grip is at its top')
     p.add_argument('--hold_view', action='store_true', help='replay with the viewer: keep the window open at the end until it is closed')
     p.add_argument('--rot_sign', type=float, default=1.0)
@@ -219,7 +220,7 @@ def make_cfg(n, viewer, torsion_m):
     return cfg
 
 
-def closed_loop_paths(env, rows, who, above_m=0.11, extra=0.005, dz=0.0, lean=1.0, dx=0.0, top=False):
+def closed_loop_paths(env, rows, who, above_m=0.11, extra=0.005, dz=0.0, lean=1.0, dx=0.0, top=False, dx_q=None):
     """(10/14) per env (above, descend) joint paths (deg) from the plate actually in the hand now: the plate turns ~9 deg
     in the grip on the carry (Isaac), so the planned descent lands it 3-4 gaps off.  Keeps the plate's turn about the
     vertical small: shortest rotation of its normal onto the row axis, centre on the row's target_centre (base)."""
@@ -248,7 +249,7 @@ def closed_loop_paths(env, rows, who, above_m=0.11, extra=0.005, dz=0.0, lean=1.
         Tb = np.asarray(r['Tb'])
         path = []
         for lf in (1.0, 0.5, 0.0):                             # (10/14 night) far quadrants: no IK at the full lean -> lean less
-            path = _cl_one(kin, tool, be, r, Tb, Rp, H, qs[k], lean * lf, above_m, extra, dz, dx, top)
+            path = _cl_one(kin, tool, be, r, Tb, Rp, H, qs[k], lean * lf, above_m, extra, dz, (dx_q or {}).get(r['model_qd'], dx), top)
             if len(path) == 13:
                 break
         out.append((np.array(path[:1]), np.array(path[1:])) if len(path) == 13 else (None, None))
@@ -357,7 +358,8 @@ def run_replay(args):
         drive(env, L('descend_pre', 'slot'), ~open_, args.speed / 4)
     descend, ascend = L('descend', 'slot'), L('ascend', 'slot')
     if args.closed_loop:                                       # (10/14) re-aim from the plate actually in the hand
-        fix = closed_loop_paths(env, rows, who, dz=args.cl_dz, lean=args.cl_lean, dx=args.cl_dx, top=args.cl_top)
+        fix = closed_loop_paths(env, rows, who, dz=args.cl_dz, lean=args.cl_lean, dx=args.cl_dx, top=args.cl_top,
+                                dx_q={k: float(v) for k, v in (x.split(':') for x in args.cl_dx_q.split(',') if x)})
         print(f"[replay] closed loop: re-solved {sum(a is not None for a, _ in fix)}/{n}", flush=True)
         drive(env, [a for a, _ in fix], ~open_, args.speed / 4, hold=30)
         descend = [b if b is not None else d for (_, b), d in zip(fix, descend)]

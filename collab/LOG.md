@@ -1713,6 +1713,8 @@
 - 들어 올린 직후 시작 관절 자세에서 접시·그리퍼와 셀/바구니 벽의 모델 clearance ratio도 기록한다; 기준 1.3. 로봇 명령과 GPU 사용은 없다.
 - 초기 smoke(v2)의 held-clearance 1.166은 접시 이동을 반영하지 않은 잘못된 lift pose 결과라 폐기했다. 보정 smoke(v4)에서 목표 dish XY로 변환한 lift pose IK 성공, Q1–Q4 양면 하강 IK 100%, post-lift clearance ratio 1.400 (기준 1.3 이상)을 재확인했다. 단일 기준 자세의 모델 결과이며 전체 스윕 결과 전에는 범위 성공을 뜻하지 않는다.
 - 전체 배치 계산 시작: `calibration/data/basket/reach_parallel_20261014_v1/`, 진행 로그 `/tmp/reach_parallel_20261014_v1.log`; 이 디렉터리에 결과 JSON/PNG를 기록한다. 현재 2,000 중 진행 중. 구버전 범위 결과는 비교용으로만 보존되고 이번 결론에는 사용하지 않는다.
+- 19:35 진행: 5 cm coarse v1이 740/2,000 (37%). 작업판 상세 해상도 2.5 cm에 맞추기 위해 authoritative v2를 6,480점(9×9 basket xy × 5 yaw × 16 dish poses) corrected-start로 실행할 예정이다. 보정 기준 smoke v4는 Q1–Q4 양면 하강 IK 100%, dish 이동 반영 lift IK 성공, clearance ratio 1.40. 별도 32 경계점 smoke도 완료했으며 일부 dish 경계는 여유비 <1.3.
+- `bash calibration/run.sh tests` 전체 시도는 32개 중 2개 pipeline fake-stream stability timeout으로 실패(약 390초, R CPU worker 부하 중). 동시 계산 부하에 따른 타임아웃 가능성이 있어 회귀로 단정하지 않고 R 완료 뒤 전체 재실행한다. 수정한 clearance 재집계는 lift pose뿐 아니라 dish별 올바른 lift 자세에서 하강 IK도 다시 계산하도록 보강했다.
 
 ## 2026-10-14 19:3x Claude — 오늘 밤 1단계 완료, 2단계 시작 (30분 기록)
 - **1단계(경로) 완료 — 종료 조건 통과.** `plate_plans.py random_plans`(6bffbd7: 접시 x·y 범위 추출) 800개, 새 배치 흔들기(바구니 x 0.757~0.857, y −0.242~−0.142, 회전 ±10°, 접시 x 0.808~0.928, y 0.259~0.359): 잡기 → 운반 → 넣기 → 복귀 전체 경로 **798/800 (99.75%)**, 분면별 Q1 198/199, Q2 202/202, Q3 200/200, Q4 198/199. 실패 2개는 같은 라이브러리 파일을 동시에 읽다 난 CRC 오류이고, 경로 실패는 0개다. 접시 면 −x(손목 뒤집힘)는 40개에서 사용. 한 개 계산 중앙값 28.6 s(16 worker). 결과 `calibration/data/basket/random_20261014_190130/{rows.jsonl,summary.json,random.png}`, 로그 `calibration/logs/stage1_random_20261014.log`.
@@ -1723,3 +1725,19 @@
   - 새 지표 `in_quadrant`: 접시가 자기 분면의 어느 칸에든 똑바로 섰는지(2단계 종료 조건용). 기존 'any gap'은 예전 슬롯 기준이라 새 배치에서는 의미가 없다.
   - 진행 중: sim 경로 100개 생성 → 큰 재생.
 - 회귀 시험: 19:2x에 Pipeline 3개 실패('stable pose/live joints timeout'). 1단계 배치가 CPU 16코어를 쓰는 동안 돌려 568 s가 걸렸다. 부하가 없을 때 다시 돌린 뒤 expert.py를 커밋한다.
+
+## 2026-10-14 20:0x Claude — 2단계 재생 결과 (30분 기록)
+- sim 경로 100개(`random_plans --sim`, 99개 성공) → Isaac closed-loop 재생 99경로 × 4회(`--closed_loop --cl_top`). 판정: in_quadrant = 자기 분면 어느 칸에든 똑바로 섬(바깥에서 봤을 때 비틀림 < 15°, 기울기 < 빗살 기울기 + 12°, 최저점 < 95 mm), exact = 그 칸이 목표 칸.
+
+| 분면 | in_quadrant (겨냥 공통 −0.95 cm) | exact | 분면별 겨냥 후 in_quadrant | exact |
+|---|---|---|---|---|
+| Q1 | 0.09 | 0.03 | 0.10 | 0.03 |
+| Q2 | 0.51 | 0.22 | 0.57 | 0.29 |
+| Q3 | 0.68 | 0.13 | **0.84** | **0.66** |
+| Q4 | 0.83 | 0.07 | **0.93** | **0.57** |
+| 전체 | 0.50 | 0.11 | 0.58 | 0.38 |
+
+  - 분면별 겨냥(`--cl_dx_q "Q1:-0.0095,Q2:0.0015,Q3:-0.029,Q4:-0.035"`, 미커밋 → 이번 커밋): Q3/Q4는 +1~2칸 치우침이 사라졌다(도착 − 목표 = 0이 Q3 84/111, Q4 44/73).
+  - **Q1 문제는 칸이 아니라 기울기다.** 도착한 칸은 59/85가 정확히 목표 칸인데, 접시가 36~39°로 누워 판정(빗살 12.5° + 12°)을 넘는다. Q1 빗살 간격이 3 cm로 넓기 때문이다(다른 분면은 1.7~1.8 cm). → 놓는 자세 변형(기울기 1.5·2.0·반대, 더 깊게) 시험 중. 판정 기준을 바꾸는 것은 보스 결정이 필요하다(접시가 맞는 칸에 기대어 서 있는 상태를 성공으로 볼지).
+  - Q2는 아직 −1칸 치우침 → 겨냥 +1.2 cm 시험 중.
+  - 결과 `rl/logs/basket/replay_stage2_r100{,_aim1}_20261014.json`, 경로 `calibration/data/basket/random_20261014_192905/replay.jsonl`.
