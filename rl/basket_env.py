@@ -91,13 +91,21 @@ def full_basket_parts():
     x_ph = o_b[0] + p["pitch"] / 2
     xs = x_ph + p["pitch"] * np.arange(-40, 41)
     xs = xs[(xs >= f["pin_x_span"][0]) & (xs <= f["pin_x_span"][1]) & (np.abs(xs) >= f["centre_gap_x"])]
-    for yc in f["pair_centres_y"]:
-        for dy in p["rows_u"]:
-            for x in xs:
-                base = np.array([x, yc + dy, z0])
-                parts.append(("cyl", base, base + axis * h, f["pin_r"]))
-            if "rail_z" in p:                                                # (10/12 Human) the comb rail at 4.9 cm
-                parts.append(("cyl", np.array([xs.min(), yc + dy, z0 + p["rail_z"]]), np.array([xs.max(), yc + dy, z0 + p["rail_z"]]), r))
+    count = f.get("tines_from_clip")                                     # (10/14 보스) tines per row in each quadrant, from the clip
+    for k, yc in enumerate(f["pair_centres_y"]):                           # pair A (+y, left) then pair B (right)
+        for far in (False, True):
+            half = np.sort(np.abs(xs[(xs > 0) == far]))                    # nearest the clip first
+            if count:
+                half = half[:count[("Q2" if k == 0 else "Q1") if far else ("Q3" if k == 0 else "Q4")]]
+            hx_ = half if far else -half
+            if not len(hx_):
+                continue
+            for dy in p["rows_u"]:
+                for x in hx_:
+                    base = np.array([x, yc + dy, z0])
+                    parts.append(("cyl", base, base + axis * h, f["pin_r"]))
+                if "rail_z" in p:                                            # (10/12 Human) the comb rail at 4.9 cm
+                    parts.append(("cyl", np.array([hx_.min(), yc + dy, z0 + p["rail_z"]]), np.array([hx_.max(), yc + dy, z0 + p["rail_z"]]), r))
     return parts
 
 
