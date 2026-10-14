@@ -18,7 +18,9 @@
 | # | 일 | 자세한 내용 | 상태 |
 |---|---|---|---|
 | O | BC 티칭 데모 오프라인 안전·일관성 점검 | full_11~14 JSON/상태기록·분면 manifest 대조, 배치 일관성 및 recorded joint/TCP 속도와 wrench 이벤트 확인 | 완료(c8ee663) |
-| N | **빗살 전수 번호 라벨링 — Codex는 검증·수정 담당 (보스 10/14 15:xx, 지금 Codex 최우선)** | 아래 '새 일 N' | **2D 전수 기준 완료, 3D 진행 중**: 보스 전체 그림 84개 정밀화 + 독립 비교 완료; realQ2 v2 재검증 완료. Q1 calibrated 사진과 보스 최종 시각 확인 후 3D 변환 |
+| N | **빗살 전수 번호 라벨링 — Codex는 검증·수정 담당 (보스 10/14 15:xx, 지금 Codex 최우선)** | 아래 '새 일 N' | **2D 전수 기준 완료, 3D 진행 중**: 네 `190126_Q1~Q4` 파일을 모델 오버레이로 전수 재대조. 파일명이 Q1인 사진의 확인 라벨14개는 실제 Q2(+x,+y) 줄(기존 Q2 번호2~8)에 놓여 Q1 자료가 아님. 네 사진 모두 실제 Q1 빗살이 가림/프레임 절단; 전체 Q1 calibrated 사진 필요 |
+| O | **티칭 시연 충돌·안전 자동 판정기** (10/14 17:1x, N 다음 최우선) | 아래 '새 일 O' | 대기 |
+| P | **BC 데이터셋 변환기: 시연 → 바구니 좌표 키자세·궤적** (O 다음) | 아래 '새 일 P' | 대기 |
 | A | 손목 카메라 핀 쌍 검출 + 번호(위→아래) | `CODEX_BRIEF_2026-10-13.md` A | 완료(382a53d, 오프라인 프로토타입; 정확도/실기 연결 미검증) |
 | B | 바구니 마커 크기 실험 측정 모드 + 10 cm 기준값 | 같은 문서 B | 완료(382a53d, 98mm 기준값; 작은 실물 마커 비교 대기) |
 | C | failure detection 선행 연구 요약 | 같은 문서 C | 완료(382a53d, 7편) |
@@ -115,6 +117,16 @@
   - Claude도 같은 그림으로 독립적으로 같은 작업(`tines_refined_claude.json`)을 하고, 두 결과를 수치로 비교함. Claude는 추가로 사진 속 ArUco 마커로 카메라 자세를 풀어 모델 빗살을 이 사진에 겹쳐 봄.
 
 - **Claude 인계(Codex `c7ce2f3`):** N-3의 84개 전수 번호·끝점 결과와 Claude 비교 수치는 `calibration/data/basket/boss_slide_20261014/tines_refined_codex.json`, `tines_refined_codex_vs_claude.json`, `tines_refined_codex_Q{1,2,3,4}_zoom.png`에 있음. 빗살 식별·번호는 양쪽 결과가 **84/84 일치**한다. 다음 작업은 검증된 손목 사진의 realQ2/Q3/Q4를 3D 변환해 모델과 비교하는 것이다. Q1은 전화 사진 좌표를 mm로 변환하지 말고, 전체 빗살이 보이는 calibrated 손목 사진을 받은 뒤 처리한다. 세부 수치·방법·한계는 LOG의 `N-3 보스 전수 그림 정밀화 및 N-2 재검증` 항목을 기준으로 한다.
+
+### 새 일 O: 티칭 시연 충돌·안전 자동 판정기 (10/14 17:1x Claude)
+- 배경: Codex c8ee663가 full_14(보스 보고: 로봇 몸체가 프레임에 닿음)에서 tool_force 247 N, ext_torque 110.7 Nm를 찾아냄. 앞으로 시연마다 사람이 보고하지 않아도 자동으로 걸러야 함.
+- 할 일: `calibration/` 역할 파일(예: `plate_plans.py` 또는 `camera_tools.py`가 아니라 시연 데이터 쪽이면 새 함수는 `plate_plans.py`)에 `demo_audit(full_json) -> dict` + CLI 모드: (1) robot_state.jsonl의 tool_force/ext_torque 임계(정지 구간 기준선 대비) 초과 구간, (2) 관절 FK로 셀 모델(`plate_plans.cell_checker`/MultiChecker의 frame·table) 충돌 여유, (3) 최고 관절·TCP 속도. 출력: 시연별 safe/unsafe + 근거 시각·자세.
+- 완료 조건: full_11~14에서 full_14만 unsafe로 판정(임계 근거 LOG), 회귀 시험 추가·통과, 기존 데이터 수정 금지.
+
+### 새 일 P: BC 데이터셋 변환기 (10/14 17:1x Claude)
+- 입력: `calibration/data/teach/bc_demos.json`의 시연(분면·들어간 틈·layout·unsafe 태그; 파일과 다르면 manifest 우선) + 각 `full_NN.json` + `robot_state.jsonl`.
+- 출력: 시연별 키자세 7개와 연속 관절 궤적을 **바구니 좌표계 TCP**(T_base_basket⁻¹ · FK · tool 0.165 m)와 관절값 둘 다로 저장한 npz/json 1개 + 요약 표(분면, 틈, layout, unsafe, 접시 위치 = grasp TCP에서 추정). unsafe·layout 다른 것은 기본 제외 플래그.
+- 완료 조건: full_11~14 변환, 키자세 FK가 원본 posx와 1 mm 이내, 회귀 시험. 학습 코드는 Claude가 작성.
 
 ## Codex 상태
 - 10/14 11:4x (보스 전달) Codex 토큰 소진 → L·M Claude 인수.
