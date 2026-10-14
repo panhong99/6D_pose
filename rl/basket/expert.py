@@ -47,6 +47,7 @@ def parse_args():
     p.add_argument('--cl_iter', type=int, default=1, help='--closed_loop: measure + re-aim this many times at the above stop')
     p.add_argument('--cl_heights', default='', help='--closed_loop: re-aim height above the insert per iteration [m], e.g. "0.11,0.07"')
     p.add_argument('--cl_edge_q', default='', help='--closed_loop: clamp the shifted aim to the quadrant gaps, this far inside the far-end gap [m], e.g. "Q2:0.018" (unlisted: no clamp)')
+    p.add_argument('--cl_noise', type=float, nargs=2, default=None, metavar=('MM', 'DEG'), help='--closed_loop: rms noise added to the measured in-hand plate pose (position mm, rotation deg) - real FP robustness')
     p.add_argument('--cl_top_q', default='', help='--closed_loop: per model quadrant top re-grip on/off, e.g. "Q1:0" (overrides --cl_top; Q1 rolled along its 3 cm rows)')
     p.add_argument('--cl_pin_dx', default='', help='--closed_loop: json {model quadrant: {pin: aim dx [m]}} (overrides --cl_dx_q for the listed pins)')
     p.add_argument('--cl_dz_q', default='', help='--closed_loop: per model quadrant release height offset [m], e.g. "Q3:0.01,Q4:0.01"')
@@ -227,7 +228,7 @@ def make_cfg(n, viewer, torsion_m):
     return cfg
 
 
-def closed_loop_paths(env, rows, who, above_m=0.11, extra=0.005, dz=0.0, lean=1.0, dx=0.0, top=False, dx_q=None, lean_q=None, dz_q=None, edge_q=None, pin_dx=None, top_q=None):
+def closed_loop_paths(env, rows, who, above_m=0.11, extra=0.005, dz=0.0, lean=1.0, dx=0.0, top=False, dx_q=None, lean_q=None, dz_q=None, edge_q=None, pin_dx=None, top_q=None, noise=None):
     """(10/14) per env (above, descend) joint paths (deg) from the plate actually in the hand now: the plate turns ~9 deg
     in the grip on the carry (Isaac), so the planned descent lands it 3-4 gaps off.  Keeps the plate's turn about the
     vertical small: shortest rotation of its normal onto the row axis, centre on the row's target_centre (base)."""
@@ -248,8 +249,13 @@ def closed_loop_paths(env, rows, who, above_m=0.11, extra=0.005, dz=0.0, lean=1.
             out.append((None, None))
             continue
         Rp = R.from_quat(pq[k][[1, 2, 3, 0]]).as_matrix()
+        pk = pp[k].copy()
+        if noise:                                            # (10/15) measurement noise of the in-hand plate pose (real: FP)
+            rng_ = np.random.default_rng(hash((r['name'], k, len(out))) % 2**32)
+            pk = pk + rng_.normal(0, noise[0] / 1000 / np.sqrt(3), 3)
+            Rp = R.from_rotvec(rng_.normal(0, np.radians(noise[1]) / np.sqrt(3), 3)).as_matrix() @ Rp
         Tpl = np.eye(4)
-        Tpl[:3, :3], Tpl[:3, 3] = Rp, pp[k] + 0.01 * Rp[:, 2]
+        Tpl[:3, :3], Tpl[:3, 3] = Rp, pk + 0.01 * Rp[:, 2]
         Tt = kin.fk(qs[k]) @ tool
         H = np.linalg.inv(Tt) @ Tpl                          # plate in the TCP frame as it is now
         import basket_env as be
@@ -387,7 +393,8 @@ def run_replay(args):
                                     dz_q={k: float(v) for k, v in (x.split(':') for x in args.cl_dz_q.split(',') if x)},
                                     edge_q={k: float(v) for k, v in (x.split(':') for x in args.cl_edge_q.split(',') if x)},
                                     pin_dx=json.loads(Path(args.cl_pin_dx).read_text()) if args.cl_pin_dx else None,
-                                    top_q={k: bool(int(v)) for k, v in (x.split(':') for x in args.cl_top_q.split(',') if x)})
+                                    top_q={k: bool(int(v)) for k, v in (x.split(':') for x in args.cl_top_q.split(',') if x)},
+                                    noise=args.cl_noise)
             if prev_fix is not None:                         # no IK now: keep the previous re-aim (the robot is there)
                 fix = [f_ if f_[0] is not None else p_ for f_, p_ in zip(fix, prev_fix)]
             if it == 0:

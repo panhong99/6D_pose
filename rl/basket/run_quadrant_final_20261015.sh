@@ -7,4 +7,4 @@
 #   (lean = factor of the tine lean at the release; aim = basket x shift of the closed-loop target; sim only, not the real-robot trim)
 cd "$(dirname "$0")/../.."
 env -u CONDA_PREFIX -u CONDA_DEFAULT_ENV /home/pan/IsaacLab/isaaclab.sh -p rl/basket/expert.py replay --headless --closed_loop --cl_top --cl_top_q Q1:0 \
-  --cl_iter 2 --cl_dx_q Q1:0.025,Q2:0.038,Q3:-0.0464,Q4:-0.035 --cl_lean_q Q1:0.5,Q2:0,Q3:-0.5,Q4:0.5 --per_run 2 --plans "$1" --out "$2"
+  --cl_iter 2 --cl_dx_q Q1:0.025,Q2:0.038,Q3:-0.0464,Q4:-0.035 --cl_lean_q Q1:0.5,Q2:0,Q3:-0.5,Q4:0.5 --per_run 2 --plans "$1" --out "$2" "${@:3}"
