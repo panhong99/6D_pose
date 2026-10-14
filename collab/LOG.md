@@ -2302,7 +2302,16 @@
 - 같은 noise episode를 짝지으면 gate 5 mm는 FP-noise replay의 41개 성공을 잃고 101개를 회복했고, gate 3 mm는 60개를 잃고 103개를 회복했다. gate 5가 gate 3보다 17회 더 성공했다. 이는 조정 데이터와 같은 seed 7014 plans의 시뮬레이션 비교이며, 새 배치 일반화나 실기 성공 증거가 아니다.
 - 구현상 gate는 `H`의 위치 오차 크기만 임계값(mm)과 비교하고 초과하면 분면 평균 `H` 전체(회전 포함)를 사용한다. 회전 오차 단독 gate는 없다. empirical replay는 축별 독립 난수로 위치·법선 잡음을 넣으므로 AC 측정의 시간 상관(lag-1 약 0.9)을 재현하지 않는다. 따라서 gate 결과는 실제 FoundationPose 시계열 검증으로 해석하면 안 된다.
 - 원본: `rl/logs/basket/replay_{final_v3,fpnoise,fpnoise_gate5,fpnoise_gate3}_7014.json`; 로그는 같은 stem의 `.json.log`. GPU/Isaac 재실행, 로봇/카메라 사용, 코드 수정 없음.
-- AD 상태: 최초 `replay_blind_7014.json`은 TCP body frame과 FK TCP frame 불일치로 무효라고 Claude가 기록했다. 수정된 `blind_inhand_H_20261015.json`은 tuning runs에서 만들었다고 기록돼 있으나 JSON에 source/provenance 필드가 없어서 seed 4014/5014만 썼는지 결과물만으로 독립 입증할 수 없다. `replay_blind2_7014.json`은 아직 생성되지 않았고 `stage2_blind2.sh`는 `stage2_gate.done` 뒤에 실행하도록 대기한다. 최종 AD 검증은 blind2 JSON이 생기면 이어간다.
+- AD 상태 갱신(02:31): 최초 `replay_blind_7014.json`은 TCP body frame과 FK TCP frame 불일치로 무효다. 수정한 `replay_blind2_7014.json`은 600개 episode 전부 같은 `replay_final_v3_7014.json` 이름·순서로 재생했다. strict 재계산 527/600 (87.83%), Q1/Q2/Q3/Q4 147/176, 146/160, 105/134, 129/130; baseline 590/600 대비 paired success→fail 72, fail→success 9. `results[].seated_exact` 300개 요약 모두 재계산과 일치했고 `.json.log`는 mean pose 적용 600/600, re-solve 600/600을 기록한다. 이는 같은 seed 7014 시뮬레이션 plan replay다.
+- Mean source 확인은 미완료: `blind_inhand_H_20261015.json`에 source path/episode IDs, aggregation code, input hash가 없어 4014/5014만 사용했다는 걸 독립 재현할 수 없다. JSON의 변환행렬만으로 training/adjustment provenance를 역증명할 수 없다. 따라서 AD를 완료 처리하지 않고 Claude가 기록한 provenance 주장은 “현재 저장 산출물로 검증 불가”로 남긴다.
+
+## 2026-10-15 Codex — AE: 야간 replay 전수표
+- 작업판 패턴과 지정 family에 걸리는 replay 결과 JSON **118개**를 CPU로 집계해 `collab/NIGHT_RUNS_20261015.md`에 개별 행으로 정리했다. 각 행에 경로/seed 묶음, 보존된 stage shell의 핵심 호출 인자(또는 launcher 미보존 표기), episode 분모, Q1–Q4 seated&exact 및 overall을 기록했다.
+- 기준은 `seated && in_quadrant && landed_gap == target_gap`; 구버전 JSON은 `final.d_bottom < 60 mm`로 seated를 복원. gap ID가 없는 m14 구형 파일 2개는 exact N/A 및 low-only로 표시했다. 이름/배열 및 존재하는 300-run `seated_exact` 요약과 재집계 일치 확인: mismatch 0. 저녁 결과 중 untouched9014는 299 layouts × 2=598, 596/598 (99.7%); 600으로 부풀리지 않았다.
+- 최종 수치 반영: empirical FP noise 485/600 (80.8%), 5 mm gate 545/600 (90.8%), 3 mm gate 528/600 (88.0%), baseline 590/600 (98.3%); blind2 527/600 (87.8%). seed6014/7014는 설정 검토에 일부 재사용돼 untouched test로 과장하지 않음을 표에 적었다.
+- 한계: 결과 JSON에 입력 plan provenance/실행 인자가 없는 예전 runs는 stage shell/LOG 근거까지만 표기했다. 파일명에서 읽은 값은 실행 인자 증거가 아니라고 구분했다. 모든 수치는 Isaac sim proxy이며 실기 접촉 성공이 아니다.
+- 파일: `collab/NIGHT_RUNS_20261015.md`; GPU/Isaac 재실행, 로봇·그리퍼·카메라 사용 없음.
+- 검증: `bash calibration/run.sh tests` 전체 38/38 통과(33.42 s); `git diff --check` 통과. 보고서 표의 118개 행과 지정 pattern 후보를 다시 대조해 누락/초과 0개를 확인했다.
 
 ## 2026-10-15 02:1x Claude — 측정 없는 겨냥 1차는 좌표 틀 오류로 무효
 - `--cl_blind` 1차(`replay_blind_7014.json`, 앉음 & exact 0.000, 분면별로 −3~+6칸 일정 치우침)는 **무효**다. 평균 손 안 자세를 sim의 'tcp' 몸체 자세로 계산했는데, 다시 겨냥 코드는 FK(관절) + 0.165 m를 TCP로 쓴다. 두 틀의 축이 달랐다.
