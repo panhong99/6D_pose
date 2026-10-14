@@ -31,8 +31,8 @@
 | O | **티칭 시연 충돌·안전 자동 판정기** (10/14 17:1x, N 다음 최우선) | 아래 '새 일 O' | 완료(6f2d618): full_14만 unsafe, 시험 31/31. 보고서 분면은 파일값(full_11 Q3) — manifest 정정(Q4) 우선으로 S에서 같이 고칠 것 |
 | R | **바구니 배치 도달 지도 (IK만, 접시 면 양방향) — 10/14 19시 새 배치 기준으로 범위 변경** | 아래 '새 일 R' | 진행 중(21:31 2,800/6,480 CPU-only, session 76551) |
 | T | **빗살 정답 → 칸 목표표 (3단계 입력)** | 아래 '새 일 T' | 완료(4ed87bc: 생성 함수·회귀시험) |
-| U | **Claude sim 결과 검증 (Critic)** | 아래 '새 일 U' | 결과 도착(21:2x LOG); R 완성 후 JSON 재집계 예정 |
-| S | **시연 도구 파일 정리: demo_audit+demo_dataset 한 역할 파일, 시험은 tests.py로** (R 다음) | 아래 '새 일 S' | 대기 |
+| U | **Claude sim 결과 검증 (Critic)** | 아래 '새 일 U' | 완료(커밋 대기, LOG 22:xx) |
+| S | **시연 도구 파일 정리: demo_audit+demo_dataset 한 역할 파일, 시험은 tests.py로** (R과 독립 병행) | 아래 '새 일 S' | 진행 중(22:xx) |
 | P | **BC 데이터셋 변환기: 시연 → 바구니 좌표 키자세·궤적** (O 다음) | 아래 '새 일 P' | 완료(7daafd5) |
 | Q | **observe_now2 사진에 Goal 1 BC 파지 라이브러리 범위 overlay** | 고정 카메라 K/T 투영, 라이브러리 표본·가정·한계를 그림에 표시 | 완료(3ec2b71) |
 | A | 손목 카메라 핀 쌍 검출 + 번호(위→아래) | `CODEX_BRIEF_2026-10-13.md` A | 완료(382a53d, 오프라인 프로토타입; 정확도/실기 연결 미검증) |
@@ -162,7 +162,7 @@
 - Claude가 LOG에 단계 1~3 결과를 올리면 결과 JSON을 직접 다시 집계해 수치를 확인한다. 성공 판정(칸 판정 높이, 기울기 반영), 표본 수, 흔들기 범위가 SYSTEM_SPEC과 같은지 확인하고, 반박할 점·누락된 검증을 LOG에 적는다. 코드는 고치지 않는다.
 
 ## Codex 상태
-- 10/14 21:31 살아 있음: R v2 2,800/6,480 CPU-only 진행 중. T 생성기/시험 완료(4ed87bc; 전체 33/33). Claude가 21:2x에 heldout/sweep7 sim JSON 결과를 추가함; 사용자 지정 순서에 따라 R 완료 뒤 U 재집계.
+- 10/14 22:xx 살아 있음: U 원시 JSON 재집계·비판 기록 완료(heldout v1/v2/v3, stage3 offsets; LOG 참고). R v2 백그라운드 CPU-only 4,076/6,480. S 통합 도구 `calibration/demo_data.py` 작성 중; full tests 36/36 통과(54.4 s), 이후 변경은 `__main__` 가드 이동뿐이라 커밋 전 재실행 예정.
 - 10/14 20:36 살아 있음: R v2 993/6,480 (15.3%), CPU only; 분석범위는 바구니 ±10 cm/2.5 cm, yaw 0/±10/±15°, 접시 x −5~+10 cm·y −10~+2 cm. SCOPE와 SYSTEM_SPEC의 학습 흔들기 범위는 별개로 보고.
 - 10/14 20:06 살아 있음: R 공식 v2 2.5 cm 스윕 시작(6,480조합, 8 CPU workers, nice +10, PID 2 / exec session 76551; 경로 `calibration/data/basket/reach_parallel_20261014_v2/`). 5 cm 예비 JSON은 2,000/2,000이나 PNG가 없어 인용하지 않는다. full tests 32/32 통과(16 s).
 - 10/14 11:4x (보스 전달) Codex 토큰 소진 → L·M Claude 인수.

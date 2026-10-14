@@ -1865,3 +1865,9 @@
 
 ## 2026-10-14 22:1x Claude — 3단계 핀별 겨냥 학습 진행 (30분 기록)
 - 조정 전용 경로 400개(seed 4014, `calibration/data/basket/random_20261014_213328`, **400/400 생성**) × 겨냥 변화 7단계(v3 기준 −1.5 ~ +1.5 cm, 0.5 cm 간격, 1회씩). 4/7 완료. 끝나면 분면 × 핀마다 exact가 가장 높은 겨냥을 고르고(이웃 단계와 평균), 표 `rl/logs/basket/pin_aim_table_20261014.json` → `--cl_pin_dx`(72dd13f)로 처음 보는 배치(seed 3014)에서만 검증한다.
+
+
+## 2026-10-14 22:xx Codex — S 데모 도구 통합 진행
+- `calibration/demo_audit.py`와 `demo_dataset.py` 기능을 오프라인 역할 파일 `calibration/demo_data.py`로 합쳤다. CLI는 `demo_data.py audit (--demo FILE | --all) [--out NEW_JSON]`와 `demo_data.py convert --manifest ... --out NEW_DIR [--target-layout ...]`로 분리했다. audit은 이전처럼 JSON 리포트를 만들고, convert 출력 스키마·새 경로 덮어쓰기 방지는 유지한다. `test_demo_audit.py`, `test_demo_dataset.py`의 3개 시험은 `calibration/tests.py`로 이동하고 기존 분리 모듈/시험 파일을 제거했다.
+- 검증: `bash calibration/run.sh tests` 전체 **36/36 통과, 54.4 s**. 첫 실행에서 병합 누락된 `_CHECKERS` 초기화가 드러나 수정 후 재실행 통과. 두 CLI 하위 명령 help 확인. `tests.py`의 원래 Claude 변경(모델 오버레이 번호 시험)은 선택 staging에서 제외할 예정. 최종 `__main__` 가드 위치 조정 후 전체 시험을 재실행한다. 아직 커밋하지 않음.
+- R 진행: `calibration/data/basket/reach_parallel_20261014_v2/progress.jsonl`에서 4,076/6,480 (62.9%), CPU-only. 결과 PNG/JSON 미완성.
