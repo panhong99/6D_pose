@@ -382,5 +382,36 @@ class CameraPinTests(unittest.TestCase):
             self.assertAlmostEqual(measured['base_basket_xyz'][2], floor)
 
 
+class CameraPlaneTests(unittest.TestCase):
+    def test_rgbd_plane_yaw_and_tilt_with_two_mm_noise(self):
+        import camera_tools
+        K = np.array([[600., 0, 160.], [0, 600., 120.], [0, 0, 1.]])
+        # Camera optical +z looks along base +x, so a vertical dish faces it.
+        Tbc = np.eye(4)
+        Tbc[:3, :3] = np.array([[0., 0., 1.], [1., 0., 0.], [0., 1., 0.]])
+        yy, xx = np.indices((240, 320))
+        ray = np.stack(((xx-K[0, 2])/K[0, 0], (yy-K[1, 2])/K[1, 1], np.ones_like(xx)), axis=-1)
+        rgb = np.zeros((240, 320, 3), np.uint8)
+        rgb[40:200, 70:250] = (0, 0, 220)
+        rng = np.random.default_rng(7)
+        for yaw, tilt in ((0., 0.), (-10., 0.), (10., 0.), (0., 8.), (10., 8.)):
+            yr, tr = np.radians([yaw, tilt])
+            normal_base = np.array([np.cos(tr)*np.cos(yr), np.cos(tr)*np.sin(yr), np.sin(tr)])
+            normal_cam = Tbc[:3, :3].T @ normal_base
+            depth = (.30*normal_cam[2] / (ray @ normal_cam)) + rng.normal(0, .002, (240, 320))
+            depth[::11, ::9] = 0  # missing stereo pixels
+            result = camera_tools.plate_plane(rgb, depth, K, Tbc, np.eye(4))
+            self.assertAlmostEqual(result['yaw_error_deg'], yaw, delta=1.)
+            self.assertAlmostEqual(result['tilt_error_deg'], tilt, delta=1.)
+            self.assertGreater(result['inlier_fraction'], .8)
+
+    def test_rgbd_plane_rejects_missing_close_depth(self):
+        import camera_tools
+        rgb = np.zeros((240, 320, 3), np.uint8)
+        rgb[40:200, 70:250] = (0, 0, 220)
+        with self.assertRaisesRegex(ValueError, 'Insufficient red-plate depth'):
+            camera_tools.plate_plane(rgb, np.zeros((240, 320)), np.eye(3), np.eye(4), np.eye(4))
+
+
 if __name__ == '__main__':
     unittest.main()

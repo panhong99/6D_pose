@@ -8,6 +8,7 @@
   python calibration/camera_tools.py basket_stats --out NEW_DIR                   fixed camera repeatability; --marker_size_m is actual printed size
   python calibration/camera_tools.py pin_layout --labels LABELS.json --out NEW_DIR   ray/height-plane measurement from checked pixel labels
   python calibration/camera_tools.py plate_angle --req wrist_above.req.json --out NEW_DIR  RGB disk silhouette yaw diagnostic
+  python calibration/camera_tools.py plate_plane --rgb RGB.png --depth DEPTH.npy --meta SNAPSHOT.json --out NEW_DIR  saved RGB-D plane diagnostic
 
 preview : one camera (default the first found) with depth colour map and centre depth; S saves to data/real_env/.
           --all / --serial: several cameras side by side (no saving).
@@ -989,6 +990,111 @@ def basket_stats(a, cfg):
     return result
 
 
+def _red_plate_mask(rgb):
+    hsv = cv2.cvtColor(rgb, cv2.COLOR_BGR2HSV)
+    red = (((hsv[:, :, 0] <= 12) | (hsv[:, :, 0] >= 170))
+           & (hsv[:, :, 1] >= 85) & (hsv[:, :, 2] >= 35)).astype(np.uint8)
+    count, components, stats, _ = cv2.connectedComponentsWithStats(red)
+    if count < 2:
+        raise ValueError('No red plate component in RGB image')
+    largest = 1 + int(np.argmax(stats[1:, cv2.CC_STAT_AREA]))
+    if stats[largest, cv2.CC_STAT_AREA] < 200:
+        raise ValueError('Red plate component has fewer than 200 pixels')
+    return components == largest
+
+
+def plate_plane(rgb, depth, K, T_base_cam, T_base_basket, depth_range_m=(0.20, 0.45)):
+    """Diagnostic normal of a red plate from colour-aligned metric depth.
+
+    All transforms must describe the *same captured frame*. No robot command or
+    automatic wrist correction is made here. The normal sign is chosen toward
+    basket +x, the intended plate-plane normal for a vertical insertion.
+    """
+    rgb, depth = np.asarray(rgb), np.asarray(depth, float)
+    K, Tbc, Tbb = (np.asarray(v, float) for v in (K, T_base_cam, T_base_basket))
+    if rgb.ndim != 3 or rgb.shape[2] != 3 or depth.shape != rgb.shape[:2]:
+        raise ValueError('RGB and aligned metric depth must have matching dimensions')
+    if K.shape != (3, 3) or Tbc.shape != (4, 4) or Tbb.shape != (4, 4):
+        raise ValueError('K must be 3x3 and poses must be 4x4')
+    if not all(np.isfinite(v).all() for v in (K, Tbc, Tbb, depth)):
+        raise ValueError('Inputs must be finite; invalid depth must be zero')
+    if min(K[0, 0], K[1, 1]) <= 0:
+        raise ValueError('Camera focal lengths must be positive')
+    near, far = map(float, depth_range_m)
+    if not (0 < near < far <= 3.0):
+        raise ValueError('Depth range must satisfy 0 < near < far <= 3 m')
+    mask = _red_plate_mask(rgb)
+    valid = mask & (depth >= near) & (depth <= far)
+    if valid.sum() < 200 or valid.sum() / mask.sum() < 0.20:
+        raise ValueError(f'Insufficient red-plate depth in {near:.2f}–{far:.2f} m range')
+    v, u = np.nonzero(valid)
+    z = depth[valid]
+    points = np.column_stack(((u - K[0, 2]) * z / K[0, 0],
+                              (v - K[1, 2]) * z / K[1, 1], z))
+    rng = np.random.default_rng(20261014)
+    sample = points[rng.choice(len(points), min(len(points), 6000), replace=False)]
+    best = np.zeros(len(sample), bool)
+    threshold = 0.005  # 2 mm depth noise plus oblique incidence; fixed for tests/live review
+    for _ in range(300):
+        tri = sample[rng.choice(len(sample), 3, replace=False)]
+        normal = np.cross(tri[1] - tri[0], tri[2] - tri[0])
+        norm = np.linalg.norm(normal)
+        if norm < 1e-8:
+            continue
+        normal /= norm
+        inliers = np.abs((sample - tri[0]) @ normal) <= threshold
+        if inliers.sum() > best.sum():
+            best = inliers
+    if best.sum() < 200 or best.mean() < 0.50:
+        raise ValueError('No dominant red-plate plane; depth may be from background')
+    centre = sample[best].mean(axis=0)
+    _, singular, vt = np.linalg.svd(sample[best] - centre, full_matrices=False)
+    if singular[1] < 0.02:
+        raise ValueError('Plane points span too narrow an area to determine orientation')
+    normal_cam = vt[-1]
+    normal_base = Tbc[:3, :3] @ normal_cam
+    normal_basket = Tbb[:3, :3].T @ normal_base
+    if normal_basket[0] < 0:
+        normal_cam, normal_base, normal_basket = -normal_cam, -normal_base, -normal_basket
+    normal_basket /= np.linalg.norm(normal_basket)
+    residual = np.abs((points - centre) @ normal_cam)
+    return dict(yaw_error_deg=float(np.degrees(np.arctan2(normal_basket[1], normal_basket[0]))),
+                tilt_error_deg=float(np.degrees(np.arcsin(np.clip(normal_basket[2], -1, 1)))),
+                normal_basket=normal_basket.tolist(), normal_base=normal_base.tolist(),
+                normal_camera=normal_cam.tolist(), red_pixels=int(mask.sum()),
+                valid_red_depth_pixels=int(valid.sum()), valid_red_depth_fraction=float(valid.sum() / mask.sum()),
+                inlier_fraction=float(np.mean(residual <= threshold)),
+                inlier_rmse_mm=float(1000 * np.sqrt(np.mean(residual[residual <= threshold] ** 2))),
+                median_depth_m=float(np.median(z)), depth_range_m=[near, far],
+                note='Saved RGB-D and synchronized poses only; diagnostic, not a wrist motion command')
+
+
+def plate_plane_mode(a):
+    if not all((a.rgb, a.depth, a.meta, a.out)):
+        raise ValueError('plate_plane requires --rgb, --depth, --meta and --out')
+    meta = json.loads(Path(a.meta).read_text())
+    if 'T_base_cam' in meta:
+        Tbc = np.asarray(meta['T_base_cam'], float)
+    else:
+        Tbc = np.asarray(meta['T_base_flange'], float) @ np.asarray(meta['T_flange_cam'], float)
+    rgb = cv2.imread(str(a.rgb))
+    if rgb is None:
+        raise FileNotFoundError(a.rgb)
+    depth = np.load(a.depth)
+    result = plate_plane(rgb, depth, meta['K'], Tbc, meta['T_base_basket'],
+                         (a.depth_min_m, a.depth_max_m))
+    out = Path(a.out)
+    out.mkdir(parents=True, exist_ok=False)
+    view = rgb.copy()
+    view[_red_plate_mask(rgb)] = (0.55 * view[_red_plate_mask(rgb)] +
+                                  0.45 * np.array([220, 20, 220])).astype(np.uint8)
+    cv2.putText(view, f"yaw {result['yaw_error_deg']:+.2f} deg  tilt {result['tilt_error_deg']:+.2f} deg",
+                (20, 36), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (255, 255, 255), 2, cv2.LINE_AA)
+    cv2.imwrite(str(out / 'plate_plane.png'), view)
+    (out / 'plate_plane.json').write_text(json.dumps(result, indent=2))
+    return result
+
+
 def plate_angle(req, out, radius_m=0.134):
     """Estimate disk-plane yaw from one saved RGB silhouette, with the planned perpendicular orientation as prior.
 
@@ -1131,7 +1237,7 @@ def plate_angle(req, out, radius_m=0.134):
 if __name__ == '__main__':
     cfg = load_config()
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument('mode', choices=('preview', 'marker', 'probe', 'locate', 'basket', 'wrist_look', 'pre_photo', 'pins', 'basket_stats', 'pin_layout', 'plate_angle'))
+    p.add_argument('mode', choices=('preview', 'marker', 'probe', 'locate', 'basket', 'wrist_look', 'pre_photo', 'pins', 'basket_stats', 'pin_layout', 'plate_angle', 'plate_plane'))
     p.add_argument('--define', action='store_true', help='basket: define the basket frame / marker layout now')
     p.add_argument('--define_current', action='store_true', help='basket: marker layout in today\'s known basket frame (10/12)')
     p.add_argument('--golden', default=None, help='basket --define: also store this full teaching\'s slot in the basket frame')
@@ -1147,6 +1253,11 @@ if __name__ == '__main__':
     p.add_argument('--labels', type=Path, help='pin_layout: checked pin root/tip pixel labels JSON')
     p.add_argument('--layout', type=Path, help='pins: measured pin layout JSON, offline diagnostic only')
     p.add_argument('--plate_radius_m', type=float, default=0.134, help='plate_angle: assumed dish outer radius')
+    p.add_argument('--rgb', type=Path, help='plate_plane: saved BGR/RGB image readable by OpenCV')
+    p.add_argument('--depth', type=Path, help='plate_plane: colour-aligned depth in metres as .npy')
+    p.add_argument('--meta', type=Path, help='plate_plane: same-frame K, T_base_basket and T_base_cam or flange+hand-eye')
+    p.add_argument('--depth_min_m', type=float, default=.20, help='plate_plane: nearest accepted metric depth')
+    p.add_argument('--depth_max_m', type=float, default=.45, help='plate_plane: farthest accepted metric depth')
     p.add_argument('--rotate', choices=('auto', '0', '90', '270'), default='auto', help='pins: display rotation, raw projection unchanged')
     p.add_argument('--search_mm', type=float, default=8.0, help='pins: maximum local correction along basket x')
     p.add_argument('--marker_size_m', type=float, help='basket_stats: actual printed black square side, override for this run only')
@@ -1175,6 +1286,8 @@ if __name__ == '__main__':
         if not a.req or not a.out:
             p.error('plate_angle requires --req and --out')
         plate_angle(a.req, a.out, a.plate_radius_m)
+    elif a.mode == 'plate_plane':
+        print(json.dumps(plate_plane_mode(a), indent=2))
     elif a.mode == 'pre_photo':
         pre_photo(a, cfg)
     else:
