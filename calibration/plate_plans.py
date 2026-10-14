@@ -966,14 +966,16 @@ def quadrant_plan(Tbb, quadrant, gap, H, tool, start_deg, Tbc, q, grasp_legs=Non
     if yaw_trim_deg:                                         # (10/14 실기) plate face turned about the vertical, + = CCW seen from above
         c_, s_ = np.cos(np.radians(yaw_trim_deg)), np.sin(np.radians(yaw_trim_deg))
         n = np.array([c_ * n[0] - s_ * n[1], s_ * n[0] + c_ * n[1], n[2]])
-    zt = n * np.cos(t) + np.array([0, 0, 1.0]) * np.sin(t)
     v = -n * np.sin(t) + np.array([0, 0, 1.0]) * np.cos(t)
     extra = q.get('basket_policy_extra_down_m', 0.0)
     seeds = seeds or [np.radians(start_deg), np.radians(HOME_JOINTS_DEG)]
     ok_lim = lambda qq: ((np.degrees(qq) > lo + 3) & (np.degrees(qq) < hi - 3)).all()   # noqa: E731
     tried = []
-    for phi in sorted(range(-90, 91, phi_step), key=abs):
+    # (10/14 18:xx) the plate is the same both ways: facing -x lets the far quadrants (Q1/Q2) solve with the wrist flipped
+    # (J4 ~ -155, as 보스 taught them); +x alone gave 'ik/limit' there at every basket x 0.90-0.99
+    for side, phi in [(sd_, p_) for sd_ in (1.0, -1.0) for p_ in sorted(range(-90, 91, phi_step), key=abs)]:
         ph = np.radians(phi)
+        zt = side * (n * np.cos(t) + np.array([0, 0, 1.0]) * np.sin(t))
         x = v * np.cos(ph) + np.cross(zt, v) * np.sin(ph)
         Tp = np.eye(4)
         Tp[:3, :3] = np.stack([x, np.cross(zt, x), zt], 1)
@@ -997,17 +999,17 @@ def quadrant_plan(Tbb, quadrant, gap, H, tool, start_deg, Tbc, q, grasp_legs=Non
             down.append(sol)
             prev = sol
         if len(down) < 13:
-            tried.append((phi, 'ik/limit'))
+            tried.append(((int(side), phi), 'ik/limit'))
             continue
         c_ins = inserting.path_clearance(pp(np.array(down), 0.5))
         if c_ins < 1.0:
-            tried.append((phi, f'insert clearance {c_ins:.2f}'))
+            tried.append(((int(side), phi), f'insert clearance {c_ins:.2f}'))
             continue
         try:
             carry, how = held.plan(np.radians(start_deg), down[0])
             home, how_h = free.plan(down[0], np.radians(HOME_JOINTS_DEG))
         except RuntimeError as e:
-            tried.append((phi, str(e)))
+            tried.append(((int(side), phi), str(e)))
             continue
         legs = dict(to_above=[np.degrees(w).tolist() for w in carry], descend=[np.degrees(w).tolist() for w in down],
                     ascend=[np.degrees(w).tolist() for w in down[::-1]], to_home=[np.degrees(w).tolist() for w in home],
@@ -1016,7 +1018,7 @@ def quadrant_plan(Tbb, quadrant, gap, H, tool, start_deg, Tbc, q, grasp_legs=Non
             legs = dict(grasp_legs, **legs)
         path = taught_plan(legs, Tbc, q, f'quadrant {quadrant} gap {gap + 1}')
         plan = json.loads(Path(path).read_text())
-        rep = dict(quadrant=quadrant, gap=gap + 1, phi_deg=phi, y_shift_m=round(y_shift_m, 4), x_shift_m=round(x_shift_m, 4), carry=how, home=how_h, tried=tried, accepted=plan['accepted'],
+        rep = dict(quadrant=quadrant, gap=gap + 1, phi_deg=phi, face=int(side), y_shift_m=round(y_shift_m, 4), x_shift_m=round(x_shift_m, 4), carry=how, home=how_h, tried=tried, accepted=plan['accepted'],
                    clearance_ratio=dict(carry=round(held.path_clearance(pp(np.array(carry), 0.5)), 2), insert=round(c_ins, 2),
                                         after=round(free.path_clearance(pp(np.array(home), 0.5)), 2)))
         plan.update(basket_T=np.asarray(Tbb).tolist(), plate_in_tcp=np.asarray(H).tolist(), quadrant_plan=rep)
