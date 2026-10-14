@@ -43,6 +43,7 @@ marker:                            # loose calibration marker (wrist hand-eye + 
 
 basket:                            # dish basket pose from 4 ArUco markers on its rim (Human 2026-10-08 16:1x)
   marker_ids: {robot_side: 3, far: 1, handle: 4, back: 2}   # robot side x~0.97, far side x~1.49, blue handle = basket -y (marker 4 at y -0.267 in the layout, 10/14 Codex I)
+  max_fit_residual_m: 0.010         # (10/14) basket fit gate: 3-marker fits run 7-8 mm (8.1 mm stopped a run); was 0.008 in code
   marker_size_m: 0.098             # same print as the calibration marker (depth estimate ~95 mm); ID 1 = calibration ID!
   n_frames: 20
   layout: data/basket/basket_layout_20261012_133410.json   # 10/12 14:xx re-fixed markers (was basket_layout_20261012_131751.json); 13:2x markers re-taped: --define_current (today's basket = teaching frame + basket_shift_m); was data/basket/basket_layout.json
