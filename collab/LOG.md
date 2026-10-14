@@ -2706,3 +2706,4 @@
 - `run_viz`는 plan waypoints를 ghost TF/marker로 보간해 표시하며 이동 서비스는 호출하지 않는다. 실제 joint pose 서비스 `GetCurrentPosj`는 서비스가 ready일 때만 읽는다. 따라서 plan ghost만 보려면 Doosan controller bringup/로봇 연결은 필수 아님; 단, ROS 2·Doosan 메시지 패키지와 RViz 환경은 필요하다. 연결이 되면 현재 관절 자세를 별도 real ghost로 읽어 표시할 수 있다.
 - 보고서용 핵심: **아래는 sim 후보 경로의 RViz 시각화 전용이며 실행 금지.** 셀 검사에 실물 빗살 접촉이 포함되지 않았다. `calibration/run.sh viz --plan <plan.json>`; 네 분면 파일 경로는 위에 기록. `quadrant_plans --sim_q` 생성 명령은 별도이고, plan 생성은 UDP 5011로 실행 중 viz에 파일 경로를 알릴 수 있다.
 - 전체 아침 보고는 수정하지 않았다. 출처: `calibration/run.sh` viz 분기, `calibration/ros2_nodes.py::run_viz` 및 viz argparse, `calibration/plate_plans.py::quadrant_plans`. 하드웨어/ROS/RViz/GPU를 실행하지 않았고 로봇 명령 없음.
+- AM/AN 작업판 완료 표기 커밋: `9d4f69a`.
