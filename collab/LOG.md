@@ -1896,3 +1896,7 @@
 - 핀별 겨냥 학습(sweep10)은 6/7에서 중단했다. 느슨한 exact로 고른 것이라 앉음 기준으로 다시 할 예정이다.
 - 진행 중: 조정 경로로 Q1/Q2 전체 기울기(+더 돌리기) 앉음 시험, Q3 기본(seat1).
 - **앞으로 보고는 앉음&exact를 주 지표로, in_quadrant/exact(느슨)를 함께 쓴다.**
+
+
+## 2026-10-14 22:20 Codex — R 진행 업데이트
+- 공식 R v2는 **4,300/6,480 (66.4%)**. 진행 파일 `calibration/data/basket/reach_parallel_20261014_v2/progress.jsonl`; exec session 76551, CPU-only. 계산은 진행 중이며 완성 지도/summary JSON·PNG가 아직 없어 성공률 경계나 도달 범위 결론을 내리지 않는다. U/S 완료: `2abf61e`, `449a056`; S 전체 회귀 36/36 통과.

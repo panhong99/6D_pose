@@ -29,7 +29,7 @@
 | O | BC 티칭 데모 오프라인 안전·일관성 점검 | full_11~14 JSON/상태기록·분면 manifest 대조, 배치 일관성 및 recorded joint/TCP 속도와 wrench 이벤트 확인 | 완료(c8ee663) |
 | N | **빗살 전수 번호 라벨링 — Codex는 검증·수정 담당 (보스 10/14 15:xx, 지금 Codex 최우선)** | 아래 '새 일 N' | 2D 번호 전수 기준 완료. Q2/Q3/Q4 **조건부 3D 역투영 66쌍**과 현 모델 비교 완료(`realQ_verified_3d_model_audit_20261014_v5`; LOG 참고). 사진 Q1 14개 확인점은 실제 Q2 줄. 실제 Q1은 가림/프레임 절단; calibrated 사진 입력 대기 |
 | O | **티칭 시연 충돌·안전 자동 판정기** (10/14 17:1x, N 다음 최우선) | 아래 '새 일 O' | 완료(6f2d618): full_14만 unsafe, 시험 31/31. 보고서 분면은 파일값(full_11 Q3) — manifest 정정(Q4) 우선으로 S에서 같이 고칠 것 |
-| R | **바구니 배치 도달 지도 (IK만, 접시 면 양방향) — 10/14 19시 새 배치 기준으로 범위 변경** | 아래 '새 일 R' | 진행 중(21:31 2,800/6,480 CPU-only, session 76551) |
+| R | **바구니 배치 도달 지도 (IK만, 접시 면 양방향) — 10/14 19시 새 배치 기준으로 범위 변경** | 아래 '새 일 R' | 진행 중(22:20 4,300/6,480 CPU-only, session 76551) |
 | T | **빗살 정답 → 칸 목표표 (3단계 입력)** | 아래 '새 일 T' | 완료(4ed87bc: 생성 함수·회귀시험) |
 | U | **Claude sim 결과 검증 (Critic)** | 아래 '새 일 U' | 완료(2abf61e) |
 | S | **시연 도구 파일 정리: demo_audit+demo_dataset 한 역할 파일, 시험은 tests.py로** (R과 독립 병행) | 아래 '새 일 S' | 완료(449a056) |
@@ -162,7 +162,7 @@
 - Claude가 LOG에 단계 1~3 결과를 올리면 결과 JSON을 직접 다시 집계해 수치를 확인한다. 성공 판정(칸 판정 높이, 기울기 반영), 표본 수, 흔들기 범위가 SYSTEM_SPEC과 같은지 확인하고, 반박할 점·누락된 검증을 LOG에 적는다. 코드는 고치지 않는다.
 
 ## Codex 상태
-- 10/14 22:xx 살아 있음: U 완료(2abf61e), S 완료(449a056; `demo_data.py`, 전체 36/36 시험, LOG 참고). R v2는 background CPU-only로 계속; 마지막 확인 4,174/6,480, PNG/JSON 미완성.
+- 10/14 22:20 살아 있음: U 완료(2abf61e), S 완료(449a056; `demo_data.py`, 전체 36/36 시험, LOG 참고). R v2 background CPU-only 4,300/6,480; 공식 PNG/JSON 미완성.
 - 10/14 20:36 살아 있음: R v2 993/6,480 (15.3%), CPU only; 분석범위는 바구니 ±10 cm/2.5 cm, yaw 0/±10/±15°, 접시 x −5~+10 cm·y −10~+2 cm. SCOPE와 SYSTEM_SPEC의 학습 흔들기 범위는 별개로 보고.
 - 10/14 20:06 살아 있음: R 공식 v2 2.5 cm 스윕 시작(6,480조합, 8 CPU workers, nice +10, PID 2 / exec session 76551; 경로 `calibration/data/basket/reach_parallel_20261014_v2/`). 5 cm 예비 JSON은 2,000/2,000이나 PNG가 없어 인용하지 않는다. full tests 32/32 통과(16 s).
 - 10/14 11:4x (보스 전달) Codex 토큰 소진 → L·M Claude 인수.
