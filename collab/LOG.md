@@ -2148,6 +2148,38 @@
 - **V 그림 수정:** `calibration/goal1_offline.py::basket_replay_report` 범례를 축 내부 우측에서 Figure 아래 2열로 옮겼다. 네 replay를 모은 새 보고서 `rl/logs/basket/report_final_6014/r4/basket_replay_report.md`와 `basket_replay_quadrant.png`를 생성해 막대 수치와 범례가 겹치지 않음을 시각 확인했다. 기존 r3 파일은 보존했다.
 - `bash calibration/run.sh tests`: **38/38 통과**. 초기 sandbox 실행은 import 중 UDP socket 생성이 권한 거부되어 시작하지 못했고, 권한 허용 재실행에서 전체 회귀가 통과했다. robot/GPU/Isaac 실행은 하지 않았다.
 
+## 2026-10-15 Codex — U6: FP 측정 잡음 replay 감사
+- `replay_noise_{2_2,5_5,10_10}_7014.json`를 원본 episode arrays에서 `seated && in_quadrant && landed_gap == target_gap`로 재집계하고, run별 `seated_exact`와 대조했다. 세 파일에서 300/300 run summaries가 일치했다. 각 파일은 seed 7014의 같은 300 layout·600 episode 이름/순서(각 layout 2회)를 사용해 조건별 paired 비교다.
+
+| 조건 | Q1 | Q2 | Q3 | Q4 | 전체 |
+|---|---:|---:|---:|---:|---:|
+| 기준, noise 없음 (`replay_final_v3_7014`) | 175/176 (99.4%) | 156/160 (97.5%) | 134/134 (100%) | 125/130 (96.2%) | **590/600 (98.3%)** |
+| synthetic noise 2 mm / 2° | 151/176 (85.8%) | 144/160 (90.0%) | 108/134 (80.6%) | 119/130 (91.5%) | **522/600 (87.0%)** |
+| synthetic noise 5 mm / 5° | 103/176 (58.5%) | 83/160 (51.9%) | 71/134 (53.0%) | 72/130 (55.4%) | **329/600 (54.8%)** |
+| synthetic noise 10 mm / 10° | 70/176 (39.8%) | 57/160 (35.6%) | 35/134 (26.1%) | 39/130 (30.0%) | **201/600 (33.5%)** |
+| synthetic noise 14 mm / 27° | 29/176 (16.5%) | 19/160 (11.9%) | 13/134 (9.7%) | 14/130 (10.8%) | **75/600 (12.5%)** |
+
+- paired baseline 대비 exact pass→fail episode는 각각 2/2: 75, 5/5: 263, 10/10: 393; 반대로 fail→pass는 7, 2, 4였다. noise가 커질수록 정확 칸/안착 성능이 단조롭게 하락한다는 simulator 내 근거다. noise 2/2에서도 기준보다 68/600 episode 낮아 작은 인식 흔들림에도 민감할 수 있음을 보여준다. 다만 각 layout 2회뿐이라 실제 성공률의 정밀한 추정치는 아니다.
+- **척도 비교 주의:** `rl/basket/expert.py::closed_loop_paths`는 위치·회전 각각에 3축 등방 Gaussian을 넣고 축별 표준편차를 입력값/√3로 둔다. 즉 `--cl_noise 14 27`은 대략 14 mm 및 27°의 3D RMS 벡터 크기이지 p90이 아니다(등방 Gaussian의 벡터 p90은 약 1.44×RMS). W에서 얻은 위치 14 mm/회전 26.69°는 run별 **p90**이며, 더구나 회전의 대부분은 원형 접시 면내 회전이었다. AA에서 유효 삽입 관련 plate-normal 편차는 약 **0.65° p90**였다. 따라서 noise sweep은 W의 실제 오차와 정량적으로 맞춘 시험이 아니며, 특히 2/2·5/5·10/10 수치를 실기 FoundationPose 허용 한계로 읽으면 안 된다.
+- 주입 오차는 매 re-aim 호출에서 다시 뽑는 독립·등방 Gaussian으로, 실제 FP의 시간 상관, 고정 extrinsic 편향, 접시 미끄럼은 모델링하지 않는다. 난수 seed가 Python `hash((name,k,...))`를 쓰고 실행 환경의 `PYTHONHASHSEED` 기록을 찾지 못해 프로세스 간 재현성도 확인되지 않았다.
+- 14/27은 최초 확인 때 JSON 파일이 없었지만, 같은 `.json.log`가 뒤이어 끝까지 기록되고 `replay_noise_14_27_7014.json`이 생성되어 재집계했다. 300/300 run 요약과 episode 수치가 맞았고 exact는 **75/600 (12.5%)**. 기준 통과 590개 중 516개가 noise에서 실패하고, noise에서만 통과한 것은 1개였다. 두 re-aim 각각 IK 재해결은 572/600; IK 성립 자체가 안정 착좌를 보장하지 않는다.
+- 다음에 실측과 비교하려면 위치 p90에 맞춘 RMS 변환(등방 3D 가정이면 약 9.7 mm), plate-normal 축 회전 잡음 별도 모델, 반복 seed·반복 수 확대, 바이어스/상관오차 조건을 분리해야 한다. 원자료: `rl/logs/basket/replay_noise_{2_2,5_5,10_10,14_27}_7014.json[.log]`; 기준 `replay_final_v3_7014.json`. GPU/Isaac 재실행 및 source 변경 없음.
+
+## 2026-10-15 Codex — U5: 최신 robustness·untouched replay 독립 재집계
+- CPU에서 원본 JSON/생성 `summary.json`/기존 `basket_replay_report.md`만 읽었다. `replay_untouched_9014.json` 598 episodes=299 valid layouts×2, `replay_robust_wide8014.json` 380=190×2, `replay_robust_pinr175_7014.json` 600=300×2. 세 파일 모두 `names`와 episode 배열 길이 일치, `held` 전부 true. 이름 기준으로 결과 JSON의 run별 `seated_exact`를 다시 계산한 값은 각 run 299/299, 190/190, 300/300개에서 일치했다.
+
+| 조건 | Q1 | Q2 | Q3 | Q4 | 전체 |
+|---|---:|---:|---:|---:|---:|
+| 새 seed 9014, 기본 핀 | 164/164 (100%) | 147/148 (99.3%) | 158/158 (100%) | 127/128 (99.2%) | **596/598 (99.7%)** |
+| wide seed 8014, 기본 핀 | 74/74 (100%) | 94/96 (97.9%) | 110/110 (100%) | 98/100 (98.0%) | **376/380 (98.9%)** |
+| seed 7014 경로, pin radius 1.75 mm | 175/176 (99.4%) | 138/160 (86.3%) | 5/134 (3.7%) | 107/130 (82.3%) | **425/600 (70.8%)** |
+
+- 재현한 성공식은 `seated && in_quadrant && landed_gap == target_gap`이다. 9014 불일치 2회는 Q2의 칸 밖 1회와 Q4의 +1칸 1회. wide 4회는 Q2 두 번, Q4 두 번 실패. pin radius 조건에서는 600회 거의 모두 `landed_gap == target_gap`(594/600)이며, 큰 하락은 주로 앉음 실패: Q3 5/134(최저 rim `low` 중앙값 67.9 mm), Q2 52.4 mm, Q4 50.2 mm. 따라서 이 결과는 번호/칸 겨냥보다 빗살 두께에서의 안착 민감도를 드러낸다.
+- **범위 한계:** seed 9014의 생성 summary는 요청 300개 중 299개 유효, 1개가 `Bad CRC-32 for file 'q_deg.npy'`로 실패. 생성 args는 바구니 x `[0.757,0.857]`, y `[-0.242,-0.142]`, yaw ±10°; 접시 x `[0.808,0.928]`, y `[0.259,0.359]` (SYSTEM_SPEC 기준으로 각각 목표 범위에 대응). 실제 유효 replay 배치 행은 바구니 y가 `−0.242…−0.175 m`, 접시 y가 `0.296…0.359 m`만 포함해 바구니의 +y 절반과 접시 y 하단을 충분히 덮지 않았다. 9014는 설정 고정 뒤 한 번만 실행된 unseen seed이지만, **요청된 전체 Cartesian 흔들기 영역을 포괄하는 홀드아웃은 아니다.**
+- wide8014 생성은 200 중 190 plan(95%)이 유효했다. 요청 x/y±10 cm 및 yaw±15° 조건에서 exact 376/380이지만, 실제 유효 배치의 바구니 y는 `−0.292…−0.168 m`에 집중되어 기준 `−0.192 m`의 +y 큰 편차를 시험하지 않았다. 접시 위치/배치 타당성 필터가 만든 표본이므로 임의 배치 전체 성능으로 일반화하지 않는다.
+- pinr175는 seed7014의 동일 300 layout을 2회 replay한 조건 비교라 유용하나, 그립 강성·실측 철사 형상/휨/마찰까지 바뀐 실물 검증은 아니다. 현재 global config의 반경은 1.00 mm; 1.75 mm 실험은 replay JSON의 마지막 자세 수치만으로 설정 자체를 독립 증명할 수 없고 Claude의 실행 기록/명령이 근거다. 최근 sim JSON에서 새 `--cl_noise` 결과는 아직 생성되지 않아 실제 FP 잡음(14 mm/27°) 내성은 미확인.
+- 원자료/보고서: `calibration/data/basket/random_20261015_004935/summary.json`, `random_20261015_003713/summary.json`, `random_20261015_000501/summary.json`; `rl/logs/basket/replay_untouched_9014.json`, `replay_robust_wide8014.json`, `replay_robust_pinr175_7014.json`; 표 `rl/logs/basket/report_untouched_9014/basket_replay_report.md`. 회귀 시험·GPU/Isaac 재실행 없음. 소스/데이터 설정은 변경하지 않음.
+
 ## 2026-10-15 Codex — AA: FP 정지 자세 temporal filtering 감사
 - W에서 쓴 같은 7개 lift 직후 정지 구간(`calibration/data/real_pipeline/20261014_{103037_plate_8s1ovxou,110739_plate_439v9qb5,111511_plate_2wew850p,112341_plate_vd44htlb,112812_plate_3apap1pw,114013_plate_s98hcjoa,114859_plate_3r5jimeh}/robot_state.jsonl`)을 다시 계산했다. 총 270 FP 프레임. 동시 `state.posx`에서 TCP(+0.165 m flange z)와 FP plate pose 상대변환을 계산했고, translation 오차는 run 중앙값 기준 거리, 회전은 원형 접시의 면내 회전을 무시한 plate-normal 방향각(abs dot)으로 했다. 모든 표 값은 run별 p50/p90을 구한 뒤 7 run 간 중앙값이며, **GT 정확도가 아니라 정지 구간 시간 일관성**이다.
 
@@ -2163,6 +2195,21 @@
 - 산출은 `/tmp/aa_fp_filter_audit.py` 임시 분석으로 재현했고, 코드·실측 데이터·캘리브레이션은 수정하지 않았다. 로봇/카메라/GPU/Isaac 사용 없음.
 - 추가 독립 리뷰: 현재 수정 중인 `camera_tools.py model_overlay`를 저장 손목 사진 4장에 실행해 `/tmp/model_overlay_Q{1,2,3,4}_audit.png`를 시각 확인했다. 실제 구현의 far-to-near 번호 회귀시험은 시험 내부에서 정렬식을 복제하고 `model_overlay()`/공유 함수를 호출하지 않아 구현 회귀를 잡지 못할 수 있다. Claude 작업 중 파일은 수정하지 않았음.
 - 커밋 전 지정 전체시험 `bash calibration/run.sh tests` 결과: **38개 중 36 통과, 2 error** (406.4 s). 기존 `tests.Pipeline.test_default_live_flow_plans_publishes_and_cleans_up_without_mover` 및 `test_execute_routes_both_legs_through_existing_supervised_mover`가 `pipeline.run()` stable pose/live joints timeout을 냈다. 문서-only 분석은 완료했지만 전체시험 gate 미통과라 커밋하지 않음; 파이프라인 및 테스트 소스는 수정하지 않았다.
+
+## 2026-10-15 Codex — AB: 19시 배치 4분면 오프라인 경로 미리보기
+- SYSTEM_SPEC 6절 배치(바구니 base `(0.807, −0.192, z=0.1442)`, yaw `+0.1°`; 접시 FP root `(0.848, +0.339, 0.083)` m)에서 CPU `plate_plans.quadrant_plan`을 사용했다. 구성은 plate_RL + plate_ik_bc merge, 실기 기본 x trim `−20 mm`, centre_h `0.18 m`, Q1/Q2 faces `(-1,+1)` 우선; sim의 분면별 dx/lean은 넣지 않았다. 중심 gap 인덱스는 각 분면 gap 수의 `//2`로 골랐다. Grasp IK library 경로는 반경 0.9174 m, azimuth +25.23°에서 accepted였다.
+
+| 로봇 분면 / 모델 분면 | 중심 pin | 면 | auto y shift mm | 경로 accepted | clearance ratio carry / insert / after | 최소 J5 여유 ° | TCP 경로 길이 m | 속도만 고려한 시간 하한 s |
+|---|---:|---:|---:|---|---|---:|---:|---:|
+| Q1 / Q1 | 3 | −x | +11 | yes | 1.00 / 1.28 / 1.28 | 63.72 | 2.409 | 17.4 |
+| Q2 / Q2 | 4 | −x | −30 | yes | 1.00 / 2.00 / 3.40 | 67.25 | 2.138 | 16.7 |
+| Q3 / Q3 | 6 | +x | −30 | yes | 1.12 / 2.00 / 6.20 | 32.26 | 1.662 | 14.4 |
+| Q4 / Q4 | 6 | +x | +11 | yes | 1.00 / 2.00 / 4.31 | 36.39 | 1.963 | 14.0 |
+
+- 출력 root: `calibration/data/rl_plans/offline_quadrant_preview_20261015/summary.json`; 분면별 plan은 해당 디렉터리의 `20261015_010125_933_taught/plan.json`(Q1), `20261015_010133_211_taught/plan.json`(Q2), `20261015_010137_857_taught/plan.json`(Q3), `20261015_010142_340_taught/plan.json`(Q4). 원 grasp library plan도 함께 보존했다. 전부 `dry_run=true`; RViz ghost preview 용도이며 실행하면 안 된다.
+- 길이는 grasp→lift→above→descend→ascend→home의 TCP FK polyline 합이다. 예상시간은 joint waypoint 사이 최대 축 변화량을 각 구간 속도(이동 30°/s, descend 3.5°/s)로 나눈 이상적 하한 합이고 가감속, 정지, gripper, perception을 제외한다. 충돌비는 셀/바구니 벽 checker 기준; carry 1.00은 요구 margin 경계다. 빗살과 실제 제품 mesh는 이 collision checker에 포함되지 않는다. basket walls clip 방지 자동 shift가 ±30/11 mm이므로 표시된 nominal 중심에 그대로 놓는다고 해석하면 안 된다.
+- 코드 점검 중 `quadrant_plans()`가 `q=C['plate_ik_bc']`를 `library_target(...,q)`에 바로 넘기지만 `library_target`은 `offset_m`를 요구하고 그 키는 `plate_rl`에만 있다. 실행 시 KeyError가 예상된다. AB 분석에서는 `{**plate_rl, **plate_ik_bc}`로 구성해 우회했다. `plate_plans.py`가 Claude 소유 파일이라 수정하지 않았고 Claude에 공유할 점검 항목으로 남긴다.
+- 로봇/그리퍼·카메라·GPU/Isaac 사용 없음. `bash calibration/run.sh tests`는 38개 중 36 통과, pipeline fake-I/O stable-pose timeout 2건으로 커밋하지 않음. 생성 JSON parse 및 `git diff --check` 통과.
 
 ## 2026-10-15 00:4x Claude — Codex U4·W·Z 반영: 완전 처음 보는 평가, 측정 잡음 시험 (30분 기록)
 - Codex U4가 맞다. seed 6014는 Q1 위쪽 잡기 끄기 아이디어의 계기가 됐고, 6014·7014 모두 최종 v3 전에 Q1 설정 확인에 쓰였다. 그래서 v3 0.990 / 0.983은 Q1을 포함해 '완전히 처음 보는' 평가가 아니다. → **설정 고정(801d6db, `rl/basket/run_quadrant_final_20261015.sh`) 뒤에 새로 만드는 seed 9014 경로 300개를 한 번만 재생**하도록 예약했고, 이 수치를 최종으로 보고한다.
@@ -2188,3 +2235,14 @@
 
 - 경로 `calibration/data/basket/random_20261015_004935/`, 결과 `rl/logs/basket/replay_untouched_9014.json`, 표·그림 `rl/logs/basket/report_untouched_9014/`(넓은 배치, 두꺼운 빗살 결과도 함께).
 - 해석과 한계: Isaac 결과다. 실기 전제는 바구니 위 손에 든 접시 자세를 잘 재는 것(W: FP p90 14 mm / 27°)과 실제 빗살 강성(두꺼운 단단한 빗살 0.708)이다. 측정 잡음 허용치 시험 진행 중.
+
+## 2026-10-15 01:2x Claude — 측정 잡음에 매우 민감: 실기 FP 수준이면 0.13
+- seed 7014 경로(300 × 2)에 최종 설정 + 손에 든 접시 자세 측정 잡음(`--cl_noise`, rms 위치 mm / 회전 °):
+
+| 잡음 | 0 / 0 | 2 / 2 | 5 / 5 | 10 / 10 | 14 / 27 (W의 실기 FP p90) |
+|---|---|---|---|---|---|
+| 앉음 & exact | 0.983 | 0.870 | 0.548 | 0.335 | **0.125** |
+
+- **결론: 지금 방식을 실기에 쓰려면 바구니 위 손에 든 접시 자세를 대략 1~2 mm / 1~2° 안으로 재야 한다.** 원시 FP(W: p90 14 mm / 27°)로는 안 된다. Codex AA(거르기로 얻는 정확도)가 이 기준에 닿는지가 관건이다.
+- 대안 시험(예약): **측정 없이** 분면별 평균 손 안 접시 자세(조정 실행에서 계산, `rl/logs/basket/blind_inhand_H_20261015.json`)로 다시 겨냥(`--cl_blind`). sim에서 바구니 위 손 안 자세 퍼짐은 위치 표준편차 1.5~3.6 mm(Q1 x는 13.6 mm), 법선 p50 0.6~1.3° / p90 1.4~3°.
+- 위치 잡음 / 회전 잡음 분리 시험(2/0, 0/2, 5/0, 0/1) 예약. 두꺼운 빗살 Q3 시험 진행 중.
