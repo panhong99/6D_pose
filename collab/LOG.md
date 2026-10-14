@@ -1984,6 +1984,13 @@
 - 범위·검증 한계: replay JSON에는 적용한 basket/plate 교란 설정의 전체 메타데이터가 없어 SYSTEM_SPEC의 배치 흔들기 범위와 동일하게 생성됐는지 이 결과 파일만으로 확인할 수 없다. `lean`은 unsigned이므로 부호 있는 접시 각도 주장은 여기서 재검증할 수 없다. replica는 새 독립 경로가 아니라 각 경로의 반복 재생이다. 실기 성능으로 해석하지 않는다. 코드 변경 없음.
 - 표본 경로: 위 파일들은 `rl/logs/basket/` 아래에 있다. 계산은 인라인 Python으로 실행했으며 새 스크립트/데이터 파일을 만들지 않았다.
 
+## 2026-10-15 00:xx Codex — V 아침 보고 생성기 완료
+- `calibration/goal1_offline.py`에 CPU-only `basket_report` 모드 추가. replay JSON 경로를 받아 `plans/repeats`, `in_quadrant`, loose `quadrant_ok`, seated&exact, strict `sim_rate`, 최저점 중앙값, |gap error| median/p90/max와 유효 착지의 slot delta 분포를 Markdown으로 내고, 분면별 seated&exact 막대 PNG를 만든다. 기존 판정 threshold는 변경하지 않았고 출력 파일 덮어쓰기를 거부한다.
+- 세 지정 파일의 생성 보고서를 Claude `sumseat` 결과와 대조: heldout v3 Q1/Q2/Q3/Q4 = **4.4/0/42.7/83.0%**, `replay_q3lean_05` Q3 = **78.7%**, `replay_flip2_a` Q1 = **43.8%**로 일치. heldout strict sim은 Q3 1.7%, 나머지 0%; Q4도 seated&exact 83.0%와 strict 0%가 달라 두 지표를 함께 봐야 한다.
+- 산출물(로컬 replay 결과, git 미포함): `calibration/data/basket/replay_report_20261015_v1/basket_replay_report.md`, `basket_replay_quadrant.png`. 그래프 확인: 제목·격자 없음, 위/오른쪽 spine 제거, 값 표시.
+- 시험: 합성 replay fixture에서 분모·metric·gap 분포와 덮어쓰기 거부 확인. `bash calibration/run.sh tests`: **37/37 통과, 33.43 s**. 테스트 모듈의 기존 로컬 UDP socket 사용 때문에 승인된 실행 권한으로 수행. 실로봇·그리퍼·Isaac/GPU 호출 없음. 구현+시험 커밋 `b1d72c5`; `tests.py`의 기존 Claude 모델 overlay 시험 변경은 커밋에서 제외.
+- 한계: 60 mm는 기존 sim seated proxy이며 물리 접촉 증명 아님. 표의 `strict sim_rate`가 낮거나 0인 점을 relaxed seated&exact와 혼동하지 말 것. 재생 JSON에 교란 범위 provenance가 없어 이 보고서만으로 SYSTEM_SPEC 범위 적용은 검증할 수 없다.
+
 ## 2026-10-14 23:4x Claude — Q3/Q4 앉음 해결 (조정 경로) (30분 기록)
 - **Q3 기울기 −0.5 + 겨냥 −4.64 cm(한 칸 당김): 앉음 & exact 230/230 = 1.00**(최저점 중앙값 48 mm). 기울기 −0.5만 했을 때는 216/216이 정확히 +1칸이었다.
 - **Q4 기울기 0.5 + 겨냥 −3.5 cm: 앉음 & exact 0.98**(170/172). 기울기 1.0은 0.82, −0.5는 0.85, −0.5 + 한 칸 당김은 0.11(−1칸으로 지나침).
