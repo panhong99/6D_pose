@@ -5,7 +5,7 @@
 #     --pid    the job's process id (the job runs on its own, e.g. nohup ... & echo $!)
 #     --log    file that grows while the job works (stall check)
 #     --done   file the job writes when it has finished (e.g. summary.json)
-# Exit line: WATCH <done|died|stalled|timeup> pid=... elapsed=...min log_age=...min  (+ last log lines)
+# Exit line: WATCH <done|died|ended|stalled|timeup>  (ended = pid gone, log then quiet for 2 min) pid=... elapsed=...min log_age=...min  (+ last log lines)
 set -uo pipefail
 PID="" LOG="" DONE="" STALL=20 MAX=30
 while [ $# -gt 0 ]; do
@@ -35,7 +35,13 @@ alive() {
 }
 while true; do
   [ -n "$DONE" ] && [ -f "$DONE" ] && report done
-  alive || report died
+  if ! alive; then                                   # (10/14) a wrapper pid can end while its child keeps writing the log:
+    if [ -n "$LOG" ] && [ -f "$LOG" ] && [ $(( $(date +%s) - $(stat -c %Y "$LOG") )) -lt 120 ]; then
+      PID_GONE=1                                      # follow the log until it has been quiet for 2 min
+    else
+      [ -n "${PID_GONE:-}" ] && report ended || report died
+    fi
+  fi
   now=$(date +%s)
   if [ -n "$LOG" ] && [ -f "$LOG" ] && [ $(( now - $(stat -c %Y "$LOG") )) -ge "$STALL_S" ]; then report stalled; fi
   [ $(( now - t0 )) -ge "$MAX_S" ] && report timeup
