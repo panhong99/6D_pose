@@ -2376,3 +2376,18 @@
 - 안전/해석 경계: 접시를 누르지 않고 손으로 놓은 뒤 5초 후 촬영한다. 가려진 점·시차가 큰 눈금은 측정 불가로 남긴다. 현행 sim `low < 60 mm`는 레일 49 mm를 둔 proxy라, 실제 바닥 기준과 좌표가 일치 확인되기 전에는 실물 pass/fail로 사용하지 않는다고 명시했다. 과거 손목 pose를 새 사진에 재사용하지 않도록 적었다.
 - 산출: `collab/REAL_DISH_SEAT_MEASUREMENT_20261015.md`. 실기/그리퍼 명령·카메라 실행 없이 절차 문서만 작성.
 - 검증: `bash calibration/run.sh tests` **38/38 통과(33.17 s)**. 첫 sandbox 실행은 `pipeline.py`의 UDP socket 생성 권한으로 중단되어 승인된 실행 권한으로 재실행했다. `git diff --check` 통과.
+
+## 2026-10-15 Codex — AG Q1 손 안 자세 퍼짐 오프라인 분석
+- `replay_q1nt_l05.json` (130 episodes, 65 plan 이름×2 반복)과 Q2/Q3/Q4 provenance 원본을 CPU에서 읽었다. 각 episode의 TCP를 기록된 6관절 FK + flange→TCP 0.165 m로 재구성하고, `H = inv(T_base_tcp) @ T_base_plate`를 계산했다. plate 중심은 기록 root pose에서 법선 방향 10 mm 보정했다. H 좌표 표준편차는 blind-H와 같은 TCP 기준이다.
+
+| 분면·원본 | n | 들기 직후 `in_hand` H xyz std (mm) | `pre` H xyz std (mm) | H 회전 geodesic std (°), in_hand → pre |
+|---|---:|---:|---:|---:|
+| Q1 `replay_q1nt_l05` | 130 | 0.70 / 1.55 / 1.10 | 0.67 / **9.94** / 2.51 | 0.51 → **5.61** |
+| Q2 `replay_q2aim_l0_dx38` | 110 | 0.64 / 1.61 / 1.20 | 0.90 / 2.78 / 1.47 | 0.61 → 1.37 |
+| Q3 `replay_m05_Q3_dx46` | 230 | 0.78 / 1.63 / 1.06 | 0.89 / 1.28 / 1.18 | 0.56 → 0.79 |
+| Q4 `replay_q4lean_05` | 172 | 0.82 / 1.52 / 1.08 | 2.21 / 1.28 / 1.32 | 0.54 → 1.24 |
+
+- Q1은 들기 직후 분산에서 다른 분면과 거의 같지만 `pre`에 도달할 때 y 분산이 1.55→9.94 mm (6.4배), 회전 scatter가 커진다. 즉 문제는 들어 올리자마자 이미 퍼져 있는 모습이 아니다. Q1 65 동일 plan 반복쌍의 H 위치 차 거리 중앙값은 `in_hand` 2.07 mm → `pre` 4.15 mm, p90 4.16→9.12 mm, 최대 6.11→29.81 mm로 커졌다.
+- 단계 정의를 확인했다: `in_hand`는 lift 경로 직후 60 sim step hold 다음이며, `pre`는 `to_above` 운반 및 `--cl_iter 2` closed-loop 측정/재겨냥 뒤, 하강 전이다. 원본 `stage2_q1notop.sh`는 `--cl_top`을 주지 않고, CLI 플래그 기본값도 false다. 따라서 Q1은 해당 재생에서 top re-grip 보정 없이 수행됐다. 그러나 중간 운반 샘플이 없어 변화가 운반 중인지 재겨냥 중인지 분리할 수 없으며, 동일 Q1·동일 계획에서 top on/off만 바꾼 짝 실험도 없다. regrip 비활성화와의 인과관계는 **미확정**이다.
+- 해석: replay 호출에 `--attach`도 없으므로 판은 운반 중 강체 고정되지 않고 시뮬레이션 그리퍼 접촉만 받는다. 들기 직후 H가 좁고 `pre` H가 퍼지는 패턴은 이동/재겨냥 동안의 판-그리퍼 상대자세 변화와 양립한다. 현 JSON은 두 시점만 저장하므로 slip이 발생한 정확한 시각·기전은 입증하지 않는다. Q1은 3 cm 간격이며 Q1/Q2와 Q3/Q4가 서로 다른 계획 seed·분면 설정이라 분면 간 직접 인과 비교도 제한된다.
+- 다음 검증 후보(시뮬레이션 담당 Claude): 동일 Q1 plans/seed/나머지 인자에서 `--cl_top_q Q1:0` 대 `Q1:1` matched replay, 그리고 carry waypoint별 H 저장. Codex는 GPU/Isaac을 실행하지 않았다. 산출은 이 LOG 기록뿐이며 원본 JSON·정책·코드는 변경하지 않았다.
