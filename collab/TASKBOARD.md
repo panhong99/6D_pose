@@ -32,6 +32,9 @@
 | R | **바구니 배치 도달 지도 (IK만, 접시 면 양방향) — 10/14 19시 새 배치 기준으로 범위 변경** | 아래 '새 일 R' | 완료(47f3684: 6,480/6,480, 지도·JSON 생성 및 원시행 재집계) |
 | T | **빗살 정답 → 칸 목표표 (3단계 입력)** | 아래 '새 일 T' | 완료(4ed87bc + 2e222f1/e802ce1: 코드 해시 비교 제외) |
 | U | **Claude sim 결과 검증 (Critic)** | 아래 '새 일 U' | 완료(2abf61e, e72ac49, 9330f83, 2e75fee: 최신 flip/Q3 재집계) |
+| V | **아침 보고 표·그림 생성기** (10/14 23:4x, 지금 최우선) | 아래 '새 일 V' | 대기 |
+| X | **Q2 걸침 기하 검사 (numpy, 빗살 vs 접시 메시)** | 아래 '새 일 X' | 대기 |
+| W | **실기 선행 조건: 바구니 위 정지 상태에서 손에 든 접시 자세 측정 잡음 (기존 실기 로그)** | 아래 '새 일 W' | 대기 |
 | S | **시연 도구 파일 정리: demo_audit+demo_dataset 한 역할 파일, 시험은 tests.py로** (R과 독립 병행) | 아래 '새 일 S' | 완료(449a056) |
 | P | **BC 데이터셋 변환기: 시연 → 바구니 좌표 키자세·궤적** (O 다음) | 아래 '새 일 P' | 완료(7daafd5) |
 | Q | **observe_now2 사진에 Goal 1 BC 파지 라이브러리 범위 overlay** | 고정 카메라 K/T 투영, 라이브러리 표본·가정·한계를 그림에 표시 | 완료(3ec2b71) |
@@ -160,6 +163,21 @@
 
 ### 새 일 U: Claude sim 결과 검증 (10/14 19:0x Claude, Critic)
 - Claude가 LOG에 단계 1~3 결과를 올리면 결과 JSON을 직접 다시 집계해 수치를 확인한다. 성공 판정(칸 판정 높이, 기울기 반영), 표본 수, 흔들기 범위가 SYSTEM_SPEC과 같은지 확인하고, 반박할 점·누락된 검증을 LOG에 적는다. 코드는 고치지 않는다.
+
+### 새 일 V: 아침 보고 표·그림 생성기 (10/14 23:4x Claude)
+- 입력: `rl/logs/basket/replay_*.json`(expert.py replay 결과; `seated`, `in_quadrant`, `quadrant_ok`, `landed_gap`, `target_gap`, `final.low`, `lean`, `yaw_err`).
+- 출력: 실행 이름 목록을 받아 분면별 표(경로 수, 회수, 느슨한 in_quadrant/exact, **앉음 & exact**, 최저점 중앙값, 칸 오차 분포)를 markdown으로, 그리고 분면별 막대 그림 PNG 한 장(그림 규칙: grid·위/오른쪽 축·제목 없음, 값 표시)으로 만든다. 역할 파일 함수 + CLI(`rl/basket/expert.py`에 모드 추가 또는 calibration 역할 파일). 코드 안의 판정 기준은 바꾸지 말고 JSON 값만 집계한다.
+- 완료 조건: 오늘 밤 실행 중 `replay_stage2_heldout_v3_20261014.json`, `replay_q3lean_05.json`, `replay_flip2_a.json`로 표·그림 생성, Claude의 `sumseat` 수치와 일치하는지 시험 추가.
+
+### 새 일 X: Q2 걸침 기하 검사 (10/14 23:4x Claude)
+- 현상: 손목 뒤집기(`--far_flip`)한 Q2 접시는 목표 칸에 들어가지만 최저점 77 mm에 걸린다(레일 49 mm, 앉음 0%). Q1(빗살 3 cm 간격)과 Q3/Q4는 앉는다.
+- 할 일: sim과 같은 바구니 모델(`rl/basket_env.full_basket_parts`, `rl/basket.yaml full`)과 접시 메시(`rl/assets/plate029_simplified.obj`)로, Q2 칸 하나에 접시를 기울기 −20~+20°, 칸 안 위치 ±10 mm로 놓았을 때 빗살·레일과 겹치지 않고 내려갈 수 있는 최저 높이를 numpy로 계산(10/12 밤 같은 방식). Q3/Q4·Q1과 비교. 원인 후보: 빗살 간격 17.56 mm vs 접시 두께, 빗살 기울기 부호, 레일 높이, pin_r.
+- 완료 조건: 분면별 '내려갈 수 있는 최저 높이 vs 기울기' 표·그림 + 원인 결론 LOG. GPU 금지.
+
+### 새 일 W: 실기 선행 조건 — 손에 든 접시 자세 측정 잡음 (10/14 23:4x Claude)
+- 배경: sim에서 쓰는 방법은 바구니 위에 멈춘 상태에서 손에 든 접시 자세를 재고 다시 겨냥한다(2회). 실기에서는 고정 D455 FoundationPose로 재야 한다.
+- 할 일: 기존 실기 실행(`calibration/data/real_pipeline/*/robot_state.jsonl`, FoundationPose 자세 기록이 있는 실행)에서 로봇이 멈춰 있는 구간의 손에 든 접시 자세(TCP 기준) 반복 잡음(mm, deg)과, 들어 올린 뒤 손 안에서 돈 각도를 추정. sim 2회 겨냥 뒤 잔여(위치 0.2 mm 이하)와 비교해 실기에서 필요한 정확도가 나오는지 결론.
+- 완료 조건: 표 + 결론 LOG, 실행 목록과 한계 명시. 로봇·카메라 연결 금지(기록만 사용).
 
 ## Codex 상태
 - 10/14 23:30 살아 있음: R 완료(`47f3684`), CPU-only 6,480/6,480. `reach_parallel_20261014_v2/basket_reach_map.json` 및 face별 IK PNG 3개·lift clearance PNG 1개 생성·검산. all-Q IK ≥80%는 −x/either 81/81 셀, +x 68/81; IK와 lift ratio ≥1.3가 각 셀 80% 이상 동시에 성립하는 곳은 33/81. T 회귀 `2e222f1/e802ce1`, U 최근 재집계 `2e75fee`, S `449a056` 완료. 전체 tests 36/36 통과.
