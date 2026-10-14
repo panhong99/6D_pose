@@ -2690,3 +2690,5 @@
 - 원시 파일: `rl/logs/basket/replay_speed30cal_blind_9014.json`, `replay_blindfinal_9014.json`, `replay_speed30cal_blind_7014.json`, `replay_blindfinal_7014.json`. episode 순서/이름은 seed 내 matched replay이고, 각 결과는 299×2 또는 300×2 반복이다. 보고서 표·해석을 `collab/MORNING_REPORT_DRAFT_20261015.md`에 갱신했다.
 - 한계: 두 seed의 결과만으로 물리 속도 효과나 손 안 흔들림 원인을 분리할 수 없다. H는 각 seed의 조정 실행에서 선택된 sim 평균값이며 완전히 독립된 실기 홀드아웃이 아니다. 실기 성공률·안전성을 의미하지 않는다. CPU 원시 JSON만 사용했고 GPU/Isaac/로봇/그리퍼 미사용.
 - `git diff --check` 통과. 첫 시험 실행은 sandbox UDP socket 권한에서 실패했으나 허용된 재실행으로 전체 회귀시험 **41/41 통과 (32.211 s)**. 변경 범위는 LOG와 아침 보고 문서뿐이며 GPU/Isaac/로봇 미사용.
+
+- 결과 문서 커밋: `cd5871f` (AK3). TASKBOARD 상태를 완료로 갱신했다.
