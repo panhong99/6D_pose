@@ -552,17 +552,35 @@ def pin_layout_measure(labels_path, out):
     root_z = floor + be.B['pins']['rail_z']
     top = floor + be.B['pins']['height'] * np.cos(np.radians(be.B['pins']['lean_deg']))
     measured = []
+    seen = set()
     for photo in labels['photos']:
         path = Path(photo['image'])
         if not path.name.endswith('.raw.png'):
             raise ValueError(f'Expected original wrist .raw.png: {path}')
+        image = cv2.imread(str(path))
+        if image is None:
+            raise FileNotFoundError(path)
+        height, width = image.shape[:2]
         meta = json.loads(path.with_name(path.name[:-8] + '.json').read_text())
         Tbb = np.asarray(meta['T_base_basket'], float)
         Tbc = np.asarray(meta['T_base_flange'], float) @ np.asarray(meta['T_flange_cam'], float)
         K = np.asarray(meta['K'], float)
+        if Tbb.shape != (4, 4) or Tbc.shape != (4, 4) or K.shape != (3, 3) or not all(
+                np.isfinite(v).all() for v in (Tbb, Tbc, K)):
+            raise ValueError(f'Invalid saved camera or basket transform: {path}')
         for pin in photo['pins']:
             if pin.get('review') != 'checked':
                 continue
+            if pin.get('row') not in ('pair_A_row_plus', 'pair_A_row_minus', 'pair_B_row_plus', 'pair_B_row_minus'):
+                raise ValueError(f'Invalid pin row: {pin.get("row")}')
+            for name in ('root_uv', 'tip_uv'):
+                u, v = np.asarray(pin[name], float)
+                if not (np.isfinite([u, v]).all() and 0 <= u < width and 0 <= v < height):
+                    raise ValueError(f'{name} outside saved image: {path}')
+            key = (str(path.resolve()), pin['row'], tuple(pin['tip_uv']))
+            if key in seen:
+                raise ValueError(f'Duplicate checked pin: {key}')
+            seen.add(key)
             root = _pixel_to_basket_plane(pin['root_uv'], root_z, Tbb, Tbc, K)
             tip = _pixel_to_basket_plane(pin['tip_uv'], top, Tbb, Tbc, K)
             dy = abs(root[1] - tip[1])
@@ -574,6 +592,8 @@ def pin_layout_measure(labels_path, out):
                                  transverse_disagreement_mm=float(dy * 1000),
                                  lean_deg=float(np.degrees(np.arctan2(root[0] - tip[0], tip[2] - root[2]))),
                                  review=pin['review']))
+    if not measured or labels.get('counts', {}).get('total', len(measured)) != len(measured):
+        raise ValueError('No checked pins or labels.counts.total disagrees with checked pins')
     result = dict(source_labels=str(labels_path.resolve()), assumed_base_z_m=floor,
                   assumed_visible_root_z_m=root_z, assumed_tip_z_m=top,
                   method='saved camera ray intersection with visible comb-rail root and tip height planes; '
