@@ -284,6 +284,14 @@ def run_replay(args):
     sc = be.B['success']
     any_gap = ((gap_err < sc['bottom_tol_m']) & (st['low'] < sc['max_height_m']) & (st['normal_err'] < sc['max_normal_err_deg'])
                & (st['d_u'].abs() < sc['centre_tol_m'])).cpu().numpy() & held
+    # (10/14) planned quadrant setups: judge the face against the rows of ITS quadrant (far tines lean the other way):
+    # plate face across the rows (normal within 15 deg of n seen from above), standing (lean within the tine lean + 12 deg)
+    up_, n_ = st['up'], st['n']
+    yaw_err = torch.rad2deg(torch.acos((torch.abs((up_[:, :2] * n_[:, :2]).sum(1)) / up_[:, :2].norm(dim=1).clamp(min=1e-6)).clamp(max=1.0)))
+    lean = torch.rad2deg(torch.asin(up_[:, 2].abs().clamp(max=1.0)))
+    lean_ok = torch.tensor([abs(be.B['full'].get('tine_lean_deg', {}).get(next((qd for qd in ('Q1', 'Q2', 'Q3', 'Q4') if f'_{qd}_' in rows[i]['name']), 'Q3'), 12.5)) + 12.0
+                            for i in who], device=dev)
+    face_ok = ((yaw_err < 15.0) & (lean < lean_ok) & (st['low'] < 0.095) & (gap_err < sc['bottom_tol_m'])).cpu().numpy() & held
     np.set_printoptions(precision=1, suppress=True)
     print('[replay] final d_bottom mm', (st['d_bottom'] * 1000).cpu().numpy()[::args.per_run], flush=True)
     print('[replay] final gap err mm  ', (gap_err * 1000).cpu().numpy()[::args.per_run], flush=True)
@@ -293,10 +301,10 @@ def run_replay(args):
     res = []
     for i, r in enumerate(rows):
         m = who == i
-        res.append(dict(run=r['name'], real=r['outcome'], sim_rate=float(ok[m].mean()), any_gap=float(any_gap[m].mean()), held=float(held[m].mean()),
+        res.append(dict(run=r['name'], real=r['outcome'], sim_rate=float(ok[m].mean()), any_gap=float(any_gap[m].mean()), quadrant_ok=float(face_ok[m].mean()), held=float(held[m].mean()),
                         pre_d_bottom_mm=float(st_pre['d_bottom'][torch.as_tensor(m)].mean() * 1000),
                         pre_normal_err=float(st_pre['normal_err'][torch.as_tensor(m)].mean())))
-        print(f"[replay] {r['name']:32s} {r['outcome'][:8]:8s}  {ok[m].mean():5.0%} any gap {any_gap[m].mean():4.0%} ({held[m].mean():4.0%})  "
+        print(f"[replay] {r['name']:32s} {r['outcome'][:8]:8s}  {ok[m].mean():5.0%} any gap {any_gap[m].mean():4.0%} quadrant ok {face_ok[m].mean():4.0%} ({held[m].mean():4.0%})  "
               f"{res[-1]['pre_d_bottom_mm']:+7.1f}        {res[-1]['pre_normal_err']:5.1f}", flush=True)
     good = [x for x in res if x['real'] == 'success']
     gate = sum(x['sim_rate'] >= 0.8 for x in good)
@@ -305,7 +313,8 @@ def run_replay(args):
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(dict(results=res, gate=gate, need=9, names=[rows[i]['name'] for i in who], in_hand=in_hand,
                                    final={k: st[k].cpu().numpy().tolist() for k in ('d_bottom', 'low', 'normal_err', 'd_u')},
-                                   gap_err=gap_err.cpu().numpy().tolist(), held=held.tolist()), indent=1))
+                                   gap_err=gap_err.cpu().numpy().tolist(), held=held.tolist(), yaw_err=yaw_err.cpu().numpy().tolist(),
+                                   lean=lean.cpu().numpy().tolist(), quadrant_ok=face_ok.tolist()), indent=1))
     env.close()
 
 
