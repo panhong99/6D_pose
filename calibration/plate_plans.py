@@ -942,7 +942,7 @@ def quadrant_checkers(Tbc, q, Tbb, H, tool):
 
 
 def quadrant_plan(Tbb, quadrant, gap, H, tool, start_deg, Tbc, q, grasp_legs=None, tilt_deg=0.0, centre_h=0.18, above_m=0.11,
-                  phi_step=10, seeds=None, yaw_trim_deg=0.0, y_shift_m=None, x_shift_m=None):
+                  phi_step=10, seeds=None, yaw_trim_deg=0.0, y_shift_m=None, x_shift_m=None, faces=(1.0, -1.0)):
     """Plan.json for one quadrant gap from the plate in the hand: to_above (carry, straight or RRT), descend (straight
     down, plate upright, +basket_policy_extra_down_m), ascend (straight up), to_home, abort_home.  -> (path, report)."""
     import ros2_nodes
@@ -973,7 +973,7 @@ def quadrant_plan(Tbb, quadrant, gap, H, tool, start_deg, Tbc, q, grasp_legs=Non
     tried = []
     # (10/14 18:xx) the plate is the same both ways: facing -x lets the far quadrants (Q1/Q2) solve with the wrist flipped
     # (J4 ~ -155, as 보스 taught them); +x alone gave 'ik/limit' there at every basket x 0.90-0.99
-    for side, phi in [(sd_, p_) for sd_ in (1.0, -1.0) for p_ in sorted(range(-90, 91, phi_step), key=abs)]:
+    for side, phi in [(sd_, p_) for sd_ in faces for p_ in sorted(range(-90, 91, phi_step), key=abs)]:
         ph = np.radians(phi)
         zt = side * (n * np.cos(t) + np.array([0, 0, 1.0]) * np.sin(t))
         x = v * np.cos(ph) + np.cross(zt, v) * np.sin(ph)
@@ -1214,7 +1214,8 @@ def _random_one(job):
     try:
         with contextlib.redirect_stdout(io.StringIO()):
             path, rep = quadrant_plan(Tbb, model_qd, gap, H, tool, grasp['lift'][-1], G['Tbc'], G['q'], grasp_legs=grasp,
-                                      phi_step=G['phi_step'], **G.get('plan_kw', {}))
+                                      phi_step=G['phi_step'], **G.get('plan_kw', {}),
+                                      **(dict(faces=(-1.0, 1.0)) if G.get('far_flip') and model_qd in ('Q1', 'Q2') else {}))
     except Exception as e:                                   # noqa: BLE001
         return dict(row, ok=False, stage='place', why=str(e)[:120], s=round(time.time() - t0, 1))
     if path is None:
@@ -1241,6 +1242,7 @@ def random_plans(a):
     run = sorted(p_.parent for p_ in (DATA / 'real_pipeline').glob('*/realplan_req.json'))[-1]
     if a.sim:                                                # (10/14) plans for the Isaac replay: no real-robot x trim,
         _RANDOM.update(plan_kw=dict(x_shift_m=0.0, centre_h=0.165), hand_tilt=(-12.9, 4.9))   # plate centre 16.5 cm, sim in-hand sag
+    _RANDOM.update(far_flip=a.far_flip, quadrants=a.only_quadrants)
     _RANDOM.update(out=out, plate_z=float(json.loads((run / 'realplan_req.json').read_text())['plate_root_fp'][2]), q={**C['plate_rl'], **C['plate_ik_bc']}, basket_z=a.basket_z, phi_step=a.phi_step,
                    Tbc=np.array(__import__('calib_core').load_json(__import__('calib_core').latest_t_base_cam())['T_base_cam']))
     jobs = []
@@ -1254,7 +1256,7 @@ def random_plans(a):
             px, py = r * np.cos(np.radians(az)), r * np.sin(np.radians(az))
         if abs(py) > 0.42 or np.hypot(px - bx, py - by) < 0.37 + PLATE_R + 0.05:   # plate not on / against the basket (53 cm square)
             continue
-        jobs.append((len(jobs), bx, by, yaw, px, py, rng.choice(list(QUADRANTS)), float(rng.random())))   # gap = fraction of the quadrant's gaps
+        jobs.append((len(jobs), bx, by, yaw, px, py, rng.choice(a.only_quadrants or list(QUADRANTS)), float(rng.random())))   # gap = fraction of the quadrant's gaps
     print(f'{len(jobs)} random setups (basket x {a.x} y {a.y} yaw +-{a.yaw_range}, plate '
           f'{f"x {a.plate_x} y {a.plate_y}" if a.plate_x else f"r {a.plate_r} az +-40"} |y|<=0.42) '
           f'with {a.workers} workers -> {out}', flush=True)
@@ -1329,6 +1331,8 @@ if __name__ == '__main__':
     p.add_argument('--plate_r', type=float, nargs=2, default=(0.86, 1.15), help='random_plans: plate radius range [m] (library path clears the frame up to ~1.15)')
     p.add_argument('--plate_x', type=float, nargs=2, default=None, help='random_plans: plate x range [m] (with --plate_y; replaces --plate_r)')
     p.add_argument('--plate_y', type=float, nargs=2, default=None, help='random_plans: plate y range [m]')
+    p.add_argument('--far_flip', action='store_true', help='random_plans: Q1/Q2 try the plate facing -x first (wrist flipped, like 보스 taught Q2)')
+    p.add_argument('--only_quadrants', nargs='+', default=None, help='random_plans: sample only these (robot) quadrants')
     p.add_argument('--sim', action='store_true', help='random_plans: plans for the Isaac replay (no x trim, centre 0.165, sim sag)')
     p.add_argument('--yaw_range', type=float, default=15.0, help='random_plans: basket yaw uniform in +-this [deg]')
     p.add_argument('--seed', type=int, default=0)
