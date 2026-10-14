@@ -367,12 +367,14 @@ class CameraPinTests(unittest.TestCase):
                                       np.linalg.inv(Tbc), self.K)[0]
         with tempfile.TemporaryDirectory() as tmp:
             photo = Path(tmp)/'sample.raw.png'
+            import cv2
+            cv2.imwrite(str(photo), np.full((240, 320, 3), 230, np.uint8))
             photo.with_name('sample.json').write_text(json.dumps(dict(
                 T_base_basket=Tbb.tolist(), T_base_flange=Tbc.tolist(),
                 T_flange_cam=np.eye(4).tolist(), K=self.K.tolist())))
             labels = Path(tmp)/'labels.json'
             labels.write_text(json.dumps(dict(photos=[dict(image=str(photo), pins=[dict(
-                row='pair_A_front', root_uv=uv[0].tolist(), tip_uv=uv[1].tolist(), review='checked')])])))
+                row='pair_A_row_plus', root_uv=uv[0].tolist(), tip_uv=uv[1].tolist(), review='checked')])])))
             result = self.camera.pin_layout_measure(labels, Path(tmp)/'out')
             measured = result['pins'][0]
             np.testing.assert_allclose(measured['root_at_rail_basket_xyz'], root, atol=1e-9)

@@ -1529,3 +1529,7 @@
 - 10/12 저장 손목 `wrist_pre` 두 장을 부분 배치로 독립 진단 실행(`calibration/data/basket/pins_e_holdout_{1,2}_partial_layout_20261014/`): 자체 확정쌍 모두0. 실제 사진은 손에 든 접시와 그리퍼가 중앙 빗살을 크게 가리고 촬영 방향도 Q1~Q4와 달라, 이 0을 정확도/실패율로 계산할 정답 분모가 없다. 독립 검증용으로는 빈손·같은 바구니 배치·다른 시점의 저장 사진과 보스의 가시쌍 라벨이 필요하다.
 - 보스가 '가운데 클립 바로 옆 핀'이라는 말 자체를 모른다고 확인했다. 이 표현은 기존 작업판에 있던 기술 가정이며 실제 부품 지정으로 간주하면 안 된다. 경첩형 고정부 6곳을 제외한 뒤에는 사진별 핀을 `visible/occluded/uncertain`으로만 다루고, 미확인 부품에 이름이나 3D 위치를 부여하지 않는다.
 - 이에 맞춰 `calibration/data/basket/wrist_look/pin_visibility_audit_PARTIAL_20261014_v9.json`에 Q1~Q4 확인 핀59개와 알려진 뿌리 가림(Q1 2곳), Q2 두 번째 줄 판정 불가, Q3 미확정 후보 등을 구분했다. 네 사진의 전체 물리적 핀 개수나 E 정답 분모는 아직 모른다. 작업판 D의 부품 미확인 '클립 위치' 완료 조건·문제 설명도 보스 정정에 맞게 바로잡았다.
+
+## 2026-10-14 Codex — Claude 보고 회귀 시험 복구
+- Claude가 작업판에 `CameraPinTests.test_visible_comb_root_uses_rail_height_not_floor` 실패를 기록했다. 원인은 새 입력 검증이 저장 raw PNG와 현재 줄 이름을 요구하는데 합성 시험 fixture가 PNG를 만들지 않고 구형 `pair_A_front`를 쓴 것. 시험에 320×240 가짜 사진을 생성하고 줄 이름을 `pair_A_row_plus`로 교정했다. 기하·높이 기준 자체는 변경하지 않았다.
+- 제한된 셸에서는 `pipeline.py` import의 로컬 UDP 소켓 생성이 `PermissionError`라 테스트가 시작되지 않아 승인된 권한 경로로 재실행했다. 해당 단일 시험 통과, 전체 `calibration/tests.py` **26/26 통과(15.735초)**. 실로봇/그리퍼 호출 없음.
