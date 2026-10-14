@@ -1,5 +1,13 @@
 # LOG
 
+## 2026-10-14 Codex — P BC 시연 데이터셋 변환기 완료
+- 구현: `calibration/demo_dataset.py` 및 `calibration/test_demo_dataset.py`, 커밋 **7daafd5**. `bc_demos.json` manifest의 분면/핀/layout/unsafe 태그를 우선하고 full_11~14의 7 키자세와 `robot_state.jsonl` 전체 관절 표본을 M1013 FK → 0.165 m 툴 길이 TCP → `T_base_basket⁻¹` 바구니 좌표로 저장한다. 출력은 새 경로만 허용하며 기존 경로 덮어쓰기를 거부한다.
+- 산출물: `calibration/data/teach/bc_dataset_full_11_14_20261014_v6/`의 시연별 `.npz`/`.json`, `summary.csv`, `summary.json`. 4개 demo, 28 keypose, 총 **26,102 joint samples** (시연별 6,846/6,544/5,949/6,763; 기록 간격 중앙값 19.43~19.44 Hz). 모든 trajectory와 keypose에 관절값·base/basket TCP 행렬이 있고 기록 posx 및 이벤트/phase 정보도 보존했다.
+- 키자세 FK 대 기록 flange posx 오차는 28개 모두 **1 mm 미만**, 최대 **0.220 mm**. 연속 상태에서는 **28/26,102 샘플이 1 mm 초과**, 최대 **6.918 mm**였고 원인은 확정하지 않았다. p95는 demo별 0.198~0.219 mm. 파생 TCP는 관절 FK로 계산하고 기록 posx를 감사용으로 함께 유지한다.
+- 기본 학습 대상 레이아웃은 현재 보스가 정한 `new: basket centred y~0, plate in front`. 네 기존 데모는 모두 구 레이아웃이라 기본 제외, full_14는 manifest의 `unsafe=true`도 추가로 적용되어 **기본 포함 0/4**다. 이는 변환 실패가 아니라 새 배치와 안전 태그를 섞지 않도록 한 의도적 필터다. `plate_centre_estimate`는 grasp TCP + 평면 radial grasp 가정(`rim_r - grasp_inset`)의 추정치이며 GT가 아니다.
+- 검증: 전용 회귀시험 **2/2 통과**, py_compile 및 4개 산출물 shape/유한값/FK 검사 통과. 기존 통합 `tests.py`는 import 시 UDP socket 생성에서 sandbox `PermissionError`로 시작되지 않아 전체 회귀는 실행 불가; 로봇·카메라 접속을 요구한 것은 아니다. 기존 원본·캘리브레이션·모델은 수정/덮어쓰기하지 않았고 NPZ 데이터는 git에 넣지 않았다.
+- 다음: P 코드는 학습 파이프라인이 아니며, 새 레이아웃 데이터가 준비될 때 기본 필터를 통과할 샘플이 필요하다. N은 actual Q1 전체가 보이는 새 calibrated 사진이 들어오기 전까지 Q1 3D 실측 완료를 주장하지 않는다.
+
 날짜별 진행을 누적한다. 최신 항목을 아래에 추가한다. 실험 결과는 metric 수치와 log 경로를 함께 남긴다.
 
 포맷:
