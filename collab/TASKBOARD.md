@@ -31,14 +31,14 @@
 | O | **티칭 시연 충돌·안전 자동 판정기** (10/14 17:1x, N 다음 최우선) | 아래 '새 일 O' | 완료(6f2d618): full_14만 unsafe, 시험 31/31. 보고서 분면은 파일값(full_11 Q3) — manifest 정정(Q4) 우선으로 S에서 같이 고칠 것 |
 | R | **바구니 배치 도달 지도 (IK만, 접시 면 양방향) — 10/14 19시 새 배치 기준으로 범위 변경** | 아래 '새 일 R' | 완료(47f3684: 6,480/6,480, 지도·JSON 생성 및 원시행 재집계) |
 | T | **빗살 정답 → 칸 목표표 (3단계 입력)** | 아래 '새 일 T' | 완료(4ed87bc + 2e222f1/e802ce1: 코드 해시 비교 제외) |
-| U | **Claude sim 결과 검증 (Critic)** | 아래 '새 일 U' | 완료(df83cc9 + U5/U6 분석 미커밋): noise 2/2 522/600, 5/5 329/600, 10/10 201/600, 14/27 75/600. 입력값은 RMS라 실측 p90과 직접 대응하지 않음(LOG) |
+| U | **Claude sim 결과 검증 (Critic)** | 아래 '새 일 U' | 완료(df83cc9 + U5/U6 6597ee7 + U7 e4267da): noise 수치·한계 재집계. 전체 시험 38/38 통과(8338218 기록) |
 | V | **아침 보고 표·그림 생성기** (10/14 23:4x, 지금 최우선) | 아래 '새 일 V' | 완료(cde413f; 원 기능 b1d72c5): 범례 하단 이동, r4 PNG 확인; 전체 시험 38/38 통과 |
 | X | **Q2 걸침 기하 검사 (numpy, 빗살 vs 접시 메시)** | 아래 '새 일 X' | 완료(2ed663f: 900조건, JSON/표/PNG, Q2 tines 제한 분석; 38/38 시험) |
 | W | **실기 선행 조건: 바구니 위 정지 상태에서 손에 든 접시 자세 측정 잡음 (기존 실기 로그)** | 아래 '새 일 W' | 완료(cde413f): 7개 정지구간, 위치 p90 중앙 14.13 mm·회전 p90 중앙 26.69° 분석 |
 | Y | **최종 평가 독립 검증 (U3/U4)** (10/14 23:5x, 지금 최우선) | 아래 '새 일 Y' | 완료(cde413f): seed6014 394/398, seed7014 590/600 재집계. Q1 설정에서 6014/7014 사후 재사용 및 valid-plan/불균등 pin 표집 한계 기록 |
 | Z | **sim 설정 → 실기 분면 넣기 이식 설계 (문서, 코드 수정 없음)** | 아래 '새 일 Z' | 완료(cde413f): `collab/SIM_TO_REAL_QUADRANT_INSERT_2026-10-15.md`; W FP 잡음·재겨냥 gate와 면 우선순위 차이 기록 |
-| AA | **FP 손에 든 접시 자세: 이상값 거르기로 얻을 수 있는 정확도 (기존 로그, 오프라인)** (10/15 00:4x, 지금 최우선) | 아래 '새 일 AA' | 완료(분석; 전체시험 36/38, 문서 미커밋) |
-| AB | **실기 미리보기: 19시 측정 배치에서 4분면 경로(Q1/Q2 손목 뒤집기) 오프라인 계획·충돌 검사** | 아래 '새 일 AB' | 완료(4/4 dry-run plan; 전체시험 36/38, 미커밋) |
+| AA | **FP 손에 든 접시 자세: 이상값 거르기로 얻을 수 있는 정확도 (기존 로그, 오프라인)** (10/15 00:4x, 지금 최우선) | 아래 '새 일 AA' | 완료(1f8ad5a; 270 FP frame 분석·필터 한계; 전체 시험 38/38 재확인 8338218) |
+| AB | **실기 미리보기: 19시 측정 배치에서 4분면 경로(Q1/Q2 손목 뒤집기) 오프라인 계획·충돌 검사** | 아래 '새 일 AB' | 완료(6597ee7; 4/4 dry-run plan JSON, 전체 시험 38/38 재확인 8338218; 실제 바구니 충돌 검증 아님) |
 | S | **시연 도구 파일 정리: demo_audit+demo_dataset 한 역할 파일, 시험은 tests.py로** (R과 독립 병행) | 아래 '새 일 S' | 완료(449a056) |
 | P | **BC 데이터셋 변환기: 시연 → 바구니 좌표 키자세·궤적** (O 다음) | 아래 '새 일 P' | 완료(7daafd5) |
 | Q | **observe_now2 사진에 Goal 1 BC 파지 라이브러리 범위 overlay** | 고정 카메라 K/T 투영, 라이브러리 표본·가정·한계를 그림에 표시 | 완료(3ec2b71) |
@@ -204,10 +204,10 @@
 
 ## Codex 상태
 - 10/15 U7 완료(e4267da): Claude 잡음 분리 replay(위치 2/5 mm, 회전 2/1°) 4개를 baseline과 episode별 재집계. 전부 같은 600개 이름/순서, run 요약 300/300 일치; exact 590/600, 532/600, 507/600, 579/600. 세부 paired 변화는 LOG 참고.
-- 10/15 U6 완료(미커밋): noise replay 4조건을 같은 7014 300-layout×2 episode와 짝지어 재집계. synthetic RMS noise에 exact 87.0%→54.8%→33.5%→12.5%; W의 14 mm/27°는 p90이고, 실제 relevant plate-normal 흔들림은 약 0.65° p90라 직접 비교 불가. 표·그림 `rl/logs/basket/report_noise_7014_codex/`, 한계 LOG 기록.
-- 10/15 U5 완료(미커밋): Claude의 wide8014 / pinr175_7014 / untouched9014 replay JSON을 원본 episode 배열로 재집계하고 run 요약·summary.json·보고서와 대조. 결과 및 표본범위 한계는 LOG `2026-10-15 Codex — U5` 참고. CUDA/Isaac 재실행 없이 CPU 파일 감사만 수행.
-- AB 계획 완료: measured layout에서 Q1–Q4 가운데 칸 4/4 dry-run 경로 승인. JSON은 `calibration/data/rl_plans/offline_quadrant_preview_20261015/`; 표·충돌여유·경로시간 추정과 주의사항은 LOG. 기본 x trim −20 mm 및 벽 회피 y shift(−30/+11 mm)를 적용한 오프라인 결과로 실제 바구니/빗살 충돌 검증은 아님. 기존 `quadrant_plans()` CLI가 `plate_ik_bc`에 없는 `offset_m`를 직접 조회하는 잠재 KeyError를 확인했으나 Claude 소유 `plate_plans.py`는 수정하지 않음. 전체시험 36/38 (pipeline stable-pose timeout 2건), 커밋 보류.
-- AA 분석 완료: 기존 7개 정지 구간의 270 FP 표본을 시간 창 median/mean, local Hampel로 재분석. 2 s median에서도 위치 p90 14.13→14.08 mm로 거의 개선되지 않음; 원래 full-rotation 지표는 접시 법선 기준으로 재정의 필요. LOG 표 참고. 저장 사진 overlay 시험의 비연결성도 LOG에 별도 리뷰로 기록. 전체시험은 36/38, pipeline 가짜 I/O stable-pose timeout 2건으로 커밋 보류.
+- 10/15 U6 완료(6597ee7): 동일 episode 재집계와 RMS/p90 척도 차이, sim proxy 한계 LOG에 기록; 표·그림 `rl/logs/basket/report_noise_7014_codex/`.
+- 10/15 U5 완료(6597ee7): wide8014/pinr175/untouched9014 원본 배열·요약 재대조, 표본범위 한계를 LOG에 기록(CPU 파일 감사).
+- AB 완료(6597ee7, 전체 시험 38/38 재확인 8338218): measured layout 가운데 칸 4/4 dry-run. plan JSON 4개 및 summary는 `calibration/data/rl_plans/offline_quadrant_preview_20261015/`에 보존(데이터는 git 제외). trim −20 mm·벽 회피 y shift −30/+11 mm 포함. 실제 바구니/빗살 충돌 검증은 아님. `quadrant_plans()`의 `offset_m` KeyError 가능성을 확인했으나 Claude 소유 `plate_plans.py`는 수정하지 않음.
+- AA 완료(1f8ad5a, 전체 시험 38/38 재확인 8338218): 7개 정지 구간 270 FP 표본 분석. 2 s median에서도 위치 p90 14.13→14.08 mm로 거의 개선 없음; 법선 지표와 overlay 회귀 시험 한계를 LOG에 기록.
 - 10/15 00:44 완료(cde413f): U4 최종 v3 재집계 394/398(6014), 590/600(7014); 6014/7014 Q1 사후 재사용이라 완전 untouched holdout 아님. V 범례 하단 이동, `report_final_6014/r4` 그림 확인. 전체 시험 38/38 통과.
 - 10/14 23:30 살아 있음: R 완료(`47f3684`), CPU-only 6,480/6,480. `reach_parallel_20261014_v2/basket_reach_map.json` 및 face별 IK PNG 3개·lift clearance PNG 1개 생성·검산. all-Q IK ≥80%는 −x/either 81/81 셀, +x 68/81; IK와 lift ratio ≥1.3가 각 셀 80% 이상 동시에 성립하는 곳은 33/81. T 회귀 `2e222f1/e802ce1`, U 최근 재집계 `2e75fee`, S `449a056` 완료. 전체 tests 36/36 통과.
 - 10/14 20:36 살아 있음: R v2 993/6,480 (15.3%), CPU only; 분석범위는 바구니 ±10 cm/2.5 cm, yaw 0/±10/±15°, 접시 x −5~+10 cm·y −10~+2 cm. SCOPE와 SYSTEM_SPEC의 학습 흔들기 범위는 별개로 보고.
