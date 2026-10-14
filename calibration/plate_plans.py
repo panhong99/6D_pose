@@ -1199,6 +1199,8 @@ def _random_one(job):
     grasp = {n: gl[n]['waypoints_deg'] for n in ('to_grasp', 'lift')}
     H, tool = hand_plate(grasp['to_grasp'][-1], [px, py, G['plate_z']])   # this grasp's plate in the hand
     model_qd = robot_quadrants(Tbb)[qd]
+    gap = int(gap * len(basket_gaps()[model_qd]))                # 6 / 8 / 12 / 12 gaps (10/14 measured basket)
+    row['gap'] = gap + 1
     try:
         with contextlib.redirect_stdout(io.StringIO()):
             path, rep = quadrant_plan(Tbb, model_qd, gap, H, tool, grasp['lift'][-1], G['Tbc'], G['q'], grasp_legs=grasp,
@@ -1230,7 +1232,7 @@ def random_plans(a):
         px, py = r * np.cos(np.radians(az)), r * np.sin(np.radians(az))
         if abs(py) > 0.42 or np.hypot(px - bx, py - by) < 0.37 + PLATE_R + 0.05:   # plate not on / against the basket (53 cm square)
             continue
-        jobs.append((len(jobs), bx, by, yaw, px, py, rng.choice(list(QUADRANTS)), int(rng.integers(0, 10))))
+        jobs.append((len(jobs), bx, by, yaw, px, py, rng.choice(list(QUADRANTS)), float(rng.random())))   # gap = fraction of the quadrant's gaps
     print(f'{len(jobs)} random setups (basket x {a.x} y {a.y} yaw +-{a.yaw_range}, plate r {a.plate_r} az +-40 |y|<=0.42) '
           f'with {a.workers} workers -> {out}', flush=True)
     rows = []

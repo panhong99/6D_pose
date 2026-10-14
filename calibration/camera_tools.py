@@ -1078,6 +1078,40 @@ def plate_plane(rgb, depth, K, T_base_cam, T_base_basket, depth_range_m=(0.20, 0
                 note='Saved RGB-D and synchronized poses only; diagnostic, not a wrist motion command')
 
 
+def model_overlay(req, out=None):
+    """(10/14) Saved wrist photo + the current basket model's tines: colour per quadrant (Q1 green, Q2 magenta, Q3 orange,
+    Q4 blue, split at the centre clip), number = tine count from the clip.  For checking the model against the real rack."""
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'rl'))
+    import basket_env as be
+    req = Path(req)
+    m = json.loads(req.read_text())
+    img = cv2.imread(str(Path(m['png']).with_suffix('.raw.png') if 'png' in m else req.with_suffix('.raw.png')))
+    if img is None:
+        raise FileNotFoundError(f'raw photo for {req}')
+    meta = json.loads(Path(m['png']).with_suffix('.json').read_text()) if 'png' in m and Path(m['png']).with_suffix('.json').exists() else m
+    Tb = np.asarray(meta['T_base_basket'], float)
+    Tcb = np.linalg.inv(np.asarray(meta['T_base_flange'], float) @ np.asarray(meta['T_flange_cam'], float))
+    K = np.asarray(meta['K'], float)
+    f = be.B['full']
+    cx, r = f.get('clip_x', 0.0), f['pin_r']
+    pins = [(np.asarray(p0), np.asarray(p1)) for k, p0, p1, *rest in be.full_basket_parts() if k == 'cyl' and rest and abs(rest[0] - r) < 1e-9]
+    colours = {'Q1': (0, 255, 0), 'Q2': (255, 0, 255), 'Q3': (0, 200, 255), 'Q4': (255, 128, 0)}
+    for p0, p1 in pins:
+        far, left = p0[0] > cx, p0[1] > 0
+        qd = {(True, False): 'Q1', (True, True): 'Q2', (False, True): 'Q3', (False, False): 'Q4'}[(far, left)]
+        row = sorted(abs(q0[0] - cx) for q0, _ in pins if (q0[0] > cx) == far and abs(q0[1] - p0[1]) < 1e-6)
+        a, b = (Tcb @ Tb @ np.r_[p0, 1])[:3], (Tcb @ Tb @ np.r_[p1, 1])[:3]
+        if a[2] < 0.05 or b[2] < 0.05:
+            continue
+        ua, ub = K @ (a / a[2]), K @ (b / b[2])
+        cv2.line(img, (int(ua[0]), int(ua[1])), (int(ub[0]), int(ub[1])), colours[qd], 2)
+        cv2.putText(img, str(row.index(abs(p0[0] - cx)) + 1), (int(ua[0]) + 3, int(ua[1]) + 4), cv2.FONT_HERSHEY_SIMPLEX, 0.45, colours[qd], 1)
+    out = Path(out) if out else req.with_name(req.stem.replace('.req', '') + '_model.png')
+    cv2.imwrite(str(out), img)
+    print(f'model overlay -> {out}', flush=True)
+    return out
+
+
 def plate_plane_mode(a):
     if not all((a.rgb, a.depth, a.meta, a.out)):
         raise ValueError('plate_plane requires --rgb, --depth, --meta and --out')
@@ -1247,7 +1281,7 @@ def plate_angle(req, out, radius_m=0.134):
 if __name__ == '__main__':
     cfg = load_config()
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument('mode', choices=('preview', 'marker', 'probe', 'locate', 'basket', 'wrist_look', 'pre_photo', 'pins', 'basket_stats', 'pin_layout', 'plate_angle', 'plate_plane'))
+    p.add_argument('mode', choices=('preview', 'marker', 'probe', 'locate', 'basket', 'wrist_look', 'pre_photo', 'pins', 'basket_stats', 'pin_layout', 'plate_angle', 'plate_plane', 'model_overlay'))
     p.add_argument('--define', action='store_true', help='basket: define the basket frame / marker layout now')
     p.add_argument('--define_current', action='store_true', help='basket: marker layout in today\'s known basket frame (10/12)')
     p.add_argument('--golden', default=None, help='basket --define: also store this full teaching\'s slot in the basket frame')
@@ -1298,6 +1332,8 @@ if __name__ == '__main__':
         if not a.req or not a.out:
             p.error('plate_angle requires --req and --out')
         plate_angle(a.req, a.out, a.plate_radius_m)
+    elif a.mode == 'model_overlay':
+        model_overlay(a.req, a.out)
     elif a.mode == 'plate_plane':
         print(json.dumps(plate_plane_mode(a), indent=2))
     elif a.mode == 'pre_photo':

@@ -382,6 +382,27 @@ class CameraPinTests(unittest.TestCase):
             self.assertAlmostEqual(measured['base_basket_xyz'][2], floor)
 
 
+class ModelOverlayTests(unittest.TestCase):
+    def test_overlay_draws_model_tines(self):
+        """(10/14) model_overlay: tines projected onto a saved wrist photo (camera 0.42 m above the basket, looking down)."""
+        import cv2
+        import tempfile
+        import camera_tools as camera
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            img = np.zeros((480, 640, 3), np.uint8)
+            cv2.imwrite(str(tmp / 'shot.raw.png'), img)
+            Tbf = np.eye(4)
+            Tbf[:3, :3] = np.diag([1.0, -1.0, -1.0])        # z down
+            Tbf[:3, 3] = [-0.1, 0.1, 0.42]
+            meta = dict(T_base_basket=np.eye(4).tolist(), T_base_flange=Tbf.tolist(), T_flange_cam=np.eye(4).tolist(),
+                        K=[[400, 0, 320], [0, 400, 240], [0, 0, 1]], png=str(tmp / 'shot.png'))
+            (tmp / 'shot.json').write_text(json.dumps(meta))
+            (tmp / 'shot.req.json').write_text(json.dumps(meta))
+            out = camera.model_overlay(tmp / 'shot.req.json', tmp / 'overlay.png')
+            self.assertGreater(int((cv2.imread(str(out)) > 0).sum()), 1000)
+
+
 class CameraPlaneTests(unittest.TestCase):
     def test_rgbd_plane_yaw_and_tilt_with_two_mm_noise(self):
         import camera_tools
