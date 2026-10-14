@@ -626,11 +626,14 @@ def run_plate(args):
             from plate_plans import hand_plate, pin_gap, quadrant_plan, robot_quadrants
             H, tool = hand_plate(legs0['to_grasp']['waypoints_deg'][-1], p)
             mq = robot_quadrants(basket_T)[args.quadrant]
-            early, rep = quadrant_plan(basket_T, mq, pin_gap(basket_T, mq, args.pin), H, tool, legs0['lift']['waypoints_deg'][-1], Tbc, q,
-                                       centre_h=q.get('basket_quadrant_centre_h_m', 0.18),
-                                       yaw_trim_deg=args.yaw_trim if args.yaw_trim is not None else q.get('basket_quadrant_yaw_trim_deg', 0.0),
-                                       tilt_deg=-(args.tilt_trim if args.tilt_trim is not None else q.get('basket_quadrant_tilt_trim_deg', 0.0)),
-                                       y_shift_m=args.y_shift, x_shift_m=args.x_shift)
+            qs = dict(H=H, tool=tool, yaw=args.yaw_trim if args.yaw_trim is not None else q.get('basket_quadrant_yaw_trim_deg', 0.0),
+                      tilt=args.tilt_trim if args.tilt_trim is not None else q.get('basket_quadrant_tilt_trim_deg', 0.0))
+
+            def qplan(start_deg):                           # the insert plan for the current hand model and trims
+                return quadrant_plan(basket_T, mq, pin_gap(basket_T, mq, args.pin), qs['H'], qs['tool'], start_deg, Tbc, q,
+                                     centre_h=q.get('basket_quadrant_centre_h_m', 0.18), yaw_trim_deg=qs['yaw'],
+                                     tilt_deg=-qs['tilt'], y_shift_m=args.y_shift, x_shift_m=args.x_shift)
+            early, rep = qplan(legs0['lift']['waypoints_deg'][-1])
             if early is None:
                 raise RuntimeError(f'{args.quadrant} pin {args.pin}: no insert plan from this grasp ({rep["tried"][:4]})')
             print(f'   {args.quadrant} (바구니 모델 {mq}) 핀 {args.pin}: 넣기 계획 OK, 운반 {rep["carry"]}, '
@@ -748,12 +751,11 @@ def run_plate(args):
                 H2, tool2 = hand_plate(rec.last['posj'], root, n_now)
                 print(f'   들어 올린 뒤 접시 (FP): 기울기 {tilt_now:.1f} deg (잡기 전 {tilt:.1f}) -> 손 안 접시 자세로 넣기 경로 다시 계산',
                       flush=True)
-                mq = robot_quadrants(basket_T)[args.quadrant]
-                again, rep2 = quadrant_plan(basket_T, mq, pin_gap(basket_T, mq, args.pin), H2, tool2, rec.last['posj'], Tbc, q,
-                                            centre_h=q.get('basket_quadrant_centre_h_m', 0.18),
-                                       yaw_trim_deg=args.yaw_trim if args.yaw_trim is not None else q.get('basket_quadrant_yaw_trim_deg', 0.0),
-                                       tilt_deg=-(args.tilt_trim if args.tilt_trim is not None else q.get('basket_quadrant_tilt_trim_deg', 0.0)),
-                                       y_shift_m=args.y_shift, x_shift_m=args.x_shift)
+                H_old = qs['H'], qs['tool']
+                qs['H'], qs['tool'] = H2, tool2
+                again, rep2 = qplan(rec.last['posj'])
+                if again is None:
+                    qs['H'], qs['tool'] = H_old
                 if again is not None:
                     early = again
                     rec.event('replan_after_lift', plan=str(again), tilt_deg=tilt_now, plate_root=[float(v) for v in root],
@@ -841,7 +843,33 @@ def run_plate(args):
                     print('[1/4] 바구니 위에서 멈춤 (--stop_at_above). 접시는 잡은 채 그대로입니다.', flush=True)
                     rec.event('done', place=args.place, slot=k, stopped='above')
                     return
-                if ask('\n[1/4] 바구니 위. d = 2단계 하강 시작, h = 하강 없이 홈 복귀 > ', ('d', 'h')) == 'h':
+                while args.insert == 'quadrant' and not args.auto:   # (10/14 보스) fix the plate angle right here, no trip home
+                    a_ = input(f'\n[1/4] 바구니 위 (회전 보정 {qs["yaw"]:+.1f}, 기울기 보정 {qs["tilt"]:+.1f} deg). d = 넣기, h = 홈 복귀, '
+                               f'숫자 = 접시를 그만큼 더 돌림(deg, + 반시계, 위에서 봄), t숫자 = 앞뒤 기울기 더(deg, + 위가 먼 쪽) > ').strip().lower()
+                    if a_ in ('d', 'h'):
+                        break
+                    try:
+                        key, val = ('tilt', float(a_[1:])) if a_.startswith('t') else ('yaw', float(a_))
+                    except ValueError:
+                        continue
+                    if abs(val) > 30:
+                        print('   한 번에 30 deg까지만', flush=True)
+                        continue
+                    qs[key] += val
+                    new_plan, rep3 = qplan(rec.last['posj'])
+                    if new_plan is None:
+                        qs[key] -= val
+                        print(f'   그 각도로는 경로 없음 ({rep3["tried"][:3]}): 그대로', flush=True)
+                        continue
+                    splan = new_plan
+                    cur['plan'] = splan
+                    rec.event('above_trim', yaw_trim=qs['yaw'], tilt_trim=qs['tilt'], plan=str(splan))
+                    print(f'   다시 계산: 회전 보정 {qs["yaw"]:+.1f}, 기울기 보정 {qs["tilt"]:+.1f} -> 바구니 위 자세로 이동', flush=True)
+                    sleg('to_above')
+                    look('above')
+                else:
+                    a_ = ask('\n[1/4] 바구니 위. d = 2단계 하강 시작, h = 하강 없이 홈 복귀 > ', ('d', 'h'))
+                if a_ == 'h':
                     sleg('abort_home')
                     rec.event('done', place=args.place, slot=k, stopped='above_home')
                     return
