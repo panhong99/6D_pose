@@ -53,8 +53,9 @@ full:                                       # whole basket (10/8 17:xx), basket 
                                             # went into 7-8 where the model said 5-6 -> the model lacked 2 tines at the clip (was 0.025)
   tines_from_clip: {Q1: 7, Q2: 9, Q3: 13, Q4: 13}   # (10/14 보스, counted) tines per row in each quadrant, from the centre clip
   tine_pitch: {Q1: 0.030, Q2: 0.020, Q3: 0.020, Q4: 0.020}   # (10/14 보스, measured) Q1 3 cm, the others <= 2 cm
-  tine_lean_deg: {Q1: 0.0, Q2: 12.5, Q3: 0.0, Q4: 12.5}   # (10/14 photos + 보스 "angles all wrong") pair A near (Q3) and pair B far
-                                            # (Q1) are straight pins, the other two leaning tines (+ = top toward the robot); to be fit (Codex D2)
+  tine_lean_deg: {Q1: -12.5, Q2: -12.5, Q3: 12.5, Q4: 12.5}   # (10/14 Codex D2: rail root -> tip of 59 보스-checked labels:
+                                            # Q1 -12.4, Q2 -14.1, Q3 +13.5, Q4 +12.8 deg) tips lean away from the clip on both halves
+                                            # (+ = top toward the robot); replaces Claude's eyeballed straight Q1/Q3
   clip_first_m: 0.010                       # (10/14 보스) centre clip -> first tine, every row
   clip_x: 0.030                             # (10/14) centre clip along x in the basket frame: Q3 wrist photo, clip junctions back-projected
                                             # to the rail height -> x +0.027..+0.037 (the insert-based guess 0.0 put Q2 tines over Q3, 보스)
