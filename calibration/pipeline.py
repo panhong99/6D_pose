@@ -618,7 +618,8 @@ def run_plate(args):
             mq = robot_quadrants(basket_T)[args.quadrant]
             early, rep = quadrant_plan(basket_T, mq, pin_gap(basket_T, mq, args.pin), H, tool, legs0['lift']['waypoints_deg'][-1], Tbc, q,
                                        centre_h=q.get('basket_quadrant_centre_h_m', 0.18),
-                                       yaw_trim_deg=args.yaw_trim if args.yaw_trim is not None else q.get('basket_quadrant_yaw_trim_deg', 0.0))
+                                       yaw_trim_deg=args.yaw_trim if args.yaw_trim is not None else q.get('basket_quadrant_yaw_trim_deg', 0.0),
+                                       tilt_deg=-(args.tilt_trim if args.tilt_trim is not None else q.get('basket_quadrant_tilt_trim_deg', 0.0)))
             if early is None:
                 raise RuntimeError(f'{args.quadrant} pin {args.pin}: no insert plan from this grasp ({rep["tried"][:4]})')
             print(f'   {args.quadrant} (바구니 모델 {mq}) 핀 {args.pin}: 넣기 계획 OK, 운반 {rep["carry"]}, '
@@ -739,7 +740,8 @@ def run_plate(args):
                 mq = robot_quadrants(basket_T)[args.quadrant]
                 again, rep2 = quadrant_plan(basket_T, mq, pin_gap(basket_T, mq, args.pin), H2, tool2, rec.last['posj'], Tbc, q,
                                             centre_h=q.get('basket_quadrant_centre_h_m', 0.18),
-                                       yaw_trim_deg=args.yaw_trim if args.yaw_trim is not None else q.get('basket_quadrant_yaw_trim_deg', 0.0))
+                                       yaw_trim_deg=args.yaw_trim if args.yaw_trim is not None else q.get('basket_quadrant_yaw_trim_deg', 0.0),
+                                       tilt_deg=-(args.tilt_trim if args.tilt_trim is not None else q.get('basket_quadrant_tilt_trim_deg', 0.0)))
                 if again is not None:
                     early = again
                     rec.event('replan_after_lift', plan=str(again), tilt_deg=tilt_now, plate_root=[float(v) for v in root],
@@ -1003,6 +1005,8 @@ def parse_args(argv=None):
                    help='--insert quadrant: robot view, robot at the bottom: Q1 far-right, Q2 far-left, Q3 near-left, Q4 near-right')
     p.add_argument('--yaw_trim', type=float, default=None, help='--insert quadrant: turn the plate face about the vertical at '
                    'the insert [deg], + = counter-clockwise seen from above (default config basket_quadrant_yaw_trim_deg)')
+    p.add_argument('--tilt_trim', type=float, default=None, help='--insert quadrant: lean the plate along the pin rows at the '
+                   'insert [deg], + = plate top toward the far side (default config basket_quadrant_tilt_trim_deg)')
     p.add_argument('--pin', type=int, default=5, help='--insert quadrant: pin-pair number in the quadrant, 1 = farthest from '
                    'the robot (wrist image top -> bottom); the plate goes into the gap just robot-side of that pair')
     p.add_argument('--auto', action='store_true', help='plate: no Human answers after the opening phrase: gripper '
