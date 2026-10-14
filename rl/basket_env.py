@@ -11,10 +11,14 @@ import math
 from pathlib import Path
 
 import numpy as np
+import os
+
 import yaml
 
 RL_DIR = Path(__file__).resolve().parent
 B = yaml.safe_load((RL_DIR / "basket.yaml").read_text())
+if os.environ.get("BASKET_PIN_R"):                                      # (10/14) sim experiments: tine radius override
+    B["full"]["pin_r"] = float(os.environ["BASKET_PIN_R"])
 BASKET_USD = RL_DIR / "assets" / "basket_slot1.usda"
 
 

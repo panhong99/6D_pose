@@ -39,6 +39,11 @@ def parse_args():
     p.add_argument('--residual', default=None, help='realplan: residual RL checkpoint on top of --policy (BC)')
     p.add_argument('--policy', default=None, help='collect: a BC checkpoint drives instead of the expert (evaluation)')
     p.add_argument('--attach', action='store_true', help='replay: rigid in-hand plate after the lift')
+    p.add_argument('--closed_loop', action='store_true', help='replay --plans: at the stop above the basket read the plate in the hand and '
+                   're-solve the descent so it stands over its target gap (stand-in for measuring the plate there)')
+    p.add_argument('--cl_dz', type=float, default=0.0, help='--closed_loop: raise the insert end by this [m] (plate bottom vs the rail)')
+    p.add_argument('--cl_lean', type=float, default=1.0, help='--closed_loop: plate lean as a fraction of its quadrant\'s tine lean (1 = parallel to the tines)')
+    p.add_argument('--cl_dx', type=float, default=0.0, help='--closed_loop: move the aim along the basket rows (+x) [m]')
     p.add_argument('--hold_view', action='store_true', help='replay with the viewer: keep the window open at the end until it is closed')
     p.add_argument('--rot_sign', type=float, default=1.0)
     p.add_argument('--batches', type=int, default=1, help='collect: batches of config expert.envs envs')
@@ -212,6 +217,63 @@ def make_cfg(n, viewer, torsion_m):
     cfg.scene.plate.spawn.collision_props = cp
     return cfg
 
+
+def closed_loop_paths(env, rows, who, above_m=0.11, extra=0.005, dz=0.0, lean=1.0, dx=0.0):
+    """(10/14) per env (above, descend) joint paths (deg) from the plate actually in the hand now: the plate turns ~9 deg
+    in the grip on the carry (Isaac), so the planned descent lands it 3-4 gaps off.  Keeps the plate's turn about the
+    vertical small: shortest rotation of its normal onto the row axis, centre on the row's target_centre (base)."""
+    import numpy as np
+    from scipy.spatial.transform import Rotation as R
+    sys.path.insert(0, str(ROOT / 'calibration'))
+    from robot_model import Kinematics
+    kin, tool = Kinematics(), np.eye(4)
+    tool[2, 3] = 0.165
+    robot, plate = env.scene['robot'], env.scene['plate']
+    qs = robot.data.joint_pos[:, :6].cpu().numpy()
+    pp = (plate.data.root_pos_w - env.scene.env_origins).cpu().numpy()
+    pq = plate.data.root_quat_w.cpu().numpy()
+    out = []
+    for k, i in enumerate(who):
+        r = rows[i]
+        if 'target_centre' not in r:
+            out.append((None, None))
+            continue
+        Rp = R.from_quat(pq[k][[1, 2, 3, 0]]).as_matrix()
+        Tpl = np.eye(4)
+        Tpl[:3, :3], Tpl[:3, 3] = Rp, pp[k] + 0.01 * Rp[:, 2]
+        Tt = kin.fk(qs[k]) @ tool
+        H = np.linalg.inv(Tt) @ Tpl                          # plate in the TCP frame as it is now
+        import basket_env as be
+        Tb = np.asarray(r['Tb'])
+        ln = np.radians(lean * be.B['full']['tine_lean_deg'][r['model_qd']])
+        up = Tb[:3, :3] @ np.array([-np.sin(ln), 0.0, np.cos(ln)])   # tine axis (+ lean = top toward basket -x)
+        nt = Tb[:3, :3] @ np.array([np.cos(ln), 0.0, np.sin(ln)])    # plate normal parallel to the tines
+        nt = nt if nt @ Rp[:, 2] >= 0 else -nt
+        gap_b = np.asarray(r['target_centre']) - [0, 0, 0.165] + Tb[:3, 0] * dx   # gap centre on the floor (base)
+        rot, _ = R.align_vectors([nt], [Rp[:, 2]])
+        Td = np.eye(4)
+        Td[:3, :3] = rot.as_matrix() @ Rp
+        path, prev = [], qs[k]
+        for lift in np.linspace(above_m, -extra, 13):
+            Td[:3, 3] = gap_b + up * 0.165 + [0, 0, lift + dz]   # bottom over the gap, centre along the tine
+            sol = None
+            for sd in ([prev] if path else [prev, np.radians(r.get('above_deg', np.degrees(prev)))]):
+                try:
+                    cand = kin.ik(Td @ np.linalg.inv(H) @ np.linalg.inv(tool), sd)
+                except RuntimeError:
+                    continue
+                if np.degrees(np.abs(cand - prev)).max() < (45 if not path else 8):
+                    sol = cand
+                    break
+            if sol is None:
+                break
+            path.append(np.degrees(sol))
+            prev = sol
+        out.append((np.array(path[:1]), np.array(path[1:])) if len(path) == 13 else (None, None))
+        if len(path) < 13:
+            print(f"[replay] closed loop: {r['name']} env {k} no IK at step {len(path)}", flush=True)
+    return out
+
 # ---------------------------------------------------------------- P1 replay of the real runs
 def run_replay(args):
     import numpy as np
@@ -224,7 +286,7 @@ def run_replay(args):
     for r in ([json.loads(l) for l in open(args.plans)] if args.plans else []):   # planned, not run: 'outcome' = planned
         legs = json.loads(Path(r['plan']).read_text())['legs']
         rows.append(dict(name=r['name'], outcome='planned', plate=r['plate'], Tb=r['Tb'], grasp=legs, slot=legs,
-                         **{k: r[k] for k in ('model_qd', 'gap', 'pin') if k in r}))
+                         **{k: r[k] for k in ('model_qd', 'gap', 'pin', 'target_centre') if k in r}))
     for r in runs:
         d = Path(r['run']) if Path(r['run']).is_absolute() else ROOT / 'calibration/data/real_pipeline' / r['run']
         ev = [json.loads(x) for x in open(d / 'robot_state.jsonl') if '"event"' in x]
@@ -272,13 +334,19 @@ def run_replay(args):
     drive(env, L('to_above', 'slot'), ~open_, args.speed)
     if all('descend_pre' in rows[i]['slot'] for i in who):    # taught slot paths only (quadrant plans: to_above -> descend)
         drive(env, L('descend_pre', 'slot'), ~open_, args.speed / 4)
+    descend = L('descend', 'slot')
+    if args.closed_loop:                                       # (10/14) re-aim from the plate actually in the hand
+        fix = closed_loop_paths(env, rows, who, dz=args.cl_dz, lean=args.cl_lean, dx=args.cl_dx)
+        print(f"[replay] closed loop: re-solved {sum(a is not None for a, _ in fix)}/{n}", flush=True)
+        drive(env, [a for a, _ in fix], ~open_, args.speed / 4, hold=30)
+        descend = [b if b is not None else d for (_, b), d in zip(fix, descend)]
     st_pre = be.basket_state(env)
     pre = dict(tcp_pos=(robot.data.body_pos_w[:, ti] - env.scene.env_origins).cpu().numpy().tolist(),   # (10/14) plate + TCP before the descent
                tcp_quat=robot.data.body_quat_w[:, ti].cpu().numpy().tolist(),
                plate_pos=(env.scene['plate'].data.root_pos_w - env.scene.env_origins).cpu().numpy().tolist(),
                plate_quat=env.scene['plate'].data.root_quat_w.cpu().numpy().tolist(),
                joints=robot.data.joint_pos[:, :6].cpu().numpy().tolist())
-    drive(env, L('descend', 'slot'), ~open_, args.speed / 20, hold=30)
+    drive(env, descend, ~open_, args.speed / 20, hold=30)
     if args.attach:
         detach(env, torch.ones(n, dtype=torch.bool, device=dev))
     drive(env, [None] * n, open_, args.speed, hold=45)         # release
@@ -302,20 +370,32 @@ def run_replay(args):
     # (10/14 보스) planned rows carrying their target gap (model quadrant + gap index): the plate must stand in THAT gap of
     # its quadrant (lowest rim point between the two tine bases, within the pair's rows), not just in some gap
     landed = np.full(n, -1)
-    bot = st['bottom'].cpu().numpy()
+    # which two tines the plate stands between: its mid-plane crossed with the row at mid-tine height, against the tines
+    # there (they lean); the lowest point is on the foot ring, up to the dish depth (~1 gap) off the mid-plane
+    from scipy.spatial.transform import Rotation as R_
+    pc = (env.scene['plate'].data.root_pos_w - env.scene.env_origins).cpu().numpy()
+    pq = env.scene['plate'].data.root_quat_w.cpu().numpy()
     f_ = be.B['full']
+    zh = f_['floor_z'] + 0.06
     for k, i in enumerate(who):
         r = rows[i]
         if 'model_qd' not in r:
             continue
         T = np.asarray(r['Tb'])
-        pb = np.linalg.inv(T) @ np.r_[bot[k], 1.0]
+        Rp = R_.from_quat(pq[k][[1, 2, 3, 0]]).as_matrix()
+        Ti = np.linalg.inv(T)
+        c = (Ti @ np.r_[pc[k] + 0.01 * Rp[:, 2], 1.0])[:3]
+        m = Ti[:3, :3] @ Rp[:, 2]
+        if abs(m[0]) < 0.5:                                    # face not across the rows (fallen / turned)
+            continue
+        x = c[0] - (m[2] * (zh - c[2])) / m[0]                # y = the plate centre's
         far, left = {'Q1': (1, 0), 'Q2': (1, 1), 'Q3': (0, 1), 'Q4': (0, 0)}[r['model_qd']]
         yc = f_['pair_centres_y'][0 if left else 1]
         half = f_.get('clip_first_m', 0.01) + f_['tine_pitch'][r['model_qd']] * np.arange(f_['tines_from_clip'][r['model_qd']])
         xs = np.sort(f_.get('clip_x', 0.0) + (half if far else -half))      # tine bases, robot side -> far (basket_gaps order)
-        g = int(np.searchsorted(xs, pb[0])) - 1
-        if 0 <= g < len(xs) - 1 and abs(pb[1] - yc) < 0.06:
+        xs = xs - np.tan(np.radians(f_['tine_lean_deg'][r['model_qd']])) * (zh - f_['floor_z'])   # + lean = top toward the robot
+        g = int(np.searchsorted(xs, x)) - 1
+        if 0 <= g < len(xs) - 1 and abs(c[1] - yc) < 0.06:
             landed[k] = g
     target = np.array([rows[i].get('gap', -1) if 'model_qd' in rows[i] else -1 for i in who])
     pin_ok = np.where(target >= 0, landed == target, True)
@@ -342,6 +422,7 @@ def run_replay(args):
     out = Path(args.out or RL / 'logs/basket/replay_20261012.json')
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(dict(results=res, gate=gate, need=9, names=[rows[i]['name'] for i in who], in_hand=in_hand, pre=pre,
+                                   final_pose=dict(plate_pos=pc.tolist(), plate_quat=pq.tolist()),
                                    final={k: st[k].cpu().numpy().tolist() for k in ('d_bottom', 'low', 'normal_err', 'd_u')},
                                    gap_err=gap_err.cpu().numpy().tolist(), held=held.tolist(), yaw_err=yaw_err.cpu().numpy().tolist(),
                                    lean=lean.cpu().numpy().tolist(), quadrant_ok=face_ok.tolist(), landed_gap=landed.tolist(), target_gap=target.tolist()), indent=1))
