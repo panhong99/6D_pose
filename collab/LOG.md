@@ -1485,3 +1485,7 @@
 - `calibration/camera_tools.py wrist_pins`의 확정·번호 부여된 쌍에 `gap_centre_base_xyz`를 추가. 정의는 두 모델 핀 tip의 base 좌표 중점에 확정된 basket+x 영상 보정량을 더한 **진단값**; 미확정 쌍·화면 밖은 null. 기존 correction_mm·번호 체계 유지, 로봇 경로에는 연결하지 않음.
 - 저장 Q3 사진을 foundationpose Python(OpenCV5)으로 재실행: `calibration/data/basket/pins_e_contract_check_20261014_v3/`, 번호가 있는 확정1쌍의 number/correction_mm/유한XYZ 확인, 그 밖39쌍의 target null 확인. `py_compile`/`git diff --check` 통과. 전체 `CameraPinTests`는 `pipeline.py` import가 sandbox UDP socket을 열려다 PermissionError로 실행 불가; 해당 실패는 코드 단정 근거가 아님. 시스템 Python OpenCV4.6은 ArucoDetector 부재라 분석에 사용하지 않음.
 - 낮 시각 검토용 네 사진의 부분 라벨 그림 `calibration/data/basket/pin_review_checked_PARTIAL_20261014.png` 생성. Q2 줄/간격, 클립·가림 핀은 보스와 확인 필요. D 정답이 없으므로 E precision/recall/mm오차 및 80% 완료 판정은 보류.
+## 2026-10-14 Codex — D 낮 시각 검토 재개
+- 보스가 `pin_review_checked_PARTIAL_20261014.png`의 기존 26개 끝–뿌리 연결을 맞다고 확인했다. 이는 표시된 연결의 확인이며, 핀 높이/hand-eye/밀리미터 정확도의 검증은 아니다.
+- Q4 원본 4배 확대에서 추가 4개 연결을 후보로 그려 보스에게 확인받았다(4/4 맞음). 확인 라벨 총30개(Q1 4/Q2 2/Q3 10/Q4 14)를 새 `calibration/data/basket/wrist_look/labels_20261013_190126_PARTIAL_20261014_v2.json`에 보존하고, `calibration/data/basket/pin_layout_measured_PARTIAL_20261014_v2/pin_layout_measured.json`으로 높이평면 역투영했다. 기존 파일은 덮어쓰지 않았다.
+- Q1 추가 후보12개 중 클립에 뿌리가 가려진2개를 제거하고 10개를 `calibration/data/basket/wrist_look/pin_labels_q1_review_candidates_20261014_v2.json/.png`에 후보로 저장했다. 보스 확인 전까지 30개 정답에 합치지 않는다. D 전체 핀/클립/번호와 E 최종 평가는 계속 미완료.
