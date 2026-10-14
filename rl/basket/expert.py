@@ -45,6 +45,7 @@ def parse_args():
     p.add_argument('--cl_lean', type=float, default=1.0, help='--closed_loop: plate lean as a fraction of its quadrant\'s tine lean (1 = parallel to the tines)')
     p.add_argument('--cl_dx', type=float, default=0.0, help='--closed_loop: move the aim along the basket rows (+x) [m]')
     p.add_argument('--cl_iter', type=int, default=1, help='--closed_loop: measure + re-aim this many times at the above stop')
+    p.add_argument('--cl_heights', default='', help='--closed_loop: re-aim height above the insert per iteration [m], e.g. "0.11,0.07"')
     p.add_argument('--cl_dx_q', default='', help='--closed_loop: per model quadrant aim, e.g. "Q3:-0.03,Q4:-0.035" (overrides --cl_dx)')
     p.add_argument('--cl_top', action='store_true', help='--closed_loop: turn the plate about its normal so the grip is at its top')
     p.add_argument('--hold_view', action='store_true', help='replay with the viewer: keep the window open at the end until it is closed')
@@ -359,16 +360,21 @@ def run_replay(args):
         drive(env, L('descend_pre', 'slot'), ~open_, args.speed / 4)
     descend, ascend = L('descend', 'slot'), L('ascend', 'slot')
     if args.closed_loop:                                       # (10/14) re-aim from the plate actually in the hand
-        fix = None
+        fix = first_fix = None
         for it in range(args.cl_iter):                       # (10/14 night) measure + re-aim again at the above stop
-            prev_fix, fix = fix, closed_loop_paths(env, rows, who, dz=args.cl_dz, lean=args.cl_lean, dx=args.cl_dx, top=args.cl_top,
+            hs = [float(h) for h in args.cl_heights.split(',')] if args.cl_heights else [0.11]
+            prev_fix, fix = fix, closed_loop_paths(env, rows, who, above_m=hs[min(it, len(hs) - 1)], dz=args.cl_dz, lean=args.cl_lean, dx=args.cl_dx, top=args.cl_top,
                                     dx_q={k: float(v) for k, v in (x.split(':') for x in args.cl_dx_q.split(',') if x)})
             if prev_fix is not None:                         # no IK now: keep the previous re-aim (the robot is there)
                 fix = [f_ if f_[0] is not None else p_ for f_, p_ in zip(fix, prev_fix)]
+            if it == 0:
+                first_fix = fix
             print(f"[replay] closed loop {it + 1}/{args.cl_iter}: re-solved {sum(a is not None for a, _ in fix)}/{n}", flush=True)
             drive(env, [a for a, _ in fix], ~open_, args.speed / 4, hold=30)
         descend = [b if b is not None else d for (_, b), d in zip(fix, descend)]
-        ascend = [np.vstack([b[::-1], a]) if b is not None else u for (a, b), u in zip(fix, L('ascend', 'slot'))]   # straight back up
+        top_ = first_fix if first_fix is not None else fix   # (10/14 night) a lower re-aim: back up through it to the first stop
+        ascend = [np.vstack([b[::-1], a] + ([t[0]] if t[0] is not None and t is not f_ else [])) if b is not None else u
+                  for (a, b), u, t, f_ in zip(fix, L('ascend', 'slot'), top_, fix)]   # straight back up
     st_pre = be.basket_state(env)
     pre = dict(tcp_pos=(robot.data.body_pos_w[:, ti] - env.scene.env_origins).cpu().numpy().tolist(),   # (10/14) plate + TCP before the descent
                tcp_quat=robot.data.body_quat_w[:, ti].cpu().numpy().tolist(),
