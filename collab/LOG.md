@@ -1654,4 +1654,5 @@
 ## 2026-10-14 Codex — E 핀 검출기 부분 v9 사진 진단
 - 기존 `camera_tools.py pins --layout`을 사용해 보스 확인 PARTIAL v9 배치(`calibration/data/basket/pin_layout_measured_PARTIAL_20261014_v9/pin_layout_measured.json`)를 원본 Q1~Q4 손목 사진에 투영하고 사진 안에서만 검출을 시도했다. 카메라/로봇 연결이나 소스 코드는 사용·수정하지 않았다.
 - 결과는 사진 파일 순서 Q1~Q4에서 가시 배치 쌍 **16/23/12/13**, 검출 확정 쌍 **0/0/6/7**이다. 결과 JSON/그림은 `calibration/data/basket/pins_partial_v9_diagnostic_20261014_0743_v4/Q{1,2,3,4}/pairs.{json,png}`. 각 출력의 번호·유한 좌표·PNG 존재를 확인했다.
+- 개별 핀 상태를 보면 사진별 `detected`는 **16/13/20/25개**지만, Q1·Q2는 각 후보 쌍에서 한쪽 이상이 `weak_line` 또는 `occluded`여서 완전 쌍 0이다. Q3·Q4 사진의 6/7개 완전 쌍은 주로 모델상 Q4/Q1, Q3/Q2 그룹으로 나뉘어 있어 파일명 사진 분면을 실제 분면 성능으로 곧바로 읽을 수 없다. 오버레이에서 단일선 검출과 줄 간 pair association을 따로 리뷰할 다음 단서로 남겼다.
 - 이는 배치를 만든 것과 같은 사진을 사용한 in-sample 진단이다. 부분 라벨·가림·분면별 사진 시야 차이가 포함돼 precision/recall, Q별 최종 검출률, mm 정확도로 해석하지 않는다. `camera_tools.py` 자체도 accuracy_note에 이 한계를 기록한다. 다음 유효 단계는 D 라벨의 visible-pair 전체 분모를 완성하고, 같은 배치로 만들지 않은 독립 사진에서 평가하는 것이다.
