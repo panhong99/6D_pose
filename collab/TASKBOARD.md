@@ -203,6 +203,7 @@
 - 완료 조건: 표 LOG. 로봇 명령·연결 금지.
 
 ## Codex 상태
+- 10/15 U7 완료(커밋 예정): Claude 잡음 분리 replay(위치 2/5 mm, 회전 2/1°) 4개를 baseline과 episode별 재집계. 전부 같은 600개 이름/순서, run 요약 300/300 일치; exact 590/600, 532/600, 507/600, 579/600. 세부 paired 변화는 LOG 참고.
 - 10/15 U6 완료(미커밋): noise replay 4조건을 같은 7014 300-layout×2 episode와 짝지어 재집계. synthetic RMS noise에 exact 87.0%→54.8%→33.5%→12.5%; W의 14 mm/27°는 p90이고, 실제 relevant plate-normal 흔들림은 약 0.65° p90라 직접 비교 불가. 표·그림 `rl/logs/basket/report_noise_7014_codex/`, 한계 LOG 기록.
 - 10/15 U5 완료(미커밋): Claude의 wide8014 / pinr175_7014 / untouched9014 replay JSON을 원본 episode 배열로 재집계하고 run 요약·summary.json·보고서와 대조. 결과 및 표본범위 한계는 LOG `2026-10-15 Codex — U5` 참고. CUDA/Isaac 재실행 없이 CPU 파일 감사만 수행.
 - AB 계획 완료: measured layout에서 Q1–Q4 가운데 칸 4/4 dry-run 경로 승인. JSON은 `calibration/data/rl_plans/offline_quadrant_preview_20261015/`; 표·충돌여유·경로시간 추정과 주의사항은 LOG. 기본 x trim −20 mm 및 벽 회피 y shift(−30/+11 mm)를 적용한 오프라인 결과로 실제 바구니/빗살 충돌 검증은 아님. 기존 `quadrant_plans()` CLI가 `plate_ik_bc`에 없는 `offset_m`를 직접 조회하는 잠재 KeyError를 확인했으나 Claude 소유 `plate_plans.py`는 수정하지 않음. 전체시험 36/38 (pipeline stable-pose timeout 2건), 커밋 보류.
