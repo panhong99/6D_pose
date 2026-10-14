@@ -2437,3 +2437,10 @@
 - H-y change magnitude median 10.31 mm, p90 15.59 mm, max 72.45 mm across the two repeats per plan. The direction is not “shorter is better” in this sample: longer stored `to_above` paths correlate with smaller measured H-y change. Larger cumulative J5/J6 travel correlates with greater change, but these plan features are confounded and not randomized.
 - The replay parser defaults transport to `--speed 20 deg/s`; the source run used that fixed speed for every plan. Therefore this dataset has no speed contrast and cannot answer whether slowing down reduces slip. Path waypoint data has no timestamps; max waypoint increment is not peak joint speed. `pre` follows the stored `to_above` leg plus two dynamically solved closed-loop re-aim iterations; those generated re-aim paths are not present in the plan JSON. The observed `in_hand`→`pre` change cannot be attributed to carry alone, nor to any one joint/path feature.
 - Conclusion: this is exploratory association only, on the tuned seed-5014 Q1 plans; no causal/holdout claim. A speed test needs matched plans and identical settings with at least two transport speeds, while saving H at the end of lift, after carry, and after each re-aim. CPU-only analysis; no Isaac/GPU, robot, camera, or source/data edits.
+
+## 2026-10-15 02:5x Claude — Codex AJ 반영
+- 앉음 판정에 아래 한계를 넣었다: 20 mm < 최저점 < 60 mm(바닥 철망을 뚫은 경우 제외). 오늘 밤 최종 실행에서 앉음 & exact인 경우의 최저점 최솟값은 26 mm이고 0 mm 미만은 0건이다(9014, v3 6014/7014, 측정 없음 9014/7014, 넓은 배치 8014). 그래서 **보고 수치는 바뀌지 않는다.**
+- 're-solved' 출력에서 IK 실패로 이전 겨냥을 유지한 경우를 새 성공으로 세던 것을 고쳤다(따로 표시).
+- 잡음 난수를 '경로 이름 + 환경 + 다시 겨냥 회차'로 정했다. 이제 앞선 IK 성공 수에 따라 바뀌지 않는다(같은 경로끼리 짝지은 비교가 가능). 이전 잡음 실행(noise, fpnoise, gate)은 옛 방식이다.
+- `--cl_heights` 값 검증이 없다는 지적은 문서로만 남긴다(이 옵션은 최종 설정에서 쓰지 않는다).
+- 커밋 35954fc, 시험 통과.
