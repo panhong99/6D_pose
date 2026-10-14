@@ -49,6 +49,7 @@ full:                                       # whole basket (10/8 17:xx), basket 
   handle_w_h: [0.025, 0.025]                # blue handle (y = +size/2), along x
   pair_centres_y: [0.129, -0.110]           # plate pair A (slot 1, from the golden teaching) and pair B (top-view photo)
   pin_x_span: [-0.245, 0.245]
-  centre_gap_x: 0.025                       # no pins at |x| < this (central clip in the photo)
+  centre_gap_x: 0.0                         # (10/14 보스) Q3 has 13 tines per row; counted from the far (clip) side the plate
+                                            # went into 7-8 where the model said 5-6 -> the model lacked 2 tines at the clip (was 0.025)
   slot_axis_from_basket: true               # (10/8 19:xx) slot axis n = basket x (rows), not the taught-normal yaw
   pin_r: 0.00100                            # 3.5 mm measured; 2 mm in sim = compliance proxy (10/8: real plate went in, rigid 3.5 mm pins leave <3 mm play)
