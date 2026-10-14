@@ -143,7 +143,7 @@ plate_ik_bc:                       # --plate_policy ik_bc (overrides plate_rl ke
   basket_policy_range: {x: [1.02, 1.22], y: [-0.39, -0.19], y_sim_checked: [-0.39, 0.20], yaw_deg: [-14, 16]}   # RL start states (10/13); y up to +0.20 only sim-checked
   basket_policy_vel_deg_s: 5.0         # policy start + insert (merged spline) (10/13 보스: 7.0 -> a bit slower)
   basket_quadrant_vel_deg_s: 3.5       # --insert quadrant: straight-down insert (10/13 19:5x 보스: 5.0 -> a bit slower)
-  basket_quadrant_centre_h_m: 0.185    # --insert quadrant: plate centre above the basket floor at the end (10/13 보스 0.18 too deep -> 0.21; 10/14 보스 2-3 cm deeper)
+  basket_quadrant_centre_h_m: 0.165    # --insert quadrant: plate centre above the basket floor at the end (10/13 보스 0.18 too deep -> 0.21; 10/14 -2.5 cm -> 0.185; 10/14 11:2x 보스 -2 cm)
   basket_quadrant_tilt_trim_deg: 0.0   # --insert quadrant: plate leaned along the pin rows at the insert, + = top toward the far side
   basket_quadrant_yaw_trim_deg: 0.0    # --insert quadrant: plate face turned about the vertical at the insert, + = CCW from above (tune on the real robot)
   basket_policy_extra_down_m: 0.005    # (10/13 보스 "조금 더 깊이") after the policy descent, 5 mm straight down before the release
