@@ -7,7 +7,7 @@
   1. **경로**: 플래너(IK + RRT)로 4분면 전체 핀의 전체 경로(잡기 → 운반 → 넣기 → 복귀)를 생성해 BC 데이터로 쓴다. 종료 조건: 흔든 배치에서 분면별 경로 생성률 ≥ 90%. 못 미치면 원인표를 남기고 2로 간다.
   2. **아무 칸에 안정적으로**: Isaac closed-loop 재생 + 놓기 자세 학습. 종료 조건: 아무 칸 성공 ≥ 90%(현재 Q3 0.82).
   3. **지정 빗살에**: 2와 같은 정책에 핀 번호를 조건으로 준다. 빗살 정답은 보스 슬라이드 + Codex 수정본. 지정 칸 성공률을 분면별로 보고(현재 0.32, 대부분 +1칸).
-- 담당: Claude = Isaac·GPU 전부(1~3). Codex = GPU를 쓰지 않는 일(R, S, T, U). 아침 08:30 LOG 보고.
+- 담당: Claude = Isaac·GPU 전부(1~3). Codex = GPU를 쓰지 않는 일(R, S, T, U, V, X, W). 아침 08:30 LOG 보고.
 
 ## 운영 규칙 (10/14 정리: 일하는 방식은 `collab/WORK_RULES.md`가 기준, 이 문서는 '무엇을'만)
 - 문서 역할: **`WORK_RULES.md` = 어떻게 일하나(업무 지침서)**, **이 문서 = 할 일·상태·요청(작업판)**, **`LOG.md` = 결과 기록(수치·경로) + 매일 08:30 아침 보고(보스는 LOG.md만 읽음)**. 나머지 collab 문서는 참고 자료.
@@ -33,8 +33,8 @@
 | T | **빗살 정답 → 칸 목표표 (3단계 입력)** | 아래 '새 일 T' | 완료(4ed87bc + 2e222f1/e802ce1: 코드 해시 비교 제외) |
 | U | **Claude sim 결과 검증 (Critic)** | 아래 '새 일 U' | 완료(df83cc9: heldout v3, flip2, Q3/Q4 lean 재집계·한계 기록) |
 | V | **아침 보고 표·그림 생성기** (10/14 23:4x, 지금 최우선) | 아래 '새 일 V' | 완료(b1d72c5: `basket_report`, 표·PNG·3개 sumseat 대조, 37/37 시험) |
-| X | **Q2 걸침 기하 검사 (numpy, 빗살 vs 접시 메시)** | 아래 '새 일 X' | 대기 |
-| W | **실기 선행 조건: 바구니 위 정지 상태에서 손에 든 접시 자세 측정 잡음 (기존 실기 로그)** | 아래 '새 일 W' | 대기 |
+| X | **Q2 걸침 기하 검사 (numpy, 빗살 vs 접시 메시)** | 아래 '새 일 X' | 완료(2ed663f: 900조건, JSON/표/PNG, Q2 tines 제한 분석; 38/38 시험) |
+| W | **실기 선행 조건: 바구니 위 정지 상태에서 손에 든 접시 자세 측정 잡음 (기존 실기 로그)** | 아래 '새 일 W' | 진행 중(10/15 01:xx): 기존 real_pipeline 로그 정지 구간/pose 필드 조사, read-only |
 | S | **시연 도구 파일 정리: demo_audit+demo_dataset 한 역할 파일, 시험은 tests.py로** (R과 독립 병행) | 아래 '새 일 S' | 완료(449a056) |
 | P | **BC 데이터셋 변환기: 시연 → 바구니 좌표 키자세·궤적** (O 다음) | 아래 '새 일 P' | 완료(7daafd5) |
 | Q | **observe_now2 사진에 Goal 1 BC 파지 라이브러리 범위 overlay** | 고정 카메라 K/T 투영, 라이브러리 표본·가정·한계를 그림에 표시 | 완료(3ec2b71) |
@@ -180,7 +180,7 @@
 - 완료 조건: 표 + 결론 LOG, 실행 목록과 한계 명시. 로봇·카메라 연결 금지(기록만 사용).
 
 ## Codex 상태
-- 10/15 00:xx 살아 있음: 보스 요청 R/T/U/S 순서 완료. R(47f3684), T(4ed87bc 및 시험 hash fix), S(449a056); U 최신 원시 재집계 `df83cc9`. 작업판 다음 일 V 완료 `b1d72c5`, 표·PNG `calibration/data/basket/replay_report_20261015_v1/`, 전체 테스트 37/37. 다음 우선순위 X 시작.
+- 10/15 01:xx 살아 있음: R/T/U/S 완료; V 보고기 `b1d72c5`; X geometry sweep 2ed663f (Q2 zero-tilt median first-contact 86.1mm, 217/225 >60mm, 225/225 tines-limited; v3 JSON/MD/PNG). 전체 시험 38/38. 현재 W 기존 로그의 pose 반복잡음/들기 후 회전 분석을 read-only로 진행 중.
 - 10/14 23:30 살아 있음: R 완료(`47f3684`), CPU-only 6,480/6,480. `reach_parallel_20261014_v2/basket_reach_map.json` 및 face별 IK PNG 3개·lift clearance PNG 1개 생성·검산. all-Q IK ≥80%는 −x/either 81/81 셀, +x 68/81; IK와 lift ratio ≥1.3가 각 셀 80% 이상 동시에 성립하는 곳은 33/81. T 회귀 `2e222f1/e802ce1`, U 최근 재집계 `2e75fee`, S `449a056` 완료. 전체 tests 36/36 통과.
 - 10/14 20:36 살아 있음: R v2 993/6,480 (15.3%), CPU only; 분석범위는 바구니 ±10 cm/2.5 cm, yaw 0/±10/±15°, 접시 x −5~+10 cm·y −10~+2 cm. SCOPE와 SYSTEM_SPEC의 학습 흔들기 범위는 별개로 보고.
 - 10/14 20:06 살아 있음: R 공식 v2 2.5 cm 스윕 시작(6,480조합, 8 CPU workers, nice +10, PID 2 / exec session 76551; 경로 `calibration/data/basket/reach_parallel_20261014_v2/`). 5 cm 예비 JSON은 2,000/2,000이나 PNG가 없어 인용하지 않는다. full tests 32/32 통과(16 s).

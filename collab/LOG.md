@@ -1991,6 +1991,14 @@
 - 시험: 합성 replay fixture에서 분모·metric·gap 분포와 덮어쓰기 거부 확인. `bash calibration/run.sh tests`: **37/37 통과, 33.43 s**. 테스트 모듈의 기존 로컬 UDP socket 사용 때문에 승인된 실행 권한으로 수행. 실로봇·그리퍼·Isaac/GPU 호출 없음. 구현+시험 커밋 `b1d72c5`; `tests.py`의 기존 Claude 모델 overlay 시험 변경은 커밋에서 제외.
 - 한계: 60 mm는 기존 sim seated proxy이며 물리 접촉 증명 아님. 표의 `strict sim_rate`가 낮거나 0인 점을 relaxed seated&exact와 혼동하지 말 것. 재생 JSON에 교란 범위 provenance가 없어 이 보고서만으로 SYSTEM_SPEC 범위 적용은 검증할 수 없다.
 
+## 2026-10-15 01:xx Codex — X Q2 빗살/접시 간섭 기하 sweep 완료
+- 기존 역할 파일 `calibration/goal1_offline.py`에 CPU-only `basket_clearance` 모드 추가. OBJ 삼각형 표면 45,000점(각 triangle 4분할)과 `rl/basket_env.py::full_basket_parts`의 YAML 빗살·빗살 지지 레일 캡슐을 사용해 수직 하강 중 첫 접촉 높이를 해석적으로 계산했다. 각 Q의 중앙 칸에서 plate normal elevation −20°…+20°(5° 간격), 칸 안 x/y offset 각 −10…+10mm(5mm 간격), 분면당 225 조합·총 **900** 조건. 손목 뒤집기 방향을 Q1/Q2 면 −x, Q3/Q4 면 +x로 두었다.
+- 정정 이력: 첫 산출 `tine_clearance_20261015_v1`은 x 부호로 반쪽을 나눠 Q3/Q4의 clip_x를 넘는 핀을 잘못 분면에 포함했으므로 폐기 대상(삭제/덮어쓰기 없이 보존). `tine_clearance_20261015_v2`와 최종 `tine_clearance_20261015_v3`은 `tines_from_clip`, `clip_first_m`, `tine_pitch`로 분면별 모델 핀을 정확히 재구성해 `full_basket_parts`와 대조했다. 아침 보고에는 **v3만 사용**.
+- 최종 결과(접시 바닥 rim이 빗살/레일과 처음 접촉하는 높이, 바구니 바닥 위): 0° 중앙값 Q1 **59.2**, Q2 **86.1**, Q3 **85.0**, Q4 **69.1 mm**. Q2는 225 offset×angle 경우 중 **217/225**가 60 mm보다 높은 접촉, 모든 225건의 최초 제한 물체가 빗살이고 레일 제한은 0건. Q2의 최저 중앙값은 tilt +10°에서 **81.8 mm**; 그 조건에도 25개 offset 분포는 47.7~111.9 mm로 넓다. 분면별 각도-높이 표와 min/median/max PNG 범위 band가 JSON/그림에 저장됨.
+- 원인 평가: Q2 실측모델은 tine_pitch 17.56mm, 모델 pin radius 1mm라 중심 간격에서 반경을 뺀 자유폭은 약 **15.56mm**다. 접시 OBJ의 최대 두께 bounding range는 25.4mm(실제 접촉점 국소 두께는 더 작을 수 있음). Q2 geometry 0° 중앙값 86.1mm는 `replay_stage2_heldout_v3_20261014.json` Q2 최저점 중앙값 90.2mm와 4.1mm 차이, `replay_flip2_a.json` Q2 85.7mm와 0.4mm 차이로 perched 높이 현상과 근접한다. 각 시뮬레이션에서 접시는 빗살과 맞물리고 첫 제한은 레일(49mm)보다 빗살 측이다. 따라서 Q2의 좁은 간격/접시 외곽 간섭 가설을 지지한다.
+- 반대 증거·한계: 이 정적 지도는 heldout v3의 Q3 67.0mm / seated&exact 42.7%, Q4 46.6mm / 83.0%와 같은 결과를 재현하지 못한다(Q3/Q4의 0° 예측 중앙값은 85.0/69.1mm). 즉 tine collision은 Q2 걸침의 강한 기하 원인 후보지만 분면별 정책 자세·실제 기울기/xy·접촉 dynamics를 넣지 않으면 전체 성공차를 설명하지 못한다. 캡슐 끝은 구형으로 보수 근사, 표면은 유한 샘플, basket floor/마찰/유연성/동적 회전은 제외. `basket.yaml pin_r=1mm`는 3–4mm 실물 철사보다 작은 sim compliance proxy. 접시 normal/OBJ 축 방향은 명시한 정렬 가정이다.
+- 산출물(로컬 데이터, git 미포함): `calibration/data/basket/tine_clearance_20261015_v3/basket_tine_clearance.json`, `.md`, `.png`. X 코드+분석시험 커밋 `2ed663f`. 전체 회귀 `bash calibration/run.sh tests`: **38/38 통과, 33.94 s**. GPU/Isaac/실로봇/그리퍼 호출 없음.
+
 ## 2026-10-14 23:4x Claude — Q3/Q4 앉음 해결 (조정 경로) (30분 기록)
 - **Q3 기울기 −0.5 + 겨냥 −4.64 cm(한 칸 당김): 앉음 & exact 230/230 = 1.00**(최저점 중앙값 48 mm). 기울기 −0.5만 했을 때는 216/216이 정확히 +1칸이었다.
 - **Q4 기울기 0.5 + 겨냥 −3.5 cm: 앉음 & exact 0.98**(170/172). 기울기 1.0은 0.82, −0.5는 0.85, −0.5 + 한 칸 당김은 0.11(−1칸으로 지나침).
