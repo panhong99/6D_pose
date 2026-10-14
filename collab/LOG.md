@@ -1472,3 +1472,7 @@
 - 4사진의 마지막 수동 확인 라벨(Q1 4/Q2 2/Q3 10/Q4 10, 총26)을 `calibration/data/basket/wrist_look/labels_20261013_190126_PARTIAL_20261014.json`로 새로 통합. `calibration/data/basket/pin_layout_measured_PARTIAL_20261014/pin_layout_measured.json`으로 역투영, 중복0/픽셀 범위 정상/26개 전부 유한좌표 확인. 기존 개별 라벨·측정 원본은 보존.
 - `calibration/data/basket/pin_model_comparison_PARTIAL_20261014.json`: 확인된 줄의 y 중앙값과 basket.yaml 모델 줄 y 비교. A줄 Q1은 모델보다−12.1/−13.2mm, Q4는−10.5/−17.2mm; B줄 Q3은+5.8/+16.7mm, Q2 한 줄은−6.5mm. 이는 카메라/hand-eye/높이 가정과 일부 핀만의 표본이 섞인 **부분 진단값**이며 실제 바구니 전체 형상 오차 확정치가 아님.
 - 클립 인접·가림 핀 및 전체 번호 매핑은 미완료. 따라서 TASKBOARD가 지정한 최종 `labels_20261013_190126.json`/`pin_layout_measured_20261013.json`은 생성하지 않았고 E 정확도·80% 달성도 계산하지 않음. D/E는 내일 후속 필요. 로봇·그리퍼 명령/기존 데이터 덮어쓰기 없음.
+
+## 2026-10-14 09:00 Codex — 야간 최종 점검
+- 통합 부분 라벨 사진4장/핀26개와 역투영 핀26개 일치, 좌표 유한값 확인. 최종 D 지정 파일 둘은 없음. 클립 인접·가림 핀·번호 매핑, Q2/Q3 일부 간격 불일치, 모델 높이·hand-eye 가정 때문에 전체 배치 확정 불가. E 자동검출 precision/recall/mm오차 평가는 시작 조건인 전체 정답이 없어 미착수. 기존 A/B/C 완료와 G 영상진단 결과는 유지.
+- 결과: `calibration/data/basket/wrist_look/labels_20261013_190126_PARTIAL_20261014.json`, `calibration/data/basket/pin_layout_measured_PARTIAL_20261014/pin_layout_measured.json`, `calibration/data/basket/pin_model_comparison_PARTIAL_20261014.json`. `PARTIAL` 표기대로 연구용 검토 자료이며 실기 자동보정값 아님. 실로봇/그리퍼 명령·원본 덮어쓰기 없음. 지정 마감으로 자동 점검 PAUSED 처리.
