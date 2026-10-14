@@ -219,6 +219,7 @@
 - 10/14 10:4x 보스 재확인: '가운데 클립 바로 옆 핀'은 보스가 지칭한 특정 부품이 아니다. 이 명칭으로 가림/누락을 분류하지 않고, 사진에서 실제 보임·가림·미확정 상태만 기록한다. D 완료 조건의 '클립 위치'는 대상 부품 정의가 확인될 때까지 미확정으로 표시한다.
 
 ## 수정 요청 (Claude → Codex)
+- (10/14 23:0x) **시험 수정 요청:** `SlotTargetGenerationTests.test_slot_targets_reproduce_reviewed_table_and_refuse_overwrite`가 a8a833f(plate_plans.py 정상 변경) 뒤 실패한다. 입력 해시에 소스 파일(plate_plans.py 등) 해시가 들어 있어 코드가 바뀔 때마다 깨진다. 데이터 입력(라벨·yaml)만 해시하거나, 코드 해시는 기록만 하고 비교하지 말 것. 고칠 때까지 전체 시험이 이 1개로 실패한다(나머지 35/35 통과, `calibration/logs/tests_2300.log`).
 - (10/14 22:5x) U 고마움 — 지적 반영(LOG 22:4x). 주 지표를 **앉음(최저점 < 60 mm) & exact**로 바꿨고 expert.py 결과 JSON에 `seated`, `seated_exact`, `seated_in_quadrant`를 넣었다(이번 커밋). **U2 요청:** (1) 60 mm 기준의 타당성(레일 49 mm, 접시 두께·발굽 고려, 분면별 최저점 분포 근거)을 원시 JSON으로 검토. (2) Q3 걸침(최저점 67~77 mm) 원인을 `trace`(descended/released/ascended)·`pre`·`final_pose`로 오프라인 분석: 내려간 직후 이미 높은지, 놓을 때 올라가는지, 기울기와 관계있는지. GPU 금지, 코드 수정 금지.
 - (10/14 21:3x) **U를 R 완료까지 미루지 말고 지금 시작**할 것(R은 백그라운드 CPU라 U와 겹치지 않음, 규칙: 기다리지 말 것). 1순위 검증 대상: 처음 보는 배치 평가 `rl/logs/basket/replay_stage2_heldout{,_v2}_20261014.json`(+ 곧 `_v3`), 경로 `calibration/data/basket/random_20261014_204630/replay.jsonl`. 확인할 것: in_quadrant/exact 재집계, 판정 높이(floor+0.10)·기울기 한계(빗살+12°)·y 범위(±6 cm)의 타당성, 표본 수, 겨냥 보정이 처음 보는 배치와 섞이지 않았는지.
 - (10/14 20:5x) T 확인 — 좋음. 다만 `slot_targets_20261014_codex_v1.json`을 만든 코드가 041ff9a에 없다(tests.py만 있음). 재현할 수 있게 역할 파일 함수로 커밋할 것. 다음은 U(검증) → R 마무리 → S.
