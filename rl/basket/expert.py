@@ -240,7 +240,7 @@ def closed_loop_paths(env, rows, who, above_m=0.11, extra=0.005, dz=0.0, lean=1.
     qs = robot.data.joint_pos[:, :6].cpu().numpy()
     pp = (plate.data.root_pos_w - env.scene.env_origins).cpu().numpy()
     pq = plate.data.root_quat_w.cpu().numpy()
-    out = []
+    out, lean_used = [], []
     for k, i in enumerate(who):
         r = rows[i]
         if 'target_centre' not in r:
@@ -254,17 +254,22 @@ def closed_loop_paths(env, rows, who, above_m=0.11, extra=0.005, dz=0.0, lean=1.
         import basket_env as be
         Tb = np.asarray(r['Tb'])
         path = []
-        for lf in (1.0, 0.5, 0.0):                             # (10/14 night) far quadrants: no IK at the full lean -> lean less
-            path = _cl_one(kin, tool, be, r, Tb, Rp, H, qs[k], (lean_q or {}).get(r['model_qd'], lean) * lf, above_m, extra, (dz_q or {}).get(r['model_qd'], dz), (pin_dx or {}).get(r['model_qd'], {}).get(str(r.get('pin')), (dx_q or {}).get(r['model_qd'], dx)), top, (edge_q or {}).get(r['model_qd']))
+        # (10/14 night) no IK at the full lean: first turn the plate more about its normal (a vertical plate jams in the
+        # leaning tines - Q2 never seated below 60 mm with lean 0/0.5), only then lean less
+        for lf, wide in ((1.0, False), (1.0, True), (0.5, False), (0.0, False)):
+            path = _cl_one(kin, tool, be, r, Tb, Rp, H, qs[k], (lean_q or {}).get(r['model_qd'], lean) * lf, above_m, extra, (dz_q or {}).get(r['model_qd'], dz), (pin_dx or {}).get(r['model_qd'], {}).get(str(r.get('pin')), (dx_q or {}).get(r['model_qd'], dx)), top, (edge_q or {}).get(r['model_qd']), wide=wide)
             if len(path) == 13:
+                lean_used.append(lf if not wide else 1.01)
                 break
         out.append((np.array(path[:1]), np.array(path[1:])) if len(path) == 13 else (None, None))
         if len(path) < 13:
             print(f"[replay] closed loop: {r['name']} env {k} no IK at step {len(path)}", flush=True)
+    import collections
+    print(f"[replay] closed loop lean used (1.01 = full lean, wider turn): {sorted(collections.Counter(lean_used).items())}", flush=True)
     return out
 
 
-def _cl_one(kin, tool, be, r, Tb, Rp, H, q0, lean, above_m, extra, dz, dx, top, edge=None):
+def _cl_one(kin, tool, be, r, Tb, Rp, H, q0, lean, above_m, extra, dz, dx, top, edge=None, wide=False):
     """One closed-loop (above + descent) joint path in deg for this tine lean; shorter than 13 = no IK."""
     import numpy as np
     from scipy.spatial.transform import Rotation as R
@@ -287,7 +292,7 @@ def _cl_one(kin, tool, be, r, Tb, Rp, H, q0, lean, above_m, extra, dz, dx, top, 
     g -= (g @ nt) * nt
     a0 = np.arctan2(np.cross(g, up) @ nt, g @ up) if top else 0.0   # (10/14) turn the plate about its normal: grip at its top
     path = []                                              # (a side grip lets the plate spin 30-40 deg on release)
-    for dphi in ((0, 10, -10, 20, -20) if top else (0,)):
+    for dphi in ((30, -30, 40, -40, 50, -50, 60, -60) if wide else (0, 10, -10, 20, -20) if top else (0,)):
         Td = np.eye(4)
         Td[:3, :3] = R.from_rotvec(nt * (a0 + np.radians(dphi))).as_matrix() @ R0
         path, prev = [], q0
