@@ -412,9 +412,25 @@ def run(args):
 
 # ================================================================ plate task (RL policy rollout, 2026-10-07)
 
-def plate_root_in_base(T_base_obj):
-    """Sim plate root (mesh bounding-box bottom centre) from a FoundationPose mesh pose in base."""
+def plate_upright(T_base_obj):
+    """(10/14 실기) FoundationPose sometimes returns the round plate upside down (z down, 'tilt 179 deg') from the far
+    fixed camera although it lies right side up: turn such a pose 180 deg about the mesh x axis through the bounding-box
+    centre (same volume, z up).  A plate within 90 deg of upright is returned unchanged."""
+    T_base_obj = np.asarray(T_base_obj, float)
+    if T_base_obj[2, 2] >= 0:
+        return T_base_obj
     import trimesh
+    lo, hi = trimesh.load(cpath(C['paths']['plate_obj']), force='mesh').bounds
+    c, F = np.eye(4), np.diag([1.0, -1.0, -1.0, 1.0])
+    c[:3, 3] = (lo + hi) / 2
+    return T_base_obj @ c @ F @ np.linalg.inv(c)
+
+
+def plate_root_in_base(T_base_obj):
+    """Sim plate root (mesh bounding-box bottom centre) from a FoundationPose mesh pose in base (upside-down poses
+    turned upright first, see plate_upright)."""
+    import trimesh
+    T_base_obj = plate_upright(T_base_obj)
     lo, hi = trimesh.load(cpath(C['paths']['plate_obj']), force='mesh').bounds
     p = (T_base_obj @ np.array([(lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2, lo[2], 1.0]))[:3]
     yaw = float(np.degrees(np.arctan2(T_base_obj[1, 0], T_base_obj[0, 0])))
@@ -562,7 +578,7 @@ def run_plate(args):
                     d[:2] = [(r - (rlo + rhi) / 2) * 1000, np.degrees(az)]
                 else:
                     ok = ((d >= lo) & (d <= hi)).all() and tilt <= q['max_tilt_deg']
-                viz(plate=(Tbc @ T).tolist(), ok=bool(ok), area=None if q.get('library') else area)
+                viz(plate=plate_upright(Tbc @ T).tolist(), ok=bool(ok), area=None if q.get('library') else area)
                 good = good + 1 if ok else 0
                 if not q.get('library') and not lo[0] <= d[0] <= hi[0]:
                     over = d[0] - hi[0] if d[0] > hi[0] else d[0] - lo[0]
@@ -684,9 +700,9 @@ def run_plate(args):
             if not fp.hist:
                 return None
             root, fyaw, ftilt = plate_root_in_base(Tbc @ fp.hist[-1])
-            viz(plate=(Tbc @ fp.hist[-1]).tolist(), ok=True)
+            viz(plate=plate_upright(Tbc @ fp.hist[-1]).tolist(), ok=True)
             return dict(plate_root=[round(float(v), 5) for v in root], yaw_deg=round(fyaw, 2), tilt_deg=round(ftilt, 2),
-                        T=np.round(Tbc @ fp.hist[-1], 5).tolist())     # (10/13) full pose: plate normal in the hand afterwards
+                        T=np.round(plate_upright(Tbc @ fp.hist[-1]), 5).tolist())     # (10/13) full pose: plate normal in the hand afterwards
         rec = RobotRecorder(receivers[0], out / 'robot_state.jsonl', fp_sample)   # every ROS2 joint/flange sample + FP
         rec.event('plan', plan=str(plan), plate_root_fp=[float(v) for v in p], yaw_deg=yaw, tilt_deg=tilt,
                   offset_m=q['offset_m'], rollout_plate=[x, y])
@@ -712,10 +728,10 @@ def run_plate(args):
         if args.insert == 'quadrant':                       # (10/13 실기) the plate sags in the fingers: replan from the FP plate now
             fp.poll()
             if fp.hist and rec.last:
-                Tn = Tbc @ fp.hist[-1]
+                Tn = plate_upright(Tbc @ fp.hist[-1])
                 root, _, tilt_now = plate_root_in_base(Tn)
                 from plate_plans import hand_plate, pin_gap, quadrant_plan, robot_quadrants
-                n_now = Tn[:3, :3] @ (Tbc @ T)[:3, :3].T @ [0, 0, 1.0]   # change since the flat plate: FP's ~2-4 deg bias cancels
+                n_now = Tn[:3, :3] @ plate_upright(Tbc @ T)[:3, :3].T @ [0, 0, 1.0]   # change since the flat plate: FP's ~2-4 deg bias cancels
                 H2, tool2 = hand_plate(rec.last['posj'], root, n_now)
                 print(f'   들어 올린 뒤 접시 (FP): 기울기 {tilt_now:.1f} deg (잡기 전 {tilt:.1f}) -> 손 안 접시 자세로 넣기 경로 다시 계산',
                       flush=True)
