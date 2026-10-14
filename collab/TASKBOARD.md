@@ -30,6 +30,8 @@
 | AK | 아침 보고 초안 (5분 분량, 표 위주) | 단계 1~3, 실기 위험, 보스 결정, Codex 검토 정정 포함; `collab/MORNING_REPORT_DRAFT_20261015.md` | 완료(초안 6e03f79; AL/U8 보강 2f3588a) |
 | AK2 | 아침 보고 초안 최종 갱신 | 속도별 측정 없는 평균 H 표(9014/7014), 실기 자세 요구조건, 4/4 dry-run 계획과 금지사항, 보스 결정 목록 갱신 | 완료(e57c70f): speed별 9014/7014 표, 계측 목표·한계, dry-run 4/4/미실행·충돌 미검사 명시; 41/41 tests |
 | AK3 | AK2 후속: 추가 30°/s seed 반영 | Claude의 9014 raw replay를 원시 배열로 재집계하고 seed별 표·paired 변화·H 표본 한계 갱신 | 완료(cd5871f) |
+| AM | Claude 아침 보고 독립 검토 | raw replay·LOG 대조, 오류/빠진 한계만 LOG에 적고 본문은 Claude가 수정 | 완료(다음 결과 커밋 참조) |
+| AN | `--sim_q` RViz 미리보기 명령 확인 | run.sh·ros2_nodes 코드만 확인, 실행/로봇 이동 없이 plan 경로·연결 요건 기록 | 완료(다음 결과 커밋 참조) |
 | O | BC 티칭 데모 오프라인 안전·일관성 점검 | full_11~14 JSON/상태기록·분면 manifest 대조, 배치 일관성 및 recorded joint/TCP 속도와 wrench 이벤트 확인 | 완료(c8ee663) |
 | N | **빗살 전수 번호 라벨링 — Codex는 검증·수정 담당 (보스 10/14 15:xx, 지금 Codex 최우선)** | 아래 '새 일 N' | 2D 번호 전수 기준 완료. Q2/Q3/Q4 **조건부 3D 역투영 66쌍**과 현 모델 비교 완료(`realQ_verified_3d_model_audit_20261014_v5`; LOG 참고). 사진 Q1 14개 확인점은 실제 Q2 줄. 실제 Q1은 가림/프레임 절단; calibrated 사진 입력 대기 |
 | O | **티칭 시연 충돌·안전 자동 판정기** (10/14 17:1x, N 다음 최우선) | 아래 '새 일 O' | 완료(6f2d618): full_14만 unsafe, 시험 31/31. 보고서 분면은 파일값(full_11 Q3) — manifest 정정(Q4) 우선으로 S에서 같이 고칠 것 |

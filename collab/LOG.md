@@ -2692,3 +2692,17 @@
 - `git diff --check` 통과. 첫 시험 실행은 sandbox UDP socket 권한에서 실패했으나 허용된 재실행으로 전체 회귀시험 **41/41 통과 (32.211 s)**. 변경 범위는 LOG와 아침 보고 문서뿐이며 GPU/Isaac/로봇 미사용.
 
 - 결과 문서 커밋: `cd5871f` (AK3). TASKBOARD 상태를 완료로 갱신했다.
+
+## 2026-10-15 06:02 Codex — AM/AN 결과
+
+### AM — Claude 08:30 아침 보고 Critic (보고 본문은 직접 수정하지 않음)
+- **주요 정의 혼합:** 보고서 `2·3. 지정 칸에 앉힘(손 안 자세를 정확히 앎)` 행은 단계 2(아무 칸 안정 배치)와 3(지정 빗살)을 합친 표현이다. LOG의 raw 재집계(2460행)는 blind-final 단계 2가 seated+in-quadrant **574/598 (9014), 573/600 (7014)**이고, perfect-pose untouched 단계 3의 designated-gap exact가 **596/598 (9014)**임을 분리한다. 보고서의 평균 자세 표 570/598·571/600은 designated-gap exact이므로 단계 2의 아무 칸 성공률로 읽히지 않게 해야 한다.
+- **경로 생성 범위 누락:** 798/800은 바구니 x/y ±5 cm, yaw ±10° 조건이다(LOG 2473). 요청한 R의 ±10 cm·yaw ±15° 전체 범위 결과가 아니며, 2건은 파일 읽기 오류다. 보고서에 실제 범위와 R 지도(하강 IK 성공 6480/6480, clearance≥1.3은 3999/6480=61.7%)가 서로 다른 실험임을 적어야 한다.
+- **추가 seed 반영 시점:** 08:30 본문에는 30°/s H30 seed 9014가 빠졌으나 이후 추가된 raw replay를 재집계한 결과는 **555/598 (92.8%)**. 같은 episode의 H20 570/598과 비교해 35 H20 승, 20 H30 승, 543 동률(−15건, −2.5 pp); 이 값은 AK3 보고 초안에 반영했다. 7014 H30은 554/600으로 기준 대비 −2건(26/28/546 paired)이다.
+- **해석 한계:** 9014는 299개 valid layout × 2회이며 requested jitter 전체의 무작위·독립 홀드아웃으로 보면 안 된다. 위치 약 2 mm·법선 기울기 −1°~+0.3°는 제한된 sim bias sweep에서 나온 **실기 계측 목표 제안**이지 보증 허용오차가 아니다. 보고서가 단계 정의와 평가 split을 명시하고 이를 유지해야 한다. 수치 원본은 LOG 2460–2474, 2591–2662 및 위 raw JSON.
+
+### AN — plan 미리보기 호출·연결 확인 (코드 읽기만, RViz/ROS 실행 안 함)
+- 4개 파일: `calibration/data/rl_plans/20261015_031640_477_taught/plan.json` (Q1), `_031648_308_taught/plan.json` (Q2), `_031622_524_taught/plan.json` (Q3), `_031626_740_taught/plan.json` (Q4). 한 번에 하나씩 `bash calibration/run.sh viz --plan <절대 plan.json 경로>`로 읽기 전용 ghost 미리보기 가능. `run.sh viz`는 ROS env를 source하고 RViz와 `ros2_nodes.py viz`를 띄운다.
+- `run_viz`는 plan waypoints를 ghost TF/marker로 보간해 표시하며 이동 서비스는 호출하지 않는다. 실제 joint pose 서비스 `GetCurrentPosj`는 서비스가 ready일 때만 읽는다. 따라서 plan ghost만 보려면 Doosan controller bringup/로봇 연결은 필수 아님; 단, ROS 2·Doosan 메시지 패키지와 RViz 환경은 필요하다. 연결이 되면 현재 관절 자세를 별도 real ghost로 읽어 표시할 수 있다.
+- 보고서용 핵심: **아래는 sim 후보 경로의 RViz 시각화 전용이며 실행 금지.** 셀 검사에 실물 빗살 접촉이 포함되지 않았다. `calibration/run.sh viz --plan <plan.json>`; 네 분면 파일 경로는 위에 기록. `quadrant_plans --sim_q` 생성 명령은 별도이고, plan 생성은 UDP 5011로 실행 중 viz에 파일 경로를 알릴 수 있다.
+- 전체 아침 보고는 수정하지 않았다. 출처: `calibration/run.sh` viz 분기, `calibration/ros2_nodes.py::run_viz` 및 viz argparse, `calibration/plate_plans.py::quadrant_plans`. 하드웨어/ROS/RViz/GPU를 실행하지 않았고 로봇 명령 없음.
