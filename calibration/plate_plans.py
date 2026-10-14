@@ -1053,13 +1053,11 @@ def measured_basket(cfg=None):
 
 def robot_quadrants(Tbb):
     """{robot quadrant: basket-model quadrant}.  Q1..Q4 are named as seen from the robot (top view, robot at the bottom,
-    far = +x, left = +y); the model's quadrants are fixed to the basket (markers), so a turned basket maps onto them."""
-    c = np.asarray(Tbb)[:3, 3]
-    out = {}
-    for qd, gaps in basket_gaps().items():
-        m = (np.asarray(Tbb) @ np.r_[np.mean(gaps, 0), 1.0])[:3] - c
-        out[next(k for k, (fn, lr) in QUADRANTS.items() if (fn == 'far') == (m[0] > 0) and (lr == 'left') == (m[1] > 0))] = qd
-    return out
+    far = +x, left = +y); the model's quadrants are fixed to the basket (markers), so a turned basket maps onto them:
+    the labels move one quadrant per 90 deg of basket yaw (nearest; always one-to-one, also at 45 deg)."""
+    ccw = ['Q1', 'Q2', 'Q3', 'Q4']                           # far-right, far-left, near-left, near-right = counter-clockwise
+    k = int(np.round(np.degrees(np.arctan2(Tbb[1][0], Tbb[0][0])) / 90.0)) % 4
+    return {ccw[(ccw.index(m) + k) % 4]: m for m in ccw}
 
 
 def pin_gap(Tbb, model_qd, pin):
