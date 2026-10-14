@@ -46,6 +46,7 @@ def parse_args():
     p.add_argument('--cl_dx', type=float, default=0.0, help='--closed_loop: move the aim along the basket rows (+x) [m]')
     p.add_argument('--cl_iter', type=int, default=1, help='--closed_loop: measure + re-aim this many times at the above stop')
     p.add_argument('--cl_heights', default='', help='--closed_loop: re-aim height above the insert per iteration [m], e.g. "0.11,0.07"')
+    p.add_argument('--cl_lean_q', default='', help='--closed_loop: per model quadrant tine-lean factor, e.g. "Q1:-1,Q2:0" (overrides --cl_lean)')
     p.add_argument('--cl_dx_q', default='', help='--closed_loop: per model quadrant aim, e.g. "Q3:-0.03,Q4:-0.035" (overrides --cl_dx)')
     p.add_argument('--cl_top', action='store_true', help='--closed_loop: turn the plate about its normal so the grip is at its top')
     p.add_argument('--hold_view', action='store_true', help='replay with the viewer: keep the window open at the end until it is closed')
@@ -222,7 +223,7 @@ def make_cfg(n, viewer, torsion_m):
     return cfg
 
 
-def closed_loop_paths(env, rows, who, above_m=0.11, extra=0.005, dz=0.0, lean=1.0, dx=0.0, top=False, dx_q=None):
+def closed_loop_paths(env, rows, who, above_m=0.11, extra=0.005, dz=0.0, lean=1.0, dx=0.0, top=False, dx_q=None, lean_q=None):
     """(10/14) per env (above, descend) joint paths (deg) from the plate actually in the hand now: the plate turns ~9 deg
     in the grip on the carry (Isaac), so the planned descent lands it 3-4 gaps off.  Keeps the plate's turn about the
     vertical small: shortest rotation of its normal onto the row axis, centre on the row's target_centre (base)."""
@@ -251,7 +252,7 @@ def closed_loop_paths(env, rows, who, above_m=0.11, extra=0.005, dz=0.0, lean=1.
         Tb = np.asarray(r['Tb'])
         path = []
         for lf in (1.0, 0.5, 0.0):                             # (10/14 night) far quadrants: no IK at the full lean -> lean less
-            path = _cl_one(kin, tool, be, r, Tb, Rp, H, qs[k], lean * lf, above_m, extra, dz, (dx_q or {}).get(r['model_qd'], dx), top)
+            path = _cl_one(kin, tool, be, r, Tb, Rp, H, qs[k], (lean_q or {}).get(r['model_qd'], lean) * lf, above_m, extra, dz, (dx_q or {}).get(r['model_qd'], dx), top)
             if len(path) == 13:
                 break
         out.append((np.array(path[:1]), np.array(path[1:])) if len(path) == 13 else (None, None))
@@ -364,7 +365,8 @@ def run_replay(args):
         for it in range(args.cl_iter):                       # (10/14 night) measure + re-aim again at the above stop
             hs = [float(h) for h in args.cl_heights.split(',')] if args.cl_heights else [0.11]
             prev_fix, fix = fix, closed_loop_paths(env, rows, who, above_m=hs[min(it, len(hs) - 1)], dz=args.cl_dz, lean=args.cl_lean, dx=args.cl_dx, top=args.cl_top,
-                                    dx_q={k: float(v) for k, v in (x.split(':') for x in args.cl_dx_q.split(',') if x)})
+                                    dx_q={k: float(v) for k, v in (x.split(':') for x in args.cl_dx_q.split(',') if x)},
+                                    lean_q={k: float(v) for k, v in (x.split(':') for x in args.cl_lean_q.split(',') if x)})
             if prev_fix is not None:                         # no IK now: keep the previous re-aim (the robot is there)
                 fix = [f_ if f_[0] is not None else p_ for f_, p_ in zip(fix, prev_fix)]
             if it == 0:
