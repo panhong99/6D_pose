@@ -2490,3 +2490,24 @@
   - 보스 승인
 - 운반 여유 1.0은 기준 경계다.
 - `git diff --check` 통과. 커밋 전 `bash calibration/run.sh tests`는 sandbox UDP 권한으로 시작되지 않았고 승인된 재실행에서 **38/38 통과(33.166 s)**. 문서만 변경; GPU/Isaac/로봇 미사용.
+
+## 2026-10-15 Codex — AL 시작: sim_q preview 검토
+- 4분면 dry-run plan 파일을 읽어 descend 마지막 joint pose에서 접시 자세/위치를 FK로 재계산한다. J5 headroom과 SYSTEM_SPEC의 느린 속도 상한으로 waypoint timing 하한을 계산한다. 파일 전용 CPU 분석; 로봇/RViz/GPU/Isaac 호출 및 Claude 소유 소스 수정 없음.
+
+## 2026-10-15 Codex — AL sim_q 미리보기 경로 독립 검토
+- 입력 4개는 Claude LOG에 연결된 경로의 `plan.json`이다: `calibration/data/rl_plans/20261015_031640_477_taught/plan.json` (Q1), `_031648_308_taught` (Q2), `_031622_524_taught` (Q3), `_031626_740_taught` (Q4). 네 파일 모두 `dry_run=true`, `accepted=true`. `Kinematics.fk(q_descend_last) @ T_flange_tcp @ plate_in_tcp`를 계산하고 `basket_T` 역변환으로 검산했다.
+
+| Q | config lean × tine / FK 실측 | face; 끝 자세 J4/J5/J6 (°) | `|J5|` 최대 / ±135° 여유 | 접시 바닥 중심 − gap 중심 x,y (mm) | 바닥 위 / 핀 끝 위 (mm) | FK TCP 길이 / 느린 속도 시간 하한 |
+|---|---:|---|---:|---:|---:|---:|
+| Q1 | −6.250° / −6.250° | −1; −175.62/−66.49/−18.32 | 77.59° / 57.41° | +28.0, 0.0 | 158.9 / 43.7 | 2.625 m / 21.41 s |
+| Q2 | 0° / −0.000° | −1; −152.33/−58.19/−22.56 | 67.77° / 67.23° | +10.0, 0.0 | 160.0 / 44.8 | 2.183 m / 19.13 s |
+| Q3 | −6.250° / −6.251° | +1; −19.68/+95.29/+3.53 | 105.33° / 29.67° | +8.1, 0.0 | 161.1 / 45.9 | 1.760 m / 16.78 s |
+| Q4 | +6.250° / +6.250° | +1; −22.89/+76.92/−6.07 | 87.24° / 47.76° | −28.0, 0.0 | 158.9 / 43.7 | 2.062 m / 15.73 s |
+
+- 기울기 오차는 최대 0.001°로 config 목표와 일치한다. Q1/Q2는 `face=-1`, J4 −175.62°/−152.33°로 뒤집힌 면을 사용한다. 모든 계획의 J5는 ±135° 안이며 가장 작은 여유는 Q3의 29.67°다.
+- gap 대비 바닥 중심의 x 오프셋(+28/+10/+8/−28 mm)은 접시 기울기와 `plate_root = plane centre − 10 mm·normal` 정의에서 예상되는 기하 오프셋이며, 목표 gap에 대한 삽입 오차로 해석하지 않는다. 이 root 가정은 `plate_plans.hand_plate`에 따른다.
+- **핵심 제한:** descend 끝의 접시 바닥 중심은 모델 바닥 위 158.9–161.1 mm, 핀 끝 위 43.7–45.9 mm다. 그러므로 이 미리보기는 실제 핀 사이에 내려놓는 끝점까지 도달하지 않는다. `accepted=true`는 IK/셀 경로 검사 통과일 뿐 삽입·빗살 충돌 검증이 아니다. SYSTEM_SPEC의 셀 충돌 목록은 빗살을 포함하지 않는다. 실기/그리퍼 명령·RViz 송신은 없었다.
+- 예상시간은 FK TCP 길이와 저장 joint waypoint를 사용했다. `to_grasp/lift/to_above/to_home`은 30°/s, `descend/ascend` 전체는 더 느린 3.5°/s로 계산(각 segment에서 최대 축 joint delta/speed를 합산); 감속·가감속·정지·그리퍼·인식 시간은 없어 실제 소요시간이 아닌 이상적 하한이다.
+- 추가 수정: 보스 아침 보고에서 2단계(blindfinal: sim 평균 자세, 무측정)와 3단계(untouched9014: sim 정답 자세 재측정)를 별도 감지 조건으로 표기해 직접 비교가 아님을 명시했다. FP gate 파일명을 실제 `replay_fpnoise_gate5_7014.json`으로 바로잡았다.
+- 시험 `bash calibration/run.sh tests`: `pipeline.py` UDP socket으로 sandbox에서는 import가 막혔고 승인된 재실행으로 **38/38 통과**; 세부 실행시간 아래 기록. `git diff --check` 통과. 결과는 오프라인 문서 분석뿐이다.
+- 승인 실행 전체 시험 **38/38 통과 (32.891 s)**. sandbox 첫 시도는 `pipeline.py`의 UDP socket 권한으로 import 전에 실패했다.
