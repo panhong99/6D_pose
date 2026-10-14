@@ -2365,3 +2365,8 @@
 - `pre.joints`의 FK(link_6, rad) + TCP z 0.165 m, plate quaternion의 Isaac wxyz→SciPy xyzw 재배열, plate 원점 + 10 mm 법선 오프셋으로 매 episode `inv(T_base_tcp) @ T_base_plate`를 다시 계산했다. 위치 산술평균·회전 `Rotation.mean()`이 blind H 네 분면 모두와 정확히 일치(행렬 최대 수치차 1e−12 이하; 위치 0.0000 mm / 회전 0.0000° 표시 정밀도).
 - 재계산 위치 표준편차(Q1–Q4, xyz mm): `[0.667,9.904,2.502]`, `[0.896,2.770,1.465]`, `[0.883,1.279,1.174]`, `[2.199,1.279,1.317]`; `_provenance`의 반올림 수치와 일치한다. AD의 남은 출처 확인 조건을 충족했다.
 - 재현은 저장된 JSON/summary만 읽은 CPU 계산이다. Isaac/GPU, 실기·카메라, 정책/데이터 파일 수정 없음.
+
+## 2026-10-15 Codex — AA/AB/U5/U6 회귀 재확인
+- 이전 taskboard의 “미커밋/36 of 38” 표기는 현재 상태와 달랐다: AA/U5/U6 분석은 LOG에 각각 `1f8ad5a`/`6597ee7`, AB dry-run 분석은 `6597ee7`로 이미 커밋돼 있다. U5/U6 수치·한계도 동일 LOG 항목에 기록되어 있다.
+- 전체 `bash calibration/run.sh tests`를 다시 실행해 **38/38 통과(33.42 s)**를 확인했다. 소스 코드는 수정하지 않았다.
+- AB의 4분면 dry-run `plan.json` 4개와 `summary.json`, AA/U5/U6 표·그림 파일 경로를 확인했다. 산출 JSON/PNG는 데이터·결과물이므로 git에 추가하지 않았다. dry-run은 실제 바구니/빗살 충돌과 실기 가능성을 증명하지 않는다.
