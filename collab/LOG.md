@@ -2289,6 +2289,21 @@
 - 판정: 로그에 적힌 98.3/88.7/84.5/96.5%와 모두 일치한다. 이 paired 결과에서도 위치 2 mm는 전체 성공 수가 같지만 에피소드 16개의 결과가 서로 바뀌었으므로 '영향 없음'은 아니다. 회전 2°는 위치 잡음보다 큰 순 하락을 만들었다. 단, 이는 Isaac noise replay이며 empirical FP 시계열 모델 시험이 아니고, 선택된 같은 7014 valid plans 범위에 한정된다.
 - 원본 JSON은 `rl/logs/basket/replay_noise_{2_0,0_2,5_0,0_1}_7014.json`; GPU·Isaac 재실행/코드 수정 없음. 결과 JSON 파싱·배열/요약 일치 검사 통과.
 
+## 2026-10-15 Codex — FP empirical-noise / gate replay 독립 재집계
+- 세 결과 JSON의 600 episode 이름·순서를 `replay_final_v3_7014.json`과 대조하고, `seated && in_quadrant && landed_gap == target_gap`으로 CPU 재집계했다. 세 JSON 모두 300개 run별 `results[].seated_exact`와 재계산이 일치했다.
+
+| 재생 | 분면별 exact (Q1/Q2/Q3/Q4) | 전체 | baseline과 paired 변화 (성공→실패 / 실패→성공) |
+|---|---|---:|---:|
+| baseline, no noise | 175/176, 156/160, 134/134, 125/130 | 590/600 (98.33%) | — |
+| empirical FP noise | 147/176, 132/160, 111/134, 95/130 | 485/600 (80.83%) | 111 / 6 |
+| empirical FP noise + 5 mm position gate | 148/176, 148/160, 120/134, 129/130 | 545/600 (90.83%) | 53 / 8 |
+| empirical FP noise + 3 mm position gate | 147/176, 143/160, 110/134, 128/130 | 528/600 (88.00%) | 70 / 8 |
+
+- 같은 noise episode를 짝지으면 gate 5 mm는 FP-noise replay의 41개 성공을 잃고 101개를 회복했고, gate 3 mm는 60개를 잃고 103개를 회복했다. gate 5가 gate 3보다 17회 더 성공했다. 이는 조정 데이터와 같은 seed 7014 plans의 시뮬레이션 비교이며, 새 배치 일반화나 실기 성공 증거가 아니다.
+- 구현상 gate는 `H`의 위치 오차 크기만 임계값(mm)과 비교하고 초과하면 분면 평균 `H` 전체(회전 포함)를 사용한다. 회전 오차 단독 gate는 없다. empirical replay는 축별 독립 난수로 위치·법선 잡음을 넣으므로 AC 측정의 시간 상관(lag-1 약 0.9)을 재현하지 않는다. 따라서 gate 결과는 실제 FoundationPose 시계열 검증으로 해석하면 안 된다.
+- 원본: `rl/logs/basket/replay_{final_v3,fpnoise,fpnoise_gate5,fpnoise_gate3}_7014.json`; 로그는 같은 stem의 `.json.log`. GPU/Isaac 재실행, 로봇/카메라 사용, 코드 수정 없음.
+- AD 상태: 최초 `replay_blind_7014.json`은 TCP body frame과 FK TCP frame 불일치로 무효라고 Claude가 기록했다. 수정된 `blind_inhand_H_20261015.json`은 tuning runs에서 만들었다고 기록돼 있으나 JSON에 source/provenance 필드가 없어서 seed 4014/5014만 썼는지 결과물만으로 독립 입증할 수 없다. `replay_blind2_7014.json`은 아직 생성되지 않았고 `stage2_blind2.sh`는 `stage2_gate.done` 뒤에 실행하도록 대기한다. 최종 AD 검증은 blind2 JSON이 생기면 이어간다.
+
 ## 2026-10-15 02:1x Claude — 측정 없는 겨냥 1차는 좌표 틀 오류로 무효
 - `--cl_blind` 1차(`replay_blind_7014.json`, 앉음 & exact 0.000, 분면별로 −3~+6칸 일정 치우침)는 **무효**다. 평균 손 안 자세를 sim의 'tcp' 몸체 자세로 계산했는데, 다시 겨냥 코드는 FK(관절) + 0.165 m를 TCP로 쓴다. 두 틀의 축이 달랐다.
 - 관절 FK 기준으로 다시 계산해 `rl/logs/basket/blind_inhand_H_20261015.json`을 덮어썼다(1차 파일은 내가 오늘 밤 만든 파생 파일이다). 분면 안 퍼짐(표준편차, mm):
@@ -2315,3 +2330,16 @@
 - 거르기 5 mm에서 평균으로 대체한 비율은 1차 387/600, 2차 306/600이다. 평균 자세 자체도 실제와 몇 mm 차이가 나서(Q1 y 표준편차 9.9 mm), 기준을 좁히면 오히려 나빠진다.
 - 해석: 실측 FP 그대로는 sim 기준 0.81, 간단한 거르기로 0.91이다. 남은 실기 과제는 측정 꼬리(10~30 mm 튐)를 줄이는 것이다(동기화 확인, 손목 카메라, 여러 프레임 일관성). 이 수치는 sim과 FP 잡음 모델에 기반한 추정이다(Codex AC 한계: GT 없음, 7개 실행 270 프레임).
 - 다음: 측정 없이 평균 자세만 쓰기(blind2) 진행 중.
+
+## 2026-10-15 02:3x Claude — 손 안 접시를 재지 않아도 0.878 (분면별 평균 손 안 자세)
+- seed 7014(300 × 2), 최종 설정에서 바구니 위 측정 대신 분면별 평균 손 안 자세(조정 실행 seed 4014/5014에서 FK 기준으로 계산, `rl/logs/basket/blind_inhand_H_20261015.json`)로 다시 겨냥(`--cl_blind`): **앉음 & exact 0.878**. Q1 0.835 / Q2 0.912 / Q3 0.784 / Q4 0.992.
+
+| 손 안 자세 정보 | 앉음 & exact |
+|---|---|
+| sim 실제값(측정 완벽) | 0.983 |
+| 실측 FP 잡음 그대로 | 0.808 |
+| 실측 FP + 튀는 값 거르기 5 mm | **0.908** |
+| 재지 않음(분면 평균) | **0.878** |
+
+- 의미: sim에서는 손 안 접시 자세가 경로마다 거의 같아서, 재지 않고 평균값을 써도 원시 FP보다 낫다. 실기에서는 이 평균값을 실기에서 다시 정해야 한다(들어 올린 직후 정지 상태에서 여러 프레임으로 한 번 측정 등). 보스 결정 항목.
+- Q3 −1칸 23회, Q1 −1칸 12회 → 이 방식용 겨냥을 조정 경로로 다시 맞추는 중(Q1/Q3 +0/+4/+8 mm).
