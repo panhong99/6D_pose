@@ -52,5 +52,9 @@ full:                                       # whole basket (10/8 17:xx), basket 
   centre_gap_x: 0.0                         # (10/14 보스) Q3 has 13 tines per row; counted from the far (clip) side the plate
                                             # went into 7-8 where the model said 5-6 -> the model lacked 2 tines at the clip (was 0.025)
   tines_from_clip: {Q1: 7, Q2: 9, Q3: 13, Q4: 13}   # (10/14 보스, counted) tines per row in each quadrant, from the centre clip
+  tine_pitch: {Q1: 0.030, Q2: 0.020, Q3: 0.020, Q4: 0.020}   # (10/14 보스, measured) Q1 3 cm, the others <= 2 cm
+  clip_first_m: 0.010                       # (10/14 보스) centre clip -> first tine, every row
+  clip_x: 0.0                               # centre clip along x in the basket frame: 10/14 real Q3 insert at x -0.133 went into
+                                            # tines 7-8 from the clip -> clip at -0.133 + 0.01 + 6.5 * 0.02 = +0.007 ~ 0
   slot_axis_from_basket: true               # (10/8 19:xx) slot axis n = basket x (rows), not the taught-normal yaw
   pin_r: 0.00100                            # 3.5 mm measured; 2 mm in sim = compliance proxy (10/8: real plate went in, rigid 3.5 mm pins leave <3 mm play)

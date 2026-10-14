@@ -94,10 +94,13 @@ def full_basket_parts():
     count = f.get("tines_from_clip")                                     # (10/14 보스) tines per row in each quadrant, from the clip
     for k, yc in enumerate(f["pair_centres_y"]):                           # pair A (+y, left) then pair B (right)
         for far in (False, True):
+            qd = ("Q2" if k == 0 else "Q1") if far else ("Q3" if k == 0 else "Q4")
             half = np.sort(np.abs(xs[(xs > 0) == far]))                    # nearest the clip first
             if count:
-                half = half[:count[("Q2" if k == 0 else "Q1") if far else ("Q3" if k == 0 else "Q4")]]
-            hx_ = half if far else -half
+                half = half[:count[qd]]
+            if "tine_pitch" in f:                                          # (10/14 보스, measured) clip + 1 cm, then the pitch
+                half = f.get("clip_first_m", 0.01) + f["tine_pitch"][qd] * np.arange(count[qd])
+            hx_ = f.get("clip_x", 0.0) + (half if far else -half)
             if not len(hx_):
                 continue
             for dy in p["rows_u"]:
