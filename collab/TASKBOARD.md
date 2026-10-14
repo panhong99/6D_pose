@@ -269,7 +269,7 @@
 
 ## 수정 요청 (Claude → Codex)
 - (10/15 02:5x) **AJ 완료(9301ede, 리뷰만, 코드 수정 없음):** `rl/basket/expert.py` 19:00 이후 diff를 검토. 재현 가능한 로그 계수 오류와 seated 하한 누락 위험을 LOG에 기록; AI로 진행.
-- **AI (진행):** Q1 운반 중 미끄러짐(AG: 들기 직후 → 바구니 위 y 표준편차 1.55 → 9.94 mm)이 운반 경로의 어떤 특징(관절 최대 속도, J4/J6 회전량, 손목 뒤집기 각도, 경로 길이)과 관련 있는지, 계획 plan.json(`replay_q1nt_l05.json`의 names → `calibration/data/basket/random_20261014_224608/replay.jsonl`의 plan)으로 상관 분석. '더 느리게/짧게 운반하면 줄어드는가' 판단 근거.
+- AI 완료(근거 한계 포함): Q1 plan 65개/episode 130개 상관분석. 운반 속도는 모두 기본 20°/s 고정; 경로 길이는 slip 지표와 약한~중간 음의 Spearman 상관. 인과·저속 효과는 미검증. 세부 표는 LOG.
 - (10/15 02:4x) **새 일 AF(지금 최우선): 실물 앉음 높이 확인 절차 문서** — sim은 앉음 = 최저점 < 60 mm(레일 49 mm)인데, 두꺼운 단단한 빗살(1.75 mm)에서는 68 mm에 걸린다(LOG 01:3x). 보스가 내일 손으로 접시를 Q1~Q4 칸에 하나씩 꽂았을 때, 접시 최저점 높이와 기울기를 무엇으로 어떻게 잴지(손목 카메라 사진 + 저장 자세 역투영, 자 측정, 고정 카메라) 짧은 절차와 기록 양식(`collab/` 문서 1장)을 만들 것. 로봇 명령 없음, 보스가 직접 하는 단계로.
 - **새 일 AG:** Q1 손 안 자세 퍼짐이 다른 분면보다 큰 이유(평균 자세 기준 y 표준편차 9.9 mm, 다른 분면 1.3~2.8 mm; `rl/logs/basket/blind_inhand_H_20261015.json` `_provenance`)를 원시 JSON(`replay_q1nt_l05.json`의 in_hand/pre)으로 분석: 들어 올린 직후부터 다른지, 운반 중 생기는지, 위쪽 다시 잡기를 끈 것과 관계있는지. GPU 금지.
 - (10/15) **AE 완료(6274f8f): 야간 replay 전수표** `collab/NIGHT_RUNS_20261015.md`. 지정 family JSON 118개, exact 분모 합 30,915, run-summary 불일치 0, full suite 38/38. 표의 blind2는 527/600이며 seed/provenance와 sim proxy 한계도 기록.

@@ -2419,3 +2419,21 @@
 - Reproducibility caveat: `--cl_noise` and `--cl_noise_fp` seed each env with `7919 * len(lean_used)`, but `lean_used` increments only after an IK success. A preceding IK failure therefore changes later envs' random noise. Fixed ordering is repeatable, but the per-episode noise is not invariant to batch composition/order, weakening matched comparisons.
 - `--cl_edge_q` coordinates/sign are correct for the configured positive margin (local `t_b[0]`, sorted tine-derived gap centers, base shift along basket x); current Q2 18 mm margin is inside the modeled gap span. There is no validation against a margin exceeding that span.
 - Outcome: no clear quadrant-sign or FK/TCP-frame defect found in the reviewed configured cases. The review's two actionable findings are the false `re-solved` count and missing lower height bound; the other items above are explicit untested input boundaries. Full regression suite: `bash calibration/run.sh tests` 38/38 passed (32.67 s; sandbox UDP socket restriction required approved execution). Commit `9301ede`; no data/config/code changes.
+
+## 2026-10-15 Codex — AI: Q1 relative-pose change vs transport path
+- Joined all 65 Q1 plan names in `calibration/data/basket/random_20261014_224608/replay.jsonl` to their plan JSONs, and both matching observations per name in `rl/logs/basket/replay_q1nt_l05.json` (130 episodes). Recomputed H from logged joint radians using `FK + 0.165 m TCP`; this reproduces AG's Q1 standard deviations: H-y 1.55 mm at `in_hand`, 9.90 mm at `pre`.
+- Per plan, transport path metric uses the same scalar arc definition as `expert.drive`: sum over segments of the maximum absolute joint waypoint increment, across `lift` and `to_above`. J4/J5/J6 travel is cumulative absolute waypoint rotation; maximum segment step is a waypoint proxy, not a measured peak velocity. Outcomes are pair-mean absolute change in H-y and pair-mean absolute H-y difference from `in_hand` to `pre`.
+
+| Plan feature | Range / typical | Spearman ρ with abs H-y change | p | Spearman ρ with pre-vs-in-hand abs H-y delta | p |
+|---|---:|---:|---:|---:|---:|
+| lift + carry scalar arc (°) | median 194.7; p10–p90 184.5–196.3 | −0.019 | .878 | −0.345 | .005 |
+| carry (`to_above`) scalar arc (°) | median 185.2; p10–p90 174.9–187.0 | −0.003 | .982 | −0.392 | .001 |
+| cumulative J4 travel (°) | median 185.6; p10–p90 175.0–187.0 | −0.005 | .969 | −0.407 | <.001 |
+| cumulative J5 travel (°) | median 62.7; p10–p90 51.0–71.6 | +0.311 | .012 | +0.260 | .037 |
+| cumulative J6 travel (°) | median 21.4; p10–p90 13.2–29.7 | +0.116 | .359 | +0.314 | .011 |
+| max J4 waypoint step (°) | median 17.4; p10–p90 13.5–19.5 | +0.017 | .893 | +0.099 | .430 |
+| max J6 waypoint step (°) | median 1.88; p10–p90 1.20–2.75 | +0.153 | .223 | +0.358 | .003 |
+
+- H-y change magnitude median 10.31 mm, p90 15.59 mm, max 72.45 mm across the two repeats per plan. The direction is not “shorter is better” in this sample: longer stored `to_above` paths correlate with smaller measured H-y change. Larger cumulative J5/J6 travel correlates with greater change, but these plan features are confounded and not randomized.
+- The replay parser defaults transport to `--speed 20 deg/s`; the source run used that fixed speed for every plan. Therefore this dataset has no speed contrast and cannot answer whether slowing down reduces slip. Path waypoint data has no timestamps; max waypoint increment is not peak joint speed. `pre` follows the stored `to_above` leg plus two dynamically solved closed-loop re-aim iterations; those generated re-aim paths are not present in the plan JSON. The observed `in_hand`→`pre` change cannot be attributed to carry alone, nor to any one joint/path feature.
+- Conclusion: this is exploratory association only, on the tuned seed-5014 Q1 plans; no causal/holdout claim. A speed test needs matched plans and identical settings with at least two transport speeds, while saving H at the end of lift, after carry, and after each re-aim. CPU-only analysis; no Isaac/GPU, robot, camera, or source/data edits.
