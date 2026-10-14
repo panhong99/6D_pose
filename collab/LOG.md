@@ -1961,3 +1961,25 @@
 - **해석 한계:** 이 결과는 목표 분면 안 13점 수직 하강의 IK 수렴 및 들어올린 직후 정적 표본 clearance만 다룬다. 운반/RRT, 전 구간 충돌, 바구니 삽입 충돌은 검사하지 않았다. IK 100%는 작업 성공률이 아니다. 접시 y offset 표본에 0 cm가 빠져 있어 기준 접시 y=0.339 m 자체는 포함되지 않으며, 가까운 두 표본은 −2/+2 cm다. clearance ratio<1.3은 채택한 여유 미달이지 모든 경우의 실제 접촉을 뜻한다고 과장하지 않는다.
 - 산출물(로컬 데이터, git 미포함): `calibration/data/basket/reach_parallel_20261014_v2/basket_reach_map.json`; `ik_rate_plus_x.png`, `ik_rate_minus_x.png`, `ik_rate_either.png`, `lift_collision_margin.png`. 그림은 시각 확인 완료.
 - 구현 커밋 `47f3684` (`calibration/goal1_offline.py` 기존 역할 파일에 함수 추가). 검증 `bash calibration/run.sh tests`: **36/36 통과, 36.35 s**. T 후속 코드해시 시험 `2e222f1/e802ce1`; U 최신 비판 재집계 `2e75fee`; S 통합 `449a056`.
+
+## 2026-10-15 00:xx Codex — U4 최신 sim 원시결과 비판 재집계 (read-only)
+- 재집계 대상: `replay_stage2_heldout_v3_20261014.json`, `replay_q3lean_05.json`, `replay_q3lean_m05.json`, `replay_flip2_{a,b,c}.json`, `replay_q4lean_{1,05}.json`. 원본 JSON의 `results` 경로 수, episode별 `final.low`, `quadrant_ok`, `landed_gap/target_gap`, `sim_rate`를 직접 계산했다. replica 표본은 경로당 2회(heldout v3는 3회)이며 성공률 분모는 경로 수로 평균했다.
+
+| 실행 | 분면 | 경로 n | low 중앙값 mm | low<60 mm | 앉음 & quadrant/gap exact | strict sim_rate |
+|---|---:|---:|---:|---:|---:|---:|
+| heldout v3 | Q1 | 30 | 49.2 | 64/90 | 4.4% | 0.0% |
+| heldout v3 | Q2 | 46 | 90.2 | 17/138 | 0.0% | 0.0% |
+| heldout v3 | Q3 | 39 | 67.0 | 52/117 | 42.7% | 1.7% |
+| heldout v3 | Q4 | 45 | 46.6 | 112/135 | 83.0% | 0.0% |
+| Q3 lean 0.5 | Q3 | 115 | 48.0 | 192/230 | 78.7% | 0.9% |
+| Q3 lean −0.5 | Q3 | 115 | 48.0 | 230/230 | 0.0% | 0.9% |
+| flip2 a (Q1 +2.5cm) | Q1 | 65 | 47.5 | 91/130 | 43.8% | 0.0% |
+| flip2 b (Q1 +3.5cm) | Q1 | 65 | 67.7 | 62/130 | 20.8% | 0.0% |
+| flip2 c (Q1 +3cm) | Q1 | 65 | 47.9 | 87/130 | 38.5% | 0.0% |
+| flip2 a/b/c | Q2 | 55 | 85.7/106.0/76.8 | 8/110, 3/110, 0/110 | 0/55, 0.9/55, 0/55 | 모두 0.0% |
+| Q4 lean 1.0 / 0.5 | Q4 | 86 | 46.6 / 46.6 | 142/172, 170/172 | 82.0% / 98.3% | 모두 0.0% |
+
+- `seated & exact`는 low<60 mm AND quadrant_ok AND landed_gap==target_gap로 산출했다(heldout v3에는 `seated` 필드가 없어 원시 low에서 계산). 60 mm는 코드가 쓰는 레일 근접 proxy이지 독립 실물 접촉 검증은 아니다. strict sim_rate는 안정 정지 등 더 강한 기존 게이트를 통과한 비율이며 relaxed seated/exact와 구분해야 한다.
+- 재생 전후의 `results[].run` 이름 목록은 Q3 lean 0.5/−0.5, flip2 a/b/c, Q4 lean 1/0.5 각각 동일한 순서·경로 집합이다. paired 비교로는 Q3 −0.5가 230/230 낮게 내려왔어도 exact 0/115이며, 유효 landing 216회 모두 +1칸이고 14회는 `landed_gap=-1` 미착지 sentinel이다. Q4 0.5는 1.0보다 앉음&exact 70.5/86→84.5/86로 개선됐지만 strict 성공은 여전히 0이다. Q1 +2.5cm가 이 세 후보 중 최고(28.5/65)이나 heldout v3 Q1은 4.4%라 일반화 개선은 입증되지 않았다. Q2는 느슨한 정확 칸 비율이 높아지는 경우에도 low<60과 strict 성공이 0에 가까워 안정 삽입 개선으로 볼 수 없다.
+- 범위·검증 한계: replay JSON에는 적용한 basket/plate 교란 설정의 전체 메타데이터가 없어 SYSTEM_SPEC의 배치 흔들기 범위와 동일하게 생성됐는지 이 결과 파일만으로 확인할 수 없다. `lean`은 unsigned이므로 부호 있는 접시 각도 주장은 여기서 재검증할 수 없다. replica는 새 독립 경로가 아니라 각 경로의 반복 재생이다. 실기 성능으로 해석하지 않는다. 코드 변경 없음.
+- 표본 경로: 위 파일들은 `rl/logs/basket/` 아래에 있다. 계산은 인라인 Python으로 실행했으며 새 스크립트/데이터 파일을 만들지 않았다.
