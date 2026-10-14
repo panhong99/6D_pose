@@ -4,7 +4,7 @@
   python calibration/camera_tools.py marker [--serial S] [--marker_mm 100]        live ArUco check + averaged report
   python calibration/camera_tools.py probe [--serial S | --image F] [--marker_mm M]   identify an unknown marker board
   python calibration/camera_tools.py locate                                       plate position vs the RL sim spot
-  python calibration/camera_tools.py pins --out NEW_DIR                           saved wrist photos only; numbered diagnostic overlays
+  python calibration/camera_tools.py pins --out NEW_DIR [--layout MEASURED.json]  saved wrist photos only; numbered diagnostic overlays
   python calibration/camera_tools.py basket_stats --out NEW_DIR                   fixed camera repeatability; --marker_size_m is actual printed size
   python calibration/camera_tools.py pin_layout --labels LABELS.json --out NEW_DIR   ray/height-plane measurement from checked pixel labels
   python calibration/camera_tools.py plate_angle --req wrist_above.req.json --out NEW_DIR  RGB disk silhouette yaw diagnostic
@@ -738,8 +738,9 @@ def _pin_line_match(context, p0, p1, Tcb, K, axis, search_mm):
                 model_uv=base_uv.tolist(), detected_uv=corrected.tolist())
 
 
-def wrist_pins(req, cfg, out, image=None, rotate='auto', search_mm=8.0):
-    """Stored image only. Pair physical rows by equal model x; display top-to-bottom IDs within each quadrant.
+def wrist_pins(req, cfg, out, image=None, rotate='auto', search_mm=8.0, layout=None):
+    """Stored image only. Pair model rows by equal x or checked measured rows by nearby x.
+    Display top-to-bottom IDs within each quadrant.
     Auto rotation aligns the two physical rows left-to-right in the saved display. Raw pixel geometry stays in JSON.
     Rejected/occluded pins retain their model IDs; no automatic robot correction is performed."""
     if not 0 < search_mm <= 8:
@@ -766,41 +767,75 @@ def wrist_pins(req, cfg, out, image=None, rotate='auto', search_mm=8.0):
     context = _pin_image_context(img, cfg)
     pins = []
     pin_tops_base = []
-    for i, (p0, p1) in enumerate(basket_pins_in_base(Tbb)):
+    if layout is None:
+        pin_geometry = [(p0, p1, None) for p0, p1 in basket_pins_in_base(Tbb)]
+    else:
+        measured = json.loads(Path(layout).read_text())
+        pin_geometry = []
+        for entry in measured['pins']:
+            if entry.get('review') != 'checked' or entry.get('row') not in (
+                    'pair_A_row_plus', 'pair_A_row_minus', 'pair_B_row_plus', 'pair_B_row_minus'):
+                raise ValueError('Measured layout requires checked pins with one of four named rows')
+            endpoints = [np.asarray(entry[k], float) for k in ('base_basket_xyz', 'top_basket_xyz')]
+            if any(v.shape != (3,) or not np.isfinite(v).all() for v in endpoints):
+                raise ValueError('Measured pin endpoints must be finite basket-frame xyz')
+            p0, p1 = [(Tbb @ np.r_[v, 1.])[:3] for v in endpoints]
+            pin_geometry.append((p0, p1, entry['row']))
+    for i, (p0, p1, row_name) in enumerate(pin_geometry):
         local = (Tbi @ np.r_[p0, 1])[:3]
         match = _pin_match(img, context, p0, p1, Tcb, K, axis, search_mm)
-        pins.append(dict(model_id=i, local_xyz=local.tolist(), **match))
+        pins.append(dict(model_id=i, local_xyz=local.tolist(), row=row_name, **match))
         pin_tops_base.append(np.asarray(p1, float))
-    # Four rows, two rows per physical pair, independent of pixel nearest-neighbour ambiguity.
-    rows = sorted(set(round(p['local_xyz'][1], 5) for p in pins))
     groups = []
-    for row0, row1 in zip(rows[::2], rows[1::2]):
-        a = {round(p['local_xyz'][0], 5): p for p in pins if round(p['local_xyz'][1], 5) == row0}
-        b = {round(p['local_xyz'][0], 5): p for p in pins if round(p['local_xyz'][1], 5) == row1}
-        for x in sorted(a.keys() & b.keys()):
-            p, q = a[x], b[x]
-            if 'model_uv' not in p or 'model_uv' not in q:
-                continue
-            yc = (row0+row1)/2
-            # Same basket-frame convention as plate_plans.basket_gaps: +y is left.
-            quadrant = ('Q2' if yc >= 0 else 'Q1') if x >= 0 else ('Q3' if yc >= 0 else 'Q4')
-            confirmed = p['status'] == q['status'] == 'detected'
-            corrections = [p['correction_mm'], q['correction_mm']]
-            if confirmed and abs(corrections[0]-corrections[1]) > 3.0:
-                confirmed = False
-                status = 'pair_disagreement'
-            else:
-                status = 'detected' if confirmed else 'partial_or_occluded'
-            dx_mm = float(np.mean(corrections)) if confirmed else None
-            # The observed correction is along basket +x only.  Rejected pairs have no
-            # usable target; do not silently return an uncorrected model point.
-            gap_centre = ((pin_tops_base[p['model_id']] + pin_tops_base[q['model_id']]) / 2
-                          + axis * (dx_mm / 1000)).tolist() if confirmed else None
-            groups.append(dict(quadrant=quadrant, model_pin_ids=[p['model_id'], q['model_id']],
-                               midpoint_uv=np.mean([p['model_uv'][1], q['model_uv'][1]], 0).tolist(),
-                               status=status, correction_mm=dx_mm,
-                               gap_centre_base_xyz=gap_centre,
-                               local_x_m=x, row_y_m=[row0, row1]))
+    if layout is None:
+        # Model pins share exactly the same x on the two rows of each pair.
+        rows = sorted(set(round(p['local_xyz'][1], 5) for p in pins))
+        pair_ids = []
+        for row0, row1 in zip(rows[::2], rows[1::2]):
+            a = {round(p['local_xyz'][0], 5): p for p in pins if round(p['local_xyz'][1], 5) == row0}
+            b = {round(p['local_xyz'][0], 5): p for p in pins if round(p['local_xyz'][1], 5) == row1}
+            pair_ids.extend((a[x], b[x]) for x in sorted(a.keys() & b.keys()))
+    else:
+        # Measured pins can have slightly different x in the two physical rows.
+        pair_ids = []
+        for pair_name in ('A', 'B'):
+            a = sorted((p for p in pins if p['row'] == f'pair_{pair_name}_row_minus'),
+                       key=lambda p: p['local_xyz'][0])
+            b = sorted((p for p in pins if p['row'] == f'pair_{pair_name}_row_plus'),
+                       key=lambda p: p['local_xyz'][0])
+            unused = set(range(len(b)))
+            for p in a:
+                if not unused:
+                    break
+                j = min(unused, key=lambda k: abs(b[k]['local_xyz'][0] - p['local_xyz'][0]))
+                if abs(b[j]['local_xyz'][0] - p['local_xyz'][0]) <= 0.008:
+                    unused.remove(j)
+                    pair_ids.append((p, b[j]))
+    for p, q in pair_ids:
+        x = round((p['local_xyz'][0] + q['local_xyz'][0]) / 2, 5)
+        row0, row1 = sorted((p['local_xyz'][1], q['local_xyz'][1]))
+        if 'model_uv' not in p or 'model_uv' not in q:
+            continue
+        yc = (row0+row1)/2
+        # Same basket-frame convention as plate_plans.basket_gaps: +y is left.
+        quadrant = ('Q2' if yc >= 0 else 'Q1') if x >= 0 else ('Q3' if yc >= 0 else 'Q4')
+        confirmed = p['status'] == q['status'] == 'detected'
+        corrections = [p['correction_mm'], q['correction_mm']]
+        if confirmed and abs(corrections[0]-corrections[1]) > 3.0:
+            confirmed = False
+            status = 'pair_disagreement'
+        else:
+            status = 'detected' if confirmed else 'partial_or_occluded'
+        dx_mm = float(np.mean(corrections)) if confirmed else None
+        # The observed correction is along basket +x only. Rejected pairs have no
+        # usable target; do not silently return an uncorrected model point.
+        gap_centre = ((pin_tops_base[p['model_id']] + pin_tops_base[q['model_id']]) / 2
+                      + axis * (dx_mm / 1000)).tolist() if confirmed else None
+        groups.append(dict(quadrant=quadrant, model_pin_ids=[p['model_id'], q['model_id']],
+                           midpoint_uv=np.mean([p['model_uv'][1], q['model_uv'][1]], 0).tolist(),
+                           status=status, correction_mm=dx_mm,
+                           gap_centre_base_xyz=gap_centre,
+                           local_x_m=x, row_y_m=[row0, row1]))
     # Display rotation is explicit provenance; no calibration transform changes.
     if rotate == 'auto':
         vectors = [np.array(pins[g['model_pin_ids'][1]]['model_uv'][1])-pins[g['model_pin_ids'][0]]['model_uv'][1] for g in groups]
@@ -837,10 +872,15 @@ def wrist_pins(req, cfg, out, image=None, rotate='auto', search_mm=8.0):
                   display_rotation_deg=rotation, numbering='quadrant, top-to-bottom in displayed image; hidden IDs retained',
                   quadrant_basis='basket frame: +x far, +y left; Q1 far/right, Q2 far/left, Q3 near/left, Q4 near/right',
                   correction_axis='basket +x; diagnostic only', search_mm=search_mm,
-                  gap_centre_definition='midpoint of the two model pin tips, shifted by confirmed basket +x image correction; diagnostic only',
+                  gap_centre_definition=('midpoint of two measured pin tips, shifted by confirmed basket +x image correction; diagnostic only'
+                                         if layout else 'midpoint of two model pin tips, shifted by confirmed basket +x image correction; diagnostic only'),
                   confirmed_pairs=sum(g['status'] == 'detected' and 'number' in g for g in groups),
-                  visible_model_pairs=sum('number' in g for g in groups), pins=pins, pairs=groups,
-                  accuracy_note='No measured 3D ground truth; mm offsets are model-to-image fits, not absolute accuracy.')
+                  visible_model_pairs=sum('number' in g for g in groups) if layout is None else None,
+                  visible_layout_pairs=sum('number' in g for g in groups), pins=pins, pairs=groups,
+                  layout_source=str(Path(layout).resolve()) if layout else 'parametric_model',
+                  accuracy_note=('Measured layout comes from manually labelled images and assumed height planes; '
+                                 'using its source image for detection is in-sample and not an independent accuracy test.'
+                                 if layout else 'No measured 3D ground truth; mm offsets are model-to-image fits, not absolute accuracy.'))
     (out/'pairs.json').write_text(json.dumps(result, indent=2))
     return result
 
@@ -857,9 +897,9 @@ def pins_mode(a, cfg):
     rows = []
     for req in reqs:
         try:
-            r = wrist_pins(req, cfg, out/f'{req.parent.name}_{req.stem}', a.image, a.rotate, a.search_mm)
+            r = wrist_pins(req, cfg, out/f'{req.parent.name}_{req.stem}', a.image, a.rotate, a.search_mm, a.layout)
             offsets = [g['correction_mm'] for g in r['pairs'] if g['status'] == 'detected' and 'number' in g]
-            rows.append(dict(photo=str(req), detected_pairs=r['confirmed_pairs'], visible_pairs=r['visible_model_pairs'],
+            rows.append(dict(photo=str(req), detected_pairs=r['confirmed_pairs'], visible_pairs=r['visible_layout_pairs'],
                              median_dx_mm=float(np.median(offsets)) if offsets else None, display_rotation=r['display_rotation_deg']))
         except (FileNotFoundError, ValueError) as e:
             rows.append(dict(photo=str(req), error=str(e)))
@@ -1085,6 +1125,7 @@ if __name__ == '__main__':
     p.add_argument('--dictionary', default=None)
     p.add_argument('--out', type=Path, help='pins / basket_stats: new output directory')
     p.add_argument('--labels', type=Path, help='pin_layout: checked pin root/tip pixel labels JSON')
+    p.add_argument('--layout', type=Path, help='pins: measured pin layout JSON, offline diagnostic only')
     p.add_argument('--plate_radius_m', type=float, default=0.134, help='plate_angle: assumed dish outer radius')
     p.add_argument('--rotate', choices=('auto', '0', '90', '270'), default='auto', help='pins: display rotation, raw projection unchanged')
     p.add_argument('--search_mm', type=float, default=8.0, help='pins: maximum local correction along basket x')
