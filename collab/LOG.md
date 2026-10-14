@@ -1,5 +1,14 @@
 # LOG
 
+## 2026-10-14 Codex — O 티칭 데모 안전 오프라인 판정기
+- `calibration/demo_audit.py`의 `demo_audit(full_json) -> dict`와 `--demo`/`--all --out` CLI를 추가했다(코드 커밋 **6f2d618**). 기록 JSON/robot_state만 읽으며 로봇·카메라 연결은 없다. 저장 관절 → M1013 FK로 TCP/속도를 계산하고, 정지구간 baseline 대비 6축 `tool_force`/`ext_torque`, `plate_plans.library_checkers`의 frame/table clearance를 검사한다. 10 mm voxel, 약 0.1 s 간격이며 이벤트 시간·관절 자세를 보고한다.
+- wrench 선별 임계는 stationary median + `8 × 1.4826 × MAD`, 하한 force **50 N**, torque **40 N·m**다. full_11~13 관측 최대 baseline residual(33.1 N, 36.8 N) 위에서 full_14 이상치를 분리하기 위한 **데이터셋 선별 휴리스틱**으로, 제조사 안전 한계나 실기 보호 기준은 아니다.
+- 회귀 `calibration/test_demo_audit.py`: full_11~14 중 **full_14만 unsafe**, wrench 이벤트와 frame 여유 위반을 확인. `py_compile` 및 통합 회귀 **1/1 통과(16.2 s)**. JSON 결과 `calibration/data/teach/demo_audit_full_11_14_20261014_v2/audit.json`.
+- 결과: full_11/12/13 SAFE(screen pass), full_14 UNSAFE. full_14 t=214.01 s에서 baseline 대비 force **260.2 N**, torque **127.9 N·m** 피크(원 기록 최대 성분 247.2 N/110.7 N·m); 후속 이벤트 t=248.37/256.81 s. Frame 최소 clearance **0 mm** 대 50 mm margin, sampled 위반구간 208.1–216.5 s 및 246.3–347.9 s. 첫 구간은 wrench 이상시점과 겹치고, 두 번째 긴 구간은 힘 임계 초과와 맞지 않아 cell/mesh 모델 false positive 가능성도 있다. Table 최소 clearance 80 mm, 20 mm margin은 통과.
+- 티칭 기록 최대 속도: joint axis **16.05°/s**, FK TCP **172.8 mm/s**(0.165 m tool), 기록 flange **138.9 mm/s**. 이는 관측값이지 재생 제한/실기 안전 속도가 아니다. 본 screen은 swept-volume나 접시 형상 충돌을 인증하지 않는다. 현재 audit의 분면 값은 full JSON에서 읽고, full_11의 manifest 값(Q4)과 file 값(Q3) 불일치는 다음 S에서 manifest 우선으로 고친다.
+- 검증 실행: `MPLCONFIGDIR=/tmp/mpl-cache /home/pan/miniconda3/envs/foundationpose/bin/python calibration/demo_audit.py --all --out calibration/data/teach/demo_audit_full_11_14_20261014_v2/audit.json`. 결과 파일은 git에 추가하지 않았다.
+- 작성자: Codex
+
 ## 2026-10-14 Codex — N 실제 Q2/Q3/Q4 라벨의 조건부 3D 역투영 및 모델 비교
 - 보스가 시각 확인한 realQ2/Q3/Q4 픽셀 라벨을 저장 K, `T_base_flange @ T_flange_cam`, `T_base_basket`와 rail/tip 높이평면으로 역투영했다. Q2는 뿌리 y를 바로잡은 최신 `labels_full_realQ2_codex_verified_20261014_v2.json` 사용. Q3/Q4는 각 Codex 검증본을 사용했다. 모델 비교는 현재 `rl/basket.yaml`의 번호 방향·분면별 pitch/clip/lean을 반영했다.
 - **70개 핀 항목** 중 root 68, tip 66, 완전 root-tip 66쌍, root-only 2, 완전 가림 2. 6개 사진줄의 모델 대비 root x MAE는 가중 평균 **1.69 mm**, tip x MAE **2.96 mm**. 추정 피치 root/tip (mm): Q2 `17.62/17.28`, `17.47/17.12` (모델 17.56); Q3 `17.34/17.18`, `17.15/16.78` (모델 17.40); Q4 `17.46/16.68`, `17.26/16.61` (모델 17.87). 모델 줄 y 대비 median offset: Q2 −12.13/−13.15 mm, Q3 −8.94/−11.76 mm, Q4 +1.75/+16.73 mm.
