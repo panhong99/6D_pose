@@ -452,5 +452,32 @@ class CameraPlaneTests(unittest.TestCase):
         self.assertIsNone(result['yaw_error_deg'])
 
 
+class BasketGapNumbering(unittest.TestCase):
+    def test_pin_gap_maps_far_to_near_numbering(self):
+        import plate_plans
+
+        # New basket pose: basket +x points away from the robot.
+        Tbb = make_T(R.from_euler('z', 0.1, degrees=True).as_matrix(),
+                     [0.807, -0.192, 0.0])
+        Tbb_reversed = make_T(R.from_euler('z', 180, degrees=True).as_matrix(),
+                              [0.807, -0.192, 0.0])
+        gaps = plate_plans.basket_gaps()
+        self.assertEqual({q: len(gaps[q]) for q in gaps},
+                         {'Q1': 6, 'Q2': 8, 'Q3': 12, 'Q4': 12})
+        for q, qgaps in gaps.items():
+            xs = [float(g[0]) for g in qgaps]
+            self.assertTrue(all(a < b for a, b in zip(xs, xs[1:])), q)
+            for pin in range(1, len(qgaps) + 1):
+                # Number 1 is farthest; model gap arrays are robot-side -> far-side.
+                self.assertEqual(plate_plans.pin_gap(Tbb, q, pin), len(qgaps) - pin,
+                                 f'{q} pin {pin}')
+                self.assertEqual(plate_plans.pin_gap(Tbb_reversed, q, pin), pin - 1,
+                                 f'reversed {q} pin {pin}')
+            with self.assertRaises(ValueError):
+                plate_plans.pin_gap(Tbb, q, 0)
+            with self.assertRaises(ValueError):
+                plate_plans.pin_gap(Tbb, q, len(qgaps) + 1)
+
+
 if __name__ == '__main__':
     unittest.main()
