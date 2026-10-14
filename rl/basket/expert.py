@@ -231,6 +231,9 @@ def make_cfg(n, viewer, torsion_m):
     return cfg
 
 
+_CL_CALLS = [0]
+
+
 def closed_loop_paths(env, rows, who, above_m=0.11, extra=0.005, dz=0.0, lean=1.0, dx=0.0, top=False, dx_q=None, lean_q=None, dz_q=None, edge_q=None, pin_dx=None, top_q=None, noise=None, blind_h=None, noise_fp=None, gate=None):
     """(10/14) per env (above, descend) joint paths (deg) from the plate actually in the hand now: the plate turns ~9 deg
     in the grip on the carry (Isaac), so the planned descent lands it 3-4 gaps off.  Keeps the plate's turn about the
@@ -245,6 +248,7 @@ def closed_loop_paths(env, rows, who, above_m=0.11, extra=0.005, dz=0.0, lean=1.
     qs = robot.data.joint_pos[:, :6].cpu().numpy()
     pp = (plate.data.root_pos_w - env.scene.env_origins).cpu().numpy()
     pq = plate.data.root_quat_w.cpu().numpy()
+    _CL_CALLS[0] += 1                                       # re-aim call number: independent noise per iteration, same per env
     out, lean_used, gated = [], [], []
     for k, i in enumerate(who):
         r = rows[i]
@@ -255,12 +259,12 @@ def closed_loop_paths(env, rows, who, above_m=0.11, extra=0.005, dz=0.0, lean=1.
         pk = pp[k].copy()
         if noise:                                            # (10/15) measurement noise of the in-hand plate pose (real: FP)
             import zlib                                      # reproducible across processes (Codex U6: hash() is salted)
-            rng_ = np.random.default_rng(zlib.crc32(f"{r['name']}|{k}|{noise}".encode()) + 7919 * len(lean_used))
+            rng_ = np.random.default_rng(zlib.crc32(f"{r['name']}|{k}|{noise}|call{_CL_CALLS[0]}".encode()))
             pk = pk + rng_.normal(0, noise[0] / 1000 / np.sqrt(3), 3)
             Rp = R.from_rotvec(rng_.normal(0, np.radians(noise[1]) / np.sqrt(3), 3)).as_matrix() @ Rp
         if noise_fp:                                         # (10/15) Codex AC empirical FP model: basket-axis heavy-tailed position
             import zlib                                      # (inliers p50, 15 % outliers matching p90/p95) + small normal tilt
-            rng_ = np.random.default_rng(zlib.crc32(f"fp|{r['name']}|{k}".encode()) + 7919 * len(lean_used))
+            rng_ = np.random.default_rng(zlib.crc32(f"fp|{r['name']}|{k}|call{_CL_CALLS[0]}".encode()))
             Rb = np.asarray(r['Tb'])[:3, :3]
             e = []
             for ax in ('x', 'y', 'z'):
@@ -419,11 +423,12 @@ def run_replay(args):
                                     top_q={k: bool(int(v)) for k, v in (x.split(':') for x in args.cl_top_q.split(',') if x)},
                                     noise=args.cl_noise, blind_h=json.loads(Path(args.cl_blind).read_text()) if args.cl_blind else None,
                                     noise_fp=json.loads(Path(args.cl_noise_fp).read_text()) if args.cl_noise_fp else None, gate=args.cl_gate)
+            new_ok = sum(a is not None for a, _ in fix)
             if prev_fix is not None:                         # no IK now: keep the previous re-aim (the robot is there)
                 fix = [f_ if f_[0] is not None else p_ for f_, p_ in zip(fix, prev_fix)]
             if it == 0:
                 first_fix = fix
-            print(f"[replay] closed loop {it + 1}/{args.cl_iter}: re-solved {sum(a is not None for a, _ in fix)}/{n}", flush=True)
+            print(f"[replay] closed loop {it + 1}/{args.cl_iter}: re-solved {new_ok}/{n} (with kept earlier aims {sum(a is not None for a, _ in fix)})", flush=True)
             drive(env, [a for a, _ in fix], ~open_, args.speed / 4, hold=30)
         descend = [b if b is not None else d for (_, b), d in zip(fix, descend)]
         top_ = first_fix if first_fix is not None else fix   # (10/14 night) a lower re-aim: back up through it to the first stop
@@ -495,7 +500,8 @@ def run_replay(args):
     loose = ((yaw_err < 15.0) & (lean < lean_ok) & (st['low'] < 0.095)).cpu().numpy() & held   # the any-gap error (2 cm pitch) does not hold per quadrant
     face_ok = np.where(target >= 0, loose & pin_ok, face_ok)
     in_quadrant = loose & (landed >= 0)                       # (10/14 night, stage 2) standing in SOME gap of its quadrant
-    seated = (st['low'] < 0.060).cpu().numpy()                # (10/14 night, Codex U) down on the 49 mm rail, not perched on the tines
+    seated = ((st['low'] < 0.060) & (st['low'] > 0.020)).cpu().numpy()   # (10/14 night, Codex U) down on the 49 mm rail, not perched;
+    # (10/15 Codex AJ) lower bound: a mesh point below 20 mm would be through the floor grid, not seated (none in tonight's finals: min 26 mm)
     np.set_printoptions(precision=1, suppress=True)
     print('[replay] final d_bottom mm', (st['d_bottom'] * 1000).cpu().numpy()[::args.per_run], flush=True)
     print('[replay] final gap err mm  ', (gap_err * 1000).cpu().numpy()[::args.per_run], flush=True)
