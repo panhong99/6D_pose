@@ -823,6 +823,17 @@ def run_plate(args):
                         subprocess.run([sys.executable, str(HERE / 'camera_tools.py'), 'pre_photo', '--req',
                                         str(out / f'wrist_{tag}.req.json')], check=True, timeout=60)
                         rec.event('wrist_snapshot', at=tag, png=str(png))
+                        share = Path('/dev/shm/fixed_latest.npz')         # (10/14) fixed RGB-D at the same stop: held-plate angle (L)
+                        t_f = time.time()
+                        while share.exists() and float(np.load(share)['t']) < t_ask and time.time() - t_f < 3:
+                            time.sleep(0.1)
+                        if share.exists() and float(np.load(share)['t']) >= t_ask:
+                            import shutil
+                            shutil.copy(share, out / f'fixed_{tag}.npz')
+                            (out / f'fixed_{tag}.json').write_text(json.dumps(dict(
+                                T_base_cam=np.asarray(Tbc).tolist(), T_base_basket=Tbb.tolist(), posj=rec.last['posj'],
+                                plan=str(cur['plan']))))
+                            print(f'   고정 카메라 RGB-D: {out / f"fixed_{tag}.npz"}', flush=True)
                         print(f'   손목 사진: {png} (초록 = 모델 핀 위치)', flush=True)
                     except Exception as exc:                        # a photo never blocks the run
                         print(f'   손목 사진 실패: {exc}', flush=True)
