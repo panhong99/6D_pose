@@ -479,5 +479,28 @@ class BasketGapNumbering(unittest.TestCase):
                 plate_plans.pin_gap(Tbb, q, len(qgaps) + 1)
 
 
+class SlotTargetGenerationTests(unittest.TestCase):
+    def test_slot_targets_reproduce_reviewed_table_and_refuse_overwrite(self):
+        import camera_tools
+
+        reference_path = DATA / 'basket' / 'slot_targets_20261014_codex_v1.json'
+        reference = json.loads(reference_path.read_text())
+        with tempfile.TemporaryDirectory() as tmp:
+            output = Path(tmp) / 'slot_targets.json'
+            generated = camera_tools.slot_targets(output)
+            # Row centers are rounded to 1 um; tolerate a one-unit decimal
+            # tie difference between the serialized review JSON and refit.
+            generated_cmp = json.loads(json.dumps(generated))
+            reference_cmp = json.loads(json.dumps(reference))
+            for actual, expected in zip(generated_cmp['targets'], reference_cmp['targets']):
+                for arow, erow in zip(actual['rows_used'], expected['rows_used']):
+                    axy = arow.pop('row_gap_centre_xy_m')
+                    exy = erow.pop('row_gap_centre_xy_m')
+                    np.testing.assert_allclose(axy, exy, atol=1.01e-6, rtol=0)
+            self.assertEqual(generated_cmp, reference_cmp)
+            with self.assertRaises(FileExistsError):
+                camera_tools.slot_targets(output)
+
+
 if __name__ == '__main__':
     unittest.main()

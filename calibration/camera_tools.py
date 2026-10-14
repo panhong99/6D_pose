@@ -9,6 +9,7 @@
   python calibration/camera_tools.py pin_layout --labels LABELS.json --out NEW_DIR   ray/height-plane measurement from checked pixel labels
   python calibration/camera_tools.py plate_angle --req wrist_above.req.json --out NEW_DIR  RGB disk silhouette yaw diagnostic
   python calibration/camera_tools.py plate_plane --rgb RGB.png --depth DEPTH.npy --meta SNAPSHOT.json --out NEW_DIR  saved RGB-D plane diagnostic
+  python calibration/camera_tools.py slot_targets --out NEW.json  reproducible quadrant/pin-to-gap table
 
 preview : one camera (default the first found) with depth colour map and centre depth; S saves to data/real_env/.
           --all / --serial: several cameras side by side (no saving).
@@ -1083,9 +1084,155 @@ def plate_plane(rgb, depth, K, T_base_cam, T_base_basket, depth_range_m=(0.20, 0
                 note='Saved RGB-D and synchronized poses only; diagnostic, not a wrist motion command')
 
 
+def slot_targets(out, slide_path=None, tines_path=None, audit_path=None):
+    """Build a stage-3 pin-number to basket-frame gap table from reviewed labels and 3D tine rows.
+
+    The output path is exclusive: choose a new path for every run so previous results are never overwritten.
+    This offline file operation does not access a camera, robot, simulator, or GPU.
+    """
+    import hashlib
+
+    root = Path(__file__).resolve().parents[1]
+    slide_path = Path(slide_path or root/'calibration/data/basket/boss_slide_20261014/tines_refined_codex.json')
+    tines_path = Path(tines_path or root/'calibration/data/basket/wrist_look/tines_3d_claude_20261014.json')
+    audit_path = Path(audit_path or root/'calibration/data/basket/realQ_verified_3d_model_audit_20261014_v5/verified_pin_3d_model_comparison.json')
+    out = Path(out)
+    if not out.is_absolute():
+        out = root/out
+    slide, measured, audit = (json.loads(p.read_text()) for p in (slide_path, tines_path, audit_path))
+    # plate_plans is the single source for model gap ordering and pin_gap numbering.
+    from plate_plans import basket_gaps, pin_gap
+    import numpy as np
+
+    gaps = basket_gaps()
+    counts = {q: len(v) for q, v in gaps.items()}
+    expected_tines = {q: count + 1 for q, count in counts.items()}
+    slide_checks = {}
+    labels = slide.get('labels', [])
+    for q, n_tines in expected_tines.items():
+        rows = {}
+        for label in labels:
+            if label.get('quadrant') == q:
+                rows.setdefault(label.get('row'), []).append(int(label['num']))
+        row_checks = {str(row): sorted(nums) == list(range(1, n_tines + 1))
+                      and len(nums) == n_tines and len(set(nums)) == n_tines
+                      for row, nums in rows.items()}
+        slide_checks[q] = {
+            'model_slots': counts[q], 'model_tines_per_row': n_tines,
+            'slide_numbering_by_row': {str(row): sorted(nums) for row, nums in sorted(rows.items())},
+            'both_rows_match_model_sequence': len(row_checks) == 2 and all(row_checks.values()),
+        }
+        if not slide_checks[q]['both_rows_match_model_sequence']:
+            raise ValueError(f'{q} boss-slide labels do not provide two complete numbered rows: {row_checks}')
+
+    # Basket +x points away from the robot; the measured reference yaw is +0.1 degree.
+    angle = np.radians(0.1)
+    Tbb = np.eye(4)
+    Tbb[:2, :2] = [[np.cos(angle), -np.sin(angle)], [np.sin(angle), np.cos(angle)]]
+    row_points = measured.get('quadrants', {})
+    targets = []
+    for q in ('Q1', 'Q2', 'Q3', 'Q4'):
+        for number in range(1, counts[q] + 1):
+            model_index = int(pin_gap(Tbb, q, number))
+            model_gap = np.asarray(gaps[q][model_index], dtype=float)
+            used_rows, measured_centres = [], []
+            extrapolated = False
+            for row_name, pins in sorted(row_points.get(q, {}).items()):
+                by_number = {int(pin['num']): np.asarray(pin['base'][:2], dtype=float) for pin in pins}
+                nums = np.asarray(sorted(by_number), dtype=float)
+                coords = np.asarray([by_number[int(n)] for n in nums], dtype=float)
+                if len(nums) < 2:
+                    continue
+                fit_x, fit_y = np.polyfit(nums, coords[:, 0], 1), np.polyfit(nums, coords[:, 1], 1)
+                pair, estimated = [], []
+                for tine_number in (number, number + 1):
+                    if tine_number in by_number:
+                        point = by_number[tine_number]
+                    else:
+                        point = np.asarray([np.polyval(fit_x, tine_number), np.polyval(fit_y, tine_number)])
+                        estimated.append(tine_number)
+                    pair.append(point)
+                centre = np.mean(pair, axis=0)
+                measured_centres.append(centre)
+                extrapolated |= bool(estimated)
+                used_rows.append({
+                    'row': row_name, 'estimated_tines': estimated,
+                    'tine_base_xy_m': {str(n): [round(float(v), 6) for v in point]
+                                       for n, point in zip((number, number + 1), pair)},
+                    # Match numpy's decimal rounding used by the reviewed source table.
+                    'row_gap_centre_xy_m': [float(np.round(v, 6)) for v in centre],
+                })
+            if not row_points.get(q):
+                target = model_gap.copy()
+                status, evidence, delta, error = 'model_only_no_3d', 'rl_basket_gaps_model', None, None
+            else:
+                if len(measured_centres) != 2:
+                    raise ValueError(f'{q} pin {number}: expected two 3D tine rows, got {len(measured_centres)}')
+                xy = np.mean(measured_centres, axis=0)
+                target = np.r_[xy, model_gap[2]]
+                status = 'measured_with_linear_edge_extrapolation' if extrapolated else 'measured'
+                evidence = '3d_measured_base_midpoint'
+                delta = [round(float(v), 2) for v in (target[:2] - model_gap[:2]) * 1000]
+                error = round(float(np.linalg.norm(target[:2] - model_gap[:2]) * 1000), 2)
+            targets.append({
+                'quadrant': q, 'pin_number': number,
+                'tines_bracketing_gap': [number, number + 1],
+                'model_gap_index_robot_to_far': model_index,
+                'gap_centre_basket_m': [round(float(v), 6) for v in target],
+                'evidence': evidence, 'status': status, 'rows_used': used_rows,
+                'model_gap_centre_basket_m': [round(float(v), 6) for v in model_gap],
+                'measured_minus_model_mm': delta, 'measured_model_xy_error_mm': error,
+            })
+
+    assumptions = audit.get('assumptions', {})
+    def source_name(path):
+        try:
+            return str(path.relative_to(root))
+        except ValueError:
+            return str(path)
+    result = {
+        'title': 'Quadrant/pin-number slot target map for basket insertion stage 3',
+        'units': 'm in basket frame; x away from robot, y left, z up',
+        'layout': {'basket_xy_m': [0.807, -0.192], 'dish_xy_m': [0.848, 0.339],
+                   'basket_yaw_deg': 0.1, 'basket_x_away_from_robot': True},
+        'numbering_rule': ('Pin N target lies between tines N and N+1; N=1 is farthest from robot. '
+                           'pin_gap(Tbb, model_qd, N) selects robot-to-far model gap index.'),
+        'sources': {
+            'boss_slide_labels': source_name(slide_path),
+            'boss_slide_sha256': hashlib.sha256(slide_path.read_bytes()).hexdigest(),
+            '3d_tine_result': source_name(tines_path),
+            '3d_tine_sha256': hashlib.sha256(tines_path.read_bytes()).hexdigest(),
+            'verified_3d_audit': source_name(audit_path),
+            'verified_3d_audit_sha256': hashlib.sha256(audit_path.read_bytes()).hexdigest(),
+            'planner': 'calibration/plate_plans.py basket_gaps/pin_gap',
+            'planner_data': 'rl/basket.yaml + rl/basket_env.py',
+            'basket_yaml': {'path': 'rl/basket.yaml', 'sha256': hashlib.sha256((root/'rl/basket.yaml').read_bytes()).hexdigest()},
+            'basket_geometry': {'path': 'rl/basket_env.py', 'sha256': hashlib.sha256((root/'rl/basket_env.py').read_bytes()).hexdigest()},
+            'pin_gap_implementation': {'path': 'calibration/plate_plans.py', 'sha256': hashlib.sha256(Path(__file__).with_name('plate_plans.py').read_bytes()).hexdigest()},
+        },
+        'slide_numbering_checks': slide_checks,
+        'model_slot_counts': counts,
+        'targets': targets,
+        'limitations': [
+            'Q1 has no 3D measured tine coordinates; model coordinates only.',
+            'Q2/Q3/Q4 3D backprojection depends on the saved wrist-camera calibration and assumed height planes.',
+            'Missing edge tines are linearly extrapolated from that row and explicitly marked; check rows_used.',
+            'Measured targets average base/floor XY midpoints of tines N and N+1 across the two rail rows; geometric target only, not collision or placement success.',
+        ],
+        '3d_backprojection_assumptions': assumptions,
+        '3d_label_counts': audit.get('counts', {}),
+    }
+    out.parent.mkdir(parents=True, exist_ok=True)
+    with out.open('x') as f:
+        json.dump(result, f, indent=2)
+        f.write('\n')
+    print(json.dumps({'out': str(out), 'target_count': len(targets), 'quadrants': counts,
+                      'all_slide_sequences_valid': all(x['both_rows_match_model_sequence'] for x in slide_checks.values())}))
+    return result
+
+
 def model_overlay(req, out=None):
-    """(10/14) Saved wrist photo + the current basket model's tines: colour per quadrant (Q1 green, Q2 magenta, Q3 orange,
-    Q4 blue, split at the centre clip), number = tine count from the clip.  For checking the model against the real rack."""
+    """Saved wrist photo + current basket tines; numbers follow the boss's far-to-near rule."""
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'rl'))
     import basket_env as be
     req = Path(req)
@@ -1339,6 +1486,10 @@ if __name__ == '__main__':
         plate_angle(a.req, a.out, a.plate_radius_m)
     elif a.mode == 'model_overlay':
         model_overlay(a.req, a.out)
+    elif a.mode == 'slot_targets':
+        if not a.out:
+            p.error('slot_targets requires --out <new JSON path>')
+        slot_targets(a.out)
     elif a.mode == 'plate_plane':
         print(json.dumps(plate_plane_mode(a), indent=2))
     elif a.mode == 'pre_photo':
