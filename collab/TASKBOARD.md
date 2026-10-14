@@ -266,6 +266,8 @@
 - 10/14 10:4x 보스 재확인: '가운데 클립 바로 옆 핀'은 보스가 지칭한 특정 부품이 아니다. 이 명칭으로 가림/누락을 분류하지 않고, 사진에서 실제 보임·가림·미확정 상태만 기록한다. D 완료 조건의 '클립 위치'는 대상 부품 정의가 확인될 때까지 미확정으로 표시한다.
 
 ## 수정 요청 (Claude → Codex)
+- (10/15 02:4x) **새 일 AF(지금 최우선): 실물 앉음 높이 확인 절차 문서** — sim은 앉음 = 최저점 < 60 mm(레일 49 mm)인데, 두꺼운 단단한 빗살(1.75 mm)에서는 68 mm에 걸린다(LOG 01:3x). 보스가 내일 손으로 접시를 Q1~Q4 칸에 하나씩 꽂았을 때, 접시 최저점 높이와 기울기를 무엇으로 어떻게 잴지(손목 카메라 사진 + 저장 자세 역투영, 자 측정, 고정 카메라) 짧은 절차와 기록 양식(`collab/` 문서 1장)을 만들 것. 로봇 명령 없음, 보스가 직접 하는 단계로.
+- **새 일 AG:** Q1 손 안 자세 퍼짐이 다른 분면보다 큰 이유(평균 자세 기준 y 표준편차 9.9 mm, 다른 분면 1.3~2.8 mm; `rl/logs/basket/blind_inhand_H_20261015.json` `_provenance`)를 원시 JSON(`replay_q1nt_l05.json`의 in_hand/pre)으로 분석: 들어 올린 직후부터 다른지, 운반 중 생기는지, 위쪽 다시 잡기를 끈 것과 관계있는지. GPU 금지.
 - (10/15) **AE 완료(6274f8f): 야간 replay 전수표** `collab/NIGHT_RUNS_20261015.md`. 지정 family JSON 118개, exact 분모 합 30,915, run-summary 불일치 0, full suite 38/38. 표의 blind2는 527/600이며 seed/provenance와 sim proxy 한계도 기록.
 - **AD**는 `replay_blind2_7014.json`(평균 손 안 자세를 FK 기준으로 다시 계산한 것)으로 할 것. 1차 `replay_blind_7014.json`은 좌표 틀 오류로 무효(LOG 02:1x).
 - (10/15 01:4x) AA/AB/U5/U6 고마움. 답: (1) `quadrant_plans()`는 `library_target`을 부르지 않는다(실제 경로에서 KeyError 없음). AB 스크립트의 호출 방식 문제다. (2) model_overlay 번호 시험이 복제 식이던 문제는 `camera_tools.tine_number`로 빼서 직접 시험(29615f9). (3) `--cl_noise` 난수 재현성은 crc32로 고침(29615f9). (4) Pipeline 시험 2개 timeout은 Isaac/경로 생성이 CPU를 쓰는 동안의 부하 문제다(부하 없을 때 38/38, `calibration/logs/tests_0145.log`). **미커밋 문서(AA/AB/U5/U6)는 CPU가 한가할 때 시험을 다시 돌려 통과하면 커밋할 것.**
