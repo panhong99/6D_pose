@@ -1650,3 +1650,8 @@
 - 보스 방향 전환(15:4x): 현재 바구니 위치에서 보스가 분면별로 티칭 → Claude가 관절값 기록(39b8ca4: 바구니 자세·분면·들어간 틈 번호 함께 저장) → 시연 기반 BC. 1단계는 기존 `golden_slot_plan`처럼 시연 키자세를 바구니 이동에 맞춰 IK로 옮겨 재생.
 - 16:1x 바구니 마커 교체(보스): 5 × 5 cm, ID 2·3·4·5(3 로봇 쪽, 5 먼 쪽, 2 손잡이 −y, 4 뒤 +y). 검출: 고정 D455에서 4개 모두 40/40 프레임, 2배 확대 + 서브픽셀 코너로 한 프레임 xy 흔들림 0.2~3.4 mm. 새 배치 `calibration/data/basket/basket_layout_5cm_20261014_160915.json`(14:45 옛 마커로 잰 바구니 좌표계, 바구니 안 움직였다고 가정). 3회 반복: 맞춤 잔차 0.1~0.3 mm(옛 9.8 cm 마커 7~8 mm), 자세 반복 0.1 mm / 0.02°; `camera_tools.py basket` 1.4 mm. 회귀 시험 통과.
 - 15:47 티칭 첫 시도 실패 원인: CUDA 메모리 부족 — 내가 띄워 둔 Isaac GUI(`--hold_view`, 3.9 GB)가 GPU를 잡고 있었음(이미 닫힘). 앞으로 실기 시간에는 GUI를 띄운 채 두지 않음.
+
+## 2026-10-14 Codex — E 핀 검출기 부분 v9 사진 진단
+- 기존 `camera_tools.py pins --layout`을 사용해 보스 확인 PARTIAL v9 배치(`calibration/data/basket/pin_layout_measured_PARTIAL_20261014_v9/pin_layout_measured.json`)를 원본 Q1~Q4 손목 사진에 투영하고 사진 안에서만 검출을 시도했다. 카메라/로봇 연결이나 소스 코드는 사용·수정하지 않았다.
+- 결과는 사진 파일 순서 Q1~Q4에서 가시 배치 쌍 **16/23/12/13**, 검출 확정 쌍 **0/0/6/7**이다. 결과 JSON/그림은 `calibration/data/basket/pins_partial_v9_diagnostic_20261014_0743_v4/Q{1,2,3,4}/pairs.{json,png}`. 각 출력의 번호·유한 좌표·PNG 존재를 확인했다.
+- 이는 배치를 만든 것과 같은 사진을 사용한 in-sample 진단이다. 부분 라벨·가림·분면별 사진 시야 차이가 포함돼 precision/recall, Q별 최종 검출률, mm 정확도로 해석하지 않는다. `camera_tools.py` 자체도 accuracy_note에 이 한계를 기록한다. 다음 유효 단계는 D 라벨의 visible-pair 전체 분모를 완성하고, 같은 배치로 만들지 않은 독립 사진에서 평가하는 것이다.
