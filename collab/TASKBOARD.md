@@ -93,7 +93,7 @@
 - 분담(보스 15:xx 변경, Codex 토큰 절약): **Claude가 네 분면 초안 라벨** → **Codex가 검증·수정**(확대해서 틀린 점만 고치고 이유를 LOG에) → **보스 확인** → 지적은 Claude가 반영 → 반복. Codex는 처음부터 새로 라벨링하지 말 것.
 - 입력: 보스가 분면마다 손목 사진 촬영(`bash calibration/run.sh wrist_look`, 카메라 거의 수직 아래, 분면 전체 + 클립 + 로봇 쪽 끝이 보이게) 후 분면 이름(로봇 기준 Q1 먼 오른쪽, Q2 먼 왼쪽, Q3 가까운 왼쪽, Q4 가까운 오른쪽)을 알려 줌. 파일 `calibration/data/basket/wrist_look/<시각>.raw.png` + `.json`(K, T_base_flange, T_flange_cam, T_base_basket).
 - 방법(10/14 오전 D2 방식 그대로): 확대 잘라 보기 → 빗살마다 **뿌리 = 세로 레일 접합점(노란 점, 보스 정의)**, **끝 = 빗살 끝** 픽셀 → 원본에 겹쳐 그려 확인 반복.
-- 번호: 줄마다 **클립 쪽부터 1, 2, …**(보스 개수: Q1 7, Q2 9, Q3 13, Q4 13). 한 쌍의 두 줄 모두. 가려진 빗살은 '가림'으로 표시하고 번호는 건너뛰지 않음.
+- 번호(**보스 슬라이드 10/14 15:xx가 정답**, `calibration/data/basket/boss_slide_20261014/tine_numbering_boss.pdf`, 빨강 Q3·연두 Q2·보라 Q1·하늘 Q4): **1 = 로봇에서 가장 먼 빗살**, 로봇 쪽으로 2, 3, … → Q3·Q4는 클립 옆이 1, **Q1·Q2는 바깥 끝(클립 반대)이 1**. 손목 보기 사진에서는 항상 화면 위가 1(Q2는 사진이 90° 돌아 있음). 개수 Q1 7, Q2 9, Q3 13, Q4 13. 두 줄 모두. 가려진 빗살은 '가림'으로 표시하고 번호는 건너뛰지 않음. 핀 N = N번과 N+1번 빗살 사이.
 - 출력: `calibration/data/basket/wrist_look/labels_full_<분면>_<날짜>.json`(사진, 줄, 번호, root_px, tip_px, 가림 여부) + 번호 붙인 겹침 PNG(보스 확인용) → `camera_tools.py pin_layout_measure`로 3D.
 - 완료 조건: 분면 빗살 전부(가림 제외) 번호 라벨 + 보스 시각 확인 'OK' + 3D 결과(간격·기울기·클립 거리) LOG 표. 모델(`rl/basket.yaml`, `rl/basket_env.py`) 반영은 Claude.
 
