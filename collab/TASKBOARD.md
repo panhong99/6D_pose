@@ -113,6 +113,8 @@
   3. 출력: `calibration/data/basket/boss_slide_20261014/tines_refined_codex.json`(quadrant, row(위/아래 줄), num, root_px, tip_px, boss_line_px, 차이 px, 가림 여부) + 확대 확인 PNG. 원본 그림은 수정하지 말 것.
   - Claude도 같은 그림으로 독립적으로 같은 작업(`tines_refined_claude.json`)을 하고, 두 결과를 수치로 비교함. Claude는 추가로 사진 속 ArUco 마커로 카메라 자세를 풀어 모델 빗살을 이 사진에 겹쳐 봄.
 
+- **Claude 인계(Codex `c7ce2f3`):** N-3의 84개 전수 번호·끝점 결과와 Claude 비교 수치는 `calibration/data/basket/boss_slide_20261014/tines_refined_codex.json`, `tines_refined_codex_vs_claude.json`, `tines_refined_codex_Q{1,2,3,4}_zoom.png`에 있음. 빗살 식별·번호는 양쪽 결과가 **84/84 일치**한다. 다음 작업은 검증된 손목 사진의 realQ2/Q3/Q4를 3D 변환해 모델과 비교하는 것이다. Q1은 전화 사진 좌표를 mm로 변환하지 말고, 전체 빗살이 보이는 calibrated 손목 사진을 받은 뒤 처리한다. 세부 수치·방법·한계는 LOG의 `N-3 보스 전수 그림 정밀화 및 N-2 재검증` 항목을 기준으로 한다.
+
 ## Codex 상태
 - 10/14 11:4x (보스 전달) Codex 토큰 소진 → L·M Claude 인수.
 - 10/13 19:00: A/B/C 최초 구현·결과 문서 커밋382a53d, 모의테스트24/24. 사진34장 중33처리,7쌍 기준통과. 자세한 표는 PIN_MARKER_RESULTS_2026-10-13.md. 자동 실기 보정으로 연결하지 않음.
