@@ -1476,3 +1476,12 @@
 ## 2026-10-14 09:00 Codex — 야간 최종 점검
 - 통합 부분 라벨 사진4장/핀26개와 역투영 핀26개 일치, 좌표 유한값 확인. 최종 D 지정 파일 둘은 없음. 클립 인접·가림 핀·번호 매핑, Q2/Q3 일부 간격 불일치, 모델 높이·hand-eye 가정 때문에 전체 배치 확정 불가. E 자동검출 precision/recall/mm오차 평가는 시작 조건인 전체 정답이 없어 미착수. 기존 A/B/C 완료와 G 영상진단 결과는 유지.
 - 결과: `calibration/data/basket/wrist_look/labels_20261013_190126_PARTIAL_20261014.json`, `calibration/data/basket/pin_layout_measured_PARTIAL_20261014/pin_layout_measured.json`, `calibration/data/basket/pin_model_comparison_PARTIAL_20261014.json`. `PARTIAL` 표기대로 연구용 검토 자료이며 실기 자동보정값 아님. 실로봇/그리퍼 명령·원본 덮어쓰기 없음. 지정 마감으로 자동 점검 PAUSED 처리.
+
+## 2026-10-14 Codex — WORK_RULES 적용 및 작업 전환
+- 보스 지시로 `collab/WORK_RULES.md`를 `TASKBOARD.md` 운영 규칙보다 우선 적용. 이전의 매시간 짧은 라벨링·기록 방식은 지침의 '계속 일한다'에 어긋났음. D는 이미 4시간 초과했고 최종 정답에 필요한 클립/가림 핀 육안 판정과 Q2/Q3의 약28mm 대 18mm 간격 불일치가 남았다. 시도: 자동 능선 검출→확대 수동 라벨→교차 시점 역투영. 자동 능선은 철망 교차에서 선을 잘못 이어 실패. 대안: 낮에 보스와 사진 오버레이 공동 검토, 별도 시점/깊이 계측 후 최종 정답 확정.
+- D는 보스 판단 대기로 작업판에 막힘 표시, 부분 26개는 보존. 선행 정답 없이 E의 최종 precision/recall을 주장하지 않되, E 입력·출력 계약과 회귀 검증은 독립 작업으로 계속 진행. D/E 완료 조건을 작업판에 추가. 로봇·그리퍼 명령 및 기존 데이터 덮어쓰기 없음.
+
+## 2026-10-14 Codex — E 출력 계약 준비(정답 평가 전)
+- `calibration/camera_tools.py wrist_pins`의 확정·번호 부여된 쌍에 `gap_centre_base_xyz`를 추가. 정의는 두 모델 핀 tip의 base 좌표 중점에 확정된 basket+x 영상 보정량을 더한 **진단값**; 미확정 쌍·화면 밖은 null. 기존 correction_mm·번호 체계 유지, 로봇 경로에는 연결하지 않음.
+- 저장 Q3 사진을 foundationpose Python(OpenCV5)으로 재실행: `calibration/data/basket/pins_e_contract_check_20261014_v3/`, 번호가 있는 확정1쌍의 number/correction_mm/유한XYZ 확인, 그 밖39쌍의 target null 확인. `py_compile`/`git diff --check` 통과. 전체 `CameraPinTests`는 `pipeline.py` import가 sandbox UDP socket을 열려다 PermissionError로 실행 불가; 해당 실패는 코드 단정 근거가 아님. 시스템 Python OpenCV4.6은 ArucoDetector 부재라 분석에 사용하지 않음.
+- 낮 시각 검토용 네 사진의 부분 라벨 그림 `calibration/data/basket/pin_review_checked_PARTIAL_20261014.png` 생성. Q2 줄/간격, 클립·가림 핀은 보스와 확인 필요. D 정답이 없으므로 E precision/recall/mm오차 및 80% 완료 판정은 보류.

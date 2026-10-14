@@ -765,10 +765,12 @@ def wrist_pins(req, cfg, out, image=None, rotate='auto', search_mm=8.0):
     axis = Tbb[:3, 0]
     context = _pin_image_context(img, cfg)
     pins = []
+    pin_tops_base = []
     for i, (p0, p1) in enumerate(basket_pins_in_base(Tbb)):
         local = (Tbi @ np.r_[p0, 1])[:3]
         match = _pin_match(img, context, p0, p1, Tcb, K, axis, search_mm)
         pins.append(dict(model_id=i, local_xyz=local.tolist(), **match))
+        pin_tops_base.append(np.asarray(p1, float))
     # Four rows, two rows per physical pair, independent of pixel nearest-neighbour ambiguity.
     rows = sorted(set(round(p['local_xyz'][1], 5) for p in pins))
     groups = []
@@ -789,9 +791,15 @@ def wrist_pins(req, cfg, out, image=None, rotate='auto', search_mm=8.0):
                 status = 'pair_disagreement'
             else:
                 status = 'detected' if confirmed else 'partial_or_occluded'
+            dx_mm = float(np.mean(corrections)) if confirmed else None
+            # The observed correction is along basket +x only.  Rejected pairs have no
+            # usable target; do not silently return an uncorrected model point.
+            gap_centre = ((pin_tops_base[p['model_id']] + pin_tops_base[q['model_id']]) / 2
+                          + axis * (dx_mm / 1000)).tolist() if confirmed else None
             groups.append(dict(quadrant=quadrant, model_pin_ids=[p['model_id'], q['model_id']],
                                midpoint_uv=np.mean([p['model_uv'][1], q['model_uv'][1]], 0).tolist(),
-                               status=status, correction_mm=float(np.mean(corrections)) if confirmed else None,
+                               status=status, correction_mm=dx_mm,
+                               gap_centre_base_xyz=gap_centre,
                                local_x_m=x, row_y_m=[row0, row1]))
     # Display rotation is explicit provenance; no calibration transform changes.
     if rotate == 'auto':
@@ -819,6 +827,9 @@ def wrist_pins(req, cfg, out, image=None, rotate='auto', search_mm=8.0):
             midpoint = np.rint(np.mean(points, 0)).astype(int)
             label = f"{quadrant}/{number} " + (f"{g['correction_mm']:+.1f}mm" if g['status'] == 'detected' else '?')
             cv2.putText(view, label, tuple(midpoint+np.array([5, -5])), cv2.FONT_HERSHEY_SIMPLEX, 0.38, colour, 1, cv2.LINE_AA)
+    for g in groups:
+        if 'number' not in g:
+            g['gap_centre_base_xyz'] = None  # Off-image match is not an addressable gap.
     out = Path(out)
     out.mkdir(parents=True, exist_ok=False)
     cv2.imwrite(str(out/'pairs.png'), view)
@@ -826,6 +837,7 @@ def wrist_pins(req, cfg, out, image=None, rotate='auto', search_mm=8.0):
                   display_rotation_deg=rotation, numbering='quadrant, top-to-bottom in displayed image; hidden IDs retained',
                   quadrant_basis='basket frame: +x far, +y left; Q1 far/right, Q2 far/left, Q3 near/left, Q4 near/right',
                   correction_axis='basket +x; diagnostic only', search_mm=search_mm,
+                  gap_centre_definition='midpoint of the two model pin tips, shifted by confirmed basket +x image correction; diagnostic only',
                   confirmed_pairs=sum(g['status'] == 'detected' and 'number' in g for g in groups),
                   visible_model_pairs=sum('number' in g for g in groups), pins=pins, pairs=groups,
                   accuracy_note='No measured 3D ground truth; mm offsets are model-to-image fits, not absolute accuracy.')
