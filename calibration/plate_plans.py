@@ -212,7 +212,7 @@ def set_next_slot(k):
     (TEACH_DIR / 'next_slot.json').write_text(json.dumps(dict(slot=k, updated=time.strftime('%Y-%m-%d %H:%M:%S'))))
 
 
-def teach_slot(k, rec, choose_gripper, lift_end_deg):
+def teach_slot(k, rec, choose_gripper, lift_end_deg, meta=None):
     """Human moves the robot with the pendant (jog / direct teaching); Enter stores the live joints + flange posx.
     The pipeline only READS joints here.  The gripper opens (Human choice) between `insert` and `retreat`."""
     print(f'\n=== 슬롯 {k} 티칭 ===\n펜던트로 로봇을 움직이세요 (이 동안 PC는 관절값만 읽습니다).\n'
@@ -235,12 +235,16 @@ def teach_slot(k, rec, choose_gripper, lift_end_deg):
             rec.event('teach_pose', slot=k, pose=name, **poses[name])
             print(f'     저장: posj {np.round(msg["posj"], 1).tolist()}', flush=True)
             break
+    meta = dict(meta or {})
+    if meta.get('quadrant'):                                 # (10/14 보스) BC label: where the plate actually went
+        ans = input(f'  [{meta["quadrant"]}] 접시가 들어간 틈 번호 (N = N번과 N+1번 빗살 사이, 1 = 로봇에서 가장 먼 빗살; 모르면 Enter) > ').strip()
+        meta['landed_pin'] = int(ans) if ans.isdigit() else None
     TEACH_DIR.mkdir(parents=True, exist_ok=True)
     path = TEACH_DIR / f'slot_{k:02d}.json'
     if path.exists():
         path.replace(path.with_name(f'slot_{k:02d}_{time.strftime("%Y%m%d_%H%M%S")}.json'))   # keep older teachings
     path.write_text(json.dumps(dict(slot=k, created=time.strftime('%Y-%m-%d %H:%M:%S'), poses=poses,
-                                    lift_end_deg=[float(v) for v in lift_end_deg], gripper_force=64), indent=1))
+                                    lift_end_deg=[float(v) for v in lift_end_deg], gripper_force=64, **meta), indent=1))
     print(f'슬롯 {k} 저장: {path}\n로봇은 펜던트로 홈에 돌려놓고, 자동 모드로 바꾼 뒤 run.sh connect 를 다시 실행하세요.', flush=True)
     return path
 

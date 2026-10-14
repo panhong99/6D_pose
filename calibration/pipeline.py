@@ -538,7 +538,8 @@ def run_plate(args):
         basket_delta, basket_T = None, None
         if args.insert == 'quadrant' and (args.place != 'basket' or not args.quadrant):
             raise SystemExit('--insert quadrant needs --place basket (measured markers) and --quadrant Q1..Q4')
-        if args.place == 'basket':                           # markers first: the fixed D455 is FoundationPose's afterwards
+        if args.place in ('basket', 'teach'):                # markers first: the fixed D455 is FoundationPose's afterwards
+            # (10/14 보스) teach: the basket pose is saved with every demonstration (BC per quadrant)
             from camera_tools import basket_fit_robust, basket_measure
             slot1 = json.loads((DATA / 'basket' / 'slot_01_in_basket.json').read_text())
             layout = json.loads(cpath(C['basket']['layout']).read_text())
@@ -767,7 +768,9 @@ def run_plate(args):
                 print('   FP 접시 없음: 처음 계획으로 진행', flush=True)
         if args.place == 'teach':
             k = args.slot or next_slot()
-            teach_slot(k, rec, choose_gripper, lift_end)
+            teach_slot(k, rec, choose_gripper, lift_end, meta=dict(
+                run=str(out), quadrant=args.quadrant, plate_root_fp=[float(v) for v in p],
+                T_base_basket=None if basket_T is None else np.asarray(basket_T).tolist()))
             rec.event('done', place='teach', slot=k)
             print('[5/5] 티칭 완료.', flush=True)
             return
