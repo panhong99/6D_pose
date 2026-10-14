@@ -2463,3 +2463,8 @@
 - Codex 검토 정정 포함: untouched 9014 분모는 598이지 600이 아님; 9014 표본은 valid-plan 필터 때문에 요청된 흔들기 전체를 덮지 않음; FP 실기 추적오차를 replay 잡음과 동일시할 수 없음; Q1 속도 인과 분석은 모든 replay가 20°/s라 불가; 측정 없는 성공은 학습된 BC/RL 정책이나 실기 성공으로 부를 근거가 없음.
 - 보스 결정 항목 4개와 AF 실물 높이 측정 절차, 원자료/그림 경로를 초안에 연결했다. 시험 `bash calibration/run.sh tests`: sandbox에서 `pipeline.py` UDP socket 권한으로 import 불가; 승인된 권한으로 재실행해 **38/38 통과 (33.668 s)**. `git diff --check` 통과. 로봇·그리퍼·카메라·GPU 사용 없음; 데이터·가중치 stage하지 않음.
 - 초안: `collab/MORNING_REPORT_DRAFT_20261015.md`. 아침 보고 최종본은 Claude가 LOG에 통합 예정.
+
+## 2026-10-15 Codex — AK 초안에 최신 평균 자세 편향 시험 반영
+- Claude의 03:1x 결과(`rl/logs/basket/replay_blind_inhand_H_bias_{p2,p5,r1,r2}.json`)를 읽고 아침 보고 초안을 갱신했다. 측정 없는 기준 571/600=95.2%에서 평균 자세 위치 편향 2 mm는 0.902, 5 mm는 0.775였다. TCP x축 법선 회전 편향 1°/2°는 0.947/0.945이나 회전축 하나만 시험됐다.
+- 보스 결정 목록에 평균 자세 실물 계측/독립 기준 검증을 명시하고, '수십 프레임 중앙값'은 아직 검증된 절차가 아닌 제안이라고 제한했다. 이 결과 역시 sim 민감도 시험이며 실제 FP의 허용오차·실기 성공률이 아니다.
+- 갱신 파일: `collab/MORNING_REPORT_DRAFT_20261015.md`. `git diff --check` 통과. `bash calibration/run.sh tests`: sandbox UDP 권한으로 첫 실행은 import 전 차단됐고 승인된 재실행 **38/38 통과 (33.692 s)**. GPU·Isaac·로봇 명령 및 데이터 변경 없음.
