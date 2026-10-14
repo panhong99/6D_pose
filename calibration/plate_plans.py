@@ -1220,7 +1220,7 @@ def _random_one(job):
     if path is None:
         why = sorted({w if w == 'ik/limit' else w.split(' ')[0] for _, w in rep['tried']})
         return dict(row, ok=False, stage='place', why=','.join(why), s=round(time.time() - t0, 1))
-    return dict(row, ok=True, stage='done', why='', phi=rep['phi_deg'], clearance=rep['clearance_ratio'], plan=str(path),
+    return dict(row, ok=True, stage='done', why='', phi=rep['phi_deg'], face=rep.get('face', 1), clearance=rep['clearance_ratio'], plan=str(path),
                 s=round(time.time() - t0, 1))
 
 
@@ -1238,12 +1238,16 @@ def random_plans(a):
     while len(jobs) < a.n:
         bx, by = rng.uniform(*a.x), rng.uniform(*a.y)
         yaw = rng.uniform(-a.yaw_range, a.yaw_range)
-        r, az = rng.uniform(*a.plate_r), rng.uniform(-40, 40)
-        px, py = r * np.cos(np.radians(az)), r * np.sin(np.radians(az))
+        if a.plate_x:                                        # (10/14 19시) box around the parallel layout's plate
+            px, py = rng.uniform(*a.plate_x), rng.uniform(*a.plate_y)
+        else:
+            r, az = rng.uniform(*a.plate_r), rng.uniform(-40, 40)
+            px, py = r * np.cos(np.radians(az)), r * np.sin(np.radians(az))
         if abs(py) > 0.42 or np.hypot(px - bx, py - by) < 0.37 + PLATE_R + 0.05:   # plate not on / against the basket (53 cm square)
             continue
         jobs.append((len(jobs), bx, by, yaw, px, py, rng.choice(list(QUADRANTS)), float(rng.random())))   # gap = fraction of the quadrant's gaps
-    print(f'{len(jobs)} random setups (basket x {a.x} y {a.y} yaw +-{a.yaw_range}, plate r {a.plate_r} az +-40 |y|<=0.42) '
+    print(f'{len(jobs)} random setups (basket x {a.x} y {a.y} yaw +-{a.yaw_range}, plate '
+          f'{f"x {a.plate_x} y {a.plate_y}" if a.plate_x else f"r {a.plate_r} az +-40"} |y|<=0.42) '
           f'with {a.workers} workers -> {out}', flush=True)
     rows = []
     with mp.get_context('fork').Pool(a.workers) as pool, (out / 'rows.jsonl').open('w') as f:
@@ -1310,6 +1314,8 @@ if __name__ == '__main__':
     p.add_argument('--workers', type=int, default=16)
     p.add_argument('--n', type=int, default=300, help='random_plans: setups')
     p.add_argument('--plate_r', type=float, nargs=2, default=(0.86, 1.15), help='random_plans: plate radius range [m] (library path clears the frame up to ~1.15)')
+    p.add_argument('--plate_x', type=float, nargs=2, default=None, help='random_plans: plate x range [m] (with --plate_y; replaces --plate_r)')
+    p.add_argument('--plate_y', type=float, nargs=2, default=None, help='random_plans: plate y range [m]')
     p.add_argument('--yaw_range', type=float, default=15.0, help='random_plans: basket yaw uniform in +-this [deg]')
     p.add_argument('--seed', type=int, default=0)
     p.add_argument('--measure', action='store_true', help='look_plans: basket from the fixed camera markers (read-only)')
