@@ -306,6 +306,10 @@ def basket_measure(cfg, n_frames=None, return_samples=False):
     d = cv2.aruco.getPredefinedDictionary(getattr(cv2.aruco, cfg['marker']['dictionary']))
     prm = cv2.aruco.DetectorParameters()
     prm.perspectiveRemovePixelPerCell = cfg['marker']['pixels_per_cell']
+    up = int(b.get('detect_upsample', 1))                    # (10/14) 5 cm markers: 2x image + sub-pixel corners
+    if up > 1:
+        prm.cornerRefinementMethod = cv2.aruco.CORNER_REFINE_SUBPIX
+        prm.minMarkerPerimeterRate = 0.01
     det = cv2.aruco.ArucoDetector(d, prm)
     s = b['marker_size_m'] / 2
     obj = np.array([[-s, s, 0], [s, s, 0], [s, -s, 0], [-s, -s, 0]], np.float32)
@@ -317,10 +321,11 @@ def basket_measure(cfg, n_frames=None, return_samples=False):
         for _ in range(n_frames or b['n_frames']):
             fr = cam.read()
             detected_ids = []
-            corners, ids, _ = det.detectMarkers(cv2.cvtColor(fr.rgb, cv2.COLOR_RGB2GRAY))
+            g = cv2.cvtColor(fr.rgb, cv2.COLOR_RGB2GRAY)
+            corners, ids, _ = det.detectMarkers(cv2.resize(g, None, fx=up, fy=up, interpolation=cv2.INTER_CUBIC) if up > 1 else g)
             for c, i in zip(corners, [] if ids is None else ids.ravel()):
                 if int(i) in ids_wanted:
-                    ok, rv, tv = cv2.solvePnP(obj, c.reshape(4, 2), fr.K, None, flags=cv2.SOLVEPNP_IPPE_SQUARE)
+                    ok, rv, tv = cv2.solvePnP(obj, (c.reshape(4, 2) / up).astype(np.float32), fr.K, None, flags=cv2.SOLVEPNP_IPPE_SQUARE)
                     if ok:
                         seen.setdefault(int(i), []).append((Tbc @ np.r_[tv.ravel(), 1.0])[:3])
                         detected_ids.append(int(i))
