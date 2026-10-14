@@ -35,6 +35,8 @@
 | V | **아침 보고 표·그림 생성기** (10/14 23:4x, 지금 최우선) | 아래 '새 일 V' | 완료(b1d72c5: `basket_report`, 표·PNG·3개 sumseat 대조, 37/37 시험) |
 | X | **Q2 걸침 기하 검사 (numpy, 빗살 vs 접시 메시)** | 아래 '새 일 X' | 완료(2ed663f: 900조건, JSON/표/PNG, Q2 tines 제한 분석; 38/38 시험) |
 | W | **실기 선행 조건: 바구니 위 정지 상태에서 손에 든 접시 자세 측정 잡음 (기존 실기 로그)** | 아래 '새 일 W' | 진행 중(10/15 01:xx): 기존 real_pipeline 로그 정지 구간/pose 필드 조사, read-only |
+| Y | **최종 평가 독립 검증 (U3)** (10/14 23:5x, 지금 최우선) | 아래 '새 일 Y' | 대기 |
+| Z | **sim 설정 → 실기 분면 넣기 이식 설계 (문서, 코드 수정 없음)** | 아래 '새 일 Z' | 대기 |
 | S | **시연 도구 파일 정리: demo_audit+demo_dataset 한 역할 파일, 시험은 tests.py로** (R과 독립 병행) | 아래 '새 일 S' | 완료(449a056) |
 | P | **BC 데이터셋 변환기: 시연 → 바구니 좌표 키자세·궤적** (O 다음) | 아래 '새 일 P' | 완료(7daafd5) |
 | Q | **observe_now2 사진에 Goal 1 BC 파지 라이브러리 범위 overlay** | 고정 카메라 K/T 투영, 라이브러리 표본·가정·한계를 그림에 표시 | 완료(3ec2b71) |
@@ -178,6 +180,15 @@
 - 배경: sim에서 쓰는 방법은 바구니 위에 멈춘 상태에서 손에 든 접시 자세를 재고 다시 겨냥한다(2회). 실기에서는 고정 D455 FoundationPose로 재야 한다.
 - 할 일: 기존 실기 실행(`calibration/data/real_pipeline/*/robot_state.jsonl`, FoundationPose 자세 기록이 있는 실행)에서 로봇이 멈춰 있는 구간의 손에 든 접시 자세(TCP 기준) 반복 잡음(mm, deg)과, 들어 올린 뒤 손 안에서 돈 각도를 추정. sim 2회 겨냥 뒤 잔여(위치 0.2 mm 이하)와 비교해 실기에서 필요한 정확도가 나오는지 결론.
 - 완료 조건: 표 + 결론 LOG, 실행 목록과 한계 명시. 로봇·카메라 연결 금지(기록만 사용).
+
+### 새 일 Y: 최종 평가 독립 검증 (10/14 23:5x Claude)
+- 대상: `rl/logs/basket/replay_final_6014_20261014.json`(LOG 23:5x '최종 평가'), 경로 `calibration/data/basket/random_20261014_230916/replay.jsonl`.
+- 확인: (1) 분면별 앉음 & exact 재집계 (2) seed 6014 경로가 설정 선택에 쓰이지 않았는지 — `calibration/logs/stage2_*.sh`, `stage3_*.sh` 전체에서 이 경로 사용처 검사 (3) Q4 +1칸 7회, Q1 줄 밖 70회의 경로·핀 분포 (4) 표본의 바구니·접시 위치가 흔들기 범위를 얼마나 덮는지. 반박할 점을 LOG에. 코드 수정 금지.
+
+### 새 일 Z: sim 설정 → 실기 분면 넣기 이식 설계 (10/14 23:5x Claude)
+- sim 최종 설정: Q1/Q2 손목 뒤집기(`random_plans --far_flip` = `quadrant_plan(faces=(-1,1))`), 바구니 위 2회 측정 → 다시 겨냥(`expert.py closed_loop_paths`, `--cl_iter 2 --cl_top`), 분면별 기울기 `Q1 0, Q2 0, Q3 −0.5, Q4 0.5`, 겨냥 `Q1 +2.5, Q2 +3.8, Q3 −4.64, Q4 −3.5 cm`(sim 기준; 실기 x 보정 −2 cm와 별개).
+- 할 일: 실기 경로(`calibration/pipeline.py --insert quadrant`, `plate_plans.quadrant_plan`)에 무엇을 옮겨야 하는지 문서로 정리: (a) 손목 뒤집기 경로 선택 (b) 바구니 위 정지 상태에서 손에 든 접시 자세를 무엇으로 잴지(FoundationPose 고정 D455, 손목 카메라), W 결과와 연결 (c) 기울기·겨냥 값을 config로 (d) 속도 상한(SYSTEM_SPEC 4절) 유지 (e) sim과 실기 차이 위험(빗살 강성, 접시 미끄럼, 바구니 모델 Q1 미실측, 줄 y 차이 −8/+7 mm). 보스가 결정할 항목 목록.
+- 완료 조건: `collab/` 문서 한 개(짧게, 표 위주) + LOG 요약. 로봇·코드 수정 없음.
 
 ## Codex 상태
 - 10/15 01:xx 살아 있음: R/T/U/S 완료; V 보고기 `b1d72c5`; X geometry sweep 2ed663f (Q2 zero-tilt median first-contact 86.1mm, 217/225 >60mm, 225/225 tines-limited; v3 JSON/MD/PNG). 전체 시험 38/38. 현재 W 기존 로그의 pose 반복잡음/들기 후 회전 분석을 read-only로 진행 중.
