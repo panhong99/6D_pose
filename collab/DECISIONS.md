@@ -1090,6 +1090,12 @@ Human 지시: Claude와 Human이 실증하는 동안 Codex가 이 문제의 원�
 - 이는 PD **목표 갱신률** 제한이며 실제 관절 물리 속도 보증으로 해석하지 않는다. phase 값은 변경·상향하지 않고 safety shield·충돌물리·`seated_exact` 성공 기준도 그대로 둔다.
 - capped teacher의 seated_exact와 capped+shield joint-reference 재현은 새 산출 경로의 진단이다. 높은 joint-reference 일치율만으로 SafeDiffIK TCP G0 통과나 BC gate 통과를 선언하지 않는다. SafeDiffIK G0는 기존 ≥95% 조건으로 별도 확인한다.
 
+## 2026-10-15 AO/G0: rate-capped teacher 결과와 shield 유지
+- 결과 검토 전 결론: 학생 재생의 safety shield를 끄지 않는다. 계획기 경로 검사와 프레임별 shield는 다른 안전 검증이고, G0 행동계약에서도 shield는 실행 일부다. shield를 통과하지 못한 경로는 현재 실행 스택에서 실행 가능하다고 입증되지 않은 것으로 남긴다.
+- Q1 동일 seed/plan 비교에서 현재 teacher target-slew profile(transport/reaim/insert/release 20/5/1/20 deg/s)은 seated_exact **10/20**으로, uncapped teacher 18/20보다 낮았다. 따라서 이 속도 프로파일로 AO teacher gate를 만족한다고 할 수 없다. 다른 구간 cap으로 17/20을 보장하는 수치는 한 번의 profile 결과에서 도출할 수 없고, 기존 제한을 올리는 값은 제안하지 않는다.
+- `--teacher_rate_cap`은 30 Hz PD **목표 변화량** 제한이다. rate-cap 결과에서 목표 변화는 최대 cap의 0.9991배였지만, 실제 sim 관절 속도는 insert 구간 최대 2.27 deg/s로 설정한 목표 slew 1 deg/s보다 높았다. 이는 목표값 제한이 물리 관절 속도 제한과 같지 않음을 보인다. 실기 속도에 대한 주장은 아니다.
+- 다음 원인 분리는 contact/plate-pose 시계열·open frame과 phase별 관절/TCP trace가 있어야 가능하다. 그 자료 없이 low 66–68 mm를 접촉 걸림 또는 release 타이밍 중 하나로 단정하지 않는다. gate 미달 동안 G1/G2는 시작하지 않는다.
+
 ## 2026-10-15 AO/G0 재개: 바구니 회전 hold + 추적형 SafeDiffIK replay
 - 결정: generic `SafeDiffIKActionCfg.rotation_hold` 기본값은 꺼 두고 `basket_env.make_basket_cfg()`에서만 켠다. 바구니 실행기가 쓰는 spatial delta 규약에 맞춰 `hold_quat ← δ ⊗ hold_quat`으로 목표 회전을 적분한다. TCP 회전 속도 상한은 기존 10°/s 그대로다.
 - G0 replay는 저장된 고정 FK delta를 반복하지 않고, 매 프레임 실제 학생 TCP 현재 pose에서 선생님 trace의 다음 절대 TCP pose까지 slot frame 오차를 계산한 후 기존 5 cm/s·10°/s step norm 제한으로 자른다. 그 실행 action은 `replay_act`; 선생님 상태에서 만든 원본 clean action `act`와 분리 저장한다.
