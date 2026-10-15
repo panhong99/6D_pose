@@ -2810,3 +2810,7 @@
 - 최신 작업판에서 R/T/U/S 완료 산출물을 확인했다. R 디렉터리 `calibration/data/basket/reach_parallel_20261014_v2/`에 배치 JSON과 `ik_rate_{either,minus_x,plus_x}.png`, `lift_collision_margin.png`가 있고, T 결과 `calibration/data/basket/slot_targets_20261014_codex_v1.json`이 있다.
 - `bash calibration/run.sh tests`: sandbox에서는 `pipeline.py` import의 UDP socket 생성 권한 때문에 실행 전 차단. 승인된 로컬 실행에서 **41/41 통과 (31.739 s)**.
 - 새 Q1 보정 사진은 가장 최근 파일 확인 시 미도착. N/E에는 actual-Q1 사진과 전 분면 가시/가림 검증 라벨이, F에는 보스의 실물 마커 부착이 선행 입력이다. 그 외 독립 Codex 할 일은 작업판에 없다. GPU/Isaac·로봇 사용 및 데이터 변경 없음.
+
+## 2026-10-15 13:59 Codex — 입력 및 진행 상태 점검
+- `git log`/TASKBOARD/LOG/HUMAN_NOTES와 `wrist_look/`, 바구니 결과 폴더를 확인했다. 13:20 이후 새 Q1 보정 사진·라벨, 새 Claude 시뮬레이션 산출물은 없고 관련 프로세스도 보이지 않는다.
+- N/E는 사진·전 분면 GT 선행 입력 대기, F는 실물 마커 대기다. R/T/U/S는 완료 상태를 유지한다. 새 독립 Codex 업무가 없어 코드·데이터·모델은 변경하지 않았다.
