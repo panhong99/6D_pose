@@ -220,7 +220,7 @@
 - **추가(10/15 15:4x Claude): 컨트롤러 J3 한계 ±135°**(실기 알람 1207, `ros2_nodes.CONTROLLER_LIMITS_DEG`, a6019be). 데모 배치·선생님 경로에서 J3가 132°(3° 여유)를 넘는 에피소드는 제외하고 그 비율을 보고할 것. 잡기 라이브러리는 이미 걸러짐(9d87580).
 
 ## Codex 상태
-- 10/16 01:25 검증 보강(진행 중): fake ROS service로 실제 `run_mover` 연결 경로에서 baseline→spline→25 N 초과→QSTOP, 중단 뒤 자동 관절 이동 없음 확인. 전체 시험 69/69 통과; 후속 시험·LOG 반영 커밋 대기.
+- 10/16 01:25 완료(613260e): fake ROS service로 실제 `run_mover` 연결 경로에서 baseline→spline→25 N 초과→QSTOP, 중단 뒤 자동 관절 이동 없음 확인. 전체 시험 69/69 통과; 상세·한계는 LOG에 기록. 물리 QSTOP 실효성은 미검증.
 - 10/16 00:52 완료(비교 분석, commit 3465140): ratecap/uncapped 같은 seed·plan의 20 Q1쌍 원시 비교. uncapped→ratecap 선생님 seated_exact 18/20→11/20; 회귀 7개는 정확 gap·분면은 맞지만 low 66.2–67.8 mm 정지. 이 7개의 ratecap 접촉 peak 중앙 177.3 N(161.6–188.1), peak 시 low 66.2–67.9 mm; uncapped 짝 peak 중앙 102.6 N(61.2–165.8), 그중 3개 <100 N. 센서는 작동기 힘이 아니며 strict_inserted는 두 실행 모두 0/20. ‘100 N 밀어 넣기 필요’ 근거 아님. LOG 표·한계·검증 기록, 전체 시험 65/65 통과.
 - 10/16 00:31 완료(472df46): uncapped teacher insert 텔레메트리 episode별 접촉/하강 검토. 성공 18/18은 삽입 중 1 N 접촉 감지; 최초 접촉 중앙 low 67.1 mm, 법선 오차 19.1°, 그 뒤 최종 seated low 45.4–56.5 mm. 실패 env17은 frame 0부터 비정상 겹침 후보, env16은 threshold 접촉 없음. 전체 시험 65/65 통과. 상세·한계 LOG 00:31. Ratecap 출력은 아직 없음.
 - 10/15 15:10 재확인: ratecap stdout은 두 closed-loop pass에서 각각 18/20 IK 재계산까지 기록하지만 JSON/NPZ는 여전히 없음. 로그 끝에 명시적 예외/종료 상태가 없어 완료·실패 판정 불가; Isaac 재실행은 하지 않음. uncapped G0는 11/18로 미통과, G1/G2 보류.
