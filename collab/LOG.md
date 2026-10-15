@@ -3130,3 +3130,8 @@
 - Claude의 TASKBOARD 제안인 “clipping·shield 없이 선생님 관절 목표 그대로 재생”은 수행하지 않는다. AO 행동 상한/충돌 보호를 유지해야 하며, uncapped 실험은 그 조건을 벗어난다.
 - 근거: 새 `Q1_g0.npz`의 연속 teacher joint-target 차분을 해당 frame의 `teacher_joint_speed_cap_deg_s`와 비교(초기 frame 제외)했더니 13,300 frame 중 **7,723 frame**에서 적어도 한 축이 cap을 넘었다. cap 대비 최대 2.124× (insert cap 1°/s에서 2.124°/s); 절대 목표 변화율 최대 37.89°/s (release cap 20°/s). 이는 teacher 목표의 frame-to-frame 차분 통계이며, 실제 축 속도 측정과 동일하다고 해석하지 않는다. student는 선언된 cap을 따르도록 action을 제한하므로 원 teacher와 student의 재생률 차이를 물리 비결정성만으로 돌릴 수 없다.
 - 대안: Isaac 단독 사용이 확인된 뒤, 동일 계획·seed·초기화와 현재 speed cap + shield를 유지한 joint-reference 반복 재생을 별도 새 출력 경로로 수행해 반복 편차를 측정한다. 이는 여전히 diagnostic이고 SafeDiffIK G0 gate를 바꾸지 않는다. 현재 Codex는 GPU/Isaac을 실행하지 않았다.
+
+## 2026-10-15 21:17 Codex — scaled insert PPO C 초기 평가 raw audit (CPU)
+- 새 결과 `rl/logs/basket/insert_rl_20261015_night_scaled/{eval_0000,train_0000}.{json,npz}` 도착. 평가 JSON의 598 `results`와 NPZ seated & in-quadrant & landed==target 판정 **598/598 일치**(각 행 이름/목표 gap 포함); train JSON/NPZ **96/96 일치**. obs/action은 finite.
+- eval_0000 초기 checkpoint는 **331/598 = 55.35%**; Q1 81/156=51.92%, Q2 79/146=54.11%, Q3 78/155=50.32%, Q4 93/141=65.96%. 학습 batch 0은 34/96=35.42%. history.json도 동일 수치. 이건 C의 시작선/첫 batch이며 앞선 A 0회차 수준과 비슷하다; 입력 스케일의 개선 효과나 수렴은 아직 판정 불가. AO G2는 BC ≥90%라서 이 결과와 무관하게 해당 gate가 아니다.
+- eval summary의 `gate=0, need=9`; train log `train_0001.log`까지 있어 실험 후속 진행 중인 흔적이 있다. 이 시점에 새 eval/checkpoint 이상 결과는 확인되지 않아 C 완료/중단을 주장하지 않는다. CPU 원시 검사만 수행; GPU/Isaac·정책/데이터 변경 없음.
