@@ -606,6 +606,7 @@ def run_insert_rl(a):
     opt = torch.optim.Adam(pol.parameters(), lr=a.lr or 3e-4)
     extra = (['--cl_dr'] + (['--cl_dr_full'] if a.dr_full else [])) if not a.no_dr else []
     extra += ['--cl_noise_fp', str(ROOT / 'rl/logs/basket/fp_noise_model_20261015.json')] if not a.no_fp_noise else []
+    extra += ['--cl_policy_noseen'] if a.noseen else []      # (10/16) policy never sees the believed gap error (no wrist gap detection)
     code = code_snapshot(out) if a.snapshot else None
     hist = []
     (out / 'config.json').write_text(json.dumps(dict(vars(a), plans_n=len(rows), eval_n=len(hold), extra=extra), indent=1, default=str))
@@ -698,6 +699,7 @@ def parse_args():
     p.add_argument('--epochs', type=int, default=8)
     p.add_argument('--minibatch', type=int, default=32)
     p.add_argument('--no_dr', action='store_true', help='insert_rl: no model-error randomisation')
+    p.add_argument('--noseen', action='store_true', help='insert_rl: hide the believed gap error (real robot without wrist gap detection)')
     p.add_argument('--snapshot', action='store_true', help='insert_rl: replays run a frozen copy of the committed rl/ code')
     p.add_argument('--no_obs_scale', action='store_true', help='insert_rl: raw inputs (runs before 21:0x)')
     p.add_argument('--dr_full', action='store_true', help='insert_rl: also basket-yaw and in-hand-bias randomisation (unobserved)')
