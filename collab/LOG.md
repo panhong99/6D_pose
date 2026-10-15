@@ -3177,7 +3177,7 @@
 - 같은 plan/seed에서 두 후보를 각각 새 경로로 **한 번에 하나씩** Claude가 Isaac에서 실행한다. 아래 실행은 teacher `seated_exact`와 capped joint-reference 진단을 함께 기록한다. ≥17/20 판정을 teacher 기준으로 하고, joint-reference 비율을 SafeDiffIK G0 gate로 간주하지 않는다.
   1. `bash rl/basket/run_quadrant_final_20261015.sh calibration/data/basket/ao_g0_final_plans_20261015_1635/Q1_plans.jsonl calibration/data/basket/ao_g0_joint_ratecap_extra10_20261015_2145/Q1_g0.json --g0_joint --teacher_rate_cap --cl_extra 0.010 --seed 11014`
   2. `bash rl/basket/run_quadrant_final_20261015.sh calibration/data/basket/ao_g0_final_plans_20261015_1635/Q1_plans.jsonl calibration/data/basket/ao_g0_joint_ratecap_extra15_20261015_2145/Q1_g0.json --g0_joint --teacher_rate_cap --cl_extra 0.015 --seed 11014`
-- 시작 전 Claude가 GPU/Isaac 단독 점유와 각 경로 미존재를 확인한다. 이 셸은 Isaac/GPU를 쓰지 않았다. 회귀시험에는 세 허용 깊이와 음수·미지원·NaN·무한대 거부를 추가했다; 전체 tests/commit은 이 항목 마무리 때 기록한다. gate는 SafeDiffIK G0 미통과라 G1/G2 금지 상태다.
+- 시작 전 Claude가 GPU/Isaac 단독 점유와 각 경로 미존재를 확인한다. 이 셸은 Isaac/GPU를 쓰지 않았다. 회귀시험에는 세 허용 깊이와 음수·미지원·NaN·무한대 거부를 추가했다. `python -m py_compile rl/basket/expert.py calibration/tests.py`, `git diff --check`, 전체 `bash calibration/run.sh tests` **63/63 통과, 34.933 s**. gate는 SafeDiffIK G0 미통과라 G1/G2 금지 상태다.
 
 ## 2026-10-15 21:4x Claude — 입력 스케일 효과 확인, B → D 교체
 - C(스케일 입력, gap 랜덤화) 5회차 평가 **0.756**(Q1 .73 / Q2 .74 / Q3 .79 / Q4 .76), 같은 회차 A 0.615. 겨냥 보정과 −(믿는 틈 오차) 상관 0.914, 남은 겨냥 오차 |x| 5.7 → 3.4 mm → 정책이 틈 오차를 읽고 고친다.

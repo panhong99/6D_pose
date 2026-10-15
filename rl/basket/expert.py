@@ -21,6 +21,15 @@ ROOT = RL.parent
 sys.path[:0] = [str(HERE), str(RL)]
 
 
+CLOSED_LOOP_EXTRA_M = (0.005, 0.010, 0.015)
+
+def validate_closed_loop_extra(value):
+    import math
+    x = float(value)
+    if not math.isfinite(x) or not any(abs(x - allowed) < 1e-9 for allowed in CLOSED_LOOP_EXTRA_M):
+        raise ValueError(f'closed-loop extra must be one of {CLOSED_LOOP_EXTRA_M} m')
+    return x
+
 def parse_args():
     from isaaclab.app import AppLauncher
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -46,6 +55,8 @@ def parse_args():
     p.add_argument('--closed_loop', action='store_true', help='replay --plans: at the stop above the basket read the plate in the hand and '
                    're-solve the descent so it stands over its target gap (stand-in for measuring the plate there)')
     p.add_argument('--cl_dz', type=float, default=0.0, help='--closed_loop: raise the insert end by this [m] (plate bottom vs the rail)')
+    p.add_argument('--cl_extra', type=float, choices=CLOSED_LOOP_EXTRA_M, default=0.005,
+                   help='--closed_loop: lower the final plate-bottom target below the rail by 0.005, 0.010, or 0.015 m')
     p.add_argument('--cl_lean', type=float, default=1.0, help='--closed_loop: plate lean as a fraction of its quadrant\'s tine lean (1 = parallel to the tines)')
     p.add_argument('--cl_dx', type=float, default=0.0, help='--closed_loop: move the aim along the basket rows (+x) [m]')
     p.add_argument('--cl_iter', type=int, default=1, help='--closed_loop: measure + re-aim this many times at the above stop')
@@ -930,6 +941,7 @@ def _cl_one(kin, tool, be, r, Tb, Rp, H, q0, lean, above_m, extra, dz, dx, top, 
 
 # ---------------------------------------------------------------- P1 replay of the real runs
 def run_replay(args):
+    cl_extra = validate_closed_loop_extra(args.cl_extra)
     import numpy as np
     import torch
     from isaaclab.envs import ManagerBasedRLEnv
@@ -1022,7 +1034,7 @@ def run_replay(args):
         fix = first_fix = None
         for it in range(args.cl_iter):                       # (10/14 night) measure + re-aim again at the above stop
             hs = [float(h) for h in args.cl_heights.split(',')] if args.cl_heights else [0.11]
-            prev_fix, fix = fix, closed_loop_paths(env, rows, who, above_m=hs[min(it, len(hs) - 1)], dz=args.cl_dz, lean=args.cl_lean, dx=args.cl_dx, top=args.cl_top,
+            prev_fix, fix = fix, closed_loop_paths(env, rows, who, above_m=hs[min(it, len(hs) - 1)], extra=cl_extra, dz=args.cl_dz, lean=args.cl_lean, dx=args.cl_dx, top=args.cl_top,
                                     dx_q={k: float(v) for k, v in (x.split(':') for x in args.cl_dx_q.split(',') if x)},
                                     lean_q={k: float(v) for k, v in (x.split(':') for x in args.cl_lean_q.split(',') if x)},
                                     dz_q={k: float(v) for k, v in (x.split(':') for x in args.cl_dz_q.split(',') if x)},
@@ -1482,6 +1494,7 @@ def run_replay(args):
             per_q[qd] = dict(teacher_success=denom, reproduced=num_ok,
                              ratio=(num_ok / denom if denom else None))
         report = dict(gate=gate, teacher_rate_capped=bool(args.teacher_rate_cap),
+                      closed_loop_extra_m=cl_extra if args.closed_loop else None,
                       criterion='same-start SafeDiffIK replay / teacher seated & in_quadrant & exact successes >= 0.95',
                       seated_exact_definition='0.020 m < low < 0.060 m AND in_quadrant AND landed_gap == target_gap; finger/rim metrics diagnostic only',
                       teacher_seated_exact=teacher_count, reproduced_seated_exact=reproduced,

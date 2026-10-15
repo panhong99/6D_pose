@@ -762,6 +762,14 @@ class BasketG0ActionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'binary'):
             mod.g0_joint_actions_from_trace(bad_open, np.zeros((1, 6)))
 
+    def test_closed_loop_extra_accepts_only_declared_depth_sweep(self):
+        mod = self.expert_module()
+        for value in (0.005, 0.010, 0.015):
+            self.assertAlmostEqual(mod.validate_closed_loop_extra(value), value)
+        for value in (-0.005, 0.020, float('nan'), float('inf')):
+            with self.assertRaises(ValueError):
+                mod.validate_closed_loop_extra(value)
+
     def test_teacher_rate_cap_retimes_each_path_and_reaches_its_endpoint(self):
         mod = self.expert_module()
         initial = np.zeros((3, 6), dtype=float)

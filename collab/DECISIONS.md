@@ -1102,6 +1102,10 @@ Human 지시: Claude와 Human이 실증하는 동안 Codex가 이 문제의 원�
 - 고정된 phase cap 20/5/1/20°/s 아래서 17/20을 달성하는 새 프로파일은 미확정이다. 제한을 올리거나 shield를 우회해 수치를 맞추지 않는다. 다음 원인 분리는 plate pose/contact 및 손-held target trace를 저장하고, 시작 상태 settle 확인 뒤 기존 cap/shield 그대로 재현해야 한다.
 - JSON/helper의 18 clipped frames는 이전 명령 target을 기준으로 재계산해 확인됐다. 보존된 ratecap2 NPZ의 `joint_action_clipped` 합 29는 과거 writer의 잘못된 기준(직전 teacher target) 때문에 생긴 11-frame 불일치다. 원본 산출물을 고치지 않고, 향후 산출물 계산을 수정하고 회귀시험을 추가했다.
 
+## 2026-10-15 AO/G0: insertion-end depth sweep
+- Teacher target-slew는 기존 20/5/1/20°/s와 runtime shield를 그대로 둔다. 이번 비교는 `closed_loop_paths(extra=...)`의 마지막 plate-bottom 목표만 기본 5 mm에서 10 mm/15 mm로 더 깊게 한다. 20 mm 이상 등 다른 깊이는 이 진단에서 허용하지 않는다.
+- Claude가 각 후보를 새 경로·동일 plan/seed로 순차 실행한다. Teacher `seated_exact` ≥17/20이 후보 선정 기준이고, 이후 joint-reference 재생은 실행기 진단일 뿐 SafeDiffIK G0 gate를 대체하지 않는다. 두 깊이 모두 기준 미달이면 결과를 기록하고 원인 추적에 필요한 contact/plate-pose trace를 추가한다. 속도 상향이나 shield 해제는 하지 않는다.
+
 ## 2026-10-15 AO/G0 재개: 바구니 회전 hold + 추적형 SafeDiffIK replay
 - 결정: generic `SafeDiffIKActionCfg.rotation_hold` 기본값은 꺼 두고 `basket_env.make_basket_cfg()`에서만 켠다. 바구니 실행기가 쓰는 spatial delta 규약에 맞춰 `hold_quat ← δ ⊗ hold_quat`으로 목표 회전을 적분한다. TCP 회전 속도 상한은 기존 10°/s 그대로다.
 - G0 replay는 저장된 고정 FK delta를 반복하지 않고, 매 프레임 실제 학생 TCP 현재 pose에서 선생님 trace의 다음 절대 TCP pose까지 slot frame 오차를 계산한 후 기존 5 cm/s·10°/s step norm 제한으로 자른다. 그 실행 action은 `replay_act`; 선생님 상태에서 만든 원본 clean action `act`와 분리 저장한다.
