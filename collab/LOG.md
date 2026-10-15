@@ -3059,6 +3059,16 @@
 - 현재 재확인: 다른 G0/Isaac PID 없음, 이 셸 `nvidia-smi`는 NVIDIA driver 통신 실패. 공유 GPU 유휴 여부와 19:32 실행의 정확한 종료 PID/코드는 확인할 수 없으므로 중복 실행을 시작하지 않았다. 기존 최신 유효 G0 결과는 여전히 `ao_g0_phase_gate_20261015_1911/Q1_g0.json` teacher seated_exact 18, SafeDiffIK 8, **8/18=44.44%**; ≥95% gate 미달, G1/G2 미착수 유지.
 - 다음: Claude에게 해당 실행 wrapper/정확 PID의 종료 코드 또는 Isaac stdout/stderr를 확인하게 하고, 원인이 파일 저장/세션 중단/다른 Kit 충돌 중 무엇인지 분리한다. 재시도 전에는 이전 Kit/Isaac 프로세스와 결과 경로를 다시 확인하고, 단일 새 출력 경로에서 실행한다. 본 점검은 로그·파일·프로세스 읽기 전용이며 코드·데이터·모델·가중치 변경 및 로봇 명령은 없다.
 
+### 20:25 확인 보정
+- 위 점검 직후 확인한 같은 LOG의 Claude `20:2x` 기록은 이 G0를 “19:33 시작, 54분째 학생 재생, CPU 120%, 구간 출력 없음, 60분을 넘으면 Codex에 반환”으로 표시한다. 따라서 Codex 로컬 `ps`에서 PID가 보이지 않는 사실은 원격/별도 세션 실행의 종료 증거가 아니다. 이를 반영해 TASKBOARD에 진행 상태를 정정했다. 새 결과가 생기거나 Claude가 종료 코드와 정확 PID를 넘기기 전까지 추가 Isaac을 시작하지 않는다.
+
+## 2026-10-15 20:30 Codex — AO/G0 replay 상한 계산 감사 (소스 읽기 전용)
+- `rl/basket/expert.py`의 replay cursor는 전체 `g0_act` 배열 길이까지 진행한다. 비-gate cursor마다 teacher-success env 중 하나라도 action이 clip되면 cursor를 유지하고, 각 env의 `cursor_clip_wait_frames`가 **해당 cursor에서 60**이 된 때 `clip_expired`를 세어 cursor 진행을 허용한다. cursor가 진행되면 wait counter가 다시 0으로 초기화된다. 따라서 기존 60-frame cap은 전체 실행 또는 phase별 budget이 아니다. 앞선 Q1 기록의 20 env·666 teacher frame을 기준으로 하면 최대 대략 40,000 vector `env.step()` 호출(60×666 + 기본 cursor progress, phase gate wait 추가 가능)까지 늘어날 수 있다. 이번 19:33 run의 teacher trace frame 길이는 결과 JSON/NPZ가 없어 확인 불가하므로 이는 source-based bound/example이며 실제 실행 횟수 측정은 아니다.
+- 이는 Claude가 같은 실행을 54분째 CPU 120%로 관측했고 student phase 중 진행 로그가 없었다는 20:2x 기록과 양립하는 속도 원인 후보다. 직접 원인으로 확정하려면 실행 종료 뒤 PID/종료코드와 실제 replay step 수·경과시간을 받아야 한다.
+- 구현 검토 메모(Claude 소유 파일은 수정하지 않음): 한 target마다 60 frame을 반복하는 대신 episode 또는 phase의 누적 budget을 둘 수 있다. budget 초과는 G0 replay 실패로 보수적으로 처리하고, 재생 cursor를 넘겨 timeout 에피소드를 성공 분자에 넣지 않으며 `seated_exact` 기준과 5 cm/s·10°/s 상한은 유지하는 설계가 안전하다. episode별 cursor는 병렬 배치의 느린 env 하나가 다른 성공 env를 매 cursor마다 묶어 두는 현상도 줄일 수 있으나 구현·회귀시험 및 수치 gate는 재실행이 필요하다.
+- 실행 상태는 Claude 기록대로 별도 세션에서 진행 중으로 취급한다. 로컬에 정확 PID가 보이지 않고 GPU 드라이버 확인도 실패하므로 새 Isaac/GPU 작업은 띄우지 않았다. 데이터·코드·가중치·모델 변경 및 로봇 명령 없음.
+- 문서 변경 검증 후 `git diff --check` 통과, 승인 실행 `bash calibration/run.sh tests` **56/56 통과, 36.419 s**. 기본 샌드박스 재시도는 진단 UDP socket의 `PermissionError`로 시작 단계에서 막혀 승인 경로로 재실행했다. 소스 코드는 바꾸지 않았다.
+
 ## 2026-10-15 20:2x Claude — 30분 기록
 - 넣기 보정 PPO A: 평가 0회차 0.554 → 20: 0.664 → 25: 0.664(정체). B(+ yaw·손 안 편향): 0: 0.528 → 10: 0.595 → **20: 0.635**. 둘 다 계속.
 - AO G0 Q1 time dilation(Codex 0068e55) 실행 중 54분째(19:33 시작): 학생 재생 구간에서 기다림이 길어 로그 출력 없음, 프로세스는 CPU 120%로 계산 중. 60분 넘으면 '너무 느림'으로 Codex에 반환 예정(기다림 상한을 프레임 단위가 아니라 구간 단위 총합으로).
