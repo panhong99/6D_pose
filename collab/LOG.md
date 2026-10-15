@@ -3410,3 +3410,13 @@
 - For those order-aligned candidates, cross-row |Δx| at the floor-extrapolated `base_basket_xyz` exceeds the current 8 mm pairing cutoff for **Q1 0/7, Q3 2/9, Q4 2/11**. At the measured root plane it is **0/7, 0/9, 0/11**; at tip plane **0/7, 0/9, 0/11**. This is consistent with the measured-layout evaluator's pair counts (Q1 7, Q3 7, Q4 9): two Q3 and two Q4 correspondences are omitted when matching uses floor x. It does not establish that row-order pairing is the boss's pin numbering.
 - As a sensitivity-only calculation, matching checked pins by row order and the same 8 mm tip-x bound yields candidate paired fits with both per-pin status `detected` and existing ±3 mm correction agreement: Q1 **2/7**, Q3 **8/9**, Q4 **9/11**. These use the manually measured layout to seed search on its source photos, so they are **in-sample local sensitivity only**, not OOS detection, formal recall, or proof of correct `number`.
 - Sources: v9 checked layout above and `pins_label_layout_eval_20261016_v4_Q1/Q3/Q4/*/pairs.json`. No code changed. Do not alter pairing/acceptance from this audit alone; numbered correspondence and exhaustive visible-pair truth are still missing, particularly Q2 has only one labeled row.
+
+## 2026-10-16 02:58 Codex — E 높이 평면별 후보 짝 매칭 민감도
+- v9 checked labels의 두 행에서 각 행을 basket-x 순으로 정렬하고 같은 순번끼리만 비교했다(보스 번호 대응으로 확정한 pair가 아님). 각 후보의 두 끝점 x 차가 8 mm 이내인 개수는 바닥 외삽 `base_basket_xyz`에서 Q1 **7/7**, Q3 **7/9**, Q4 **9/11**; 실제 라벨 높이인 레일 접합 `root_at_rail_basket_xyz`에서는 **7/7, 9/9, 11/11**; 가정 tip 높이 `top_basket_xyz`에서는 **7/7, 9/9, 11/11**이었다. Q3/Q4는 바닥 외삽에서 각각 2쌍을 놓치지만 root/tip 평면에서는 이 순서 후보들이 기준 안에 든다.
+- 이는 두 라벨 행의 순서와 부분 표본에 조건부인 연관 민감도이지 정답 pair precision/recall이 아니다. tip 좌표도 가정된 높이 평면 역투영이므로 독립 실측 GT가 아니다. `wrist_pins(layout=...)`의 기존 base-x greedy pairing이나 번호 규칙은 바꾸지 않았다. 보스 번호 검증 및 exhaustive visible-pair 분모가 없어서 E의 80% gate·공식 지표는 미판정.
+- 계산은 부분 라벨 JSON의 basket-frame 좌표를 읽은 CPU 오프라인 분석이며 새 파일·코드·데이터를 만들지 않았다. 로봇·그리퍼·GPU 미사용.
+
+## 2026-10-16 03:0x Claude — 30분 기록
+- 실기 이식 문제 발견·수정: sim 정책의 손 안 회전 입력이 접시 메시의 임의 회전(법선 둘레)을 포함 → 실기 `hand_plate` 프레임(x = 중심→TCP)과 뜻이 다름. `canonical_hand()` + `--canon`(7d7243a), 73° 돌린 시험 자세에서 실기 H와 차이 0. 이전 정책(C2, E)은 sim 결과로만 유효하고 실기에 그대로 쓰지 않는다.
+- E(틈 가림 + 전체 랜덤화) 20회차 0.666 → 중지, **E2 `insert_rl_20261016_noseen_drfull_canon`**(같은 조건 + canon, E에서 이어감) 0회차 0.639. 이게 실기 후보 정책.
+- Codex: 접시 없는 손목 사진 빗살 검출 label-seeded 48/59, model-only 2D는 아직 약함(쌍 확정 1개) → 틈 검출 실기 사용 불가(아직).
