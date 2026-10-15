@@ -3006,3 +3006,18 @@
 - eval 0→5→10의 seated_exact: **331/598 (55.35%) → 368/598 (61.54%) → 387/598 (64.72%)**. 0→10 +56건(+9.36%p), 5→10 +19건(+3.18%p); 5→10 paired 전이 실패→성공 50, 성공→실패 31. 분면 eval0→eval10: Q1 81/156→88/156 (51.92→56.41%, +4.49%p), Q2 79/146→86/146 (54.11→58.90%, +4.79%p), Q3 78/155→118/155 (50.32→76.13%, +25.81%p), Q4 93/141→95/141 (65.96→67.38%, +1.42%p). train batch 10은 44/96 exact(45.83%)로 홀드아웃과 구분한다.
 - `config.json`은 `--cl_dr`와 `--cl_noise_fp`를 사용했으며 `--cl_dr_full`은 포함하지 않는다. 이 산출물은 Claude의 `insert_rl` PPO 보조 실험으로, AO의 G0 SafeDiffIK 재생 ≥95% 관문이나 BC/G2(seed 12014 ≥90%) 통과 증거가 아니다. AO G0의 최신 기록은 Q1 12/18(66.7%)로 미통과이므로 G1/G2를 시작하지 않는다.
 - `train_0011.log`가 갱신 중 흔적(09:44:54Z USD unresolved-reference 경고)을 남겼지만 이 셸에서는 정확한 Isaac PID가 보이지 않고 `nvidia-smi`가 드라이버와 통신하지 못했다. 활성 여부/원인은 단정하지 않고 별도 Isaac을 띄우지 않았다. 현 감사는 JSON/NPZ 읽기 전용, 로봇 명령·코드·데이터·가중치 변경 없음.
+
+## 2026-10-15 19:11 Codex — AO/G0 phase-gated replay 진행
+- 최신 지시 확인: WORK_RULES.md와 TASKBOARD의 AO 우선순위에 따라 Q1 G0 실행기 수정. 이전 결과는 Q1 12/18 (66.7%)로 gate ≥95% 미통과; 이 변경만으로 통과했다고 간주하지 않는다.
+- `rl/basket/expert.py` G0 trace에 `preinsert/reaim_i/insert/release` phase를 기록한다. 학생 SafeDiffIK 재생은 각 `reaim_*` 및 `insert` phase 끝에서 TCP 목표 오차가 **위치 <1 mm AND 회전 <0.5°**일 때만 cursor를 진행한다. 각 gate timeout은 60 sim frames(30 Hz 기준 2.0 s); 미도달 성공 에피소드는 timeout/failure로 남기고 경로를 건너뛰지 않는다. 속도 상한과 seated_exact 성공 기준은 그대로다.
+- insert-complete gate 전에는 open 명령을 차단하고, gate 통과 후 teacher의 release 시점에만 연다. timeout 에피소드는 이후에도 정지·닫힘으로 유지한다. 동적 길이 replay와 cursor/phase/reference pose/gate timeout/wait frame을 NPZ/JSON에 기록한다. 이들은 G0 진단용 실행 기록이지 BC 데이터가 아니다.
+- 회귀시험 추가: sparse gate phase 선택, 엄격한 경계값(<1 mm, <0.5°), 빈/NaN 입력 거부. 빠른 격리 검증 결과 gate mask `[false,false,true,true,false,true,false]`, 경계 정렬 `[true,false,false]`. `py_compile`, `git diff --check` 통과.
+- `bash calibration/run.sh tests`: sandbox UDP socket 권한으로 실패했으나 승인 실행에서 **55/55 PASS, 34.510 s**. Isaac/GPU는 이 Codex 세션에서 실행하지 않았고, 로봇 명령 0회. 다음: 변경 코드를 커밋한 뒤 Claude가 한 번에 하나의 Isaac 작업만 확인하고 새 출력 경로에서 Q1 G0 재실행.
+- Claude용 재실행(이 항목을 기록한 시각에는 새 출력 JSON/NPZ 경로가 비어 있었음; 실행 전 재확인): `bash rl/basket/run_quadrant_final_20261015.sh calibration/data/basket/ao_g0_final_plans_20261015_1635/Q1_plans.jsonl calibration/data/basket/ao_g0_phase_gate_20261015_1911/Q1_g0.json --g0 --seed 11014`. 이 명령은 최종 teacher flags를 wrapper에서 적용한다. Codex는 실행하지 않음.
+
+## 2026-10-15 19:20 Codex — AO/G0 replay phase gate 구현 완료
+- 커밋 `8ca3d6f` (`Fix AO G0 replay phase gates`): G0의 `reaim_*`/`insert` 경계에서만 sparse event gate 사용. 경계 TCP 오차가 위치 <1 mm AND 회전 <0.5°인 경우에만 진행한다. 못 맞춘 teacher-success episode는 gate마다 최대 60 frame(2.0 s) 대기 후 timeout/failure로 기록하고 이후 정지·닫힘으로 둔다. 끼워 넣기 완료 gate 전 그리퍼 열기 금지; 성공 기준(seated_exact), 5 cm/s·10°/s action cap, 비-G0 기본 동작은 변경하지 않았다.
+- G0 trace/NPZ에는 phase, replay cursor, 목표 TCP pose, 대기 frame·timeout·release gate 상태를 저장한다. replay TCP 오차는 동적 길이 student frame별 다음 teacher target 대비이며, teacher action (`act`)과 실행 추적 action (`replay_act`)은 분리된다.
+- 최종 확인: `python -m py_compile rl/basket/expert.py calibration/tests.py`, `git diff --check`, `bash calibration/run.sh tests` 모두 통과; **55/55, 34.152 s**. 추가 시험은 gate phase 경계 및 엄격한 tolerance·NaN/empty 입력을 확인한다.
+- Claude용 Q1 재실행 명령(계획기 최종 flags는 wrapper에 포함; GPU/Isaac는 Codex가 실행하지 않음): `bash rl/basket/run_quadrant_final_20261015.sh calibration/data/basket/ao_g0_final_plans_20261015_1635/Q1_plans.jsonl calibration/data/basket/ao_g0_phase_gate_20261015_1911/Q1_g0.json --g0 --seed 11014`. JSON/NPZ 대상은 확인 시 존재하지 않았다. Claude는 실행 전 현재 Isaac 작업/PID와 출력 경로를 확인해야 한다.
+- 제한: 이는 실행기 코드와 CPU 회귀시험 통과일 뿐, G0 성공률이 아니다. Isaac 재실행으로 Q1 ≥95% 확인 전 G1 데모·G2 BC는 시작하지 않는다. 로봇 명령/Isaac/GPU 실행 0회.
