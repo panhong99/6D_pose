@@ -630,10 +630,21 @@ def run_plate(args):
             qs = dict(H=H, tool=tool, yaw=args.yaw_trim if args.yaw_trim is not None else q.get('basket_quadrant_yaw_trim_deg', 0.0),
                       tilt=args.tilt_trim if args.tilt_trim is not None else q.get('basket_quadrant_tilt_trim_deg', 0.0))
 
+            sim_kw = {}
+            if args.sim_q:                                  # (10/15 보스 시연) Isaac per-quadrant lean / aim / wrist flip
+                sys.path.insert(0, str(ROOT / 'rl'))
+                import basket_env as be
+                sq = C['basket_quadrant_sim'][mq]
+                sim_kw = dict(tilt_deg=sq['lean'] * be.B['full']['tine_lean_deg'][mq], centre_h=sq['centre_h'],
+                              x_shift_m=sq['aim_m'] if args.x_shift is None else args.x_shift,
+                              faces=(-1.0, 1.0) if sq['flip'] else (1.0, -1.0))
+                print(f'   sim 설정 {mq}: {sq} -> 기울기 {sim_kw["tilt_deg"]:+.2f} deg, 겨냥 {sim_kw["x_shift_m"]:+.4f} m', flush=True)
+
             def qplan(start_deg):                           # the insert plan for the current hand model and trims
+                kw = dict(centre_h=q.get('basket_quadrant_centre_h_m', 0.18), tilt_deg=-qs['tilt'], x_shift_m=args.x_shift)
+                kw.update(sim_kw)
                 return quadrant_plan(basket_T, mq, pin_gap(basket_T, mq, args.pin), qs['H'], qs['tool'], start_deg, Tbc, q,
-                                     centre_h=q.get('basket_quadrant_centre_h_m', 0.18), yaw_trim_deg=qs['yaw'],
-                                     tilt_deg=-qs['tilt'], y_shift_m=args.y_shift, x_shift_m=args.x_shift)
+                                     yaw_trim_deg=qs['yaw'], y_shift_m=args.y_shift, **kw)
             early, rep = qplan(legs0['lift']['waypoints_deg'][-1])
             if early is None:
                 raise RuntimeError(f'{args.quadrant} pin {args.pin}: no insert plan from this grasp ({rep["tried"][:4]})')
@@ -1077,6 +1088,8 @@ def parse_args(argv=None):
                    '(basket y, + = left seen from the robot) [m]; default: automatic, keeps the 26.8 cm rim off the side wall')
     p.add_argument('--x_shift', type=float, default=None, help='--insert quadrant: plate along the pin rows (basket x, + = away '
                    'from the robot) [m]; default config basket_quadrant_x_trim_m')
+    p.add_argument('--sim_q', action='store_true', help='--insert quadrant: use config basket_quadrant_sim (Isaac per-quadrant '
+                   'lean, aim, wrist flip; 10/15) instead of the real trims; --x_shift still overrides the aim')
     p.add_argument('--pin', type=int, default=5, help='--insert quadrant: pin-pair number in the quadrant, 1 = farthest from '
                    'the robot (wrist image top -> bottom); the plate goes into the gap just robot-side of that pair')
     p.add_argument('--auto', action='store_true', help='plate: no Human answers after the opening phrase: gripper '
