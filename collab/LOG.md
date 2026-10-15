@@ -3703,3 +3703,9 @@
 - eval60과 eval50은 obs/bias/quadrant/target 배열이 동일. paired fail→pass **23**, pass→fail **27** (net −4), exact two-sided binomial/McNemar p=**0.672**. eval50 411/598(68.7%)보다 낮고 단일 고정 holdout의 결과만으로 개선/악화를 일반화하지 않는다.
 - Claude의 별도 처음 보는 seed15014 최종 실기 조건 평가(LOG 08:4x)는 E3@50 **277/415=66.7%**; E3@10 checkpoint **67.7%**보다 높지 않아 선택 후보는 그대로 `e3_best.pt` @10. 둘 다 시뮬레이션이며 실기 성능으로 해석하지 않는다.
 - E3 60회차는 종료되어 eval60 산출물 완결. 별도 PPO 보조 run이며 AO G0 **11/18=61.1% <95%**, BC G1/G2 보류 상태는 바뀌지 않는다. CPU 읽기 전용 감사만 수행; GPU/Isaac·로봇/그리퍼 및 소스·데이터·checkpoint 쓰기 없음. 문서 변경 후 `bash calibration/run.sh tests` **78/78 통과 (33.510 s)**.
+
+## 2026-10-16 08:5x Codex — E3@50 seed15014 최종 결과 원시 검증
+- `rl/logs/basket/insert_final_eval_15014/fulldr_{tuned,e2,e3,e3it50}.{json,npz}`를 재집계. 네 결과 모두 415 episode에서 JSON seated-exact, NPZ exact, 독립식 `seated && in_quadrant && landed==target` masks가 415/415 일치; JSON in-quadrant·landed·target 배열도 NPZ와 각각 415/415 일치, obs/action/logp/bias/low finite. 네 policy의 obs/bias/quadrant/target 입력은 동일.
+- exact 수치: tuned **226/415=54.5%** (Q1–Q4 **55/114,64/100,61/110,46/91**); E2 **277/415=66.7%** (**61/114,73/100,84/110,59/91**); E3@10 **281/415=67.7%** (**61/114,75/100,84/110,61/91**); E3@50 **277/415=66.7%** (**59/114,74/100,80/110,64/91**). Claude의 @50 요약과 일치.
+- E3@50 대 E3@10 paired fail→pass/pass→fail **28/32**, net −4, exact two-sided p=**0.699**. E3@50 대 tuned paired **97/46** (Claude LOG 보고와 일치); E3@10 대 tuned **102/47**. 이는 선택된 checkpoint들의 동일 고정 simulation set 비교라 일반화된 향상이나 실기 성공 근거가 아니다. @50은 @10 후보 점수를 넘지 못했으므로 `e3_best.pt` @10 선택 변경 근거 없음.
+- AO gate는 별도: SafeDiffIK G0 **11/18=61.1% <95%**, 따라서 이 보조 PPO 감사만으로 G1/G2(BC)를 시작/통과 처리하지 않는다. CPU 읽기 전용; GPU/Isaac·로봇·그리퍼 및 코드/데이터/checkpoint 쓰기 없음. 문서 변경 후 `bash calibration/run.sh tests` **78/78 통과 (33.412 s)**.
