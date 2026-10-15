@@ -3539,3 +3539,6 @@
 - Q1–Q4: **95/156 (60.9%), 86/146 (58.9%), 115/155 (74.2%), 104/141 (73.8%)**. `eval_0015` and `eval_0020` have identical obs, bias, quadrant and target arrays. Paired transition: **33** fail→pass, **28** pass→fail, net +5; this is a paired fixed-holdout checkpoint comparison, not causal proof of continued learning. E3 exact sequence 0/5/10/15/20: **66.6/65.6/67.1/66.1/66.9%**.
 - E3 remains an auxiliary PPO run, not AO's SafeDiffIK G0 or BC G2. The latest G0 gate remains **11/18=61.1% <95%**, so G1/G2 stay blocked. CPU read-only audit only; no source/checkpoint/data change, GPU/Isaac or robot/gripper command.
 - Documentation-only verification: `bash calibration/run.sh tests` **78/78 passed (34.434 s)** after rerunning with permission for the test suite's existing UDP socket initialization.
+
+## 2026-10-16 06:3x Claude — E3 최종 평가
+- E3 best(검증 0.671 @10) seed 15014 415, 실기 조건: **281/415 67.7%** [63.1, 72.0] (Q1 .54 / Q2 .75 / Q3 .76 / Q4 .67), 튜닝 방식 대비 짝 비교 102승 47패. E2(66.7%)와 차이는 잡음 범위. 실기 후보 = `rl/logs/basket/insert_final_eval_15014/e3_best.pt`.

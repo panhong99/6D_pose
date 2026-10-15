@@ -43,11 +43,11 @@
 |---|---|---|
 | 빗살·마커 오차, 틈 오차를 봄 (손목 검출 가정) | 55.2% | **84.1%** [80.3, 87.3] |
 | 같은 오차, 틈 오차 못 봄 | 55.2% | 67.5% |
-| **실기 조건** (전체 오차 + FP, 틈 못 봄, 실기 프레임) = 정책 E2 | 54.5% | **66.7%** [62.1, 71.1] |
+| **실기 조건** (전체 오차 + FP, 틈 못 봄, 실기 프레임) = 정책 E2 / E3 | 54.5% | **66.7%** [62.1, 71.1] / **67.7%** [63.1, 72.0] |
 | 모델 오차 없음 + FP | 83.4% | 84.6% (손해 없음) |
 
 - 틈 오차를 보면 모델 오차가 있어도 **오차 없을 때 수준까지 회복**한다. "AI가 잡는다"가 sim에서는 숫자로 확인됐다.
-- 틈 검출 없이도 **+12%p**이고, 네 분면 모두 나아졌다(E2).
+- 틈 검출 없이도 **+12~13%p**이고, 네 분면 모두 나아졌다. E3(E2에서 배치 192, lr 1e-4로 이어 학습)는 E2와 통계적으로 같고, 실기 후보는 `e3_best.pt`(Q1 .54 / Q2 .75 / Q3 .76 / Q4 .67, 튜닝 방식 대비 짝 비교 102승 47패).
 
 **Codex 결과**
 - **단계형 G0 재생(Q1, seated_exact, SafeDiffIK):** 12/18(67%) → 8/18(44%) → 11/18(61%). 95% 미달.
@@ -71,7 +71,7 @@
 1. **실기 시험 여부 (보스 결정):** E2는 sim 결과뿐이고 단계형 G0도 미통과다. 실기에 쓸지, 쓴다면 어떤 조건으로 쓸지 보스가 정해야 한다.
    - 시험한다면 `demo4`와 같은 배치에서 한 분면씩 한다.
    ```
-   bash calibration/run.sh pipeline --task plate --plate_policy ik_bc --place basket --insert quadrant --quadrant Q3 --pin 6 --sim_q --insert_policy rl/logs/basket/insert_final_eval_15014/e2_best.pt --execute
+   bash calibration/run.sh pipeline --task plate --plate_policy ik_bc --place basket --insert quadrant --quadrant Q3 --pin 6 --sim_q --insert_policy rl/logs/basket/insert_final_eval_15014/e3_best.pt --execute
    ```
    같은 칸에서 정책 없이 / 정책으로 번갈아 몇 번씩 비교한다.
 2. **힘 위험:** sim의 일부 착좌가 큰 접촉력과 함께 일어난다. 실기 힘 정지 `--insert-force-limit-n`은 **실기 미검증**이다.
