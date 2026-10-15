@@ -3309,6 +3309,15 @@
 - 검증: `bash calibration/run.sh tests` **73/73 통과(35.337 s)**; `py_compile`·`git diff --check` 통과. 코드/시험은 `7e49b3a`; 사진·JSON 산출물은 data이므로 git에 넣지 않음. 로봇·ROS·GPU 미사용.
 - 한계/다음 입력: 저장 사진 기반 GT 없이 precision/recall 또는 실제 x/y 오차를 주장할 수 없다. 목표 gap이 접시에 가려져 0/6 full fit이므로 E의 사진 detector 평가 및 공식 precision/recall은 막힘 유지; 같은 wrist-above 시점의 확인된 target-tine root/tip pixel labels 또는 접시가 target 빗살을 가리지 않는 저장사진이 필요하다.
 
+## 2026-10-16 01:52 Codex — plate-free 손목 사진 59 라벨 detector 진단
+- Claude의 새 지시에 따라 10/13 Q1~Q4 `wrist_look` 사진과 보스 확인 `labels_20261013_190126_PARTIAL_20261014_v9.json` 59개를 썼다. 라벨의 높이 가정으로 기존 `pin_layout`을 새 디렉터리 `calibration/data/basket/wrist_look/pin_layout_eval_20261016.json/`에 산출하고 `pins --layout`을 실행했다. 입력 이미지의 라벨과 같은 3D 위치에서 dark-wire line-fit을 시험하는 **in-sample local detector sensitivity**다.
+- 결과: Q1 **7/14 (50.0%)**, Q2 **4/5 (80.0%)**, Q3 **17/18 (94.4%)**, Q4 **18/22 (81.8%)**, 합계 **46/59 (78.0%)**가 `detected`. Q1 미검출 7개는 모두 `weak_line`; Q2 1개 `weak_line`; Q3 1개 `weak_line`; Q4는 2 `weak_line`, 1 `search_boundary`, 1 `ambiguous`. 임계값은 낮추지 않았다.
+- 통과 46개 tip 후보와 같은 사진 checked tip 픽셀 차이: 중앙 **0.72 px**, p90 **2.86 px**, 최대 **4.30 px**(46/46가 5 px 이내). 라벨 자체의 점 위치 불확실성은 기존 주석대로 2–3 px다. 이는 detector에 정답 위치를 미리 준 조건의 선 중심 검증이지 자동 위치추정 정확도가 아니다.
+- 비교용 parametric model output은 basket-y 행을 가장 가까운 행으로 놓고 x 순서로 one-to-one 연결했다. 해당 **추정 대응**에서 후보 상태는 28/59였지만, pin 번호 GT가 없고 4개 대응은 model 17.4 mm pitch의 절반보다 x 차이가 커 정식 recall로 계산하지 않았다. `detected` tip과 checked tip은 대응별 5 px 안에 든 경우 0/28; 이는 현 model projection이 labelled tine에 잘 맞지 않음을 시사하나 대응 오차를 포함한 진단이다.
+- 결과 JSON·시각화: `calibration/data/basket/wrist_look/pin_detector_eval_20261016_v1/summary.json`, `Q1_label_eval.png`…`Q4_label_eval.png`. 원시 model detector JSON은 `pins_model_eval_20261016_Q1`…`Q4`; label-seeded 시험 JSON은 `pins_label_layout_eval_20261016_v2_Q1`…`Q4`. 이 전부는 data 산출물이며 Git 미추적.
+- 범위/한계: 59개는 네 원본 이미지의 부분 라벨이고 그 라벨에서 검색 위치를 역투영했으므로 같은 사진에 대한 in-sample 결과다. 이 시험으로 precision, exhaustive visible-pair recall, pin numbering, 새로운 camera pose에서의 일반화 또는 실제 gap-centre x/y 오차를 주장할 수 없다. 특히 Q1 50%로 quadrant 전부의 80% 조건도 통과하지 못함. 다음 단계는 miss-case 확대 시각검토 후 보수적 개선안 검증, 그리고 독립된 plate-free target view에 exhaustive 보임/가림·번호 GT 확보.
+- 코드 변경 없음; 분석에 쓴 detector는 `7e49b3a`, 그 전체 회귀시험은 73/73 통과 기록(01:42). 카메라·로봇·GPU 명령 없음.
+
 ## 2026-10-16 01:1x Claude — 30분 기록: 틈 검출 없을 때의 가치
 - C2 평가 25회차 **0.828**(Q1 .85 / Q2 .79 / Q3 .83 / Q4 .84, 최고). D3(전체 랜덤화) 0.759 @10.
 - C2 최고 정책을 **틈 오차 관측을 가리고**(`--cl_policy_noseen`, ca4c875) 같은 598개로 평가: **0.684**(Q1 .60 / Q2 .64 / Q3 .77 / Q4 .73). 기준(튜닝 방식) 0.554 → 틈 검출 없이 +13%p, 틈 검출(손목 카메라)까지 +14%p 더. 출력 `rl/logs/basket/insert_eval_noseen_20261016/`.
