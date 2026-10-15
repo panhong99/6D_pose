@@ -3052,3 +3052,14 @@
 - 선행 attach blocker도 여전히 적용: `expert.py` collect 경로가 attach/update를 호출하며 접시 pose를 강제하고, attached env에서는 그리퍼 명령을 열기로 덮어쓴다. 이는 AO '실제 물리만' 조건 위반이다.
 - 필요한 수정 순서: (1) AO 기준 좌표·배치 범위를 source of truth로 연결, (2) 매 episode quadrant+pin_gap 무작위 선택 및 목표표와 번호 provenance 저장, (3) observation을 17+5 requested alignment+4 quadrant one-hot(26D; E.alignment()의 추가 reach-fraction은 별도 승인 없이 포함하지 않음), FP 잡음·episode 고정 hand bias를 학생 관측에만 적용, (4) 물리 파지 유지/실제 release로 attach 경로 제거, (5) J3>132° plan/데모 제외·비율 기록, (6) CPU 스키마·finite·범위·분포·attach 회귀검사 후 G0 gate≥95% 및 G1 단일 Isaac physical smoke test.
 - 변경 없음: Claude 소유 `rl/basket/*` 및 basket model/config/data/weights는 수정하지 않았다. 문서 변경 검증: 기본 샌드박스는 진단 UDP 소켓 생성 권한에서 차단됐으나 승인 실행 `bash calibration/run.sh tests` **56/56 통과, 38.917 s**; `git diff --check` 통과. 이 회귀 세트는 기존 코드 검증이며 오늘 발견한 G1 요건 자체를 검증하는 시험은 아니다.
+
+## 2026-10-15 20:25 Codex — AO/G0 19:32 실행 흔적 점검 (읽기 전용)
+- 새로 발견한 경로 `calibration/data/basket/ao_g0_dilation_20261015_1933/`에는 `Q1_g0.stdout.log`(31,930 bytes; 마지막 수정 19:33:50 KST)만 있고 예상 결과 JSON/NPZ는 없다. 끝부분은 환경 초기화 후 `closed loop 1/2`와 `2/2`가 각각 18/20 plan 재해결을 보고한 뒤 종료되며, SafeDiffIK episode replay 완료·성공 집계·저장 메시지가 보이지 않는다. 두 plan 재해결 비율은 G0 성공률이 아니다.
+- 로그에는 `Disabling key-value database because another kit process is locking it` 및 USD unresolved-reference 경고가 있다. 현재 정확한 PID나 종료코드는 보존된 기록에서 확인할 수 없어 이것들을 실패 원인으로 단정하지 않는다. 해당 디렉터리의 결과 파일 부재와 현 셸 프로세스 조회 결과만으로는 결과 미저장 원인을 구별할 수 없다.
+- 현재 재확인: 다른 G0/Isaac PID 없음, 이 셸 `nvidia-smi`는 NVIDIA driver 통신 실패. 공유 GPU 유휴 여부와 19:32 실행의 정확한 종료 PID/코드는 확인할 수 없으므로 중복 실행을 시작하지 않았다. 기존 최신 유효 G0 결과는 여전히 `ao_g0_phase_gate_20261015_1911/Q1_g0.json` teacher seated_exact 18, SafeDiffIK 8, **8/18=44.44%**; ≥95% gate 미달, G1/G2 미착수 유지.
+- 다음: Claude에게 해당 실행 wrapper/정확 PID의 종료 코드 또는 Isaac stdout/stderr를 확인하게 하고, 원인이 파일 저장/세션 중단/다른 Kit 충돌 중 무엇인지 분리한다. 재시도 전에는 이전 Kit/Isaac 프로세스와 결과 경로를 다시 확인하고, 단일 새 출력 경로에서 실행한다. 본 점검은 로그·파일·프로세스 읽기 전용이며 코드·데이터·모델·가중치 변경 및 로봇 명령은 없다.
+
+## 2026-10-15 20:2x Claude — 30분 기록
+- 넣기 보정 PPO A: 평가 0회차 0.554 → 20: 0.664 → 25: 0.664(정체). B(+ yaw·손 안 편향): 0: 0.528 → 10: 0.595 → **20: 0.635**. 둘 다 계속.
+- AO G0 Q1 time dilation(Codex 0068e55) 실행 중 54분째(19:33 시작): 학생 재생 구간에서 기다림이 길어 로그 출력 없음, 프로세스는 CPU 120%로 계산 중. 60분 넘으면 '너무 느림'으로 Codex에 반환 예정(기다림 상한을 프레임 단위가 아니라 구간 단위 총합으로).
+- Codex: G1 데모 수집기가 아직 attach(대용품 물리)를 쓰는 문제와 사양 공백을 기록(b7ff057, b51b0cb).
