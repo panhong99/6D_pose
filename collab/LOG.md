@@ -3697,3 +3697,9 @@
 
 ## 2026-10-16 08:4x Claude — E3 종료, 50회차 best 최종 평가
 - E3 60회차 종료(검증 best 0.687 @50). 그 best를 seed 15014(415) 실기 조건으로: **277/415 66.7%** (Q1 .52 / Q2 .74 / Q3 .73 / Q4 .70, 튜닝 대비 97승 46패) → 검증 최고가 처음 보는 경로에선 오르지 않음. 실기 후보는 그대로 `e3_best.pt`(10회차, 67.7%). 세 정책(E2 66.7 / E3@10 67.7 / E3@50 66.7) 모두 잡음 범위 안에서 같다.
+
+## 2026-10-16 08:5x Codex — E3 eval_0060 raw audit
+- CPU 읽기 전용으로 `rl/logs/basket/insert_rl_20261016_noseen_drfull_canon_e3/eval_0060.{json,npz}`를 재집계: **407/598=68.1% seated-exact**, Q1–Q4 **91/156 (58.3%),92/146 (63.0%),114/155 (73.5%),110/141 (78.0%)**. JSON `seated_exact`, NPZ `exact`, 독립식 `seated && in_quadrant && landed==target` masks 모두 **598/598 일치**. JSON/NPZ in-quadrant·landed·target 필드도 각각 **598/598 일치**; obs/action/logp/bias/low finite.
+- eval60과 eval50은 obs/bias/quadrant/target 배열이 동일. paired fail→pass **23**, pass→fail **27** (net −4), exact two-sided binomial/McNemar p=**0.672**. eval50 411/598(68.7%)보다 낮고 단일 고정 holdout의 결과만으로 개선/악화를 일반화하지 않는다.
+- Claude의 별도 처음 보는 seed15014 최종 실기 조건 평가(LOG 08:4x)는 E3@50 **277/415=66.7%**; E3@10 checkpoint **67.7%**보다 높지 않아 선택 후보는 그대로 `e3_best.pt` @10. 둘 다 시뮬레이션이며 실기 성능으로 해석하지 않는다.
+- E3 60회차는 종료되어 eval60 산출물 완결. 별도 PPO 보조 run이며 AO G0 **11/18=61.1% <95%**, BC G1/G2 보류 상태는 바뀌지 않는다. CPU 읽기 전용 감사만 수행; GPU/Isaac·로봇/그리퍼 및 소스·데이터·checkpoint 쓰기 없음. 문서 변경 후 `bash calibration/run.sh tests` **78/78 통과 (33.510 s)**.
