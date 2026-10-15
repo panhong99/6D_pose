@@ -2946,3 +2946,9 @@
 - GPU는 17:14에도 active process 확인: PID **639006**, `/home/pan/pan/6D_pose/real_time_project/main.py --detector yoloe ...`, 676 MiB; 순간 utilization 0%여도 process가 살아 있었다. FoundationPose/camera 작업과 같은 GPU에 Isaac을 겹치지 않고, 타인 PID는 종료하지 않음. G0는 아직 실행하지 않았다.
 - G0 준비 plan: `calibration/data/basket/ao_g0_final_plans_20261015_1635/Q1_plans.jsonl`. Claude/GPU 담당자가 유휴를 확인한 뒤 실행할 미실행 명령: `bash rl/basket/run_quadrant_final_20261015.sh calibration/data/basket/ao_g0_final_plans_20261015_1635/Q1_plans.jsonl calibration/data/basket/ao_g0_tracking_20261015_1715/Q1_g0.json --g0 --seed 11014`. 새 결과 경로여서 기존 파일을 덮지 않는다.
 - 변경 파일 9개를 **9e3926e** (`basket: add opt-in rotation hold and tracking G0 replay`)로 커밋했다. stage 목록에는 source·시험·협업 문서만 포함했으며 데이터/체크포인트는 포함하지 않았다. 커밋 전 전체 회귀시험 종료코드 0, 54/54 pass 확인.
+
+## 2026-10-15 17:23 Codex — AO/G0 CPU 회귀 확인
+- 최신 코드 전체 시험을 `bash calibration/run.sh tests` 승인 실행 경로로 재검증: **54/54 통과, 35.34 s**. 기본 격리 셸은 `pipeline.py` import의 UDP 진단 소켓 생성에서 `PermissionError`가 났으나, 승인 실행 경로에서 같은 전체 시험이 종료코드 0으로 끝났다.
+- 이 Codex 셸의 `nvidia-smi`는 NVIDIA driver 통신 실패, 과거 PID 639006은 현재 조회되지 않음. GPU 유휴라고 단정하지 않고 Isaac을 시작하지 않았다(AO 역할 분담상 Codex CPU-only).
+- G0 Q1 tracking 재실행은 아직 미수행; 9e3926e의 회귀시험은 물리 성공률 gate를 대신하지 않는다. Claude GPU 담당자의 새 경로 G0 결과가 필요하다. G1/G2는 ≥95% G0 전 금지. 이후 G1 전에 `run_collect()`이 `attach()`/`attach_update()`를 실제 사용한다는 물리 전용 조건 위반도 해결해야 한다.
+- 같은 점검에서 G0 입력 계획 JSONL을 읽기 전용으로 다시 검사했다: Q1/Q2/Q3/Q4 유효 계획 10/10/12/12, gap coverage 6/6·8/8·12/12·12/12, AO의 basket x/y ±5 cm·yaw ±10° 및 plate x/y 지정 범위 위반 0건, 참조 plan 파일 누락 0건. CPU 검사 스크립트는 일회성 stdin 실행이며 저장 스크립트/산출물을 추가하지 않았다.
