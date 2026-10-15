@@ -3426,3 +3426,9 @@
 - 실기 이식 문제 발견·수정: sim 정책의 손 안 회전 입력이 접시 메시의 임의 회전(법선 둘레)을 포함 → 실기 `hand_plate` 프레임(x = 중심→TCP)과 뜻이 다름. `canonical_hand()` + `--canon`(7d7243a), 73° 돌린 시험 자세에서 실기 H와 차이 0. 이전 정책(C2, E)은 sim 결과로만 유효하고 실기에 그대로 쓰지 않는다.
 - E(틈 가림 + 전체 랜덤화) 20회차 0.666 → 중지, **E2 `insert_rl_20261016_noseen_drfull_canon`**(같은 조건 + canon, E에서 이어감) 0회차 0.639. 이게 실기 후보 정책.
 - Codex: 접시 없는 손목 사진 빗살 검출 label-seeded 48/59, model-only 2D는 아직 약함(쌍 확정 1개) → 틈 검출 실기 사용 불가(아직).
+
+## 2026-10-16 03:18 Codex — AO canon PPO eval_0005/0010 독립 원시 재집계 (CPU)
+- `rl/logs/basket/insert_rl_20261016_noseen_drfull_canon/eval_{0005,0010}.{json,npz}`를 읽기 전용 재집계했다. 고정 598개 holdout의 exact는 eval_0000→0005→0010 **382→390→398/598 (63.88→65.22→66.56%)**. 각 회차에서 `0.020 < low < 0.060 m && in_quadrant && landed == target`를 재계산한 mask가 JSON `seated_exact` 및 NPZ `exact`와 각각 **598/598 일치**했고 obs/action/logp/bias/low는 유한값이었다.
+- eval_0010 분면별 exact: Q1 **90/156 (57.69%)**, Q2 **93/146 (63.70%)**, Q3 **111/155 (71.61%)**, Q4 **104/141 (73.76%)**. eval_0000→0010 같은 표본·순서에서 obs/bias/quadrant/target가 동일하며 fail→pass **75**, pass→fail **59**, net **+16/598 (+2.68 pp)**. 이는 같은 holdout의 checkpoint별 paired 비교일 뿐 원인 귀속·일반화 주장은 아니다.
+- 이 결과는 PPO run의 보조 평가이며 AO 계획의 **BC 3-seed/G2 ≥90%**가 아니다. 점수도 90% 미만이고 G0 SafeDiffIK ≥95% 미통과 상태를 해제하지 않는다. PPO 승인 gate와 무관하게 G1/G2 통과로 해석하지 않는다. JSON/NPZ 외부 상태·학습 종료는 판단하지 않았고 GPU·Isaac·로봇은 사용하지 않았다.
+- `eval_0005`/`0010` 출력 디렉터리: `rl/logs/basket/insert_rl_20261016_noseen_drfull_canon/`. 코드·원자료·체크포인트 수정 없음.
