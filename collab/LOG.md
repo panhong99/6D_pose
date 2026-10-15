@@ -3258,3 +3258,23 @@
 - 두 실패는 서로 다른 진단 신호: env16은 threshold 접촉 없음, 최종 low −15.65 mm/gap −1; env17은 시작부터 frame 0에 1.15 N, low −16.37 mm, normal error 81.1°이고 390 frame 모두 threshold 접촉이라 초기 겹침/비정상 시작 후보다. 1 N·33 ms 센서 표본은 물리적 접촉 시각의 완전한 판정이 아니며 어느 표면 지점이 닿았는지도 제공하지 않는다.
 - 재생은 선생님보다 60배 길어지는 구간이 있어 본 분석은 선생님 trace만 해석했다. Ratecap은 아직 JSON/NPZ 미생성. G0 SafeDiffIK 재현은 11/18=61.1%로 95% 미통과, G1/G2 보류. 코드/데이터/체크포인트 변경 없음.
 - Verification: first `bash calibration/run.sh tests` was blocked at sandbox UDP socket creation (`PermissionError`); rerun with the approved execution path passed **65/65** in 39.203 s. `git diff --check` passed. Documentation-only commit planned; no code, data, checkpoint, or GPU/Isaac changes.
+
+## 2026-10-16 00:52 Codex — ratecap vs uncapped 접촉력·정지 높이 (CPU raw audit)
+- 원본 `calibration/data/basket/ao_g0_insert_telemetry_20261015_2210/{uncapped,ratecap}/Q1_g0.{json,npz}`를 쌍으로 검증했다. 두 실행 모두 seed **11014**, plans SHA-256 `b18269a808372275130c8a6d614ec8a34bed03ba72bf1a7edb73a60267d5cd9f`, 20개 target gap 순서가 동일하다. JSON seated_exact masks와 NPZ `teacher_success` 일치, 배열 finite, force≥1 N 접촉 mask 및 첫 프레임 목록 일치. trace 길이는 uncapped 390, ratecap 391 frame이다.
+- 같은 20 plan에서 uncapped teacher **18/20**, `--teacher_rate_cap` teacher **11/20** seated_exact. 차이가 난 7 episode(2,6,7,12,13,14,15)는 모두 uncapped 성공 → ratecap 실패. Ratecap 쪽은 일곱 모두 in-quadrant/exact gap은 맞지만 `seated=false`, 최종 low **66.2–67.8 mm**다. 삽입 trace 마지막 30 표본의 low 중앙은 **66.25–67.90 mm**, 각 표본 범위 **0.00015–0.00328 mm**, 선형 변화량 절댓값 최대 **0.00060 mm/s**로 사실상 높이 plateau다. 첫 1 N 접촉 표본은 frame **115–230**.
+
+| env | uncapped 최종 low mm | uncapped peak N @ low mm | ratecap 최종 low mm | ratecap peak N @ low mm | ratecap first contact frame |
+|---:|---:|---:|---:|---:|---:|
+| 2 | 55.9 | 165.8 @ 67.0 | 67.6 | 185.7 @ 67.9 | 226 |
+| 6 | 47.4 | 88.6 @ 49.7 | 67.8 | 188.1 @ 67.7 | 221 |
+| 7 | 47.2 | 94.8 @ 50.0 | 67.1 | 187.2 @ 67.0 | 115 |
+| 12 | 47.2 | 120.9 @ 49.8 | 66.9 | 164.5 @ 66.8 | 224 |
+| 13 | 47.2 | 102.6 @ 50.3 | 67.6 | 177.3 @ 67.1 | 224 |
+| 14 | 47.6 | 61.2 @ 51.0 | 66.2 | 161.6 @ 66.2 | 230 |
+| 15 | 46.9 | 153.0 @ 66.0 | 66.9 | 175.1 @ 66.8 | 118 |
+
+- 이 paired subset에서 uncapped 성공의 episode peak 반력 중앙값은 **102.6 N**(61.2–165.8; **3/7은 100 N 미만**). Ratecap 실패의 peak 중앙값은 **177.3 N**(161.6–188.1)인데도 높이가 66–68 mm에 멈췄다. 그러므로 현재 결과는 “sim 착좌에 100 N을 밀어 넣어야 한다”는 주장을 지지하지 않는다. 추가로 env2·15의 uncapped insert trace 끝 low는 각각 약 67/66 mm였지만 release 후 JSON 최종 low는 55.9/46.9 mm로 seated_exact에 들었다. 이는 release 후 낙하/안착이 관여할 가능성과 맞지만, 인과를 증명하진 않는다.
+- 안전 한계: force는 Plate↔Basket 필터의 **시뮬레이션 접촉력 norm**이지 TCP/그리퍼 작동력 측정치가 아니며, 접촉점·접촉 방향·충격량도 저장되지 않았다. 따라서 N 수치를 실기에 환산하거나 빗살/레일 중 접촉 원인을 단정할 수 없다. 또한 두 실행 모두 `strict_inserted=true` **0/20**(코드상 gap·중심·높이·직립·30-frame 정지의 더 엄격한 검사)였다. 여기의 seated_exact 18/20·11/20은 계획에 명시된 낮은 높이+분면+정확 gap 대리 기준이며 완전한 안정 삽입 증명으로 보고하면 안 된다.
+- 전체 G0 판정은 미통과 유지: uncapped SafeDiffIK 재현 11/18=61.1%, ratecap 6/11=54.5%로 둘 다 95% 미달. 상한은 joint target slew retiming이며 실제 관절 속도를 제한한다고 볼 수 없다. Q1 한 seed/20 plan 진단이므로 일반화·인과 결론이 아니다. 코드·데이터 변경 없음.
+
+- Verification: `git diff --check` 통과. 최초 `bash calibration/run.sh tests`는 pipeline UDP 소켓 권한으로 막혔고, 승인된 경로 재실행은 **65/65 통과(36.252 s)**. 문서 두 파일만 커밋; 코드·시뮬레이션 데이터·체크포인트 변경 없음.
