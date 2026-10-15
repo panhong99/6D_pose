@@ -3142,6 +3142,7 @@
 - 회귀시험: numpy-only trajectory helper로 per-frame joint delta ≤ speed/30 Hz, 최종 waypoint 도달, no-motion path·phase boundary를 검증한다. 이후 전체 tests, 원시 teacher/G0 결과와 새 output 경로 확인.
 
 ## 2026-10-15 21:25 Codex — `--teacher_rate_cap` CPU 구현·검증 완료
+- 커밋 `af1633e`에 코드·시험·DECISIONS·작업판/LOG를 포함했다(데이터·가중치는 제외).
 - `rl/basket/expert.py`: 기본값은 꺼진 `--teacher_rate_cap`을 추가했다. 켜면 teacher joint-PD waypoint를 30 Hz로 retime하며 매 프레임 joint 목표 변화량을 해당 phase의 기존 `speed/30` 이하로 제한한다. 이전 phase의 마지막 명령 목표를 이어받아 경계에서 낮은 새 상한도 지킨다. 기존 보간 경로는 flag off일 때 그대로다. G0 및 joint-reference JSON에 적용 여부 `teacher_rate_capped`를 기록한다.
 - `calibration/tests.py`: 서로 다른 길이/no-path 병렬 경로, 마지막 waypoint 도달, 낮은 상한으로 phase 전환, shape/NaN/상한 오류의 CPU 시험 3개 추가. `python -m py_compile rl/basket/expert.py calibration/tests.py`, `git diff --check` 통과. 필수 전체 `bash calibration/run.sh tests` **61/61 통과, 34.013 s**.
 - 해석 한계: 제한하는 것은 PD 목표 갱신량이며 실측 관절 물리 속도의 보증이 아니다. 실제 물리 replay와 seated_exact 결과는 아직 없음. 기본 동작·SafeDiffIK TCP 행동계약·충돌 shield·성공 판정은 변경하지 않았고 속도 상한도 올리지 않았다. Codex는 GPU/Isaac, 로봇·그리퍼를 실행하지 않았으며 데이터/체크포인트를 만들거나 수정하지 않았다.
