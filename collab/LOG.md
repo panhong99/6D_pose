@@ -3034,3 +3034,10 @@
 - 넣기 보정 PPO A(gap x·y 랜덤화): 평가(seed 9014·10014, 598) 0회차 0.554 → 5: 0.615 → 10: 0.647 → 15: 0.649 → **20: 0.664**(Q1 .62 / Q2 .58 / Q3 .77 / Q4 .68). B(+ 바구니 yaw·손 안 편향, c9884db): 0회차 0.528, 9회차 진행 중. 세 Isaac 동시 실행으로 회차당 약 3분.
 - AO G0(Codex 실행기, Claude가 Isaac 실행): 추적형 12/18(67%) → 단계 대기(phase gate) 8/18(44%). 칸 정렬은 좋아짐(14 중 12 정확), 실패는 덜 내려감 5(65~76 mm), gate 시간 초과로 못 놓음 4. 고칠 방향은 작업판(bb2a7e4).
 - 18:3x 미팅 시연 중 GPU 부족(FP 할당 실패): 학습 두 개 + FP. 두 번째 학습을 멈췄다가 시연 끝난 뒤 다시 시작. Q3 실기 y trim +1.5 → +0.5 cm(벽 검사 통과, 967e149).
+
+
+## 2026-10-15 19:48 Codex — AO 상태 재확인 및 G1 collector 물리 조건 감사
+- `calibration/data/basket`에 새로운 `Q1_g0.json/.npz`가 없고 Isaac/학습 PID도 보이지 않았다. 따라서 재생 결과는 기존 최신 8/18=44.44% 그대로이며 G0 ≥95% gate 미통과; 이 세션에서는 GPU/Isaac을 실행하지 않았다.
+- `rl/basket/expert.py`를 읽기 전용으로 대조: `run_collect()`은 실제 grasp 시작 `bt.grasped_start()` 직후 `attach(env, s0['ok'], ...)`를 호출한다(1344–45행). `attach_update()`는 붙인 plate의 root pose를 TCP×상대변환으로 매 physics step 강제 쓰고 속도를 0으로 만든다(89–113행; `sim_steps` 80–84행). 삽입 루프도 붙은 env에 gripper-open 명령을 덮어쓰고 다시 `attach_update()`를 호출한다(1443–46행). 따라서 현 collector는 실제 물리 grasp를 시작해도 운반·삽입 데이터를 물리-only로 보장하지 않으며 AO G1 데모로 사용 불가다. `--save_starts` 역시 `env._attach` 데이터를 요구한다(1381–85행).
+- 다음 코드 수정 제안(현재 파일 소유권과 충돌해 Codex는 미수정): AO G1 경로에서는 `attach()`/per-step `attach_update()`/attached 전용 gripper-open override를 제거해 물린 손가락을 닫힌 상태로 유지하고, attach 기반 `--save_starts`는 AO 수집에서 거부 또는 별도 명시 경로로 분리한다. CPU 회귀시험에서 AO 수집 경로에 attach 호출이 없음을 검증한 뒤, G0 gate ≥95% 통과 후 단일 Isaac 실행으로 lift·grasp 유지·실제 release를 확인해야 한다.
+- TASKBOARD Codex 상태를 갱신했다. 데이터·모델·config·코드 변경 및 로봇 명령 없음.
