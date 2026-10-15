@@ -94,3 +94,15 @@ wandb:
   project: basket_insert
   mode: auto                       # online if logged in, else offline; WANDB_MODE overrides
   # one run per training job; BC seeds share a group; RL resumes the same run id across chunks
+
+align:                             # (10/15 보스) stage-4 alignment observation / reward (env.alignment) and the model-error randomisation
+  rows_y: [-0.0475, 0.0475]        # tine rows L / R across the gap (sim model 9.5 cm; real Q1/Q4 ~7.9 cm -> covered by dr.row_scale)
+  rim_radius: 0.134                # plate rim radius (PLATE_R)
+  handoff: {xy_m: 0.002, tilt_deg: 2.0, hold_s: 1.0}   # 4 -> 5: both rows within 2 mm, plane within 2 deg, held 1 s
+  dr:                              # per-episode error between the model the policy is given and the true sim geometry
+    gap_x_m: {Q1: 0.020, Q2: 0.008, Q3: 0.008, Q4: 0.008}   # along the rows: Q1 pitch unmeasured (model 30 vs photo ~24 mm)
+    gap_y_m: 0.010                 # across (pair centre: model vs wrist 3-D ~1 cm)
+    yaw_deg: 3.0                   # basket marker fit 4-7 mm over ~0.4 m
+    row_scale: [0.82, 1.0]         # row spacing factor (Q1/Q4 real ~79 / 95 mm)
+    in_hand_mm: 2.0                # fixed per-episode bias of the plate in the hand
+    in_hand_deg: 1.0

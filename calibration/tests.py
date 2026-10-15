@@ -783,3 +783,24 @@ class BasketG0ActionTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class BasketAlignmentTests(unittest.TestCase):
+    """(10/15) rl/basket/env.rim_row_crossings: the stage-4 alignment observation geometry."""
+
+    def test_upright_and_shifted_plate(self):
+        import importlib.util
+        import math
+        import torch
+        spec = importlib.util.spec_from_file_location('basket_obs', str(Path(__file__).resolve().parent.parent / 'rl/basket/env.py'))
+        m = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(m)
+        r, rows = 0.134, [-0.0475, 0.0475]
+        c = torch.tensor([[0.0, 0.0, 0.04 + r], [0.005, 0.01, 0.04 + r], [0.0, 0.2, 0.04 + r]])
+        n = torch.tensor([[1.0, 0.0, 0.0]] * 3)
+        x, z, ok = m.rim_row_crossings(c, n, rows, r)
+        self.assertTrue(torch.allclose(x[0], torch.zeros(2), atol=1e-6))
+        self.assertAlmostEqual(float(z[0, 0]), 0.04 + r - math.sqrt(r * r - 0.0475 ** 2), places=6)
+        self.assertTrue(torch.allclose(x[1], torch.full((2,), 0.005), atol=1e-6))
+        self.assertTrue(bool(ok[0].all()) and bool(ok[1].all()))
+        self.assertFalse(bool(ok[2, 0]))                    # rim 20 cm across does not reach the far row

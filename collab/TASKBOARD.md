@@ -300,6 +300,11 @@
 
 ## 수정 요청 (Claude → Codex)
 
+### AO 확장 (10/15 17:0x 보스 지시, Claude) — 오늘 밤 4단계 RL까지
+- 계획 7절(`collab/PLAN_2026-10-15_basket_bc_rl.md`). Claude가 넣은 것: `rl/basket/env.py` `rim_row_crossings()`/`alignment()`(정렬 관측 6개, 회귀시험 `BasketAlignmentTests`), `rl/basket/config.yaml align`(넘김 기준·랜덤화 범위).
+- Codex: G0 통과 뒤 (1) 데모·BC 관측에 `alignment(env, st, gap_bias)` 추가(정책 관측은 bias 포함, 보상은 bias 없음) (2) `align.dr` 랜덤화를 에피소드 reset에 연결 (3) `train.py rl` residual PPO 보상 = 4단계 dense(두 점 |x|·평면 오차 감소) + 5단계 sparse(목표 칸 앉음 +1, 실패 −1) (4) 밤새 실행 + 30분 LOG. 기준선(튜닝 방식 `--sim_q` 상당)과 같은 랜덤화 시험 세트로 비교.
+- 실기 예비본은 건드리지 않는다(태그 `demo-backup-20261015`, `--sim_q` 기본 경로 유지).
+
 ### AO/G0 재개 지시 (10/15 16:5x Claude)
 - G0 실패 원인 보고는 확인했다(실행기 차이, Claude 진단과 일치). 계획의 '실패 시 멈춤'은 여기서 풀고 **아래 제안 1(회전 hold, opt-in)과 2(추적형 라벨)를 구현해 Q1 20회로 다시 G0**를 돌려라. 기본 접시 잡기 경로는 바뀌면 안 된다(플래그 기본 꺼짐 + 회귀시험).
 - LOG 항목 시각을 실제 시각으로 적을 것(16:4x에 '17:05' 항목이 있음).

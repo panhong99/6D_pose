@@ -46,6 +46,46 @@ def observe(env, released):
     return obs, st
 
 
+def rim_row_crossings(centre, normal, rows_y, radius):
+    """(10/15) Where the plate rim crosses each tine row, all in the slot frame (x along the rows, y across, z up).
+    centre (n,3) rim-circle centre, normal (n,3) plate normal, rows_y: row offsets (k,) -> (x (n,k), z (n,k), ok (n,k)):
+    the LOWER of the two rim points in the plane y = row_y; ok = False where the rim does not reach that row.
+    x = 0 is the gap line, so x is the bottom's along-row alignment error at that row (L / R)."""
+    down = torch.tensor([0.0, 0.0, -1.0], device=centre.device).expand_as(centre)
+    a = down - normal * (down * normal).sum(1, keepdim=True)               # plate-plane direction toward the lowest rim
+    a = a / a.norm(dim=1, keepdim=True).clamp(min=1e-9)
+    b = torch.cross(normal, a, dim=1)
+    rows = torch.as_tensor(rows_y, dtype=centre.dtype, device=centre.device)
+    A, B = radius * a[:, 1:2], radius * b[:, 1:2]                          # y(theta) = cy + A cos + B sin
+    C = rows[None, :] - centre[:, 1:2]
+    rho = torch.sqrt(A ** 2 + B ** 2).clamp(min=1e-9)
+    ok = C.abs() <= rho
+    base, half = torch.atan2(B, A), torch.acos((C / rho).clamp(-1.0, 1.0))
+    pts = []
+    for th in (base + half, base - half):
+        p = centre[:, None, :] + radius * (torch.cos(th)[..., None] * a[:, None, :] + torch.sin(th)[..., None] * b[:, None, :])
+        pts.append(p)
+    lower = torch.where((pts[0][..., 2] <= pts[1][..., 2])[..., None], pts[0], pts[1])
+    return lower[..., 0], lower[..., 2], ok
+
+
+def alignment(env, st, gap_bias=None):
+    """(10/15) Stage-4 alignment observation (n, 6): rim x at row L, rim height above the rail at L, same for R (m),
+    plate-plane error to the slot plane (rad), rows reached (0..1).  gap_bias (n, 2) [m] shifts the gap the policy
+    BELIEVES in (tine-model / marker error, domain randomisation); rewards use the true geometry (bias None)."""
+    import basket_env as be
+    a = CFG['align']
+    R = slot_R(env)
+    loc = lambda v: torch.einsum('nij,ni->nj', R, v)                       # noqa: E731  env -> slot frame
+    centre, normal = loc(st['rel']), loc(st['up'])
+    if gap_bias is not None:
+        centre = centre - torch.cat([gap_bias, torch.zeros_like(gap_bias[:, :1])], 1)
+    x, z, ok = rim_row_crossings(centre, normal, a['rows_y'], a['rim_radius'])
+    rail = be.B['pins'].get('rail_z', 0.049)
+    z = z - rail
+    return torch.stack([x[:, 0], z[:, 0], x[:, 1], z[:, 1], torch.deg2rad(st['normal_err']), ok.float().mean(1)], 1)
+
+
 def to_env_action(env, step_slot, open_flag):
     """Slot-frame step (n, 6) [m, rad] + open (n,) -> env action (n, 7) for the SafeDiffIK arm term."""
     import plate_env as pe
