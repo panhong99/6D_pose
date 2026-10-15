@@ -3458,3 +3458,15 @@
 - 분면별 (미착좌/정분면 밖/오답 칸/exact): eval_0000 Q1 **33/13/21/89**, Q2 **16/25/21/84**, Q3 **7/12/26/110**, Q4 **15/3/24/99**. eval_0010은 Q1 **28/19/19/90**, Q2 **12/18/23/93**, Q3 **4/8/32/111**, Q4 **12/4/21/104**. Q3는 exact +1과 동시에 오답 칸 +6이라 aggregate exact 변화만으로 분면별 개선을 주장하지 않는다.
 - 이것은 동일 holdout 두 checkpoint의 진단 분해이며 원인·일반화 주장이 아니다. `train_0010.json/.npz`는 확인 시점에 없고 `.log`만 있어 train batch 점수 미판정. 현재 셸 process 목록에서 Isaac/Python 작업은 보이지 않았고 `nvidia-smi`는 NVIDIA driver 통신 실패를 냈다. 외부 실행기의 생사/GPU 점유는 확인 불가라 종료·재실행하지 않았다.
 - 오프라인 JSON/NPZ만 읽음. gate·코드·모델 변경 없음; G0 미통과 및 BC/G2 미달 유지.
+
+## 2026-10-16 03:41 Codex — E: model projection vs checked-root residual 분리 진단 (CPU)
+- Q1–Q4의 v5 model-only `pairs.json`과 D의 부분 v9 checked layout을 읽었다. 각 사진에서 `basket_pins_in_base()`의 모델 빗살을 가정 rail-root z=−95 mm로 교차시키고, **바구니 좌표 root XY**의 Hungarian 1:1 최소거리로 59 checked 라벨에 사후 대응했다. 대응 핀의 모델 root와 tip을 저장 hand-eye/K/pose로 투영하고 클릭한 root/tip 픽셀과 차이를 구했다. 앞서 시도한 image-row 부호 매칭은 줄 이름이 basket y 부호를 뜻하지 않아 폐기했고, 최종 산출물에는 사용하지 않았다.
+- 분면별 root XY 모델-라벨 거리 중앙값/p90은 Q1 **10.14/10.95 mm**, Q2 **6.98/21.28 mm**, Q3 **12.91/17.33 mm**, Q4 **7.35/9.79 mm**. 모델 tip projection과 checked tip 픽셀의 거리 중앙값/p90은 각각 **26.81/29.83, 21.76/29.77, 17.87/26.11, 19.11/19.85 px**; ≤5 px는 **0/59**였다. 행별로 Q3 `pair_B_row_plus` tip median은 **8.03 px**(7/9가 ≤10 px), `pair_B_row_minus`는 **25.29 px**; 같은 사진의 두 행에 편차가 다르게 나타난다. 이는 라벨로 대응 대상을 고른 투영 잔차 진단이며 end-to-end hit 점수가 아니다.
+- 이 수치만으로 모델 위치, 저장 basket pose, camera hand-eye, 가정 root/tip 높이 또는 pixel label 중 어느 항목이 원인인지 단독 판별할 수 없다. 59개는 양성 부분 라벨뿐이고 모델 대응은 사후 label-assisted이므로 precision/full recall 및 핀 번호 정확도는 미산출. gate·검색 범위·threshold 변경 없음.
+- JSON 및 사진 위 모델/확인 tip 연결 그림: `calibration/data/basket/wrist_look/pins_projection_residual_partialGT_20261016_v1/summary.json`, `Q1..Q4_rootplane_assigned_projection.png`. Q3 그림을 열어 확인했다. 생성물은 data이며 git에 넣지 않음. 계산은 NumPy/SciPy/OpenCV CPU만 사용, 로봇·GPU·Isaac 및 코드 변경 없음; `summary.json` 파싱, `git diff --check`를 검증한다.
+- E 다음: exhaustive visible-pin/pair labels와 분면-행·번호 연결이 필요하다. 제공 전에는 성능 임계값을 바꾸거나 공식 precision/recall/80% gate를 판정하지 않는다.
+
+## 2026-10-16 03:4x Claude — 30분 기록
+- E2(실기 이식용: 틈 가림 + 전체 랜덤화 + canon): 평가 0: 0.639 → 5: 0.652 → 10: 0.666 → 15: 0.637. 64~67% 대에서 진동(같은 조건 튜닝 방식 0.528).
+- Codex: 실기 `--insert_policy` 연결(047dc3e) — sim 함수 그대로 호출해 관측 동일, 보정 부호 sim과 대조 일치, opt-in(`--sim_q --execute` 분면 넣기에서만), 정책 실패 시 무보정 경로로 넘어가지 않고 정지. 전체 시험 78/78.
+- 다음: 06:00쯤 E2 best를 처음 보는 seed 15014(415)에서 전체 랜덤화 조건으로 튜닝 방식과 비교 → 08:30 보고.
