@@ -4,6 +4,7 @@
 #   bash calibration/run.sh stream             read-only flange pose stream -> UDP 5006 (needed by calibrate.py)
 #   bash calibration/run.sh viz [--plan P]     read-only RViz: real robot, FoundationPose plate, plan preview (UDP 5011)
 #   bash calibration/run.sh pipeline [args]    terminal 2: cube pipeline in conda foundationpose (see pipeline.py)
+#   bash calibration/run.sh demo4 [--execute]  meeting demo: Q4, Q3, Q1, Q2 one --auto --sim_q run each (plate back on the stand between)
 #   bash calibration/run.sh sim [args]         Isaac Sim digital twin of the cell (see sim_scene.py)
 #   bash calibration/run.sh mover --plan P --leg L [--execute]   one plan leg, Human-run
 #   bash calibration/run.sh wrist_look         read-only: wrist photo at the current pose + model pins (starts its own stream)
@@ -33,6 +34,19 @@ case "$mode" in
                  rviz2 -d "$0/viz.rviz"' "$DIR" "$@" ;;
   pipeline)
     cd "$DIR/.." && exec conda run --no-capture-output -n foundationpose python -u "$DIR/pipeline.py" "$@" ;;
+  demo4)      # (10/15 보스) meeting demo: Q4 -> Q3 -> Q1 -> Q2, each one --auto run (--sim_q settings); Human puts the plate
+              # back on the stand between runs.  Extra args go to every run (e.g. --execute).  Pins: DEMO_PINS="Q4:6 Q3:6 Q1:6 Q2:5"
+    cd "$DIR/.."
+    for qp in ${DEMO_PINS:-Q4:6 Q3:6 Q1:6 Q2:5}; do
+      q=${qp%%:*}; pin=${qp##*:}
+      echo; echo "=== ${q} 핀 ${pin}: 접시를 받침 위에 올려 두고 Enter (건너뛰기: s, 끝내기: q) ==="
+      read -r ans
+      [ "$ans" = q ] && break
+      [ "$ans" = s ] && continue
+      conda run --no-capture-output -n foundationpose python -u "$DIR/pipeline.py" --task plate --plate_policy ik_bc \
+        --place basket --insert quadrant --quadrant "$q" --pin "$pin" --sim_q --auto "$@" \
+        || echo "!!! ${q} 실패 - 로그 확인 후 다음으로 (Enter)"
+    done ;;
   sim)
     unset CONDA_PREFIX CONDA_DEFAULT_ENV PYTHONPATH LD_LIBRARY_PATH
     cd "$DIR" && exec "$ISAAC_ROOT/python.sh" -u "$DIR/sim_scene.py" "$@" ;;
