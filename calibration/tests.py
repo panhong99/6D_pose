@@ -484,6 +484,19 @@ class CameraPinTests(unittest.TestCase):
         self.assertIsNone(camera._solve_pin_pixel_offset(J @ [9., -15.], J, 8.0, search_y_mm=20.0))
         self.assertIsNone(camera._solve_pin_pixel_offset(J @ [6., -21.], J, 8.0, search_y_mm=20.0))
 
+    def test_pin_pair_candidate_keeps_strict_disagreement_gate(self):
+        import camera_tools as camera
+        pair = camera._pin_pair_offset([3.0, 10.0], [4.0, 12.0])
+        self.assertTrue(pair['consistent'])
+        np.testing.assert_allclose(pair['candidate_xy_mm'], [3.5, 11.0])
+        np.testing.assert_allclose(pair['disagreement_xy_mm'], [1.0, 2.0])
+        boundary = camera._pin_pair_offset([3.0, 10.0], [4.0, 13.0])
+        self.assertTrue(boundary['consistent'])  # Existing gate is inclusive at exactly 3 mm.
+        rejected = camera._pin_pair_offset([3.0, 10.0], [4.0, 13.01])
+        self.assertFalse(rejected['consistent'])
+        np.testing.assert_allclose(rejected['candidate_xy_mm'], [3.5, 11.505])
+        self.assertIsNone(camera._pin_pair_offset([np.nan, 0.0], [0.0, 0.0]))
+
     def test_2d_hough_match_recovers_synthetic_xy_shift(self):
         import cv2
         import camera_tools as camera

@@ -3400,3 +3400,8 @@
 | 모델 오차 없음 + FP 잡음 | 지금 튜닝 방식 | 346/415 83.4% | .87 / .87 / .83 / .76 |
 | 〃 | C2 정책, 가림 | 351/415 84.6% | .89 / .84 / .84 / .80 |
 - 결론: 틈 오차를 보면 모델 오차가 있어도 오차 없을 때(83.4%) 수준까지 회복. 틈 검출 없이도 +12%p, 모델이 맞을 때 손해 없음(+1.2%p). 출력 `rl/logs/basket/insert_final_eval_15014/`(run_all.sh 재현). 괄호 = Wilson 95%, 계획당 1회.
+## 2026-10-16 02:50 Codex — E 행간 불일치 쌍의 후보 중심을 격리해 출력
+- v4에서 보인 Q3 교차행 후보([model IDs 53,66])의 원인을 조사하기 위해 `pairs[]`에 `candidate_correction_xy_mm`, `correction_disagreement_xy_mm`, `candidate_gap_centre_base_xyz`를 추가했다. 후보 보정 두 행의 축별 절대 차가 기존 ±3 mm 기준을 모두 만족할 때만 `status=detected`, `correction_xy_mm`, `gap_centre_base_xyz`를 정식 필드로 둔다. 기준을 넘으면 `status=pair_disagreement`와 정식 중심 `null`을 보존하고 후보 필드만 별도로 남긴다. 번호가 없거나 화면 밖이면 후보 중심도 null이다.
+- 기존 저장 wrist 사진으로 새 디렉터리 `calibration/data/basket/wrist_look/pins_model_oos2d_20261016_v5_Q1..Q4/`에 4개 결과를 생성했다. 보이는 model pair 기준 Q1/Q2/Q3/Q4 confirmed는 **0/1/0/0**; pair disagreement는 **6/3/3/3**. Q3 사진의 model IDs 53/66, candidate gap 10은 계속 disagreement이며 행 보정 차 **(1.062, 12.626) mm**, 정식 `gap_centre_base_xyz=null`; 후보 평균 보정은 **(3.639, 11.479) mm**, 후보 중심은 base **(0.646264, 0.070863, 0.113463) m**로 따로 보인다. 이전 라벨 조건부 중심 이동 (+4.39,+11.23) mm와의 차이는 약 **(+0.75,−0.25) mm**로 재확인된다. 이는 사람이 확인한 부분 라벨에서의 단일 후보 비교이며 새 detection, 정답 판정 또는 생산 중심이 아니다.
+- `calibration/tests.py`에 pair mean/disagreement, inclusive ±3 mm gate, non-finite 입력 단위시험을 추가했다. `python -m py_compile calibration/camera_tools.py calibration/tests.py`, `git diff --check` 통과. 전체 `bash calibration/run.sh tests`: **76/76 통과 (최종 34.127 s)**. 첫 샌드박스 시험은 pipeline의 UDP bind 권한에 막혔고 승인된 재실행에서 통과했다. 실기·그리퍼·GPU 미사용; E의 exhaustive visible-pair GT/공식 precision·recall/80% gate는 미완료.
+- 필드 의미와 strict gate 유지 결정은 `collab/DECISIONS.md`의 2026-10-16 E 항목에 기록; 검토 요청 상태다.

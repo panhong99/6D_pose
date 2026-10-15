@@ -666,6 +666,16 @@ def _solve_pin_pixel_offset(delta_px, jacobian_px_per_mm, search_mm, max_residua
     return correction, residual
 
 
+def _pin_pair_offset(first_xy, second_xy, tolerance_mm=3.0):
+    """Combine two row-wise image offsets while preserving their disagreement for review."""
+    a, b = np.asarray(first_xy, float), np.asarray(second_xy, float)
+    if a.shape != (2,) or b.shape != (2,) or not np.isfinite(a).all() or not np.isfinite(b).all():
+        return None
+    disagreement = np.abs(a-b)
+    return dict(candidate_xy_mm=np.mean([a, b], axis=0), disagreement_xy_mm=disagreement,
+                consistent=bool(np.all(disagreement <= tolerance_mm)))
+
+
 def _pin_match(img, context, p0, p1, Tcb, K, axis, search_mm=8.0, axis_y=None, search_radius_px=19,
                search_y_mm=None):
     """Local dark-wire ridge fit. No depth estimate from a guessed plate plane; offsets translate the 3D pin.
@@ -1157,12 +1167,13 @@ def wrist_pins(req, cfg, out, image=None, rotate='auto', search_mm=8.0, layout=N
         confirmed = p['status'] == q['status'] == 'detected'
         corrections = [np.asarray(p.get('correction_xy_mm', [p['correction_mm'], 0.0]), float),
                        np.asarray(q.get('correction_xy_mm', [q['correction_mm'], 0.0]), float)]
-        if confirmed and np.any(np.abs(corrections[0]-corrections[1]) > 3.0):
+        pair_offset = _pin_pair_offset(*corrections) if confirmed else None
+        if confirmed and not pair_offset['consistent']:
             confirmed = False
             status = 'pair_disagreement'
         else:
             status = 'detected' if confirmed else 'partial_or_occluded'
-        correction_xy_mm = np.mean(corrections, axis=0) if confirmed else None
+        correction_xy_mm = pair_offset['candidate_xy_mm'] if confirmed else None
         dx_mm = float(correction_xy_mm[0]) if confirmed else None
         # The observed correction is along basket +x only. Rejected pairs have no
         # usable target; do not silently return an uncorrected model point.
@@ -1170,17 +1181,24 @@ def wrist_pins(req, cfg, out, image=None, rotate='auto', search_mm=8.0, layout=N
                            midpoint_uv=np.mean([p['model_uv'][1], q['model_uv'][1]], 0).tolist(),
                            status=status, correction_mm=dx_mm,
                            correction_xy_mm=correction_xy_mm.tolist() if confirmed else None,
+                           candidate_correction_xy_mm=(pair_offset['candidate_xy_mm'].tolist()
+                                                       if pair_offset is not None else None),
+                           correction_disagreement_xy_mm=(pair_offset['disagreement_xy_mm'].tolist()
+                                                         if pair_offset is not None else None),
                            gap_centre_base_xyz=None,
+                           candidate_gap_centre_base_xyz=None,
                            local_x_m=x, row_y_m=[row0, row1]))
     _assign_gap_numbers(Tbb, groups, numbered_gaps)
     for g in groups:
-        if g['status'] == 'detected' and g['number'] is not None:
+        if g['candidate_correction_xy_mm'] is not None and g['number'] is not None:
             p, q = (pins[i] for i in g['model_pin_ids'])
-            shift = axis * (g['correction_xy_mm'][0] / 1000)
-            if g['correction_xy_mm'] is not None:
-                shift += axis_y * (g['correction_xy_mm'][1] / 1000)
-            g['gap_centre_base_xyz'] = ((pin_tops_base[p['model_id']] + pin_tops_base[q['model_id']]) / 2
-                                        + shift).tolist()
+            candidate_shift = axis * (g['candidate_correction_xy_mm'][0] / 1000)
+            candidate_shift += axis_y * (g['candidate_correction_xy_mm'][1] / 1000)
+            g['candidate_gap_centre_base_xyz'] = (
+                (pin_tops_base[p['model_id']] + pin_tops_base[q['model_id']]) / 2
+                + candidate_shift).tolist()
+        if g['status'] == 'detected' and g['number'] is not None:
+            g['gap_centre_base_xyz'] = g['candidate_gap_centre_base_xyz']
     # Display rotation is explicit provenance; no calibration transform changes.
     if rotate == 'auto':
         vectors = [np.array(pins[g['model_pin_ids'][1]]['model_uv'][1])-pins[g['model_pin_ids'][0]]['model_uv'][1] for g in groups]
@@ -1213,6 +1231,7 @@ def wrist_pins(req, cfg, out, image=None, rotate='auto', search_mm=8.0, layout=N
     for g in groups:
         if g['number'] is None or not g['visible_in_image']:
             g['gap_centre_base_xyz'] = None  # Off-image match is not an addressable gap.
+            g['candidate_gap_centre_base_xyz'] = None
     out = Path(out)
     out.mkdir(parents=True, exist_ok=False)
     cv2.imwrite(str(out/'pairs.png'), view)
