@@ -3294,6 +3294,21 @@
 - 파일: `calibration/tests.py`; force guard 구현/설계는 `4c6c99a`, 본 회귀시험 및 기록은 별도 후속 커밋으로 관리.
 - 추가 오프라인 인터페이스 확인: 설치된 `/home/pan/pan/doosan_ws/src/doosan-robot2/dsr_msgs2/srv/GetToolForce.srv`는 외력이 `ref` 좌표 기준이고 모멘트는 tool 좌표 기준이라고 명시한다. 따라서 코드의 `ref=DR_BASE` 및 앞 3개 성분만 쓰는 좌표 선택은 로컬 서비스 주석과 일치한다. 다만 `.srv` 주석에는 힘 단위, 중력 보상/필터·영점, 갱신 주기·지연 또는 QSTOP 물리 응답은 명시되지 않는다. 이 소스 확인은 API 실행/실기 안전 검증으로 간주하지 않는다.
 
+## 2026-10-16 01:30 Codex — 작업 E 시작: 실기 손목사진에서 목표 gap 오차
+- 최신 작업판 01:3x Claude 지시에 따라 저장된 `wrist_above.raw.png`/요청 JSON만 읽어 목표 gap의 model 대비 basket/slot-frame x/y 편차(mm)와 관측 가능한 tine 수를 산출한다. 현재 사진 묶음에는 10/15 18:29–18:44의 wrist 저장본 6개가 있고, 첫 단계로 실제 완료 이벤트의 quadrant/pin 및 카메라 변환을 확인한다.
+- 구현은 기존 역할 파일 `calibration/camera_tools.py`의 읽기전용 모드로 한정; data/config/model overwrite·robot/ROS/GPU 명령 없음. 기존 `pins` 경로의 correction은 basket-x 단일축이라 2D 수치를 대신하지 못한다.
+- 완료 기준: 새 경로 PNG/JSON에 per-pin 후보/신뢰도와 목표 gap x/y 오차를 쓰고, 사용자 제공 결과(Q3 6 성공, Q2 4 다른 칸, Q4 6·Q1 6 성공)와 비교. 라벨 없는 수동 시각 승인/가정값은 자동 검출 정확도로 간주하지 않는다.
+
+## 2026-10-16 01:42 Codex — E 오프라인 gap 진단 완료, 사진 오차는 미확정
+- 기존 역할 파일 `calibration/camera_tools.py gap_error --req <wrist_above.json> --out <새 경로>`를 추가해 저장 손목사진마다 목표 gap 주변 네 model tine tip의 basket x/y 2D Hough 후보, 표시 그림·JSON 및 별도 기존 checked-3D-root prior를 생성한다. 2D Jacobian 합성 이동시험 추가. 코드/시험 commit `7e49b3a`.
+- 6개 캡처 (`calibration/data/real_pipeline/20261015_182940_plate_f9r8z4fm` ~ `20261015_184412_plate_jvqj_n4f`)에서 사진 후보 수는 각각 **3, 1, 0, 0, 0, 1 /4**였다. 완전한 4-corner, 두 줄 사진 gap 측정은 **0/6**. Q4 첫 캡처의 partial y −6.60 mm와 후보 좌표는 Hough 선의 실제 pin 여부를 같은 프레임 정답으로 확인하지 못해 정량 결과로 쓰지 않는다. JSON에는 이 후보들을 미검증으로 표시하고 자동정확도/visible-tine GT로 세지 않았다.
+- 비교용 별도 geometry prior는 이미 사람 확인된 `realQ_verified_3d_model_audit_20261014_v5/verified_pin_3d_model_comparison.json`의 인접 tine 두 개(번호 N,N+1), 두 y줄 root 좌표를 평균해 root-plane 편차로 냈다. basket frame, mm, actual minus model: **Q2 pin4 (+0.63, −12.04)**; 저장된 18:44 캡처의 event는 Q2 pin5이며 그 값은 **(+1.10, −12.04)**. **Q3 pin6 (−1.16, −10.35)**, **Q4 pin6 (−0.57, +9.24)**. Q1 pin6는 checked-3D prior 없음. 이 prior는 당일 사진 검출값이 아니고 동일한 실물 바구니 형상이 유지됐다는 조건부 비교다.
+- y줄별 root 편차(Q2 pin4: −11.33/−12.75 mm, Q3 pin6: −8.94/−11.76, Q4 pin6: +1.75/+16.73). 특히 Q4 모델 줄 간격 95.0 mm 대비 checked root 줄 간격 약 **80.0 mm**여서 평균 +9.24 mm 하나로 삽입 가능성을 요약하면 안 된다. Root plane은 basket z≈−95 mm이며 floor-level opening의 최종 삽입 오차와 동일시하지 않는다.
+- 보스 구두 결과는 Q1 pin6 성공, Q2 pin4 다른 gap, Q3 pin6 성공, Q4 pin6 성공으로 저장했다. 다만 Q2 사용 보고 pin4와 저장된 wrist-above run의 `done` event pin5가 불일치하고, 결과들은 특정 capture의 시간과 연결되지 않아 원인·인과 비교는 불가. checked prior의 Q2 pin4 x편차 +0.63 mm만으로 인접 gap 오삽입을 설명하지 못한다.
+- 그림/JSON: `calibration/data/basket/wrist_gap_error_20261016_v4/` (6개 run 디렉터리 + `summary.json`). 그림은 기존 저장 사진 위 model(청록/파랑), 미검증 image 후보(초록), checked prior(자홍) 표시. 앞서 시도한 v1–v3 출력은 임시 진단 경로이며 최종 참조는 v4.
+- 검증: `bash calibration/run.sh tests` **73/73 통과(35.337 s)**; `py_compile`·`git diff --check` 통과. 코드/시험은 `7e49b3a`; 사진·JSON 산출물은 data이므로 git에 넣지 않음. 로봇·ROS·GPU 미사용.
+- 한계/다음 입력: 저장 사진 기반 GT 없이 precision/recall 또는 실제 x/y 오차를 주장할 수 없다. 목표 gap이 접시에 가려져 0/6 full fit이므로 E의 사진 detector 평가 및 공식 precision/recall은 막힘 유지; 같은 wrist-above 시점의 확인된 target-tine root/tip pixel labels 또는 접시가 target 빗살을 가리지 않는 저장사진이 필요하다.
+
 ## 2026-10-16 01:1x Claude — 30분 기록: 틈 검출 없을 때의 가치
 - C2 평가 25회차 **0.828**(Q1 .85 / Q2 .79 / Q3 .83 / Q4 .84, 최고). D3(전체 랜덤화) 0.759 @10.
 - C2 최고 정책을 **틈 오차 관측을 가리고**(`--cl_policy_noseen`, ca4c875) 같은 598개로 평가: **0.684**(Q1 .60 / Q2 .64 / Q3 .77 / Q4 .73). 기준(튜닝 방식) 0.554 → 틈 검출 없이 +13%p, 틈 검출(손목 카메라)까지 +14%p 더. 출력 `rl/logs/basket/insert_eval_noseen_20261016/`.
