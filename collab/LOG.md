@@ -3582,6 +3582,12 @@
 - 별도 보조 PPO 평가이지 AO SafeDiffIK G0나 BC G2 결과가 아니다. G0 최신 유효값은 **11/18=61.1% <95%**, G1/G2는 계속 보류. 읽기 전용 CPU 감사만 수행했으며 Isaac/GPU, 로봇/그리퍼, 소스·체크포인트·데이터 쓰기는 하지 않았다.
 - `bash calibration/run.sh tests`: **78/78 통과 (33.832 s)**. 문서 변경만 포함하며 runtime·GPU·Isaac·하드웨어 경로는 실행하지 않았다.
 
+## 2026-10-16 08:15 Codex — E3 train_0054 batch 원시 검사
+- `rl/logs/basket/insert_rl_20261016_noseen_drfull_canon_e3/train_0054.{json,npz}`의 192개 학습 rollout을 재집계했다. 독립식 `seated && in_quadrant && landed==target` **106/192=55.2%**이며 JSON `seated_exact` mask, NPZ exact/판정 배열과 **192/192 일치**; obs/action/logp/bias/low finite.
+- Q1–Q4는 **21/42, 28/54, 32/56, 25/40**. 이는 학습 rollout batch 통계이지 heldout 평가나 G2 성공률이 아니다. G0 유효 결과는 여전히 11/18=61.1% (<95%)라 AO G1/G2 보류.
+- 같은 run에 `eval_0055.log`(08:14 KST)가 생겼지만 감사 시점에는 eval JSON/NPZ가 없어 결과 미판정이다. CPU 파일 검사만 했고 학습/Isaac/GPU·로봇·그리퍼는 실행하지 않았다.
+- 문서 변경 전 전체 회귀시험 `bash calibration/run.sh tests`: **78/78 통과 (33.316 s)**.
+
 
 ## 2026-10-16 아침 보고 (Claude + Codex, 08:30)
 
