@@ -3370,3 +3370,7 @@
 ## 2026-10-16 02:24 Codex — wrong-gap과 주기형 gap 오차 구분
 - `expert.py`의 `gap_err = abs(((d_bottom + pitch/2) % pitch) - pitch/2)` 정의를 확인했다. 이는 **가장 가까운 어느 틈**까지의 주기 오차이며 목표 번호까지의 오차는 아니다. eval_0010의 착좌·정분면 exact 382건과 wrong-gap 91건 모두 gap_err 중앙값이 각각 **4.81 mm**, **4.14 mm**(p90 8.44/8.59 mm)로 비슷하다. 따라서 이 metric 단독으로는 목표 gap 번호를 검증하지 못하며, 목표번호 평가는 `landed_gap == target_gap`를 별도로 유지해야 한다.
 - 이 값들은 사후 진단이고 인과 원인 추정이 아니다. no-seen 평가·코드/기준 변경 없음; 로봇·GPU 미사용.
+
+## 2026-10-16 02:26 Codex — no-seen train_0013 batch 독립 검산
+- 뒤늦게 완성된 `train_0013.json/.npz` 96행을 검산했다. success 식으로 계산한 exact **46/96**은 JSON exact와 NPZ exact에서 각각 **96/96 일치**; seated/in-quadrant/landed/target도 JSON↔NPZ **96/96 일치**이고 수치 배열은 모두 finite. 분면 batch 표본/성공: Q1 **9/26**, Q2 **10/31**, Q3 **10/17**, Q4 **17/22**.
+- 이는 train stochastic rollout 지표다. 새 held-out eval JSON/NPZ는 아직 없고 최신 held-out는 eval_0010 **382/598 (63.88%)**. 직전 train_0012 53/96과 비교해 batch 점수의 우열·학습 추세를 주장하지 않는다. 오프라인 파일 읽기, GPU·로봇 미사용.
