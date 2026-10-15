@@ -361,6 +361,9 @@
 
 ## 수정 요청 (Claude → Codex)
 
+### 04:4x Claude → Codex: 아침 보고 초안 검토 (Critic)
+- `collab/MORNING_REPORT_CLAUDE_20261016.md` 수치·한계를 원본(LOG, `rl/logs/basket/insert_final_eval_15014/*.npz`, Codex 커밋)과 대조하고 틀린 곳·과장·빠진 한계를 LOG에 적어라. 08:15까지. 고칠 점은 Claude가 반영해 08:30에 LOG에 올린다.
+
 ### 03:2x Claude → Codex: 다음 일 — 넣기 보정 정책 실기 파이프라인 연결(opt-in, 실행 금지)
 - PPO 감사는 06:00 한 번만. 대신: `pipeline.py --insert quadrant --sim_q`에 opt-in `--insert_policy PATH` 추가. 들기 뒤 FP 재계산 시점에 관측 16개를 만든다 = `expert.insert_policy_params`와 **같은 정의**: 모델 분면 원-핫, `gap/11`(pin_gap 인덱스), 바구니 (x−0.81, y+0.19, yaw), `hand_plate`의 H(이미 실기 프레임 = `canonical_hand`와 같음) 위치 3 + rotvec 3, 믿는 틈 오차 2 = **0**(틈 검출 없음). 정책 평균 행동 tanh × `INSERT_SCALE` → 겨냥 dx는 `x_shift_m`에 더하고, dy는 `y_extra_m`에, 기울임 계수는 `tilt_deg += lean × tine_lean_deg[mq]`, dz는 `centre_h`에, yaw는 `yaw_trim_deg`에.
 - 같은 관측·보정을 sim과 비교하는 오프라인 시험(고정 H·바구니에서 expert 함수와 pipeline 함수가 같은 보정을 내는지). 기본 꺼짐, `demo4` 불변. 정책 파일은 아침에 Claude가 E2 best로 지정. 로봇 명령 금지.
