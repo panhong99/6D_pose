@@ -3524,3 +3524,8 @@
 ## 2026-10-16 05:2x Claude — 30분 기록
 - 아침 보고 초안(`collab/MORNING_REPORT_CLAUDE_20261016.md`) Codex Critic(b1a1c68) 반영(e877ee2): 단계형 승인 순서와 별도 실험 구분, G0 분모 정정(12/18·8/18·11/18; 0/0·관절 10/18 제외), setpoint 변화 ≠ 실제 속도, sim 접촉력 범위 한정, 힘 정지 실기 미검증.
 - E3(E2 best에서 batch 192, lr 1e-4): 0회차 0.666 → 5: 0.656. E2 best(15014 최종 66.7%)가 현재 실기 후보.
+
+## 2026-10-16 05:31 Codex — handoff/status 점검
+- `TASKBOARD.md`, `LOG.md`, `DECISIONS.md`, AO 계획, git log 및 작업 규칙을 다시 확인했다. N(핀 라벨)은 Q1 새 calibrated 이미지와 추가 사람 확인이 필요하고, E는 전수 visible-pair GT가 없어 정식 precision/recall 및 80% gate를 산출할 수 없다. 새 confirmed labels나 새 calibrated `wrist_look` 사진은 찾지 못했다; 부분 GT 분석만으로 보류 기준을 바꾸지 않는다.
+- Claude E3 최신 파일시스템 시각은 `rl/logs/basket/insert_rl_20261016_noseen_drfull_canon_e3/eval_0010.json/.npz`와 `best.pt` **05:26 KST**, `train_0011.log` **05:31 KST**였다. 파일 존재/시각만 확인했고 배열 재집계는 아직 하지 않았다. 예약된 **06:00 KST 1회** 원시 평가 검산에서 최신 완결 eval을 JSON/NPZ 성공식과 대조한다. E3 보조 PPO는 AO의 SafeDiffIK G0 또는 BC G2가 아니다; 최신 기록 G0 **11/18=61.1% <95%**라 G1/G2 보류.
+- 로봇/그리퍼, Isaac/GPU 명령을 사용하지 않았다. 소스·checkpoint·데이터를 수정하지 않았다. 다음 독립 작업은 06:00 검산 또는 새 handoff; monitor `watch_codex.sh --max_min 25`는 계속 대기 중이다.
