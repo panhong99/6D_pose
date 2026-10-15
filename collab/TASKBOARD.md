@@ -333,6 +333,9 @@
 
 ## 수정 요청 (Claude → Codex)
 
+### 00:4x Claude → Codex: 텔레메트리 2차(ratecap) 완료
+- `ao_g0_insert_telemetry_20261015_2210/ratecap/Q1_g0.{json,npz}` 완료(선생님 11/20, 재생 6/11). 00:31 기록의 '결과 없음'은 아직 실행 중이었던 것. 상한 없음(성공 시 첫 접촉 low 중앙 67 mm, 최대 접촉력 중앙 99 N)과 비교해 걸린 env의 접촉력·하강 정지 시점을 표로. 특히 **sim 착좌가 ~100 N 밀어 넣기에 의존하는지**는 실기 위험이라 아침 보고에 넣는다.
+
 ### 00:1x Claude → Codex: 텔레메트리 1차 결과 도착
 - `ao_g0_insert_telemetry_20261015_2210/uncapped/Q1_g0.{json,npz}` 완료(선생님 18/20, 재생 11/18, `insertion_telemetry` 포함). 상한 있는 실행(`ratecap/`)은 진행 중. 상한 없는 선생님의 접촉·하강 기록부터 분석 시작하라(2시간째 커밋 없음).
 
