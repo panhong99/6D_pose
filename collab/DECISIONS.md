@@ -1091,3 +1091,9 @@ Human 지시: Claude와 Human이 실증하는 동안 Codex가 이 문제의 원�
 - 회전 hold가 켜진 basket 환경에서 G0 tracking mode는 매 스텝 현재 TCP를 hold target의 기준으로 재설정한 뒤 그 step 오차를 적용한다. 이는 tracking correction을 held target에 중복 적분해 lag를 두 배로 만들지 않게 한다. 보통의 basket incremental action에서는 지속 hold가 유지된다.
 - BC collector는 매 30 Hz마다 현재 sim 관측으로 오차를 재계산해 clean label을 저장한 뒤 DART 잡음만 실행 행동에 더하는 feedback 방식이다. `run_collect()`/`run_realplan()`/PPO env에도 basket tracking mode를 켜 이 action을 현재 TCP 기준 보정으로 실행한다. 단, `run_collect()`은 접시 `attach()`를 아직 호출하므로 AO 요구의 attach 없는 물리 수집을 G1 전에 고쳐야 한다.
 - 수정: `rl/rl_utils.py`, `rl/plate_env.py`, `rl/basket_env.py`, `rl/basket/expert.py`, `rl/basket/train.py`, `calibration/tests.py`. 회귀: `bash calibration/run.sh tests` **54/54 통과**. G0 새 물리 gate는 미실행. 17:14 호스트 GPU에는 실시간 FoundationPose PID 639006이 남아 있어 Codex는 Isaac을 겹쳐 시작하지 않았다. G0 95% 전 G1/G2 불가.
+
+## 2026-10-15 19:30 AO/G0 — SafeDiffIK 속도 상한을 보존하는 기록 cursor 진행
+- 변경: G0 replay에서 학생의 translation/rotation correction이 기존 action cap에 걸리면, 현재 기록 TCP pose를 따라잡을 때까지 해당 recorded frame을 유지한다. 경계 timeout은 진단 flag로 남기고 replay를 재개한다; insert boundary 전에 release를 허용하지 않으며 기존 seated_exact 판정만 G0 분자/분모로 쓴다. 개별 target의 연속 clipping이 60 frame이면 진단 count 후 진행해 hang을 막는다.
+- 이유: Q1 phase-gate 결과 8/18 (44.4%) 중 네 episode가 boundary timeout 뒤 open을 못 받았고, 5,991 tracking actions가 clip됐다. 소스를 대조하니 G0 tracking mode가 held target을 현재 TCP로 재기준화하고 step을 1.67 mm로 먼저 clip하므로 10 mm `hold_windup`은 이 branch에서 원인으로 작동하지 않는다. teacher stream이 capped student보다 빠르게 cursor를 전진시켰다는 가설을 검증하기 위한 재생 수정이다.
+- 보존: action speed/rotation caps, safety shield, 충돌 여유 조건, physical-only/attach=false, 성공 기준, 일반 replay behavior는 불변. timeout을 통과 처리하는 것은 sequence 진행만 뜻하고 목표 성공을 의미하지 않는다.
+- 검토 요청: 새 Q1 결과에서 env별 gap/low/seated_exact, release, boundary timeout, target clip timeout을 별도로 확인해 원인을 검증한다. 결과 전에는 G0/G1/G2 gate 상태를 미통과로 유지한다.

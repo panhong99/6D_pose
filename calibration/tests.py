@@ -737,6 +737,21 @@ class BasketG0ActionTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             mod.g0_gate_status(1, 2)
 
+    def test_g0_timeout_is_diagnostic_and_cursor_can_continue(self):
+        mod = self.expert_module()
+        latched, expired = mod.g0_gate_timeout_state(
+            [True, True, False], [False, False, False], [59, 60, 60], 60)
+        np.testing.assert_array_equal(expired, [False, True, False])
+        np.testing.assert_array_equal(latched, [False, True, False])
+        self.assertTrue(mod.g0_replay_cursor_should_advance(True, [True, True, False],
+                                                            [False, False, False], [False, False, False]))
+        self.assertFalse(mod.g0_replay_cursor_should_advance(False, [True, True], [True, False], None))
+        self.assertTrue(mod.g0_replay_cursor_should_advance(False, [True, True], [False, False], None))
+        self.assertFalse(mod.g0_replay_cursor_should_advance(False, [True], [True], None, [False]))
+        self.assertTrue(mod.g0_replay_cursor_should_advance(False, [True], [True], None, [True]))
+        with self.assertRaises(ValueError):
+            mod.g0_gate_timeout_state([True], [False, False], [1], 60)
+
     def test_g0_sparse_phase_gates_and_strict_alignment_tolerances(self):
         mod = self.expert_module()
         phases = ['preinsert', 'reaim_0', 'reaim_0', 'reaim_1', 'insert', 'insert', 'release']

@@ -387,6 +387,36 @@ def g0_gate_alignment_mask(position_error_m, orientation_error_rad):
     return (p < 0.001) & (r < np.deg2rad(0.5))
 
 
+def g0_gate_timeout_state(teacher_success, latched, wait_frames, timeout_frames):
+    """A timed-out boundary is logged and latched so replay can continue; final success stays unchanged."""
+    import numpy as np
+    success, done, waited = (np.asarray(teacher_success, dtype=bool), np.asarray(latched, dtype=bool),
+                             np.asarray(wait_frames, dtype=int))
+    if success.ndim != 1 or done.shape != success.shape or waited.shape != success.shape:
+        raise ValueError('G0 gate timeout arrays must be aligned 1D arrays')
+    if (waited < 0).any() or int(timeout_frames) < 1:
+        raise ValueError('G0 gate timeout frame counts must be nonnegative and timeout positive')
+    expired = success & ~done & (waited >= int(timeout_frames))
+    return done | expired, expired
+
+
+def g0_replay_cursor_should_advance(is_gate, teacher_success, tracking_clipped, gate_pending, clip_timeout=None):
+    """Do not outrun a clipped SafeDiffIK correction; gate/cursor timeout only logs and resumes."""
+    import numpy as np
+    success, clipped = np.asarray(teacher_success, dtype=bool), np.asarray(tracking_clipped, dtype=bool)
+    if success.ndim != 1 or clipped.shape != success.shape:
+        raise ValueError('G0 replay cursor arrays must be aligned 1D arrays')
+    if is_gate:
+        pending = np.asarray(gate_pending, dtype=bool)
+        if pending.shape != success.shape:
+            raise ValueError('G0 gate pending mask must align with replay environments')
+        return not bool(pending.any())
+    timed_out = np.zeros(success.shape, dtype=bool) if clip_timeout is None else np.asarray(clip_timeout, dtype=bool)
+    if timed_out.shape != success.shape:
+        raise ValueError('G0 clip-timeout mask must align with replay environments')
+    return not bool((success & clipped & ~timed_out).any())
+
+
 def g0_success_mask(seated, in_quadrant, exact):
     """G0's teacher/replay gate: the established seated, in-quadrant, exact-slot criterion."""
     import numpy as np
@@ -930,6 +960,8 @@ def run_replay(args):
         gate_mask = g0_phase_gate_mask(phase_1d)
         phase_gate_wait_frames = np.zeros(n, dtype=np.int32)
         gate_episode_wait_frames = np.zeros(n, dtype=np.int32)
+        cursor_clip_wait_frames = np.zeros(n, dtype=np.int32)
+        cursor_clip_timeout_count = np.zeros(n, dtype=np.int32)
         phase_gate_timeout = np.zeros(n, dtype=bool)
         release_gate_passed = np.zeros(n, dtype=bool)
         student_pos_trace, student_quat_trace, student_joint_trace = [], [], []
@@ -949,20 +981,23 @@ def run_replay(args):
                 target_quat = np.asarray(g0_record['next_quat'][cursor])
                 pos_err, rot_err = g0_pose_error(target_pos, target_quat, current_pos, current_quat)
                 aligned = g0_gate_alignment_mask(pos_err, rot_err)
-                gate_latched |= aligned & teacher_exact & ~phase_gate_timeout
-                pending = teacher_exact & ~gate_latched & ~phase_gate_timeout
+                gate_latched |= aligned & teacher_exact
+                pending = teacher_exact & ~gate_latched
                 if not pending.any():
                     if phase_1d[cursor] == 'insert':
-                        release_gate_passed |= ~phase_gate_timeout
+                        # A boundary timeout is diagnostic only. The ordered insert phase
+                        # completed (aligned or timed out), so the recorded release may run.
+                        release_gate_passed[:] = True
                     cursor += 1
                     gate_latched[:] = False
                     gate_episode_wait_frames[:] = 0
                     continue
                 phase_gate_wait_frames[pending] += 1
                 gate_episode_wait_frames[pending] += 1
-                expired = pending & (gate_episode_wait_frames >= gate_timeout_frames)
+                gate_latched, expired = g0_gate_timeout_state(
+                    teacher_exact, gate_latched, gate_episode_wait_frames, gate_timeout_frames)
                 phase_gate_timeout |= expired
-                pending = teacher_exact & ~gate_latched & ~phase_gate_timeout
+                pending = teacher_exact & ~gate_latched
                 if not pending.any():
                     continue
             else:
@@ -975,15 +1010,20 @@ def run_replay(args):
             track_action, track_clipped = g0_tracking_action(
                 current_pos, current_quat, target_pos, target_quat,
                 slot_yaw, E_CFG()['action']['step_max'])
-            active = pending.copy()
+            active = pending.copy() if is_gate else np.ones(n, dtype=bool)
             if is_gate:
-                active &= ~gate_latched & ~phase_gate_timeout
-            else:
-                active &= ~(teacher_exact & phase_gate_timeout)
+                active &= ~gate_latched
             track_action[~active] = 0.0
             replay_action_clipped += int((track_clipped & active).sum())
+            if not is_gate:
+                cursor_clip_wait_frames = np.where(teacher_exact & track_clipped,
+                                                   cursor_clip_wait_frames + 1, 0)
+                clip_expired = teacher_exact & track_clipped & (cursor_clip_wait_frames >= gate_timeout_frames)
+                cursor_clip_timeout_count += clip_expired.astype(np.int32)
+            else:
+                clip_expired = np.zeros(n, dtype=bool)
             requested_open = g0_act[:, cursor, 6] > 0.5
-            allowed_open = requested_open & release_gate_passed & ~phase_gate_timeout
+            allowed_open = requested_open & release_gate_passed
             replay_action = np.concatenate([track_action, allowed_open[:, None].astype(np.float32)], axis=1)
             replay_action_trace.append(replay_action.astype(np.float32))
             replay_ref_pos_trace.append(target_pos.copy())
@@ -1005,9 +1045,17 @@ def run_replay(args):
             o = torch.as_tensor(allowed_open.astype(np.float32), dtype=torch.float32, device=dev)
             env.step(E.to_env_action(env, a, o))
             student_released |= allowed_open
-            if not is_gate or not (teacher_exact & ~gate_latched & ~phase_gate_timeout).any():
-                if is_gate and phase_1d[cursor] == 'insert':
-                    release_gate_passed |= ~phase_gate_timeout
+            if not is_gate:
+                # Time-dilate the recorded targets when SafeDiffIK saturates instead of
+                # advancing the teacher stream faster than the capped student can follow.
+                if g0_replay_cursor_should_advance(False, teacher_exact, track_clipped & active,
+                                                   None, clip_expired):
+                    cursor += 1
+                    cursor_clip_wait_frames[:] = 0
+            elif g0_replay_cursor_should_advance(True, teacher_exact, track_clipped & active,
+                                                 teacher_exact & ~gate_latched):
+                if phase_1d[cursor] == 'insert':
+                    release_gate_passed[:] = True
                 cursor += 1
                 gate_latched[:] = False
                 gate_episode_wait_frames[:] = 0
@@ -1107,6 +1155,7 @@ def run_replay(args):
                             replay_release_gate_passed=release_gate_passed,
                             replay_phase_gate_timeout=phase_gate_timeout,
                             replay_phase_gate_wait_frames=phase_gate_wait_frames,
+                            replay_target_clip_timeout_count=cursor_clip_timeout_count,
                             quadrant=np.asarray([rows[i].get('model_qd', '') for i in who]),
                             pin=np.asarray([rows[i].get('pin', -1) for i in who]),
                             target_gap=np.asarray([rows[i].get('gap', -1) for i in who]))
@@ -1131,8 +1180,10 @@ def run_replay(args):
                                        timeout_seconds=gate_timeout_frames / E_CFG()['action']['hz'],
                                        timed_out_teacher_successes=int((teacher_exact & phase_gate_timeout).sum()),
                                        total_wait_frames=int(phase_gate_wait_frames.sum()),
-                                       release_open_requires_insert_gate=True),
-                      replay_tracking_action_semantics='clip(teacher_next_TCP_pose - student_current_TCP_pose); act is clean teacher-state label, replay_act is executed tracking action')
+                                       timeout_is_diagnostic_only=True, release_open_requires_insert_gate=True,
+                                       target_clip_timeout_frames=gate_timeout_frames,
+                                       target_clip_timeouts=int(cursor_clip_timeout_count.sum())),
+                      replay_tracking_action_semantics='clip(teacher_next_TCP_pose - student_current_TCP_pose); hold each recorded target while a teacher-success SafeDiffIK correction saturates; act is clean teacher-state label, replay_act is executed tracking action')
         output.write_text(json.dumps(report, indent=2))
         print('[G0]', json.dumps(report), flush=True)
         env.close()
