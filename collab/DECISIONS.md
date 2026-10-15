@@ -1129,6 +1129,10 @@ Human 지시: Claude와 Human이 실증하는 동안 Codex가 이 문제의 원�
 - 30 Hz 삽입 control frame마다 physics update 뒤 `low`, slot 기준 `d_bottom`, plate normal 오차, 필터 접촉력 크기를 저장한다. `first_contact_frame`은 삽입-local 0-based frame 중 힘이 1.0 N 이상인 첫 표본이며, 그 이하/무표본은 `null`이다. 시각 해상도는 한 control frame(약 33 ms)이고 1 N은 판정 임계값이지 물리 접촉 자체의 보편 경계가 아니다.
 - Teacher와 SafeDiffIK replay 각각의 시계열은 NPZ에 저장하고 JSON episode에 첫 프레임·표본 수를 남긴다. Telemetry는 진단 전용이며 gate/속도·성공 기준을 바꾸지 않는다. 동일 시드·plan 해시 및 `closed_loop_extra_m`을 JSON provenance에 포함한다.
 
+## 2026-10-16 E 검출기 실험 — 철망 단절 보강과 2D 탐색은 분리
+- label-seeded local fit은 내부 최대 2개 profile sample 단절만 continuity 계산에서 연결한다. continuity/support/ridge 판정 임계값은 낮추지 않는다. 부분 라벨 기준 46/59→48/59로만 늘었으므로 이를 정식 recall이나 실제 분면 성공률로 부르지 않는다.
+- basket 모델만 시작점으로 쓰는 2D Hough 검색은 `pins --model_search_2d` opt-in 진단으로 추가했다. 확인 tip hit는 8/59였지만 confirmed pair 수는 기존 model-only x 검색의 7에서 1로 감소했다. 따라서 기본 동작에 연결하지 않고, row/pair 교차혼동이 해결되고 pair 성능을 보존할 때까지 생산 경로에서 사용하지 않는다. 사람 확인 59개는 부분 ground truth라 precision/전체 visible recall은 아직 산출 불가.
+
 ## 2026-10-16 Codex 초안 — 실기 quadrant 삽입 힘 감시 (보스 승인 대기)
 - 범위: `--task plate --place basket --insert quadrant`의 straight-down `descend` spline에만 CLI opt-in `--insert-force-limit-n N`을 제공한다. 기본값 `None`이라 기존 움직임에는 monitor가 붙지 않는다. mover도 `insert/descend` smooth leg만 받아들이며, lift/carry/release/retreat에는 전달하지 않는다.
 - 신호와 판정: `GetToolForce(ref=DR_BASE)`의 6축 wrench에서 첫 3개 힘 성분만 써서 `||F_xyz||₂ > N`이면 즉시 `MoveStop(stop_mode=1 / DR_QSTOP)`를 요청한다. 토크(Nm)를 힘 임계값에 섞지 않는다. spline 시작 직전에도 baseline을 읽어 이미 초과했거나 응답/형식이 유효하지 않으면 이동을 시작하지 않는다. 이동 중 service 응답 실패/0.25 s timeout, 비유한값, 잘못된 shape, monitor timeout도 fail-closed로 QSTOP 요청 및 비정상 종료한다.

@@ -635,7 +635,22 @@ def _pin_longest_run(mask):
     return int((edges[1::2]-edges[::2]).max()) if len(edges) else 0
 
 
-def _solve_pin_pixel_offset(delta_px, jacobian_px_per_mm, search_mm, max_residual_px=12.0):
+def _pin_longest_run_bridged(mask, max_gap=2):
+    """Longest support after bridging only short, fully internal profile gaps."""
+    bridged = np.asarray(mask, bool).copy()
+    if max_gap < 0:
+        raise ValueError('max_gap must be non-negative')
+    missing = np.flatnonzero(~bridged)
+    if len(missing):
+        starts = missing[np.r_[True, np.diff(missing) > 1]]
+        ends = missing[np.r_[np.diff(missing) > 1, True]]
+        for start, end in zip(starts, ends):
+            if start > 0 and end < len(bridged)-1 and end-start+1 <= max_gap:
+                bridged[start:end+1] = True
+    return _pin_longest_run(bridged)
+
+
+def _solve_pin_pixel_offset(delta_px, jacobian_px_per_mm, search_mm, max_residual_px=12.0, search_y_mm=None):
     """Solve a local basket x/y tip offset from pixels; return None if ill-conditioned/out of bounds."""
     J = np.asarray(jacobian_px_per_mm, float)
     delta = np.asarray(delta_px, float)
@@ -645,12 +660,14 @@ def _solve_pin_pixel_offset(delta_px, jacobian_px_per_mm, search_mm, max_residua
         return None
     correction = np.linalg.solve(J, delta)
     residual = delta - J @ correction
-    if np.any(np.abs(correction) >= search_mm) or np.linalg.norm(residual) > max_residual_px:
+    bounds = np.array([search_mm, search_mm if search_y_mm is None else search_y_mm], float)
+    if np.any(np.abs(correction) >= bounds) or np.linalg.norm(residual) > max_residual_px:
         return None
     return correction, residual
 
 
-def _pin_match(img, context, p0, p1, Tcb, K, axis, search_mm=8.0, axis_y=None, search_radius_px=19):
+def _pin_match(img, context, p0, p1, Tcb, K, axis, search_mm=8.0, axis_y=None, search_radius_px=19,
+               search_y_mm=None):
     """Local dark-wire ridge fit. No depth estimate from a guessed plate plane; offsets translate the 3D pin.
     Evaluate only the exposed upper tine, away from floor mesh and rail. Reject plate/marker occlusion and weak fits."""
     gray, excluded, lines = context
@@ -658,8 +675,20 @@ def _pin_match(img, context, p0, p1, Tcb, K, axis, search_mm=8.0, axis_y=None, s
     # A 2-D fit must use the image-line endpoint to resolve both basket axes together.
     # The stripe scan below intentionally remains the legacy one-axis implementation.
     if axis_y is not None:
-        return _pin_line_match(context, p0, p1, Tcb, K, axis, search_mm,
-                               axis_y=axis_y, search_radius_px=search_radius_px)
+        result = _pin_line_match(context, p0, p1, Tcb, K, axis, search_mm,
+                                 axis_y=axis_y, search_radius_px=search_radius_px,
+                                 search_y_mm=search_y_mm)
+        if result is not None:
+            return result
+        # Preserve the per-pin output contract when the Hough search has no usable line.
+        model_uv, depth = _pin_project(np.stack([p0, p1]), Tcb, K)
+        visible = bool(np.all(depth > 0.05) and np.all(model_uv[:, 0] >= 0)
+                       and np.all(model_uv[:, 0] < img.shape[1])
+                       and np.all(model_uv[:, 1] >= 0) and np.all(model_uv[:, 1] < img.shape[0]))
+        return dict(status='weak_line' if visible else 'out_of_view', correction_mm=None,
+                    candidate_mm=None, ridge_score=0.0, support=0.0,
+                    visible_fraction=1.0 if visible else 0.0,
+                    model_uv=model_uv.tolist(), detected_uv=model_uv.tolist())
     t = np.linspace(0.53, 0.98, 40)
     points = p0[None]+t[:, None]*(p1-p0)[None]
     model, depth = _pin_project(points, Tcb, K)
@@ -687,7 +716,7 @@ def _pin_match(img, context, p0, p1, Tcb, K, axis, search_mm=8.0, axis_y=None, s
         contrast = np.minimum(left, right)-centre
         support = (contrast > 12) & (centre < 145)
         supports.append(float(support[valid].mean()))
-        continuous.append(_pin_longest_run(support & valid)/len(t))
+        continuous.append(_pin_longest_run_bridged(support & valid, max_gap=2)/len(t))
         scores.append(float(np.clip(contrast[valid], 0, 80).mean()))
     peak = int(np.argmax(scores))
     lo = hi = peak
@@ -721,7 +750,8 @@ def _pin_match(img, context, p0, p1, Tcb, K, axis, search_mm=8.0, axis_y=None, s
                 detected_uv=fitted.tolist())
 
 
-def _pin_line_match(context, p0, p1, Tcb, K, axis, search_mm, axis_y=None, search_radius_px=19):
+def _pin_line_match(context, p0, p1, Tcb, K, axis, search_mm, axis_y=None, search_radius_px=19,
+                    search_y_mm=None):
     """Hough fallback for small errors transverse to the x-only model fit. Report unresolved pixel residual explicitly."""
     gray, excluded, lines = context
     uv, depth = _pin_project(np.stack([p0+(p1-p0)*0.53, p1]), Tcb, K)
@@ -769,14 +799,14 @@ def _pin_line_match(context, p0, p1, Tcb, K, axis, search_mm, axis_y=None, searc
             continue
         xy = coords+normal[None]*np.dot(best[2]-tip, normal)
         ridge_mask = (np.minimum(sample(gray, xy+normal[None]*4), sample(gray, xy-normal[None]*4))-sample(gray, xy) > 12)
-        if _pin_longest_run(ridge_mask)/len(ridge_mask) < 0.45:
+        if _pin_longest_run_bridged(ridge_mask, max_gap=2)/len(ridge_mask) < 0.45:
             continue
         delta = best[2]-uv[1]
         if axis_y is None:
             correction = np.array([float(np.dot(delta, J)/np.dot(J, J))])
             residual = delta-J*correction[0]
         else:
-            solved = _solve_pin_pixel_offset(delta, J, search_mm)
+            solved = _solve_pin_pixel_offset(delta, J, search_mm, search_y_mm=search_y_mm)
             if solved is None:
                 continue
             correction, residual = solved
@@ -1029,7 +1059,8 @@ def _pin_quadrant(x_m, y_m, clip_x):
     return 'Q3' if y_m >= 0 else 'Q4'
 
 
-def wrist_pins(req, cfg, out, image=None, rotate='auto', search_mm=8.0, layout=None):
+def wrist_pins(req, cfg, out, image=None, rotate='auto', search_mm=8.0, layout=None,
+               model_search_2d=False):
     """Stored image only. Pair model rows by equal x or checked measured rows by nearby x.
     Display top-to-bottom IDs within each quadrant.
     Auto rotation aligns the two physical rows left-to-right in the saved display. Raw pixel geometry stays in JSON.
@@ -1055,6 +1086,7 @@ def wrist_pins(req, cfg, out, image=None, rotate='auto', search_mm=8.0, layout=N
     Tcb = np.linalg.inv(np.array(r['T_base_flange'], float) @ Tfc)
     Tbi = np.linalg.inv(Tbb)
     axis = Tbb[:3, 0]
+    axis_y = Tbb[:3, 1]
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'rl'))
     import basket_env as be
     clip_x = float(be.B['full'].get('clip_x', 0.0))
@@ -1079,7 +1111,14 @@ def wrist_pins(req, cfg, out, image=None, rotate='auto', search_mm=8.0, layout=N
             pin_geometry.append((p0, p1, entry['row']))
     for i, (p0, p1, row_name) in enumerate(pin_geometry):
         local = (Tbi @ np.r_[p0, 1])[:3]
-        match = _pin_match(img, context, p0, p1, Tcb, K, axis, search_mm)
+        if layout is None and model_search_2d:
+            # The basket model has a measured across-row residual in saved wrist views.
+            # Keep along-row search below half pitch, but let the image line correct up to
+            # 20 mm across rows (row spacing is much larger); labels are never used to seed it.
+            match = _pin_match(img, context, p0, p1, Tcb, K, axis, search_mm,
+                               axis_y=axis_y, search_radius_px=70, search_y_mm=20.0)
+        else:
+            match = _pin_match(img, context, p0, p1, Tcb, K, axis, search_mm)
         pins.append(dict(model_id=i, local_xyz=local.tolist(), row=row_name, **match))
         pin_tops_base.append(np.asarray(p1, float))
     groups = []
@@ -1116,26 +1155,32 @@ def wrist_pins(req, cfg, out, image=None, rotate='auto', search_mm=8.0, layout=N
         # Same basket-frame convention as plate_plans.basket_gaps: +y is left.
         quadrant = _pin_quadrant(x, yc, clip_x)
         confirmed = p['status'] == q['status'] == 'detected'
-        corrections = [p['correction_mm'], q['correction_mm']]
-        if confirmed and abs(corrections[0]-corrections[1]) > 3.0:
+        corrections = [np.asarray(p.get('correction_xy_mm', [p['correction_mm'], 0.0]), float),
+                       np.asarray(q.get('correction_xy_mm', [q['correction_mm'], 0.0]), float)]
+        if confirmed and np.any(np.abs(corrections[0]-corrections[1]) > 3.0):
             confirmed = False
             status = 'pair_disagreement'
         else:
             status = 'detected' if confirmed else 'partial_or_occluded'
-        dx_mm = float(np.mean(corrections)) if confirmed else None
+        correction_xy_mm = np.mean(corrections, axis=0) if confirmed else None
+        dx_mm = float(correction_xy_mm[0]) if confirmed else None
         # The observed correction is along basket +x only. Rejected pairs have no
         # usable target; do not silently return an uncorrected model point.
         groups.append(dict(quadrant=quadrant, model_pin_ids=[p['model_id'], q['model_id']],
                            midpoint_uv=np.mean([p['model_uv'][1], q['model_uv'][1]], 0).tolist(),
                            status=status, correction_mm=dx_mm,
+                           correction_xy_mm=correction_xy_mm.tolist() if confirmed else None,
                            gap_centre_base_xyz=None,
                            local_x_m=x, row_y_m=[row0, row1]))
     _assign_gap_numbers(Tbb, groups, numbered_gaps)
     for g in groups:
         if g['status'] == 'detected' and g['number'] is not None:
             p, q = (pins[i] for i in g['model_pin_ids'])
+            shift = axis * (g['correction_xy_mm'][0] / 1000)
+            if g['correction_xy_mm'] is not None:
+                shift += axis_y * (g['correction_xy_mm'][1] / 1000)
             g['gap_centre_base_xyz'] = ((pin_tops_base[p['model_id']] + pin_tops_base[q['model_id']]) / 2
-                                        + axis * (g['correction_mm'] / 1000)).tolist()
+                                        + shift).tolist()
     # Display rotation is explicit provenance; no calibration transform changes.
     if rotate == 'auto':
         vectors = [np.array(pins[g['model_pin_ids'][1]]['model_uv'][1])-pins[g['model_pin_ids'][0]]['model_uv'][1] for g in groups]
@@ -1174,9 +1219,16 @@ def wrist_pins(req, cfg, out, image=None, rotate='auto', search_mm=8.0, layout=N
     result = dict(req=str(req.resolve()), image=str(raw_path.resolve()), handeye=str(handeye),
                   display_rotation_deg=rotation, numbering='quadrant, top-to-bottom in displayed image; hidden IDs retained',
                   quadrant_basis='basket frame: +x far, +y left; Q1 far/right, Q2 far/left, Q3 near/left, Q4 near/right',
-                  correction_axis='basket +x; diagnostic only', search_mm=search_mm,
+                  correction_axis=('basket +x,+y; 2D local line fit, diagnostic only'
+                                   if layout is None and model_search_2d else
+                                   'basket +x; diagnostic only'),
+                  model_search_2d=bool(layout is None and model_search_2d),
+                  continuity_gap_bridge_samples=2,
+                  search_mm=search_mm,
+                  search_y_mm=20.0 if layout is None and model_search_2d else None,
                   gap_centre_definition=('midpoint of two measured pin tips, shifted by confirmed basket +x image correction; diagnostic only'
-                                         if layout else 'midpoint of two model pin tips, shifted by confirmed basket +x image correction; diagnostic only'),
+                                         if layout else ('midpoint of two model pin tips, shifted by confirmed basket +x/+y image correction; diagnostic only'
+                                                         if model_search_2d else 'midpoint of two model pin tips, shifted by confirmed basket +x image correction; diagnostic only')),
                   visually_detected_pairs=sum(g['status'] == 'detected' and g['visible_in_image'] for g in groups),
                   confirmed_pairs=sum(g['status'] == 'detected' and g['number'] is not None
                                       and g['visible_in_image'] for g in groups),
@@ -1204,7 +1256,8 @@ def pins_mode(a, cfg):
     rows = []
     for req in reqs:
         try:
-            r = wrist_pins(req, cfg, out/f'{req.parent.name}_{req.stem}', a.image, a.rotate, a.search_mm, a.layout)
+            r = wrist_pins(req, cfg, out/f'{req.parent.name}_{req.stem}', a.image, a.rotate,
+                           a.search_mm, a.layout, a.model_search_2d)
             offsets = [g['correction_mm'] for g in r['pairs'] if g['status'] == 'detected' and 'number' in g]
             rows.append(dict(photo=str(req), detected_pairs=r['confirmed_pairs'], visible_pairs=r['visible_layout_pairs'],
                              median_dx_mm=float(np.median(offsets)) if offsets else None, display_rotation=r['display_rotation_deg']))
@@ -1749,6 +1802,8 @@ if __name__ == '__main__':
                    help='plate_plane: allowed distance to fitted plane; declare larger tolerance for curved dish')
     p.add_argument('--rotate', choices=('auto', '0', '90', '270'), default='auto', help='pins: display rotation, raw projection unchanged')
     p.add_argument('--search_mm', type=float, default=8.0, help='pins: maximum local correction along basket x')
+    p.add_argument('--model_search_2d', action='store_true',
+                   help='pins: experimental model-only 2D Hough fit (basket x ±search_mm, y ±20 mm)')
     p.add_argument('--marker_size_m', type=float, help='basket_stats: actual printed black square side, override for this run only')
     p.add_argument('--repeats', type=int, default=10, help='basket_stats: repeat measurements')
     p.add_argument('--frames', type=int, default=20, help='basket_stats: frames in each measurement')

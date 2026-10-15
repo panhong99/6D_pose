@@ -457,6 +457,14 @@ class CameraPinTests(unittest.TestCase):
             cv2.circle(image, (190, y), 2, (20, 20, 20), -1)
         self.assertNotEqual(self.match(image)['status'], 'detected')
 
+    def test_pin_continuity_bridges_only_short_internal_crossings(self):
+        import camera_tools as camera
+        interrupted = np.array([1, 1, 1, 0, 1, 1, 1, 0, 0, 1, 1], bool)
+        self.assertEqual(camera._pin_longest_run(interrupted), 3)
+        self.assertEqual(camera._pin_longest_run_bridged(interrupted, max_gap=1), 7)
+        self.assertEqual(camera._pin_longest_run_bridged(interrupted, max_gap=2), 11)
+        self.assertEqual(camera._pin_longest_run_bridged(interrupted, max_gap=0), 3)
+
     def test_plate_occlusion_is_not_a_measurement(self):
         image = self.fixture()
         image[:, 180:210] = (30, 30, 190)
@@ -472,6 +480,9 @@ class CameraPinTests(unittest.TestCase):
         np.testing.assert_allclose(solved[0], expected, atol=1e-10)
         self.assertIsNone(camera._solve_pin_pixel_offset(np.array([100., 100.]), J, 35.0))
         self.assertIsNone(camera._solve_pin_pixel_offset(np.array([1., 1.]), np.array([[1., 1.], [1., 1.00001]]), 35.0))
+        self.assertIsNotNone(camera._solve_pin_pixel_offset(J @ [6., -15.], J, 8.0, search_y_mm=20.0))
+        self.assertIsNone(camera._solve_pin_pixel_offset(J @ [9., -15.], J, 8.0, search_y_mm=20.0))
+        self.assertIsNone(camera._solve_pin_pixel_offset(J @ [6., -21.], J, 8.0, search_y_mm=20.0))
 
     def test_2d_hough_match_recovers_synthetic_xy_shift(self):
         import cv2
@@ -480,16 +491,29 @@ class CameraPinTests(unittest.TestCase):
         Tcb = np.eye(4)
         p0, p1 = np.array([.06, -.04, 1.]), np.array([.06, .06, 1.])
         axis_x, axis_y = np.array([1., 0, 0]), np.array([0., 1, 0])
-        expected = np.array([6., -4.])
+        expected = np.array([6., -15.])
         image = np.full((480, 640, 3), 230, np.uint8)
         moved = np.stack([p0, p1]) + axis_x[None]*expected[0]/1000 + axis_y[None]*expected[1]/1000
         uv, _ = camera._pin_project(moved, Tcb, K)
         cv2.line(image, tuple(np.rint(uv[0]).astype(int)), tuple(np.rint(uv[1]).astype(int)), (30, 30, 30), 3)
         result = camera._pin_match(image, camera._pin_image_context(image, camera.load_config()),
-                                   p0, p1, Tcb, K, axis_x, search_mm=15, axis_y=axis_y,
-                                   search_radius_px=30)
+                                   p0, p1, Tcb, K, axis_x, search_mm=8, axis_y=axis_y,
+                                   search_radius_px=70, search_y_mm=20)
         self.assertEqual(result['status'], 'detected')
         np.testing.assert_allclose(result['correction_xy_mm'], expected, atol=2.)
+
+    def test_2d_hough_no_candidate_returns_rejection_record(self):
+        import camera_tools as camera
+        image = np.full((480, 640, 3), 230, np.uint8)
+        p0, p1 = np.array([.06, -.04, 1.]), np.array([.06, .06, 1.])
+        result = camera._pin_match(image, camera._pin_image_context(image, camera.load_config()),
+                                   p0, p1, np.eye(4),
+                                   np.array([[1500., 0, 320], [0, 1500., 240], [0, 0, 1.]]),
+                                   np.array([1., 0, 0]), axis_y=np.array([0., 1., 0.]),
+                                   search_radius_px=70, search_y_mm=20.)
+        self.assertEqual(result['status'], 'weak_line')
+        self.assertIsNone(result['correction_mm'])
+        self.assertEqual(len(result['model_uv']), 2)
 
     def test_gap_xy_offset_requires_both_edges_for_x(self):
         import camera_tools as camera

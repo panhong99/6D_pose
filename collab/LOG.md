@@ -3383,6 +3383,13 @@
 - `eval_0010`의 `target_gap`별 exact/표본을 결과 행에서 다시 셌다. Q1 gaps 0–5: **11/21, 12/26, 14/27, 16/26, 18/28, 18/28**; Q2 gaps 0–7: **10/22, 10/17, 6/11, 12/22, 6/13, 13/16, 14/25, 10/20**; Q3 gaps 0–11: **9/12, 5/10, 14/19, 5/9, 8/11, 8/9, 11/17, 7/11, 14/16, 14/17, 8/12, 7/12**; Q4 gaps 0–11: **10/12, 15/16, 7/9, 7/11, 5/8, 11/14, 7/10, 10/13, 7/10, 5/10, 8/10, 10/18**.
 - 목표 칸별 분모는 8–28로 작고 불균등하므로 이 편차는 기술통계이며 특정 핀에 대한 일반화/원인 주장이 아니다. 고정 `eval_0010`만 추가 분해; 평가 조건이나 gate 불변. CPU/JSON 읽기만 수행.
 
+## 2026-10-16 02:40 Codex — E 검출기 교차 단절 보강과 모델 전용 2D 탐색 시험
+- Q1 local detector에서 기존 miss 7개 중 6개는 ridge score 32.9–57.6, support 0.65–0.875로 대비/표본 지지는 강했지만 continuity가 기준 미달이었다. 확대 확인상 철망 교차가 빗살을 끊는 패턴과 부합해, 임계값을 낮추지 않고 내부 1–2 sample짜리 빈 구간만 메우도록 했다. 나머지 한 점은 support 0.528로 0.55 기준 아래다. 브리징 후 Q1 miss는 label index 1,6,7,11,12; 고대비 네 점 중 둘(구 index 2,5)이 회복됐다.
+- 동일 사진·checked label 위치에 측정 배치를 투영한 **in-sample local sensitivity**는 46/59 → **48/59 (81.4%)**: Q1 **9/14**, Q2 **4/5**, Q3 **17/18**, Q4 **18/22**. 통과 48개의 tip 픽셀 오차는 전부 ≤5 px; Q별 중앙값 Q1/Q2/Q3/Q4 **1.43/3.59/0/1.07 px**, 최댓값 **4.30/4.30/1.43/2.69 px**. 이는 라벨에서 검색 시작점을 받은 값이며 자동 end-to-end 성능/precision이 아니다.
+- 모델 투영만 시작점으로 쓰는 실험용 `pins --model_search_2d`는 기존 검색 대비 basket y ±20 mm까지 2D Hough line fit을 허용하고, x는 기존 ±8 mm로 유지한다. 59 checked tip과 사진별 검출 tip을 5 px 이내 one-to-one 연결한 수는 **8/59** (Q1 **2/14**, Q2 **0/5**, Q3 **5/18**, Q4 **1/22**). 해당 8개에 한해서 assumed tine-tip height plane 역투영 오차 중앙 **1.06 mm**, p90 **2.04 mm**, 최대 **3.31 mm**. 부분 라벨에서 맞은 점만의 조건부 수치라 전체 mm MAE/precision/recall로 부르지 않는다.
+- 2D 후보는 부분 라벨 tip-hit을 만들었지만 gap-pair confirmed는 Q1/Q2/Q3/Q4 **0/1/0/0 = 1**로, 기존 1D model-only 모드 **2/1/2/2 = 7**보다 감소했다. 따라서 2D는 opt-in 진단으로 두고 기본 모드로 채택하지 않음. 2D 산출물은 `calibration/data/basket/wrist_look/pins_model_oos2d_20261016_v4_Q1..Q4/`; in-sample은 `pins_label_layout_eval_20261016_v4_Q1..Q4/`. 59개 중 분면별 하위 라벨 수가 5–22이고 보이는 모든 빗살의 exhaustive GT가 없어 공식 precision/recall과 80% visible-pair 조건은 아직 계산할 수 없다.
+- 구현: `camera_tools.py`의 bounded short-gap continuity bridge, model-only experimental 2D option 및 no-Hough-candidate rejection record; `tests.py` 회귀 추가. 전체 `bash calibration/run.sh tests` **75/75 통과 (34.188 s)**, `py_compile`·`git diff --check` 통과. 첫 시험 실행은 test 기대값 1건 오류였고 helper 동작에 맞춰 기대값을 정정한 뒤 전체 통과. 로봇·그리퍼·GPU 미사용. E 계속: 가시성/분면 GT가 없는 상태에서 문턱 완화나 공식 검출률 주장은 보류; 다음은 2D candidate의 row/pair 교차혼동을 진단하고 안전한 pair 성능을 보존하는 개선.
+
 ## 2026-10-16 02:3x Claude — 넣기 보정 정책 최종 비교 (처음 보는 seed 15014, 415 계획, 평균 행동)
 | 조건 | 방식 | seated & exact | Q1 / Q2 / Q3 / Q4 |
 |---|---|---|---|
