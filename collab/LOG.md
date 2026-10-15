@@ -3150,3 +3150,7 @@
   1. `bash rl/basket/run_quadrant_final_20261015.sh calibration/data/basket/ao_g0_final_plans_20261015_1635/Q1_plans.jsonl calibration/data/basket/ao_g0_teacher_ratecap_20261015_2125/Q1_g0.json --g0 --teacher_rate_cap --seed 11014`
   2. `bash rl/basket/run_quadrant_final_20261015.sh calibration/data/basket/ao_g0_final_plans_20261015_1635/Q1_plans.jsonl calibration/data/basket/ao_g0_joint_ratecap_20261015_2125/Q1_g0_joint.json --g0_joint --teacher_rate_cap --seed 11014`
 - 두 경로는 확인 당시 새 경로(미존재)였다. 명령 1은 rate-capped teacher의 seated_exact 및 SafeDiffIK 재현율을 기록한다. 명령 2는 같은 제약과 shield 아래 joint-PD 재생 진단일 뿐 SafeDiffIK G0가 아니다. 각 결과를 JSON/NPZ raw mask로 재집계하고 teacher 분모·분자·분면별 수, action cap 비율, shield blocks, phase/open alignment를 검증해야 한다. 원 G0 ≥95% 전 G1/G2 진행 금지.
+
+## 2026-10-15 21:29 Codex — rate-cap G0 경계 연속성 후속 검증
+- 추가 코드 검토에서 G0 시작 capture가 rate-cap 추적값을 실제 관절 위치로 덮어써 직전 `to_above` 명령과 다음 descent 목표 사이의 단계 상한을 우회할 수 있음을 발견했다. 해당 재초기화를 제거해 직전 명령 목표가 phase 경계를 지나 이어지게 했다. capture한 실제 시작 관절/ TCP 상태는 G0 replay 복원용으로 그대로 저장한다.
+- 수정 뒤 필수 전체 시험 `bash calibration/run.sh tests` **61/61 통과, 35.033 s**; `git diff --check`도 통과. 시뮬레이션/GPU/데이터는 실행하지 않았다.

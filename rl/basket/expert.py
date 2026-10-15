@@ -998,9 +998,6 @@ def run_replay(args):
                          joints=[], physical_held=[], finger_ratio=[], tcp_local=[], rim_distance=[],
                          released_state=[], released=np.zeros(n, dtype=bool))
         g0_start = capture_g0_state(env, pe)
-        if args.teacher_rate_cap:
-            g0_arm_ids = env.action_manager.get_term('arm_action')._joint_ids
-            env._teacher_rate_cap_target_deg = torch.rad2deg(g0_start['q'][:, g0_arm_ids]).cpu().numpy().copy()
     if all('descend_pre' in rows[i]['slot'] for i in who):    # taught slot paths only (quadrant plans: to_above -> descend)
         drive(env, L('descend_pre', 'slot'), ~open_, args.speed / 4, trace=g0_record, trace_phase='preinsert',
               rate_cap=args.teacher_rate_cap)
