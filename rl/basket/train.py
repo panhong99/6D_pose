@@ -528,9 +528,140 @@ def run_rl(args):
     app.close()
 
 
+# ---------------------------------------------------------------- (10/15 보스) insert-correction PPO (one decision / insert)
+def insert_reward(exact, seated, in_quadrant, landed, target):
+    """1 = seated in the target gap; partial credit for standing in the quadrant, minus the gap miss (capped)."""
+    miss = np.where(landed >= 0, np.minimum(np.abs(landed - target), 4), 4)
+    return exact.astype(float) + 0.2 * (seated & in_quadrant & ~exact) - 0.05 * miss
+
+
+def insert_replay(plans, out_dir, tag, policy_path, seed, det, per_run, extra):
+    """One Isaac replay (subprocess, final per-quadrant settings) with the policy -> transitions npz."""
+    import subprocess
+    side = out_dir / f'{tag}.npz'
+    cmd = ['bash', str(ROOT / 'rl/basket/run_quadrant_final_20261015.sh'), str(plans), str(out_dir / f'{tag}.json'),
+           '--per_run', str(per_run), '--seed', str(seed), '--cl_policy', str(policy_path), '--cl_policy_out', str(side)]
+    cmd += (['--cl_policy_det'] if det else []) + extra
+    with open(out_dir / f'{tag}.log', 'w') as log:
+        rc = subprocess.run(cmd, cwd=ROOT, stdout=log, stderr=subprocess.STDOUT).returncode
+    if rc != 0 or not side.exists():
+        raise RuntimeError(f'replay {tag} failed (rc {rc}), see {out_dir / f"{tag}.log"}')
+    d = np.load(side)
+    r = insert_reward(d['exact'], d['seated'], d['in_quadrant'], d['landed'], d['target'])
+    return d, r
+
+
+def run_insert_rl(a):
+    """(10/15) PPO on the insert corrections (aim dx/dy, lean, dz, yaw) of the planner + per-quadrant settings, with the
+    model-error randomisation (--cl_dr) and the FP noise model.  Iteration 0 = the hand-tuned method (zero mean head)."""
+    import random
+    out = Path(a.out or ROOT / f'rl/logs/basket/insert_rl_{time.strftime("%Y%m%d_%H%M%S")}')
+    out.mkdir(parents=True, exist_ok=True)
+    rows = [l for f in a.plans for l in open(f) if l.strip()]
+    hold = [l for f in a.eval_plans for l in open(f) if l.strip()]
+    rng = random.Random(a.seed)
+    torch.manual_seed(a.seed)
+    sys.path.insert(0, str(HERE))
+    from expert import INSERT_ACT, INSERT_OBS
+    pol = M.InsertPolicy(INSERT_OBS, INSERT_ACT, init_std=a.init_std)
+    if a.init_ckpt:
+        pol.load_state_dict(torch.load(a.init_ckpt, map_location='cpu'))
+    opt = torch.optim.Adam(pol.parameters(), lr=a.lr or 3e-4)
+    extra = ['--cl_dr'] if not a.no_dr else []
+    extra += ['--cl_noise_fp', str(ROOT / 'rl/logs/basket/fp_noise_model_20261015.json')] if not a.no_fp_noise else []
+    hist = []
+    (out / 'config.json').write_text(json.dumps(dict(vars(a), plans_n=len(rows), eval_n=len(hold), extra=extra), indent=1, default=str))
+
+    def evaluate(it):
+        ev = out / 'eval_plans.jsonl'
+        ev.write_text(''.join(hold))
+        torch.save(pol.state_dict(), out / f'policy_{it:04d}.pt')
+        d, r = insert_replay(ev, out, f'eval_{it:04d}', out / f'policy_{it:04d}.pt', 777, True, 1, extra)
+        res = dict(it=it, eval_exact=float(d['exact'].mean()), eval_reward=float(r.mean()),
+                   **{f'eval_{q}': float(d['exact'][d['quadrant'] == q].mean()) for q in ('Q1', 'Q2', 'Q3', 'Q4') if (d['quadrant'] == q).any()})
+        print(f'[insert_rl] eval it {it}: exact {res["eval_exact"]:.3f} ' + ' '.join(f'{q} {res.get("eval_" + q, float("nan")):.2f}' for q in ('Q1', 'Q2', 'Q3', 'Q4')), flush=True)
+        return res
+
+    best = -1.0
+    for it in range(a.iters + 1):
+        row = dict(it=it)
+        if it % a.eval_every == 0:
+            row.update(evaluate(it))
+            if row['eval_exact'] > best:
+                best = row['eval_exact']
+                torch.save(pol.state_dict(), out / 'best.pt')
+        if it == a.iters:
+            hist.append(row)
+            break
+        batch = out / 'batch.jsonl'
+        batch.write_text(''.join(rng.sample(rows, min(a.batch, len(rows)))))
+        torch.save(pol.state_dict(), out / 'current.pt')
+        t0 = time.time()
+        d, r = insert_replay(batch, out, f'train_{it:04d}', out / 'current.pt', 1000 + it, False, 1, extra)
+        obs, act = torch.as_tensor(d['obs']), torch.as_tensor(d['act'])
+        old_logp, ret = torch.as_tensor(d['logp'], dtype=torch.float32), torch.as_tensor(r, dtype=torch.float32)
+        with torch.no_grad():
+            adv = ret - pol.value(obs)
+            adv = (adv - adv.mean()) / (adv.std() + 1e-6)
+        for _ in range(a.epochs):                           # PPO (clip 0.2), one-step episodes: return = reward
+            for idx in torch.randperm(len(obs)).split(a.minibatch):
+                mu, std = pol(obs[idx])
+                dist = torch.distributions.Normal(mu, std)
+                logp = dist.log_prob(act[idx]).sum(1)
+                ratio = (logp - old_logp[idx]).exp()
+                pl = -torch.min(ratio * adv[idx], ratio.clamp(0.8, 1.2) * adv[idx]).mean()
+                vl = ((pol.value(obs[idx]) - ret[idx]) ** 2).mean()
+                loss = pl + 0.5 * vl - 0.003 * dist.entropy().sum(1).mean()
+                opt.zero_grad()
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(pol.parameters(), 1.0)
+                opt.step()
+                with torch.no_grad():
+                    pol.log_std.clamp_(math.log(0.05), math.log(1.0))
+        row.update(train_exact=float(d['exact'].mean()), train_reward=float(r.mean()), std=pol.log_std.exp().tolist(),
+                   secs=round(time.time() - t0, 1), n=int(len(obs)))
+        hist.append(row)
+        print(f'[insert_rl] it {it}: train exact {row["train_exact"]:.3f} reward {row["train_reward"]:+.3f} '
+              f'std {[round(s, 2) for s in row["std"]]} ({row["secs"]} s, {row["n"]} envs)', flush=True)
+        (out / 'history.json').write_text(json.dumps(hist, indent=1))
+    (out / 'history.json').write_text(json.dumps(hist, indent=1))
+    plot_insert_curves(hist, out / 'curves.png')
+    print(f'[insert_rl] done: best eval exact {best:.3f} -> {out}', flush=True)
+
+
+def plot_insert_curves(hist, path):
+    import matplotlib
+    matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+    fig, ax = plt.subplots(figsize=(6, 3.5))
+    tr = [(h['it'], h['train_exact']) for h in hist if 'train_exact' in h]
+    ev = [(h['it'], h['eval_exact']) for h in hist if 'eval_exact' in h]
+    if tr:
+        ax.plot(*zip(*tr), label='train (sampled)', lw=1)
+    if ev:
+        ax.plot(*zip(*ev), 'o-', label='eval (mean action, held-out)', lw=1.5)
+    ax.set_xlabel('iteration')
+    ax.set_ylabel('seated & exact')
+    ax.spines[['top', 'right']].set_visible(False)
+    ax.legend(frameon=False)
+    fig.tight_layout()
+    fig.savefig(path, dpi=150)
+    plt.close(fig)
+
+
 def parse_args():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument('mode', choices=('bc', 'rl'))
+    p.add_argument('mode', choices=('bc', 'rl', 'insert_rl'))
+    p.add_argument('--plans', nargs='+', default=[], help='insert_rl: replay.jsonl plan files for training')
+    p.add_argument('--eval_plans', nargs='+', default=[], help='insert_rl: held-out replay.jsonl plan files')
+    p.add_argument('--out', default=None, help='insert_rl: output folder (new)')
+    p.add_argument('--iters', type=int, default=200, help='insert_rl: PPO iterations')
+    p.add_argument('--batch', type=int, default=96, help='insert_rl: plans per iteration (one env each)')
+    p.add_argument('--epochs', type=int, default=8)
+    p.add_argument('--minibatch', type=int, default=32)
+    p.add_argument('--no_dr', action='store_true', help='insert_rl: no model-error randomisation')
+    p.add_argument('--no_fp_noise', action='store_true', help='insert_rl: exact in-hand pose (no FP noise model)')
+    p.add_argument('--init_std', type=float, default=0.3, help='insert_rl: initial exploration std (pre-tanh; 0.3 ~ 9 mm aim)')
     p.add_argument('--data', help='bc: demo folder with batch_*.npz (expert.py collect)')
     p.add_argument('--seed', type=int, default=1)
     p.add_argument('--preflight-only', action='store_true', help='data check + tiny-batch overfit test, then exit')
@@ -561,5 +692,9 @@ if __name__ == '__main__':
         CFG['rl']['eval_every'] = a.eval_every
     if a.mode == 'bc':
         run_bc(a)
+    elif a.mode == 'insert_rl':
+        if a.eval_every is None:
+            a.eval_every = 5
+        run_insert_rl(a)
     else:
         run_rl(a)

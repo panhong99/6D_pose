@@ -58,6 +58,12 @@ def parse_args():
     p.add_argument('--cl_lean_q', default='', help='--closed_loop: per model quadrant tine-lean factor, e.g. "Q1:-1,Q2:0" (overrides --cl_lean)')
     p.add_argument('--cl_dx_q', default='', help='--closed_loop: per model quadrant aim, e.g. "Q3:-0.03,Q4:-0.035" (overrides --cl_dx)')
     p.add_argument('--cl_top', action='store_true', help='--closed_loop: turn the plate about its normal so the grip is at its top')
+    p.add_argument('--cl_policy', default='', help='--closed_loop: (10/15 insert RL) policy .pt from train.py insert_rl: per env aim dx/dy, '
+                   'lean, dz, yaw corrections on top of the per-quadrant settings, sampled once per env (actions + rewards -> --cl_policy_out)')
+    p.add_argument('--cl_policy_out', default='', help='--cl_policy: npz with obs, actions, log-probs and the per-env outcome')
+    p.add_argument('--cl_policy_det', action='store_true', help='--cl_policy: use the mean action (evaluation)')
+    p.add_argument('--cl_dr', action='store_true', help='--closed_loop: (10/15) per env model error from config align.dr: the planner aims at '
+                   'a shifted gap (tine model / marker error); the policy sees that shift with 2 mm noise (stand-in for wrist gap detection)')
     p.add_argument('--hold_view', action='store_true', help='replay with the viewer: keep the window open at the end until it is closed')
     p.add_argument('--rot_sign', type=float, default=1.0)
     p.add_argument('--batches', type=int, default=1, help='collect: batches of config expert.envs envs')
@@ -568,6 +574,54 @@ def make_cfg(n, viewer, torsion_m):
 
 
 _CL_CALLS = [0]
+_CL_POL = dict(policy=None, det=False, dr=False, seed=0, cache={})   # (10/15) insert RL: loaded policy + per-env (obs, act, logp, params)
+
+INSERT_OBS = 16      # quadrant one-hot 4, gap / 11, basket dx dy dyaw, in-hand plate offset (3) + rotvec (3), believed gap error (2)
+INSERT_ACT = 5       # aim dx, aim dy, lean factor, release dz, yaw about vertical (tanh-squashed, scaled by INSERT_SCALE)
+INSERT_SCALE = (0.03, 0.02, 0.5, 0.01, 4.0)     # m, m, lean factor, m, deg
+
+
+def insert_policy_params(r, k, H, Tb):
+    """(10/15) once per env: observation -> sampled (or mean) correction from the insert policy, cached by env index.
+    Also draws the env's model error (align.dr) when --cl_dr: the planner aims at the gap shifted by it."""
+    import numpy as np
+    import torch
+    from scipy.spatial.transform import Rotation as R
+    c = _CL_POL['cache']
+    if k in c:
+        return c[k]
+    import zlib
+    rng = np.random.default_rng(zlib.crc32(f"dr|{r['name']}|{k}|{_CL_POL['seed']}".encode()))
+    qd = r['model_qd']
+    bias = np.zeros(2)
+    if _CL_POL['dr']:
+        dr = E_CFG()['align']['dr']
+        bias = np.array([rng.uniform(-1, 1) * dr['gap_x_m'][qd], rng.uniform(-1, 1) * dr['gap_y_m']])
+    seen = bias + rng.normal(0, 0.002, 2)
+    Tb = np.asarray(Tb)
+    yaw_b = np.arctan2(Tb[1, 0], Tb[0, 0])
+    obs = np.concatenate([[qd == q for q in ('Q1', 'Q2', 'Q3', 'Q4')], [r.get('gap', 0) / 11.0],
+                          [Tb[0, 3] - 0.81, Tb[1, 3] + 0.19, yaw_b], H[:3, 3], R.from_matrix(H[:3, :3]).as_rotvec(), seen]).astype(np.float32)
+    act, logp = np.zeros(INSERT_ACT, np.float32), 0.0
+    pol = _CL_POL['policy']
+    if pol is not None:
+        with torch.no_grad():
+            mu, std = pol(torch.as_tensor(obs)[None])
+            a = mu if _CL_POL['det'] else mu + std * torch.randn_like(mu)
+            logp = float(torch.distributions.Normal(mu, std).log_prob(a).sum())
+            act = a[0].numpy()
+    s = np.tanh(act) * np.array(INSERT_SCALE)
+    c[k] = dict(obs=obs, act=act, logp=logp, bias=bias, dx=float(s[0] + bias[0]), dy=float(s[1] + bias[1]),
+                lean=float(s[2]), dz=float(s[3]), yaw=float(s[4]))
+    return c[k]
+
+
+def load_insert_policy(path):
+    import torch
+    from model import InsertPolicy
+    pol = InsertPolicy(INSERT_OBS, INSERT_ACT)
+    pol.load_state_dict(torch.load(path, map_location='cpu'))
+    return pol.eval()
 
 
 def closed_loop_paths(env, rows, who, above_m=0.11, extra=0.005, dz=0.0, lean=1.0, dx=0.0, top=False, dx_q=None, lean_q=None, dz_q=None, edge_q=None, pin_dx=None, top_q=None, noise=None, blind_h=None, noise_fp=None, gate=None):
@@ -622,11 +676,17 @@ def closed_loop_paths(env, rows, who, above_m=0.11, extra=0.005, dz=0.0, lean=1.
                 gated.append(1)
         import basket_env as be
         Tb = np.asarray(r['Tb'])
+        pol = insert_policy_params(r, k, H, Tb) if (_CL_POL['policy'] is not None or _CL_POL['dr']) else None
         path = []
         # (10/14 night) no IK at the full lean: first turn the plate more about its normal (a vertical plate jams in the
         # leaning tines - Q2 never seated below 60 mm with lean 0/0.5), only then lean less
         for lf, wide in ((1.0, False), (1.0, True), (0.5, False), (0.0, False)):
-            path = _cl_one(kin, tool, be, r, Tb, Rp, H, qs[k], (lean_q or {}).get(r['model_qd'], lean) * lf, above_m, extra, (dz_q or {}).get(r['model_qd'], dz), (pin_dx or {}).get(r['model_qd'], {}).get(str(r.get('pin')), (dx_q or {}).get(r['model_qd'], dx)), (top_q or {}).get(r['model_qd'], top), (edge_q or {}).get(r['model_qd']), wide=wide)
+            ln_, dz_ = (lean_q or {}).get(r['model_qd'], lean), (dz_q or {}).get(r['model_qd'], dz)
+            dx_ = (pin_dx or {}).get(r['model_qd'], {}).get(str(r.get('pin')), (dx_q or {}).get(r['model_qd'], dx))
+            dy_ = yaw_ = 0.0
+            if pol is not None:                              # (10/15 insert RL) policy correction + the env's model error
+                ln_, dz_, dx_, dy_, yaw_ = ln_ + pol['lean'], dz_ + pol['dz'], dx_ + pol['dx'], pol['dy'], pol['yaw']
+            path = _cl_one(kin, tool, be, r, Tb, Rp, H, qs[k], ln_ * lf, above_m, extra, dz_, dx_, (top_q or {}).get(r['model_qd'], top), (edge_q or {}).get(r['model_qd']), wide=wide, dy=dy_, yaw_deg=yaw_)
             if len(path) == 13:
                 lean_used.append(lf if not wide else 1.01)
                 break
@@ -639,7 +699,7 @@ def closed_loop_paths(env, rows, who, above_m=0.11, extra=0.005, dz=0.0, lean=1.
     return out
 
 
-def _cl_one(kin, tool, be, r, Tb, Rp, H, q0, lean, above_m, extra, dz, dx, top, edge=None, wide=False):
+def _cl_one(kin, tool, be, r, Tb, Rp, H, q0, lean, above_m, extra, dz, dx, top, edge=None, wide=False, dy=0.0, yaw_deg=0.0):
     """One closed-loop (above + descent) joint path in deg for this tine lean; shorter than 13 = no IK."""
     import numpy as np
     from scipy.spatial.transform import Rotation as R
@@ -647,6 +707,9 @@ def _cl_one(kin, tool, be, r, Tb, Rp, H, q0, lean, above_m, extra, dz, dx, top, 
     up = Tb[:3, :3] @ np.array([-np.sin(ln), 0.0, np.cos(ln)])   # tine axis (+ lean = top toward basket -x)
     nt = Tb[:3, :3] @ np.array([np.cos(ln), 0.0, np.sin(ln)])    # plate normal parallel to the tines
     nt = nt if nt @ Rp[:, 2] >= 0 else -nt
+    if yaw_deg:                                              # (10/15 insert RL) turn the plate face about the vertical
+        Rz = R.from_rotvec([0.0, 0.0, np.radians(yaw_deg)]).as_matrix()
+        up, nt = Rz @ up, Rz @ nt
     f_ = be.B['full']                                       # (10/14 night) keep the shifted aim inside the quadrant's gaps:
     cf = f_['clip_first_m'][r['model_qd']] if isinstance(f_['clip_first_m'], dict) else f_['clip_first_m']
     hx = cf + f_['tine_pitch'][r['model_qd']] * np.arange(f_['tines_from_clip'][r['model_qd']])
@@ -655,7 +718,7 @@ def _cl_one(kin, tool, be, r, Tb, Rp, H, q0, lean, above_m, extra, dz, dx, top, 
     t_b = np.linalg.inv(Tb) @ np.r_[np.asarray(r['target_centre']), 1.0]
     if edge is not None:                                     # only where asked (Q2): the near rows need the bias shift past their
         dx = float(np.clip(t_b[0] + dx, gx.min(), gx.max() - edge) - t_b[0])   # end gap (+2 gaps), Q1 lost 12/90 to -1
-    gap_b = np.asarray(r['target_centre']) - [0, 0, 0.165] + Tb[:3, 0] * dx   # gap centre on the floor (base)
+    gap_b = np.asarray(r['target_centre']) - [0, 0, 0.165] + Tb[:3, 0] * dx + Tb[:3, 1] * dy   # gap centre on the floor (base)
     rot, _ = R.align_vectors([nt], [Rp[:, 2]])
     R0 = rot.as_matrix() @ Rp
     g = R0 @ np.linalg.inv(H)[:3, 3]                        # grip (TCP) from the plate centre, turned with the plate
@@ -712,6 +775,8 @@ def run_replay(args):
         rows.append(dict(name=d.name, outcome=r['outcome'], plate=next(e for e in ev if e['event'] == 'plan')['plate_root_fp'],
                          Tb=json.loads(photo.read_text())['T_base_basket'], grasp=grasp, slot=slot))
     n = len(rows) * args.per_run
+    _CL_POL.update(policy=load_insert_policy(args.cl_policy) if args.cl_policy else None, det=args.cl_policy_det,
+                   dr=args.cl_dr, seed=args.seed, cache={})
     env = ManagerBasedRLEnv(make_cfg(n, not args.headless, E_CFG()['expert'].get('pad_torsion_radius_m', 0.01)))
     env.reset()
     dev = env.device
@@ -1035,6 +1100,14 @@ def run_replay(args):
     good = [x for x in res if x['real'] == 'success']
     gate = sum(x['sim_rate'] >= 0.8 for x in good)
     print(f'[replay] P1 gate: {gate}/{len(good)} real successes reproduced with sim rate >= 80 % (need >= 9)', flush=True)
+    if args.cl_policy_out:                                     # (10/15 insert RL) per env transition for train.py insert_rl
+        c = _CL_POL['cache']
+        ks = sorted(c)
+        np.savez_compressed(args.cl_policy_out, env=np.array(ks), obs=np.stack([c[k]['obs'] for k in ks]),
+                            act=np.stack([c[k]['act'] for k in ks]), logp=np.array([c[k]['logp'] for k in ks]),
+                            bias=np.stack([c[k]['bias'] for k in ks]), seated=seated[ks], exact=(face_ok & seated)[ks],
+                            in_quadrant=in_quadrant[ks], landed=landed[ks], target=target[ks],
+                            low=st['low'].cpu().numpy()[ks], quadrant=np.array([rows[who[k]]['model_qd'] for k in ks]))
     out = Path(args.out or RL / 'logs/basket/replay_20261012.json')
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(dict(results=res, gate=gate, need=9, names=[rows[i]['name'] for i in who], in_hand=in_hand, pre=pre,

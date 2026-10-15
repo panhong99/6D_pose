@@ -96,3 +96,23 @@ def load_bc(path, device='cpu'):
     model = BCPolicy(m['obs_dim'], m['step_max'], m['hidden'], m['activation']).to(device)
     model.load_state_dict(ck['state'])
     return model.eval(), m
+
+
+class InsertPolicy(nn.Module):
+    """(10/15) insert-correction policy (one decision per insertion, PPO as a contextual bandit): obs -> Gaussian over
+    the pre-tanh correction (expert.INSERT_SCALE).  The mean head starts at 0 = the hand-tuned settings, so iteration 0
+    IS the current method; a separate value head is the baseline."""
+
+    def __init__(self, obs_dim, act_dim, hidden=(128, 128), init_std=0.5):
+        super().__init__()
+        self.mu = mlp([obs_dim, *hidden, act_dim], 'elu')
+        self.v = mlp([obs_dim, *hidden, 1], 'elu')
+        nn.init.zeros_(self.mu[-1].weight)
+        nn.init.zeros_(self.mu[-1].bias)
+        self.log_std = nn.Parameter(torch.full((act_dim,), float(torch.log(torch.tensor(init_std)))))
+
+    def forward(self, obs):
+        return self.mu(obs), self.log_std.exp().expand(obs.shape[0], -1)
+
+    def value(self, obs):
+        return self.v(obs)[..., 0]
