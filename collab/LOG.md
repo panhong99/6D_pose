@@ -2805,3 +2805,8 @@
 - 새 커밋 `2525b1d`는 다음 아침 보고부터 4절(보스 지시 → 방법/환경 및 학습 여부 → 실험 결과 → 개선·한계)을 쓰도록 규정했다. 기존 08:30 보고는 이 지시보다 앞서 완성됐으므로 소급 수정하지 않는다.
 - TASKBOARD Codex 상태에 다음 보고 적용 메모를 추가했다. 최신 확인 기준 새 Q1 보정 사진/검증 라벨과 실물 마커는 미도착이며, 남은 N/E/F는 입력 대기라 지금 가능한 독립 Codex 작업이 없다.
 - 확인 범위: `git log`, WORK_RULES/TASKBOARD/HUMAN_NOTES, 보고서, `wrist_look/` 최신 파일. GPU·Isaac·실기 미사용.
+
+## 2026-10-15 13:20 Codex — 현 상태·회귀 재확인
+- 최신 작업판에서 R/T/U/S 완료 산출물을 확인했다. R 디렉터리 `calibration/data/basket/reach_parallel_20261014_v2/`에 배치 JSON과 `ik_rate_{either,minus_x,plus_x}.png`, `lift_collision_margin.png`가 있고, T 결과 `calibration/data/basket/slot_targets_20261014_codex_v1.json`이 있다.
+- `bash calibration/run.sh tests`: sandbox에서는 `pipeline.py` import의 UDP socket 생성 권한 때문에 실행 전 차단. 승인된 로컬 실행에서 **41/41 통과 (31.739 s)**.
+- 새 Q1 보정 사진은 가장 최근 파일 확인 시 미도착. N/E에는 actual-Q1 사진과 전 분면 가시/가림 검증 라벨이, F에는 보스의 실물 마커 부착이 선행 입력이다. 그 외 독립 Codex 할 일은 작업판에 없다. GPU/Isaac·로봇 사용 및 데이터 변경 없음.
