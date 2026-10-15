@@ -1132,7 +1132,7 @@ def run_replay(args):
             commanded_joint_delta = np.diff(
                 np.concatenate([initial_target[:, None, :], replay_joint_target], axis=1), axis=1)
             commanded_joint_speed = np.abs(commanded_joint_delta) * 30.0
-            commanded_speed_cap = teacher_joint_speed
+            commanded_speed_cap = teacher_joint_speed if np.ndim(teacher_joint_speed) == 3 else np.asarray(teacher_joint_speed)[..., None]   # (Claude 21:2x) per-frame cap -> per joint
             commanded_speed_cap_ratio = commanded_joint_speed / np.maximum(commanded_speed_cap, 1e-12)
             report = dict(
                 replay_mode='joint_pd_teacher_reference',
