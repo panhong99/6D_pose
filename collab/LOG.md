@@ -2952,3 +2952,39 @@
 - 이 Codex 셸의 `nvidia-smi`는 NVIDIA driver 통신 실패, 과거 PID 639006은 현재 조회되지 않음. GPU 유휴라고 단정하지 않고 Isaac을 시작하지 않았다(AO 역할 분담상 Codex CPU-only).
 - G0 Q1 tracking 재실행은 아직 미수행; 9e3926e의 회귀시험은 물리 성공률 gate를 대신하지 않는다. Claude GPU 담당자의 새 경로 G0 결과가 필요하다. G1/G2는 ≥95% G0 전 금지. 이후 G1 전에 `run_collect()`이 `attach()`/`attach_update()`를 실제 사용한다는 물리 전용 조건 위반도 해결해야 한다.
 - 같은 점검에서 G0 입력 계획 JSONL을 읽기 전용으로 다시 검사했다: Q1/Q2/Q3/Q4 유효 계획 10/10/12/12, gap coverage 6/6·8/8·12/12·12/12, AO의 basket x/y ±5 cm·yaw ±10° 및 plate x/y 지정 범위 위반 0건, 참조 plan 파일 누락 0건. CPU 검사 스크립트는 일회성 stdin 실행이며 저장 스크립트/산출물을 추가하지 않았다.
+## 2026-10-15 17:34 Codex — AO/G0 Q1 실패 궤적 원시 재집계 (CPU)
+- 입력을 읽기 전용 재집계: `calibration/data/basket/ao_g0_tracking_20261015_1715/Q1_g0.{json,npz}`. 파일 완결, obs `(20,666,17)`, act/replay_act `(20,666,7)`, 수치 배열 finite. gate는 기존 `seated_exact` 그대로: teacher 18/20, 재생 성공 12/18=66.7% (목표 ≥95% 미달). 실패 env는 **0,1,10,11,18,19**. env16·17은 teacher 실패라 분모에 넣으면 안 됨; TASKBOARD의 앞 설명을 원시 배열에 맞게 정정.
+- 프레임 번호는 30 Hz(33.3 ms/frame). `P`는 recorded-vs-student TCP 위치오차, `R`은 자세오차. 처음 임계값을 넘은 프레임:
+
+| env | 목표→도착 gap | P >1 / >5 / >10 mm | R >0.5 / >2 / >5° | p95 P / R | 접촉 시각 |
+|---:|:---:|:---:|:---:|:---:|:---|
+| 0 | 1→−1 | 6 / 20 / 29 | 9 / 21 / 37 | 109.37 mm / 15.00° | 기록 없음 |
+| 1 | 1→−1 | 6 / 20 / 29 | 9 / 21 / 38 | 108.58 mm / 14.71° | 기록 없음 |
+| 10 | 5→5, seated/in-quadrant 실패 | 55 / 148 / 351 | 8 / 22 / 48 | 73.67 mm / 17.26° | 기록 없음 |
+| 11 | 5→4 | 102 / 251 / 268 | 12 / 38 / 96 | 103.91 mm / 6.77° | 기록 없음 |
+| 18 | 0→−1 | 5 / 17 / 30 | 8 / 21 / 47 | 46.43 mm / 8.01° | 기록 없음 |
+| 19 | 0→−1 | 5 / 17 / 31 | 8 / 21 / 47 | 54.53 mm / 8.54° | 기록 없음 |
+
+- 대표 프레임의 위치/방향 오차(순서 frame 0,5,30,120,240,600,620,665; 단위 mm/deg): env0 `0/0, 0.86/0.26, 11.04/3.75, 48.86/14.93, 48.53/14.84, 108.79/14.98, 108.79/14.98, 101.38/13.41`; env1 `0/0, 0.87/0.26, 11.11/3.69, 48.78/14.71, 47.83/14.32, 108.25/14.39, 108.25/14.39, 108.58/14.38`; env10 `0/0, 0.59/0.29, 0.95/2.95, 2.08/14.25, 0.18/11.24, 73.03/0.13, 72.71/0.13, 51.64/0`; env11 `0/0, 0.47/0.20, 0.90/1.56, 1.04/6.14, 2.05/5.47, 103.48/6.25, 103.48/6.25, 103.92/6.27`; env18 `0/0, 1.19/0.31, 10.09/3.12, 25.63/8.01, 25.24/8.00, 4.47/0.02, 0.75/0.08, 0.01/0`; env19 `0/0, 1.18/0.31, 9.82/3.09, 27.45/8.54, 27.01/8.49, 7.85/0.02, 2.44/0.06, 0.01/0`. 모든 666 프레임별 원 배열은 NPZ에 보존되어 있고, 위는 주요 시점 요약이며 threshold crossing 표는 원 배열 전체를 대상으로 계산했다.
+- `replay_act` norm이 정해진 한 스텝 상한에 도달한 개수(각각 회전/이동; 구간 `[0,30),[30,120),[120,240),[240,620),[620,666)` 프레임): env0 회전 `[26,90,120,380,46]`, 이동 `[23,90,120,380,46]`; env1 동일; env10 회전 `[26,90,120,120,0]`, 이동 `[0,21,65,296,46]`; env11 회전 `[25,90,120,380,46]`, 이동 `[0,0,2,380,46]`; env18 회전 `[26,90,120,210,0]`, 이동 `[25,90,120,370,0]`; env19 회전 `[26,90,120,235,0]`, 이동 `[25,90,120,380,1]`. 전체 JSON의 tracking clip 카운트는 7,801/13,320=58.57%. 상한은 기존 5 cm/s·10°/s 그대로다. 이는 특히 초반 re-aim에서 상당수 프레임이 clip되고 오차도 초기에 자란다는 근거지만, DLS 단독 원인 증명은 아니다.
+- 접촉 타임스탬프는 요청된 결과에 포함할 수 없다: NPZ에는 물체-빗살/레일 contact 배열이 없고 `rl/basket/env.py:observe()`가 force 3축을 0으로 채운다. TCP-접시 rim 거리와 finger ratio는 저장됐으나 실제 접촉 센서가 아니므로 접촉 시각으로 부르지 않는다. 교차 확인 가능한 이벤트는 teacher/student open 명령이 모두 frame 620이라는 것뿐이며, 이는 접촉 시점이 아니다.
+- DLS 감사: Basket action이 IsaacLab `DifferentialIKControllerCfg(... ik_method="dls")`를 쓰며 라이브러리 기본 λ=0.01 (`differential_ik_cfg.py`). 구현은 `Jᵀ(JJᵀ+λ²I)⁻¹Δx`. 이 실행은 Jacobian singular value/condition, DLS의 `Δq`, 실제 TCP 응답 분해, frame별 `blocked`/hold-target 오차를 저장하지 않아 감쇠가 회전을 덜 따라간다고 단정할 수 없다. replay action이 cap에 자주 걸리는 사실은 시간표적이 추종 가능한 응답보다 앞서 나갔음을 시사하나, DLS·관절 PD·windup·shield의 기여 비율은 식별 불가. gain/λ/속도/성공기준은 바꾸지 않는다.
+- 수정 제안/소유 경계: `rl/basket/*`는 Claude 작업 중이라 Codex는 파일을 건드리지 않았다. 다음 Isaac 전 담당 Claude가 replay에 re-aim 구간 phase/event 기록을 추가하고, 해당 구간에서만 teacher waypoint cursor를 `<1 mm AND <0.5°` 도달 시 전진하도록 적용하는 편을 제안한다. 666개 30 Hz frame 전부를 엄격한 waypoint로 쓰면 작은 추종오차로 정지/장시간 정체할 수 있으므로 re-aim용 희소 waypoint를 분리하고, timeout이면 건너뛰지 않고 에피소드 실패로 남겨야 한다. open 시점은 마지막 삽입 milestone에 고정하고 속도 상한·충돌 여유·seated_exact gate를 보존한다. 2× teacher 감속은 비교군으로만 별도 새 출력 경로에서 시험 가능.
+- Claude GPU 재실행 명령(위 이벤트 기반 변경 반영 후, 기존 출력 덮지 않는 새 경로): `bash rl/basket/run_quadrant_final_20261015.sh calibration/data/basket/ao_g0_final_plans_20261015_1635/Q1_plans.jsonl calibration/data/basket/ao_g0_event_replay_20261015_1734/Q1_g0.json --g0 --seed 11014`. 이는 실행하지 않음. **수정 코드+Isaac 결과가 아직 없어 G0는 계속 미통과이며 G1/G2 BC를 시작하지 않는다.** Codex 역할에 따라 GPU/Isaac도 실행하지 않았다.
+- 검증/마감: `git diff --check` 통과. `bash calibration/run.sh tests` 기본 실행은 기존 `pipeline.py` UDP 진단 socket의 sandbox `PermissionError`로 중단. 승인 경로로 다시 시작했으나 17:37쯤 `E...`가 한 번 출력된 뒤 `python -m unittest tests` PID **646587**가 6분 이상 `hrtimer_nanosleep` 상태로 새 출력을 내지 않았다. 내가 시작한 그 PID만 SIGTERM해 종료코드 143; 전체시험은 **통과 확인되지 않음**(미완료라 commit하지 않음). 실패 테스트 stack trace는 runner 종료 전에 얻지 못해 원인은 미확인.
+
+## 2026-10-15 17:4x Codex — 새 분담 확인 및 Claude insert_rl 읽기 전용 리뷰
+- 최신 TASKBOARD(HEAD `fc329da`)를 확인했다. 오늘 밤은 기존 자동화 요약의 핀 라벨링 N이 아니라 **Codex가 단계형 PPO 전체, Claude가 insert correction PPO**로 나뉘었다. G0 Q1은 아직 12/18=66.7%로 ≥95% gate 미달이라 Codex의 데모/BC/residual PPO 단계는 보류 상태다. Isaac/GPU는 이 세션에서 실행하지 않았다.
+- Claude 미커밋 `expert.py`/`model.py`/`train.py` diff는 수정하지 않고 검토했다. 구현은 분면 설정 위에서 env마다 보정 5개를 한 번 고르는 contextual/one-step PPO 형태이며, 0 보정 mean이 현 튜닝 기준이다. 기본 경로 opt-in 여부와 코드 기능은 별도 테스트 결과 전까지 미검증으로 둔다.
+- 재현 가능한 누락 1: `config.yaml align.dr`에는 `yaw_deg`와 `row_scale`이 선언돼 있지만 `expert.insert_policy_params()`의 `--cl_dr`가 읽는 값은 `gap_x_m`, `gap_y_m`뿐이다. `closed_loop_paths()`에도 바구니 yaw/두 줄 간격을 episode별로 흔드는 적용은 보이지 않는다. 따라서 현재 경로로는 yaw·row-spacing 랜덤화가 포함됐다고 보고하면 안 된다.
+- 재현 가능한 누락 2: `align.dr.in_hand_mm/deg`도 `--cl_dr` 구현에서 소비되지 않는다. `--cl_noise_fp`는 닫힌고리 계획 함수 안에서 손 안 pose 측정치에 잡음을 더하지만, config의 episode 고정 손 안 편향과 같은 모델은 아니다. 의도한 2 mm/1° 편향이 별도로 주입되는지 확인이 필요하다.
+- 기준선 해석 주의: `run_insert_rl()` 기본값은 모든 평가/학습 replay에 `--cl_dr`를 붙이고, 그 경로가 policy correction에 더해 임의 gap bias를 실제 TCP aim에 적용한다. 따라서 iteration 0은 보정 평균값은 0이어도 랜덤화가 없는 튜닝 계획기의 성공률이 아니다. 랜덤화된 동일 시험 세트에서 기준선과 비교하려는 의도라면 별도 baseline replay도 같은 randomized input을 받아야 한다; “0회차=현재 튜닝 성능”이라고 단순 비교·보고하면 안 된다.
+- PPO 실행 전 검증 누락 위험: `run_insert_rl()`은 빈 `--plans`/`--eval_plans`와 train/eval 중복을 명시적으로 거부하지 않는다. 빈 목록은 빈 배치/평가 배열로 이어져 실패하거나 NaN metric을 낼 수 있고, 중복은 홀드아웃 평가를 오염시킬 수 있다. 시작 전 preflight 및 split provenance 시험이 필요하다.
+- 제안: Claude가 insert-policy 구현을 마치면, `--cl_dr`로 매 에피소드 모델 오차·고정 hand bias가 실제 관측/계획에 반영되는지 config 필드별 시험을 넣고, yaw/row_scale을 미지원으로 둘 경우 설정·보고서에서 제외할 것. `train.py insert_rl` 실행 전 비어 있지 않은 train/eval, disjoint plan identity 검증을 추가한 뒤 CPU 회귀시험. Codex는 현재 Claude 소유 부분을 고치지 않는다.
+- 상태: 리뷰 발견사항을 TASKBOARD에 전달. Isaac/GPU 실행 0회, 데이터/체크포인트 변경 0, Claude 코드 수정 0.
+- 추가 CPU 사전 필터 감사: AO 입력 최종계획 `calibration/data/basket/ao_g0_final_plans_20261015_1635/{Q1,Q2,Q3,Q4}_plans.jsonl`의 참조 plan JSON 모든 leg waypoint에서 0-based joint 2(J3)의 최대 절댓값을 계산했다. Q1 10/10, Q2 10/10, Q3 12/12, Q4 12/12에서 `|J3| > 132°`는 **0건**; 분면별 최대는 131.83°, 131.80°, 131.83°, 131.83°. 다만 이는 계획 waypoint에 대한 CPU 점검뿐이며, 실제 G0 teacher 실행 trace/향후 데모의 제한 통과를 보증하지 않는다. G1 수집 전 최종 teacher trace에도 같은 필터를 적용해 제외율을 별도 보고해야 한다.
+- 18:05 source mtime의 Claude `train.py` 변경을 다시 검토했다. 앞서 미연결로 보였던 `--init_std`는 이제 `M.InsertPolicy(..., init_std=a.init_std)`로 전달되어 해결됐다. `align.dr`의 yaw/row_scale 및 고정 hand bias 누락, train/eval split preflight 부재는 아직 코드상 미해결이다. 같은 세션의 `expert.py`/`model.py`는 17:38 mtime이며 Claude 소유 변경 파일은 계속 수정하지 않는다.
+
+## 2026-10-15 18:3x Claude — 넣기 보정 PPO 진행 / 미팅 시연 명령
+- 넣기 보정 PPO(`train.py insert_rl`, b22201a): 학습 계획 2,399개(seed 4014~8014 + 13014 실기 바구니 x 0.906 포함), 평가 9014·10014 598개, `--cl_dr` + FP 잡음, init_std 0.3, 회차당 96 env 약 110 s. 0회차(= 지금 튜닝 방식) 평가 **0.554**(Q1 .52 / Q2 .54 / Q3 .50 / Q4 .66), 학습 0~4회차 0.32~0.51(탐색 포함). 출력 `rl/logs/basket/insert_rl_20261015_night/`. 한계(Codex 검토): `align.dr`의 yaw·row_scale·손 안 편향은 아직 hook에 연결 안 됨(gap x·y만).
+- 미팅 시연: `bash calibration/run.sh demo4 --execute`(bb66992, 태그 `demo-meeting-20261016`): Q4 6 → Q3 6 → Q1 6 → Q2 5, 각 `--sim_q --auto`, 사이마다 보스가 접시를 받침에 올리고 Enter.
