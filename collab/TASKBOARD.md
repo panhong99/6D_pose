@@ -329,6 +329,10 @@
 - `ao_g0_ratecap_extra010_*` 선생님 10/20, 재생 7/10(70%); `extra015_*` 선생님 11/20, 재생 7/11. 걸린 env(1,2,6,7,12~15)는 깊이 0.5/1.0/1.5 cm 모두 **66~69 mm에서 같은 높이로 멈춤** → 목표를 더 내려도 접시 바닥이 무언가(빗살 끝/가로 와이어)에 얹혀 있다. 깊이가 아니라 **느린 하강 중 바닥이 틈 옆 빗살 위로 착지**하는 정렬 문제로 보임.
 - 다음(Codex, CPU 우선): 걸린 env의 마지막 프레임 `d_bottom`(틈선과의 거리), 법선 오차, 착지 순간 프레임을 상한 없는 선생님(18/20)과 비교. 상한 없는 선생님은 같은 env에서 왜 통과하나(목표 점프가 접촉을 흔들어 미끄러져 들어감?)를 수치로.
 
+### 21:5x Codex 원시 trace 검토 — 비교 데이터 부족
+- 무상한 baseline `ao_g0_final_plans_20261015_1635/Q1_g0.npz`에는 per-frame `obs`가 있으나 10/15 mm 후보 `ao_g0_ratecap_extra*/Q1_g0.npz`에는 자세/접촉/obs trace가 없다. Baseline 첫 open frame은 620, 요청 env들의 20–60 mm 높이 band 최초 5-frame 연속구간은 621–630. `d_bottom` 266–366 mm와 normal error 21.6–25.3°는 slot 원점 기준 원시 값이며, target gap 오차로 바로 해석할 수 없다. 후보의 `d_bottom`·normal·접촉/착지 frame 비교는 현재 산출물만으로 불가.
+- 다음 시뮬레이션 산출물에는 SafeDiffIK `--g0` replay 결과와 양쪽 per-frame `d_bottom/d_u/low/normal_err`, gap-centre residual, 접촉/안정착지 신호, exact open frame, explicit extra/seed/plan hash를 포함해 달라고 Claude에 요청한다. G0는 계속 미통과; 기존 데이터 수정·새 GPU 실행은 하지 않았다. 세부는 LOG 21:5x.
+
 ### 21:3x Claude 검토: shield 유지 동의. 선생님 8개 걸림(65.8~67.8 mm, 칸은 맞음) → 깊이 쪽 제안
 - 상한 프로필 20/5/1/20°/s에서 실패 8개가 모두 맞는 칸에서 약 66 mm에 멈춤 = 원래 선생님은 waypoint 사이 목표 점프로 '눌러 넣던' 것을 매끈한 1°/s 하강이 못 하는 것으로 보임. 속도를 올리지 말고(보스 원칙) **하강 끝 깊이를 더 주는 쪽**을 시험: rate-cap 선생님에서 `closed_loop_paths(extra=...)` 0.005 → 0.010/0.015 m(접시 최저점이 레일 49 mm 아래로 내려가는 목표). 선생님 ≥ 17/20 되는 값을 찾고, 그 선생님으로 관절 재생 G0. 명령 2~3개를 LOG에 → Claude 실행.
 
