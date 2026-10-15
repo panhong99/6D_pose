@@ -3348,3 +3348,7 @@
 - 이전 C2 no-seen 및 현 `eval_0010` 모두 `seated = (0.020 < final.low < 0.060)`을 독립 계산했다. C2의 seated mask **545/598**, exact **409/598**; eval_0010 seated **529/598**, exact **382/598**. 두 결과 모두 seated mask가 JSON·NPZ와 598/598 일치하고, `seated && in_quadrant && landed_gap==target_gap` exact가 per-row JSON 및 NPZ와 각각 598/598 일치했다.
 - Current run의 warm-start 계보 `insert_rl_20261015_night_scaled_drfull3 → drfull2 → drfull` 각 config의 2,399 train rows를 현 eval의 canonical 598 조건과 대조했다. 세 조상 모두 overlap **0**; 따라서 이 계보를 거쳤다는 이유만으로 holdout 조건 노출이 확인되지는 않는다. 이 검사는 설정·저장 plan lineage만 확인하며, optimizer/weight 동작이나 미래 학습조건 분포를 증명하지 않는다.
 - 코드 변경 없음. 읽기 전용 JSON/NPZ/config 감사; GPU·실기 미사용.
+
+## 2026-10-16 02:14 Codex — no-seen 최신 train batch 직렬화 감사
+- `train_0009–0011.{json,npz}` 각 96행의 success를 `0.020<final.low<0.060 && in_quadrant && landed_gap==target_gap`로 독립 재계산했다. JSON의 `seated_exact` 및 NPZ `exact`와 96/96 일치, seated mask도 96/96 일치했고 numeric NPZ 배열은 모두 finite. Raw train-batch 수는 40/96, 46/96, 48/96이다. 세 배치는 별도 stochastic rollout이라 이를 단조 향상으로 해석하지 않는다.
+- 02:14 점검 시 `eval_0015.json/.npz`는 아직 생성되지 않았다. 따라서 최신 유효 held-out 수치는 `eval_0010`의 382/598=63.88%로 유지하고 train batch를 평가 점수에 섞지 않았다. 오프라인 읽기 전용, 코드/데이터/체크포인트·GPU·로봇 미사용.
