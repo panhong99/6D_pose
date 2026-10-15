@@ -3580,7 +3580,7 @@
 - CPU에서 `rl/logs/basket/insert_rl_20261016_noseen_drfull_canon_e3/eval_0050.{json,npz}`를 재집계했다. JSON `seated_exact`, NPZ `exact`, 독립 판정 `seated && in_quadrant && landed==target`은 **598/598 mask 일치**. JSON의 in-quadrant·landed·target 값도 NPZ와 각각 **598/598 일치**. obs/action/bias/low/logp는 전부 finite.
 - 총 **411/598=68.7%**; Q1 **99/156 (63.5%)**, Q2 **90/146 (61.6%)**, Q3 **115/155 (74.2%)**, Q4 **107/141 (75.9%)**. eval45와 obs/bias/quadrant/target/env 입력은 동일. 짝 전이는 fail→pass **29**, pass→fail **17** (net +12); exact two-sided binomial/McNemar p=**0.104**. 따라서 이 고정 holdout에서 eval45보다 점수가 높지만 개선 증거는 아직 설득력 있지 않다. 학습 곡선은 계속 비단조이며 best checkpoint 선택/고정 holdout 한계가 있다.
 - 별도 보조 PPO 평가이지 AO SafeDiffIK G0나 BC G2 결과가 아니다. G0 최신 유효값은 **11/18=61.1% <95%**, G1/G2는 계속 보류. 읽기 전용 CPU 감사만 수행했으며 Isaac/GPU, 로봇/그리퍼, 소스·체크포인트·데이터 쓰기는 하지 않았다.
-- `bash calibration/run.sh tests` 실행 전 상태: 문서만 바뀜. 테스트 결과는 아래 커밋 항목 갱신 예정.
+- `bash calibration/run.sh tests`: **78/78 통과 (33.832 s)**. 문서 변경만 포함하며 runtime·GPU·Isaac·하드웨어 경로는 실행하지 않았다.
 
 
 ## 2026-10-16 아침 보고 (Claude + Codex, 08:30)

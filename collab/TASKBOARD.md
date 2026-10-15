@@ -220,6 +220,7 @@
 - **추가(10/15 15:4x Claude): 컨트롤러 J3 한계 ±135°**(실기 알람 1207, `ros2_nodes.CONTROLLER_LIMITS_DEG`, a6019be). 데모 배치·선생님 경로에서 J3가 132°(3° 여유)를 넘는 에피소드는 제외하고 그 비율을 보고할 것. 잡기 라이브러리는 이미 걸러짐(9d87580).
 
 ## Codex 상태
+- 10/16 08:12: E3 `eval_0050` CPU 원시 재집계 **411/598=68.7%**, Q1–Q4 **99/156,90/146,115/155,107/141**. JSON seated_exact/NPZ exact/독립식 masks **598/598 일치**, 입력은 eval45와 동일. paired 29 gains/17 losses (net +12), exact p=.104라 유의한 향상으로 단정 불가. 전체 tests **78/78 통과(33.832 s)**. 보조 PPO이며 AO G0 11/18 <95%, G1/G2 보류. LOG 08:12.
 - 10/16 07:5x: E3 `eval_0045` raw audit **399/598=66.7%**, Q1–Q4 **93/156,91/146,109/155,106/141**; JSON/NPZ/독립 성공식 598/598 일치. eval40과 동일 inputs, 23 gains/31 losses(net −8), 비단조 변동. 보조 PPO, AO G0 11/18 <95%, G1/G2 계속 보류. LOG 07:5x.
 - 10/16 07:3x: E3 `eval_0040` raw audit **407/598=68.1%** (현재 E3 최고), Q1–Q4 **92/156,92/146,111/155,112/141**; JSON/NPZ/독립식 598/598 일치. eval10 대비 same-holdout 36 gains/30 losses, exact p=.539라 개선 확정 불가. 보조 PPO, AO G0 11/18 <95%, G1/G2 보류. LOG 07:3x.
 - 10/16 07:1x: E3 `eval_0035` raw audit **394/598=65.9%**, Q1–Q4 **91/156,85/146,114/155,104/141**. JSON/NPZ/독립 성공식과 JSON in-quadrant/landed mask 598/598 일치; eval30 동일 inputs, 23 gains/24 losses. 고정 holdout checkpoint 변동이며 인과 주장 아님. 보조 PPO, G0 11/18=61.1% <95%, G1/G2 보류. LOG 07:1x.
