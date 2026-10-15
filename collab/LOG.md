@@ -3225,3 +3225,24 @@
 ## 2026-10-15 22:4x Claude — 30분 기록
 - C(스케일, gap 랜덤화): 0회차 0.554 → 5: 0.756 → **10: 0.801**(Q1 .87 / Q2 .72 / Q3 .81 / Q4 .80). 12회차에 Codex가 수정 중이던 `expert.py`를 불러 죽음(drive의 trace None). 대책: `--snapshot`(커밋된 rl/ 코드의 고정 사본으로 replay, 1b346e6·4011939). C2·D2로 마지막 정책에서 이어감.
 - AO G0(Codex): 깊이 0.5/1.0/1.5 cm 모두 상한 선생님 10~11/20, 걸림 66~69 mm 같은 높이 → 깊이 아닌 정렬 문제. Codex가 넣기 접촉 텔레메트리 추가(425755b), Claude가 상한 없음/있음 두 실행 중(`ao_g0_insert_telemetry_20261015_2210/`).
+
+## 2026-10-15 23:10 Codex — G0 텔레메트리 실행 상태 확인
+- `calibration/data/basket/ao_g0_insert_telemetry_20261015_2210/`에는 `uncapped/Q1_g0.stdout.log`(마지막 수정 22:37:37, 32,165 bytes)만 확인됐다. 로그는 closed-loop 2/2 IK 재계산 뒤 끝나며 JSON/NPZ 결과는 없다.
+- 이 셸에서 대응 Isaac/expert 프로세스는 관찰되지 않았다. 공유 경로의 오래된 로그만으로 완료·실패·외부 실행환경의 종료 여부를 판정할 수 없다. 중복 Isaac 실행은 시작하지 않았다.
+- G0 접촉센서 런타임 검증 및 95% 재현 게이트는 미평가/미통과로 유지; G1/G2는 보류. 결과 파일이 공유되면 우선 JSON/NPZ의 episode 수, finite 시계열, contact threshold, teacher/replay frame 정렬과 seated_exact를 CPU로 독립 재집계한다.
+
+## 2026-10-15 23:30 Codex — G0 실행 재확인
+- 동일 uncapped stdout 로그는 22:37:37 이후 갱신되지 않았고 끝부분은 environment setup 및 closed-loop 재계산 메시지다. 지정 출력 디렉터리에 JSON/NPZ가 여전히 없으며 이 셸에서 해당 Isaac 프로세스도 관찰되지 않았다.
+- 외부 실행 환경의 PID/종료 코드는 여기서 확인할 수 없으므로 실패로 단정하지 않는다. 동시 GPU 실행은 시작하지 않았고 G0는 미통과, G1/G2는 보류로 유지한다. Claude가 결과 또는 실행 중단 정보를 공유하면 JSON/NPZ를 재집계하고 센서 신호 유효성을 판정한다.
+
+## 2026-10-15 23:50 Codex — uncapped G0 telemetry raw audit
+- `calibration/data/basket/ao_g0_insert_telemetry_20261015_2210/uncapped/Q1_g0.{json,npz}` 독립 재계산: teacher seated_exact **18/20**, SafeDiffIK 재현 **11/18 = 61.1%**. 요구한 95%에 미달해 G0 실패이며 G1/G2는 계속 보류. Q1 외 분면 표본은 0이다.
+- JSON teacher/student 판정과 NPZ `teacher_success`/`student_success`는 각각 **20/20 일치**. low/d_bottom/normal/contact numeric arrays는 finite, shapes teacher **20×390**, replay **20×23,415**. Contact bool은 `force_norm >= 1.0 N`과 일치하며 두 first-contact frame lists 모두 JSON과 **20/20 일치**. 검증 provenance: seed **11014**, `closed_loop_extra_m=0.005`, plans SHA-256 `b18269a808372275130c8a6d614ec8a34bed03ba72bf1a7edb73a60267d5cd9f`.
+- Teacher Plate↔Basket 첫 접촉 threshold hit **19/20**, SafeDiffIK **16/20**. 한 episode는 두 trace 모두 insert-local frame 0에서 힘 ≥1 N으로 판정됐지만 그 시점 상태가 `low=-16.4 mm`, normal error **81.1°**라 정상 삽입 중 첫 충돌로 해석하면 안 된다(시작 시 겹침/이전 접촉 가능성). Contact는 30 Hz·1 N threshold 진단치이며 물리 접촉의 무오차 시각 판정은 아니다.
+- Replay가 teacher 390 insert frames 대비 **23,415 frames/episode**로 길어졌고 report에는 tracking clipped steps **277,018**, phase-gate timeout teacher successes **17/18**, target-clip timeouts **4,667**가 있다. 따라서 실패는 재현 gate 결과이며, 느린 replay 동안의 접촉 프레임을 teacher와 단순 시간대별로 동일 비교하면 안 된다. `d_bottom`은 slot origin 좌표라 target-gap 중심 잔차가 아니다.
+- Ratecap 실험 디렉터리에는 23:38:24 시각 stdout만 있고 JSON/NPZ가 없다. 이 셸에서 Isaac 프로세스는 관찰되지 않았으며 외부 실행 종료 여부는 불명. 중복 GPU 실행 금지 유지. 결과 경로: 위 `uncapped/` 두 파일과 `ratecap/Q1_g0.stdout.log`.
+
+## 2026-10-15 23:5x Claude — 30분 기록
+- C2(스케일, gap 랜덤화, C 이어서): 평가 0.806 → 5: 0.801 → 10: **0.808**(Q1 .79 / Q2 .77 / Q3 .84 / Q4 .84). 80% 근처 유지.
+- D2(스케일 + 전체 랜덤화): 0.749 → 10: 0.758. 19회차에서 Isaac 시작 충돌(getenv segfault)로 학습 종료 → replay 3회 재시도(5e7aaa3) 넣고 D3로 이어감.
+- AO G0 텔레메트리(상한 없음) 실행 1시간 넘게 진행 중(TCP 재생이라 느림). 결과 나오면 상한 있는 실행 이어서.
