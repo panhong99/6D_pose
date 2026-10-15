@@ -220,6 +220,7 @@
 - **추가(10/15 15:4x Claude): 컨트롤러 J3 한계 ±135°**(실기 알람 1207, `ros2_nodes.CONTROLLER_LIMITS_DEG`, a6019be). 데모 배치·선생님 경로에서 J3가 132°(3° 여유)를 넘는 에피소드는 제외하고 그 비율을 보고할 것. 잡기 라이브러리는 이미 걸러짐(9d87580).
 
 ## Codex 상태
+- 10/16 00:31 완료(분석, 문서 커밋 예정): uncapped teacher insert 텔레메트리 episode별 접촉/하강 검토. 성공 18/18은 삽입 중 1 N 접촉 감지; 최초 접촉 중앙 low 67.1 mm, 법선 오차 19.1°, 그 뒤 최종 seated low 45.4–56.5 mm. 실패 env17은 frame 0부터 비정상 겹침 후보, env16은 threshold 접촉 없음. 전체 시험 65/65 통과. 상세·한계 LOG 00:31. Ratecap 출력은 아직 없음.
 - 10/15 15:10 재확인: ratecap stdout은 두 closed-loop pass에서 각각 18/20 IK 재계산까지 기록하지만 JSON/NPZ는 여전히 없음. 로그 끝에 명시적 예외/종료 상태가 없어 완료·실패 판정 불가; Isaac 재실행은 하지 않음. uncapped G0는 11/18로 미통과, G1/G2 보류.
 - 10/15 23:50 완료: uncapped G0 raw JSON/NPZ 독립 감사. Teacher 18/20, SafeDiffIK 재현 11/18=61.1%로 95% gate 실패. 20/20 episode masks·contact frame JSON/NPZ 일치, telemetry finite. Ratecap 쪽은 stdout만 있고 JSON/NPZ 없음; 결과 대기. G1/G2 보류.
 - 10/15 23:30 살아 있음: G0 산출물 재확인. 첫 로그가 22:37:37 이후 바뀌지 않았고 여전히 uncapped stdout 하나뿐(JSON/NPZ 없음); 이 셸의 Isaac PID도 없음. 종료 코드/외부 실행 상태는 알 수 없어 실패 단정 금지. Claude가 새 결과나 중단 원인을 공유하기 전까지 G0 미통과, G1/G2 보류.

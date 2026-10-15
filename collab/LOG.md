@@ -3246,3 +3246,15 @@
 - C2(스케일, gap 랜덤화, C 이어서): 평가 0.806 → 5: 0.801 → 10: **0.808**(Q1 .79 / Q2 .77 / Q3 .84 / Q4 .84). 80% 근처 유지.
 - D2(스케일 + 전체 랜덤화): 0.749 → 10: 0.758. 19회차에서 Isaac 시작 충돌(getenv segfault)로 학습 종료 → replay 3회 재시도(5e7aaa3) 넣고 D3로 이어감.
 - AO G0 텔레메트리(상한 없음) 실행 1시간 넘게 진행 중(TCP 재생이라 느림). 결과 나오면 상한 있는 실행 이어서.
+
+## 2026-10-15 15:10 Codex — ratecap G0 stdout 재확인 (CPU, 읽기 전용)
+- `calibration/data/basket/ao_g0_insert_telemetry_20261015_2210/ratecap/Q1_g0.stdout.log`는 두 closed-loop pass 모두 `18/20` IK 재계산까지 기록한다. 그 뒤 출력 파일 `.json`/`.npz`가 없고 로그 끝에도 명시적 Python 예외나 종료 코드가 남아 있지 않아, 실행 완료·저장 실패·외부 중단 중 무엇인지 판정할 수 없다.
+- uncapped 독립 재집계는 teacher 18/20, SafeDiffIK 11/18=61.1%로 G0 95% gate 미통과다. ratecap은 아직 결과 미판정이므로 G1/G2는 보류한다. 재실행/프로세스 종료는 하지 않았다.
+
+## 2026-10-16 00:31 Codex — uncapped teacher 접촉·하강 telemetry 분석 (CPU)
+- 입력 `calibration/data/basket/ao_g0_insert_telemetry_20261015_2210/uncapped/Q1_g0.{json,npz}`의 20개 Q1 episode를 원시 30 Hz 배열로 집계했다. 삽입 trace는 episode당 390 frame(13 s), 센서는 Plate↔Basket 필터 force norm ≥1.0 N을 접촉 표본으로 정의한다. 성공은 기존 `seated_exact` 18/20이며 성공 18개 모두 threshold 접촉을 기록했다.
+- 성공 episode의 첫 접촉: frame **118–252**(3.93–8.40 s, median 220/7.33 s), 당시 `low` **49.0–105.1 mm**(median 67.1 mm), `normal_err` **19.04–21.27°**(median 19.11°). 첫 표본 힘은 median **1.27 N**(1.00–5.59 N); episode별 최대 접촉력 median **98.7 N**(35.3–217.2 N). ≥1 N 표본 수 median 166/390(138–205). 대부분은 최종 성공 높이 band보다 높은 `low`에서 처음 접촉한 뒤 하강이 계속됐다; 최초 접촉은 '걸림'의 위치·원인을 특정하지 않는다.
+- 최종 판정에 성공한 18개의 JSON `low_mm`는 **45.4–56.5 mm**(median 47.2 mm). insert trace 중간/끝 높이와 post-release 최종 높이가 다를 수 있다. 성공 gate는 `low` + in-quadrant + exact gap만 검사하며 법선 오차를 제한하지 않는다. 따라서 final normal-error median **22.7°** 및 높은 sim force를 무시한 채 “정상 삽입/안전 접촉”으로 확대 해석하면 안 된다.
+- 두 실패는 서로 다른 진단 신호: env16은 threshold 접촉 없음, 최종 low −15.65 mm/gap −1; env17은 시작부터 frame 0에 1.15 N, low −16.37 mm, normal error 81.1°이고 390 frame 모두 threshold 접촉이라 초기 겹침/비정상 시작 후보다. 1 N·33 ms 센서 표본은 물리적 접촉 시각의 완전한 판정이 아니며 어느 표면 지점이 닿았는지도 제공하지 않는다.
+- 재생은 선생님보다 60배 길어지는 구간이 있어 본 분석은 선생님 trace만 해석했다. Ratecap은 아직 JSON/NPZ 미생성. G0 SafeDiffIK 재현은 11/18=61.1%로 95% 미통과, G1/G2 보류. 코드/데이터/체크포인트 변경 없음.
+- Verification: first `bash calibration/run.sh tests` was blocked at sandbox UDP socket creation (`PermissionError`); rerun with the approved execution path passed **65/65** in 39.203 s. `git diff --check` passed. Documentation-only commit planned; no code, data, checkpoint, or GPU/Isaac changes.
