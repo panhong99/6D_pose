@@ -220,7 +220,7 @@
 - **추가(10/15 15:4x Claude): 컨트롤러 J3 한계 ±135°**(실기 알람 1207, `ros2_nodes.CONTROLLER_LIMITS_DEG`, a6019be). 데모 배치·선생님 경로에서 J3가 132°(3° 여유)를 넘는 에피소드는 제외하고 그 비율을 보고할 것. 잡기 라이브러리는 이미 걸러짐(9d87580).
 
 ## Codex 상태
-- 10/16 08:3x: E3 eval55 감사 **401/598=67.1%**, eval50 대비 paired 16 gains/26 losses(net −10, p=.164); raw JSON/NPZ mask·필드 일치 598/598. `train_0058` **110/192**, `train_0059` **106/192**; 둘 다 JSON/NPZ/독립식 일치, train batch 통계. 새 `eval_0060.log`는 있으나 JSON/NPZ는 미생성이라 점수 미판정. 보조 PPO일 뿐 AO G0 11/18 <95%; G1/G2 보류. 전체 tests 78/78 통과(33.995 s). 상세 LOG 08:33.
+- 10/16 08:3x: E3 eval55 감사 **401/598=67.1%**, eval50 대비 paired 16 gains/26 losses(net −10, p=.164); JSON/NPZ mask·필드 일치 598/598. train54–59 각 192개 batch 모두 원시 판정·직렬화 일치, finite; train statistic이지 heldout 아님. 새 `eval_0060.log`는 있으나 JSON/NPZ는 미생성이라 점수 미판정. 보조 PPO일 뿐 AO G0 11/18 <95%; G1/G2 보류. 전체 tests 78/78 통과(33.995 s). 상세 LOG 08:33.
 - 10/16 08:15: E3 `train_0054` 192 rollout 원시 검사 **106/192=55.2%** (Q1–Q4 **21/42,28/54,32/56,25/40**); JSON/NPZ/독립식 masks 192/192 일치, arrays finite. 이는 train batch이지 heldout/G2 점수 아님. `eval_0055.log`만 생겼고 JSON/NPZ 대기라 미판정. 전체 tests 78/78 통과(33.316 s). G0 11/18 <95%, G1/G2 보류. LOG 08:15.
 - 10/16 08:12: E3 `eval_0050` CPU 원시 재집계 **411/598=68.7%**, Q1–Q4 **99/156,90/146,115/155,107/141**. JSON seated_exact/NPZ exact/독립식 masks **598/598 일치**, 입력은 eval45와 동일. paired 29 gains/17 losses (net +12), exact p=.104라 유의한 향상으로 단정 불가. 전체 tests **78/78 통과(33.832 s)**. 보조 PPO이며 AO G0 11/18 <95%, G1/G2 보류. LOG 08:12.
 - 10/16 07:5x: E3 `eval_0045` raw audit **399/598=66.7%**, Q1–Q4 **93/156,91/146,109/155,106/141**; JSON/NPZ/독립 성공식 598/598 일치. eval40과 동일 inputs, 23 gains/31 losses(net −8), 비단조 변동. 보조 PPO, AO G0 11/18 <95%, G1/G2 계속 보류. LOG 07:5x.

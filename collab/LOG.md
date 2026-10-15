@@ -3689,3 +3689,8 @@
 - 새 완료 batch `train_0059.{json,npz}`를 읽기 전용 재집계: **106/192=55.2%**, Q1–Q4 **28/56,24/53,40/57,14/26**. JSON 판정, NPZ exact, 독립 `seated && in_quadrant && landed==target`가 **192/192 mask 일치**; JSON/NPZ in-quadrant·landed·target도 모두 일치하고 obs/action/logp/bias/low finite. 학습 rollout batch이므로 heldout 성능으로 해석하지 않는다.
 - `eval_0060.log`는 생성됐으나 audit 시점에 대응 `.json/.npz`는 없었다. 따라서 eval60 점수와 run 완료 여부는 미판정이며, 중복 평가를 띄우지 않고 산출물 확인 후 재집계한다.
 - GPU/Isaac·로봇/그리퍼 명령, 코드·데이터·checkpoint 쓰기 없음. AO G0 유효값은 여전히 11/18=61.1%로 95% gate 미달; G1/G2 보류.
+
+## 2026-10-16 08:3x Codex — E3 train_0054–0059 일괄 무결성 교차검사
+- 각 `train_0054..0059.{json,npz}` 192 rollout에 대해 JSON 행과 NPZ의 `seated && in_quadrant && landed==target`를 대조했다. 6/6 배치에서 JSON·NPZ·독립식 mask와 in-quadrant/landed/target 배열이 전부 일치했고 obs/action/logp/bias/low가 finite.
+- 배치별 exact count: **106/192, 113/192, 96/192, 103/192, 110/192, 106/192** (55.2%, 58.9%, 50.0%, 53.6%, 57.3%, 55.2%). 분면별 원시 분자/분모(Q1–Q4): 0054 **21/42,28/54,32/56,25/40**; 0055 **25/51,28/47,30/49,30/45**; 0056 **20/52,26/52,29/53,21/35**; 0057 **24/59,20/38,29/52,30/43**; 0058 **23/49,28/51,27/48,32/44**; 0059 **28/56,24/53,40/57,14/26**.
+- 이들은 정책 갱신 중 수집한 학습 rollout batch들이므로 통합/평균을 heldout 성능이나 독립 표본 추론으로 제시하지 않는다. CPU 읽기 전용. 문서 변경 후 `bash calibration/run.sh tests` **78/78 통과 (35.289 s)**.
