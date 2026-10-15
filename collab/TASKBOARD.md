@@ -221,6 +221,7 @@
 
 ## Codex 상태
 - 10/16 03:18 AO canon PPO 원시 감사 갱신: 같은 598개 holdout에서 `eval_0000→0005→0010` exact **382→390→398 (63.88→65.22→66.56%)**. `eval_0005`·`0010` JSON/NPZ와 성공식 각각 598/598 일치, 숫자 배열 finite. 분면별 0010 Q1–Q4 **90/156·93/146·111/155·104/141**. 0000→0010 paired fail→pass/pass→fail **75/59**, 순 +16; 이는 고정 holdout checkpoint 비교이지 BC/G2 결과나 인과 증명 아님. AO G0 SafeDiffIK gate 미통과, G2 BC ≥90%와 무관. LOG 03:18.
+- 03:18 eval 실패 유형 보충: 미착좌/정분면 밖/정분면 오답 칸/exact가 eval_0000 **71/53/92/382**, eval_0010 **56/49/95/398**. Q3는 exact 110→111이지만 오답 칸 26→32; 원인 추정은 하지 않음. `train_0010.json/.npz`는 아직 없고 log만 보여 batch 확정치로 세지 않음. LOG 03:18.
 - 10/16 02:58 E 높이 평면별 후보 짝 민감도: v9 부분 라벨을 행별 x순으로 짝지으면 root/tip 평면 8mm 이내 Q1/Q3/Q4 **7/7, 9/9, 11/11**, floor 외삽은 **7/7, 7/9, 9/11**. 후보 순서이며 번호 정답 아님; measured-layout 매칭·생산 기준 미변경. 문서 diff 검사 및 full tests 76/76 통과. LOG 02:58.
 - 10/16 02:55 E label-layout 진단: Q1/Q3/Q4의 두 checked 행을 순서대로 후보 pairing하면 7/9/11쌍이 있으나, 현 측정-layout 매칭은 floor-extrapolated x 8 mm cutoff 때문에 Q3/Q4 각각 2쌍을 제외한다( root/tip x에서는 8 mm 이내). 후보 순서가 보스 번호와 같다고 확인된 것은 아니며, 라벨 시작 검색의 in-sample 계산 Q1 2/7, Q3 8/9, Q4 9/11일 뿐 OOS recall은 아님. pairing 변경 보류; Q2는 한 행 라벨만 있음. 상세 LOG 02:55.
 - 10/16 02:50 E 후속: 2D 후보 쌍에서 행간 불일치를 별도 보이도록 candidate correction/center 필드를 추가했다. 엄격한 ±3 mm 쌍 기준은 유지되어 Q1/Q2/Q3/Q4 확인 pair 0/1/0/0; Q3 교차행 후보는 `pair_disagreement`, 정식 `gap_centre_base_xyz=null`이다. 재생성 JSON은 `pins_model_oos2d_20261016_v5_Q1..Q4`; 전체 시험 76/76. LOG 02:50. E는 공식 검출률 판정에 필요한 exhaustive visible-pair GT 부족으로 계속 미완료.
