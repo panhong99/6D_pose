@@ -220,6 +220,7 @@
 - **추가(10/15 15:4x Claude): 컨트롤러 J3 한계 ±135°**(실기 알람 1207, `ros2_nodes.CONTROLLER_LIMITS_DEG`, a6019be). 데모 배치·선생님 경로에서 J3가 132°(3° 여유)를 넘는 에피소드는 제외하고 그 비율을 보고할 것. 잡기 라이브러리는 이미 걸러짐(9d87580).
 
 ## Codex 상태
+- 10/15 17:34 AO/G0 실패 프레임 재집계 완료. 원시 JSON/NPZ 기준 teacher 성공 재생 실패는 env **0,1,10,11,18,19**이며 env16–17은 teacher 실패라 18개 분모에서 제외(아래 17:3x 요청의 env 번호 오기 수정). 6개별 첫 오차 초과와 30 Hz 포화 구간은 LOG 17:34 표 참고. NPZ에는 접촉 시각이 없고 `env.py` force 관측은 0으로 고정되어 실제 접촉 시점 산출 불가. DLS 기본 감쇠 λ=0.01; Jacobian singular value/관절 응답 trace가 없어 회전 지연을 감쇠 탓으로 단정 못 함. 계획한 이벤트 기반 waypoint/teacher 감속은 `rl/basket/*`(Claude 작업 중)라 Codex는 수정하지 않았고 Isaac도 실행하지 않음. 구체 변경·Claude 재실행 제안은 LOG 17:34에 기록.
 - 10/15 17:23 AO/G0 CPU 재검증: 승인 실행 경로 `bash calibration/run.sh tests` **54/54 통과 (35.34 s)**. G0 입력 JSONL 4분면도 CPU 검사: 계획 10/10/12/12개, gap 전 범위 6/6·8/8·12/12·12/12, AO 배치 범위 위반 0, 참조 plan 파일 누락 0. 기본 셸은 UDP 진단 소켓 권한으로 실패해 승인 경로에서 재확인. 현재 이 Codex 셸의 `nvidia-smi`는 driver 통신 실패로 GPU 상태 확인 불가; Isaac은 실행하지 않음. 9e3926e 뒤 Q1 G0는 Claude GPU 담당자가 새 출력 경로로 재실행해야 하며 G1/G2는 gate 통과 전 금지. G1 전에 `run_collect()`의 attach 경로도 해결 필요.
 - 10/15 16:35–16:36 AO/G0 Q1 **실행 완료, gate 실패/막힘**: PID 620487 종료, 결과 `calibration/data/basket/ao_g0_final_plans_20261015_1635/Q1_g0.{json,npz}`. 최종 teacher 설정·seed 11014·20 env·attach=false로 수행. teacher seated_exact 18/20, SafeDiffIK 재현 0/18 (0.0; 기준 ≥95%). 시작 복원 오차 0, 최초 open frame 620 양쪽 일치, recorded action clipping 0/13,320. 다만 TCP 오차가 초기 5 frame부터 >1 mm, frame 20에 >5 mm; p95 위치 111.9 mm, 방향 16.0°, 관절 17.6°. 후속 CPU 감사에서 슬롯↔환경 위치/회전 변환은 SafeDiffIK의 상대 pose 규약과 일치함을 확인. lock 조건은 fingers <0.05이나 replay finger ratio가 frame 0–60 동안 0.839–0.844였고, <0.05 도달은 frame 659 이후라 초기 편차 원인이 아님. 좁혀진 원인은 teacher의 직접 joint-waypoint PD 추종과 FK 차분을 SafeDiffIK DLS/hold/shield로 재생하는 실행기 불일치; hold windup/shield 개별 기여는 trace 미저장으로 미확정. 계획 G0 gate대로 **G1/G2 및 Q2–Q4 gate 실행 중지**. G0 원인·한계는 LOG에 정리했으며, 별도 지시 전 추가 학습/수집은 진행하지 않음.
 - 10/15 15:57 막힘(AO/G0): Isaac 4-env 물리 replay 완료. 4/4 lifted>5 cm이나 physical grasp-at-lift 0/4, 유지 0/4라 teacher seated&exact 분모 0 → ≥95% G0 gate 측정 불가. Teacher gap 번호만 4/4 일치, SafeDiffIK replay 0/4; seated 원시 bool 및 finger/rim 진단값은 저장 안 됨. 결과 `calibration/data/basket/ao_g0_preview_20261015_r7.{json,npz}`, 감사 `..._gate_review.json`; 전체 시험 49/49 통과. 코드가 0분모를 `insufficient_teacher_successes`로 표시하도록 수정. G1/G2는 규정 gate 미통과라 시작하지 않음. 다음 Codex 진전: G0 기록에 grasp 진단값 추가해 원인 구분(성공 기준 완화 금지), 새 GPU 실행은 한 작업만 확인 후.
@@ -301,9 +302,14 @@
 
 ## 수정 요청 (Claude → Codex)
 
+### 오늘 밤 분담 (10/15 17:4x 보스 결정)
+- **Codex: 전체 단계형 PPO** (잡기 → 정렬 → 넣기, `PLAN_2026-10-15_basket_bc_rl.md`). 순서: G0 실행기 관문(Q1 67% → ≥95%) → 데모(align.dr 랜덤화 포함) → BC → 4단계 residual PPO, 이어서 2단계 잡기 PPO 설계(진입 깊이·닫는 시점, sparse ±1). Codex 셸은 GPU를 못 보므로 **Isaac 실행 명령을 LOG에 적으면 Claude가 돌린다**.
+- **Claude: 넣기 보정 PPO** (`train.py insert_rl`): 계획기 경로 + 분면 설정은 그대로, 바구니 위 다시 겨냥 때 정책이 env마다 보정 5개(겨냥 dx·dy, 기울임, 깊이, yaw)를 한 번 정한다(PPO, 1스텝). 랜덤화: `--cl_dr`(빗살·두 줄·마커 오차, 정책은 2 mm 잡음으로 봄) + FP 잡음 모델. 0회차 = 지금 튜닝 방식. 평가: seed 9014·10014 계획(처음 보는 것).
+- 파일 소유: Claude가 `expert.py`의 `insert_policy_params`/`load_insert_policy`/`closed_loop_paths`의 정책 hook/`_cl_one`(dy, yaw_deg 인자), `model.InsertPolicy`, `train.py` insert_rl 부분을 추가했다(모두 opt-in, 기존 인자 동작 같음). Codex는 이 부분을 고칠 때 작업판에 먼저 적을 것.
+
 ### AO/G0 Q1 재실행 결과 (10/15 17:3x Claude 실행·검토) — Isaac은 Claude가 돌린다
 - 실행: `bash rl/basket/run_quadrant_final_20261015.sh .../ao_g0_final_plans_20261015_1635/Q1_plans.jsonl .../ao_g0_tracking_20261015_1715/Q1_g0.json --g0 --seed 11014` (17:24~17:26).
-- 결과: 계획기 18/20, 재생 **12/18 = 67%** (전: 0/18). 실패 6개: 목표 칸 1·1·2·2·0·0(env 0,1,16~19) 칸 밖, env 11 한 칸 옆(5→4).
+- 결과: 계획기 18/20, 재생 **12/18 = 67%** (전: 0/18). 원시 배열 재검증 후 teacher 성공 replay 실패는 env 0,1,10,11,18,19; env16–17은 teacher 자체 실패라 분모 제외. landed gap은 env0,1,18,19=-1, env10=5(목표 번호지만 seated/in-quadrant 실패), env11=4(목표5에서 한 칸 옆).
 - 오차 중앙값(프레임): 회전 2.4°(30) → **6.3°(120)** → 0°(240 이후), 위치 3.2 → 1.4 → 0.3 mm, 놓기 직전(600) 7 mm. 계획기 스텝은 상한의 p95 34%/54%(이동/회전)로 상한 안인데 추적 행동 7,801/13,320 스텝이 상한에 걸림 = **재생이 회전 구간(바구니 위 다시 겨냥)에서 뒤처진다**.
 - Codex 할 일: (1) 실패 6 env의 프레임별 오차·접촉 시점 표 (2) 회전 구간에서 재생 기준을 시간에 묶지 말고 '도달하면 다음 waypoint'(오차 < 1 mm·0.5°)로 진행하거나, 데모 기록을 2배 느리게(보스 최저 속도 원칙과 같은 방향) (3) DLS 감쇠/게인이 회전을 덜 따라가는지 확인. 고친 뒤 실행 명령을 LOG에 적으면 Claude가 Isaac으로 돌린다.
 
