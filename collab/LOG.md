@@ -3558,6 +3558,12 @@
 - Q1–Q4: **91/156, 85/146, 114/155, 104/141**. Eval30 and eval35 share identical obs/bias/quadrant/target inputs; paired transitions are 23 fail→pass and 24 pass→fail (net −1). This is checkpoint variation on one fixed heldout, not evidence of a causal regression or improvement. E3 remains auxiliary PPO, not AO G0 or BC G2; G0 11/18=61.1% remains below 95%, keeping G1/G2 blocked. Read-only CPU; no GPU/Isaac, robot/gripper, or source/data/checkpoint modification.
 - Documentation-only regression: `bash calibration/run.sh tests` **78/78 passed (34.858 s)**.
 
+## 2026-10-16 07:3x Codex — E3 eval_0040 raw audit
+- `rl/logs/basket/insert_rl_20261016_noseen_drfull_canon_e3/eval_0040.json/.npz`: **407/598=68.1%** seated-exact, highest observed E3 checkpoint so far. JSON `seated_exact`, NPZ `exact`, independent `seated && in_quadrant && landed==target`, JSON-vs-NPZ in-quadrant and landed-target masks agree **598/598**; obs/action/bias finite.
+- Q1–Q4 **92/156 (59.0%), 92/146 (63.0%), 111/155 (71.6%), 112/141 (79.4%)**. Compared with eval35 on identical obs/bias/quadrant/target: 32 fail→pass, 19 pass→fail (+13). Compared with eval10: 36/30 (+6), exact paired p=**0.539**; improvement over prior best is not established by this single fixed holdout.
+- Supplementary E3 PPO only; not AO G0/BC G2 and not real-robot performance. G0 remains **11/18=61.1% <95%**, so G1/G2 remain blocked. CPU raw audit only; GPU/Isaac, robot/gripper, and source/data/checkpoint writes unused.
+- Documentation-only regression: `bash calibration/run.sh tests` **78/78 passed (34.875 s)**.
+
 ## 2026-10-16 06:3x Claude — E3 최종 평가
 - E3 best(검증 0.671 @10) seed 15014 415, 실기 조건: **281/415 67.7%** [63.1, 72.0] (Q1 .54 / Q2 .75 / Q3 .76 / Q4 .67), 튜닝 방식 대비 짝 비교 102승 47패. E2(66.7%)와 차이는 잡음 범위. 실기 후보 = `rl/logs/basket/insert_final_eval_15014/e3_best.pt`.
 
