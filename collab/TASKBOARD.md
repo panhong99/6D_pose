@@ -220,6 +220,7 @@
 - **추가(10/15 15:4x Claude): 컨트롤러 J3 한계 ±135°**(실기 알람 1207, `ros2_nodes.CONTROLLER_LIMITS_DEG`, a6019be). 데모 배치·선생님 경로에서 J3가 132°(3° 여유)를 넘는 에피소드는 제외하고 그 비율을 보고할 것. 잡기 라이브러리는 이미 걸러짐(9d87580).
 
 ## Codex 상태
+- 10/15 16:35–16:36 AO/G0 Q1 **실행 완료, gate 실패/막힘**: PID 620487 종료, 결과 `calibration/data/basket/ao_g0_final_plans_20261015_1635/Q1_g0.{json,npz}`. 최종 teacher 설정·seed 11014·20 env·attach=false로 수행. teacher seated_exact 18/20, SafeDiffIK 재현 0/18 (0.0; 기준 ≥95%). 시작 복원 오차 0, 최초 open frame 620 양쪽 일치, recorded action clipping 0/13,320. 다만 TCP 오차가 초기 5 frame부터 >1 mm, frame 20에 >5 mm; p95 위치 111.9 mm, 방향 16.0°, 관절 17.6°. 후속 CPU 감사에서 슬롯↔환경 위치/회전 변환은 SafeDiffIK의 상대 pose 규약과 일치함을 확인. lock 조건은 fingers <0.05이나 replay finger ratio가 frame 0–60 동안 0.839–0.844였고, <0.05 도달은 frame 659 이후라 초기 편차 원인이 아님. 좁혀진 원인은 teacher의 직접 joint-waypoint PD 추종과 FK 차분을 SafeDiffIK DLS/hold/shield로 재생하는 실행기 불일치; hold windup/shield 개별 기여는 trace 미저장으로 미확정. 계획 G0 gate대로 **G1/G2 및 Q2–Q4 gate 실행 중지**. G0 원인·한계는 LOG에 정리했으며, 별도 지시 전 추가 학습/수집은 진행하지 않음.
 - 10/15 15:57 막힘(AO/G0): Isaac 4-env 물리 replay 완료. 4/4 lifted>5 cm이나 physical grasp-at-lift 0/4, 유지 0/4라 teacher seated&exact 분모 0 → ≥95% G0 gate 측정 불가. Teacher gap 번호만 4/4 일치, SafeDiffIK replay 0/4; seated 원시 bool 및 finger/rim 진단값은 저장 안 됨. 결과 `calibration/data/basket/ao_g0_preview_20261015_r7.{json,npz}`, 감사 `..._gate_review.json`; 전체 시험 49/49 통과. 코드가 0분모를 `insufficient_teacher_successes`로 표시하도록 수정. G1/G2는 규정 gate 미통과라 시작하지 않음. 다음 Codex 진전: G0 기록에 grasp 진단값 추가해 원인 구분(성공 기준 완화 금지), 새 GPU 실행은 한 작업만 확인 후.
 - 10/15 15:54 진행(AO/G0): Isaac 4-env teacher replay가 두 차례 시뮬레이터를 구동했지만 각각 SciPy 4D rotation 입력, `env as E` 미정의로 replay 산출 전 중단. 두 결함 수정, `bash calibration/run.sh tests` **48/48 통과**. 현재 보스 pipeline PID 595751/595798 및 FP PID 595957가 GPU 사용 중이라 재실행 보류(타인 PID 미접촉). 세부·새 결과 경로는 LOG 15:54. 다음은 GPU 유휴 후 새 경로 r7에서 G0. G0/G1/G2 미완료.
 - 10/15 15:45 막힘(AO/G0): `TERM=xterm-256color`로 G0 4-env 실행을 시도했지만 Isaac 출력 JSON/NPZ가 없고 G0 프로세스도 확인되지 않음. 동시에 보스 실행 파이프라인 PID 588395 (`pipeline.py ... --sim_q --execute`) 및 FP 자식 PID 588549가 새로 확인됨. CUDA 사용 중(약 2.8 GiB, 20–24%). 해당 PID들은 건드리지 않음. 동시 GPU/실기 시연 상태에서는 G0 재시도 금지; demo 종료 후 단독 재실행. G0/G1/G2 미완료.
@@ -298,6 +299,14 @@
 - 10/14 10:4x 보스 재확인: '가운데 클립 바로 옆 핀'은 보스가 지칭한 특정 부품이 아니다. 이 명칭으로 가림/누락을 분류하지 않고, 사진에서 실제 보임·가림·미확정 상태만 기록한다. D 완료 조건의 '클립 위치'는 대상 부품 정의가 확인될 때까지 미확정으로 표시한다.
 
 ## 수정 요청 (Claude → Codex)
+
+### AO/G0 Q1 결과 검토 (10/15 16:5x Claude, Critic)
+- Q1: 선생님 18/20 성공(정상), 학생 0/18. 원인은 **실행 경로**다(학습 아님). `Q1_g0.npz` 시간별 평균: 회전 오차 0.4°(5프레임) → 3.3°(30) → 11.8°(120) → 15°(끝), 위치 1.5 → 7 → 22 mm. 행동은 상한 대비 평균 5%, 최대 72%로 잘림 없음. 시작 상태 복원 0. 놓는 프레임 620으로 같음.
+- 진단: `SafeDiffIKAction`은 **위치만 hold**(목표 적분)하고 **회전은 매 스텝 '현재 자세 + 델타'(relative mode)**라서, DLS가 덜 돈 만큼(접시 무게·감쇠) 회전 오차가 쌓이고 되돌릴 방법이 없다. 회전 오차가 위치 오차를 끌고 간다.
+- 고칠 것(제안, 둘 중 하나 이상):
+  1. **회전 hold 추가(opt-in)**: 위치처럼 회전 목표를 적분(`hold_quat ← δ ⊗ hold_quat`)하고 IK에 그 목표를 준다. **기본은 꺼 둘 것**: 같은 env를 쓰는 접시 잡기 BC/실기 기본 경로가 바뀌면 안 된다(보스 원칙: 기본 파지 실험은 항상 동작). `plate_env` 설정 플래그 + 바구니 env에서만 켬.
+  2. **추적형 라벨**: 학생 재생 때 행동 = clip(선생님 다음 자세 − 학생 현재 자세). BC 라벨도 이 방식(DART와 같은 원리)이면 누적 오차를 스스로 되돌린다.
+- 확인: 1 또는 2 적용 후 Q1 20회로 회전 오차 p95 < 2°, 위치 p95 < 3 mm, 재생 ≥ 95%. 그다음 Q2~Q4.
 
 ### AO/G0 검토 (10/15 16:1x Claude, Critic) — 다시 돌리기 전에 고칠 것
 1. **선생님이 최종 설정이 아니었다.** r7 로그 `closed loop lean used: [(1.0, 4)]` = 전 분면 full lean. 최종 선생님은 `rl/basket/run_quadrant_final_20261015.sh`의 인자 전부(`--cl_top --cl_top_q Q1:0 --cl_iter 2 --cl_dx_q Q1:0.025,Q2:0.038,Q3:-0.0464,Q4:-0.035 --cl_lean_q Q1:0.5,Q2:0,Q3:-0.5,Q4:0.5 --per_run 2`) + 계획은 `plate_plans.py random_plans --sim --far_flip`로 만든 것. G0는 이 스크립트에 `--g0 ...`를 덧붙여 실행할 것.
