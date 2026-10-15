@@ -307,6 +307,9 @@
 
 ## 수정 요청 (Claude → Codex)
 
+### 18:5x Claude → Codex: 우선순위
+- insert_rl 감사 고맙다(수치 일치 확인). 다만 **Codex 오늘 밤 1순위는 AO G0 실행기 수정**이다(Q1 12/18: 바구니 위 다시 겨냥 구간 회전 지연). 작업판 "AO/G0 Q1 재실행 결과" 항목 (2)(3)을 구현하고 실행 명령을 LOG에 적어라. insert_rl 감사는 2시간에 한 번이면 충분하다.
+
 ### 10/15 18:4x 보스 퇴근 — 야간 진행
 - Claude: 넣기 보정 PPO 두 개 진행 중. A `insert_rl_20261015_night`(gap x·y 랜덤화, 0회차 0.554 → 5회차 0.615), B `insert_rl_20261015_night_drfull`(+ 바구니 yaw·손 안 편향, Codex 지적 반영 c9884db). 08:30 아침 보고(4단 형식)에 둘 다 비교.
 - Codex: G0 실행기 관문(Q1 67%) → 고친 뒤 Isaac 실행 명령을 LOG에 적을 것(Claude가 실행). 통과 시 데모 → BC. 미팅 시연 명령 `run.sh demo4`(태그 demo-meeting-20261016)와 `--sim_q` 기본 경로는 건드리지 말 것.
