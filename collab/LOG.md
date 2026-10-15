@@ -3496,3 +3496,8 @@
 ## 2026-10-16 04:1x Claude — 30분 기록
 - E2 학습 계속(아래 최신 평가). Codex는 E(빗살 검출) 진단 커밋 계속(투영 잔차·줄 오프셋 민감도·검토표, 3fd5162까지); 모델-only 틈 검출은 아직 실기 사용 기준 미달.
 - E2 [insert_rl] eval it 25: exact 0.644 Q1 0.57 Q2 0.58 Q3 0.72 Q4 0.71
+## 2026-10-16 04:12 Codex — E: same-photo cross-row translation 전달 진단
+- 분면 안에 checked label이 있는 두 행(Q1/Q3/Q4)에서 한 행의 `checked_root−model_root` 픽셀 잔차 성분별 중앙값을 구하고, 이를 다른 행의 모델 root/tip 픽셀에 동일하게 더했다. 기존 59개 post-hoc root 기반 model 대응은 재사용했다. 따라서 학습 행과 평가 행은 다르지만 사진·모델-ID 대응이 같아 완전한 독립/OOS 시험은 아니다.
+- 반대 행 tip 거리 중앙값 (baseline→translation 적용, px): Q1 minus→plus **29.56→16.68**, plus→minus **22.90→13.61**; Q3 minus→plus **8.03→13.96**, plus→minus **25.29→18.18**; Q4 minus→plus **19.00→8.65**, plus→minus **19.51→12.75**. 각 방향의 5px 이내 hit 수는 적용 전/후 모두 **0**. Root 오차도 Q1 **10.78→4.28 / 12.97→4.07**, Q3 **7.73→14.29 / 21.11→14.29**, Q4 **7.21→5.08 / 11.16→5.08 px**였다. Q2는 checked row가 하나뿐이라 불가.
+- Q1/Q4는 행간 translation 전달과 양립하는 개선, Q3는 전달 방향에 따라 악화/개선이 갈리는 결과다. 5px hit는 어느 행에도 없고, 보정량이 저장 카메라/pose/assumed height/model error 중 무엇인지 식별하지 못한다. 이를 생산 offset, 모델 변경 또는 detector 성능으로 쓰지 않는다.
+- JSON `calibration/data/basket/wrist_look/pins_projection_residual_partialGT_20261016_v1/cross_row_translation_transfer_partialGT_20261016_v1.json`; summary 재파싱. 코드/threshold/production 변경 없음; data 미추적. GPU·Isaac·로봇/그리퍼 사용 안 함; 코드 변경이 없어 시험 미실행.
