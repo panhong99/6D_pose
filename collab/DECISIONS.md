@@ -1084,3 +1084,10 @@ Human 지시: Claude와 Human이 실증하는 동안 Codex가 이 문제의 원�
 - G0 기록 전처리는 frame 길이/shape, finite 값, nonzero quaternion, binary release label, per-axis 설정 일치도도 검사하고 잘못된 기록을 거부한다.
 - 확인: 대각 이동·회전 상한, finger/rim 진단, 기존 `seated_exact` 분모, 시작 복원·replay 오차 요약, env별 open label, NaN/frame 불일치 회귀시험. 수정 후 `bash calibration/run.sh tests` **51/51 통과 (32.4 s)**. G0 teacher 실행은 최종 `run_quadrant_final_20261015.sh` 인자 전체로 해야 한다.
 - 보스 검토: 이 선택은 teacher 차분을 기존 실행기 상한에 맞추는 기록 전처리이며, G0 재생 결과와 함께 확인한다.
+
+## 2026-10-15 AO/G0 재개: 바구니 회전 hold + 추적형 SafeDiffIK replay
+- 결정: generic `SafeDiffIKActionCfg.rotation_hold` 기본값은 꺼 두고 `basket_env.make_basket_cfg()`에서만 켠다. 바구니 실행기가 쓰는 spatial delta 규약에 맞춰 `hold_quat ← δ ⊗ hold_quat`으로 목표 회전을 적분한다. TCP 회전 속도 상한은 기존 10°/s 그대로다.
+- G0 replay는 저장된 고정 FK delta를 반복하지 않고, 매 프레임 실제 학생 TCP 현재 pose에서 선생님 trace의 다음 절대 TCP pose까지 slot frame 오차를 계산한 후 기존 5 cm/s·10°/s step norm 제한으로 자른다. 그 실행 action은 `replay_act`; 선생님 상태에서 만든 원본 clean action `act`와 분리 저장한다.
+- 회전 hold가 켜진 basket 환경에서 G0 tracking mode는 매 스텝 현재 TCP를 hold target의 기준으로 재설정한 뒤 그 step 오차를 적용한다. 이는 tracking correction을 held target에 중복 적분해 lag를 두 배로 만들지 않게 한다. 보통의 basket incremental action에서는 지속 hold가 유지된다.
+- BC collector는 매 30 Hz마다 현재 sim 관측으로 오차를 재계산해 clean label을 저장한 뒤 DART 잡음만 실행 행동에 더하는 feedback 방식이다. `run_collect()`/`run_realplan()`/PPO env에도 basket tracking mode를 켜 이 action을 현재 TCP 기준 보정으로 실행한다. 단, `run_collect()`은 접시 `attach()`를 아직 호출하므로 AO 요구의 attach 없는 물리 수집을 G1 전에 고쳐야 한다.
+- 수정: `rl/rl_utils.py`, `rl/plate_env.py`, `rl/basket_env.py`, `rl/basket/expert.py`, `rl/basket/train.py`, `calibration/tests.py`. 회귀: `bash calibration/run.sh tests` **54/54 통과**. G0 새 물리 gate는 미실행. 17:14 호스트 GPU에는 실시간 FoundationPose PID 639006이 남아 있어 Codex는 Isaac을 겹쳐 시작하지 않았다. G0 95% 전 G1/G2 불가.

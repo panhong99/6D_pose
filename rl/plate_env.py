@@ -40,7 +40,7 @@ from isaaclab.utils.math import axis_angle_from_quat, quat_apply, quat_conjugate
 from isaaclab.utils.noise import UniformNoiseCfg as Unoise
 from isaaclab_tasks.manager_based.manipulation.lift import mdp
 
-from rl_utils import SafetyShield, load_config, rl_path
+from rl_utils import ROTATION_HOLD_DEFAULT, SafetyShield, integrate_spatial_quat, load_config, rl_path
 
 # ---------------------------------------------------------------- config (read once per process)
 C = load_config()
@@ -280,6 +280,8 @@ class SafeDiffIKAction(DifferentialInverseKinematicsAction):
         self.orientation_locked = torch.zeros(n, dtype=torch.bool, device=dev)
         self.orientation_target = self._asset.data.root_quat_w.clone()
         self.hold_pos = torch.zeros(n, 3, device=dev)
+        self.rotation_hold = bool(getattr(cfg, "rotation_hold", False))
+        self.hold_quat = self._asset.data.root_quat_w.clone()
         self.hold_init = torch.full((n,), 2, dtype=torch.long, device=dev)
 
     def process_actions(self, actions):
@@ -289,7 +291,15 @@ class SafeDiffIKAction(DifferentialInverseKinematicsAction):
         # hold: the first two steps after a reset re-read the (fresh) TCP pose, then integrate the deltas
         fresh = self.hold_init > 0
         self.hold_pos[fresh] = ee_pos[fresh]
+        self.hold_quat[fresh] = ee_quat[fresh]
         self.hold_init[fresh] -= 1
+        tracking = self.rotation_hold and bool(getattr(self._env, "_basket_tracking_mode", False))
+        if tracking:
+            # G0's adaptive expert labels are errors from the measured TCP pose, not
+            # incremental waypoints.  Rebase the integrated targets before applying
+            # that correction so existing lag is corrected once, not integrated twice.
+            self.hold_pos[:] = ee_pos
+            self.hold_quat[:] = ee_quat
         step = actions[:, :3] * self.cfg.scale
         step = step * (A["max_tcp_speed"] * self._env.step_dt / step.norm(dim=1, keepdim=True).clamp(min=1e-9)).clamp(max=1.0)
         lead = self.hold_pos + step - ee_pos
@@ -299,6 +309,16 @@ class SafeDiffIKAction(DifferentialInverseKinematicsAction):
         actions[fresh,:3]=step[fresh]/self.cfg.scale
         self.hold_pos[moving] = (ee_pos + lead)[moving]
         actions[moving, :3] = (self.hold_pos[moving] - ee_pos[moving]) / self.cfg.scale
+        # Optional rotation hold: integrate spatial delta quaternions just like the
+        # basket controller's recorded TCP reference.  It is disabled by default;
+        # basket_env opts in explicitly, leaving grasp/place tasks unchanged.
+        if self.rotation_hold:
+            rot_step = actions[:, 3:6] * self.cfg.scale
+            rot_step = rot_step * (math.radians(A["max_rot_speed_deg"]) * self._env.step_dt /
+                                   rot_step.norm(dim=1, keepdim=True).clamp(min=1e-9)).clamp(max=1.0)
+            self.hold_quat = integrate_spatial_quat(self.hold_quat, rot_step)
+            rot_error = axis_angle_from_quat(quat_mul(self.hold_quat, quat_conjugate(ee_quat)))
+            actions[:, 3:6] = rot_error / self.cfg.scale
         # lock: latch the approach orientation near the rim
         st, lk = _state(self._env), A["orientation_lock"]
         capture = (~self.orientation_locked & (st["d_rim"] < lk["dist"]) & (st["tool_match"] > _cos(lk["tool_deg"]))
@@ -336,12 +356,14 @@ class SafeDiffIKAction(DifferentialInverseKinematicsAction):
         self._safe_target[ids] = self._asset.data.joint_pos[ids][:, self._joint_ids]      # as written by reset_to_ready
         self.blocked[ids] = False
         self.orientation_locked[ids] = False
+        self.hold_quat[ids] = self._asset.data.root_quat_w[ids]
         self.hold_init[ids] = 2
 
 
 @configclass
 class SafeDiffIKActionCfg(mdp.DifferentialInverseKinematicsActionCfg):
     class_type: type = SafeDiffIKAction
+    rotation_hold: bool = ROTATION_HOLD_DEFAULT
 
 
 @configclass

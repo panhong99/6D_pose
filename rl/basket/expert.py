@@ -312,6 +312,47 @@ def g0_actions_from_trace(trace, slot_yaw, step_max):
     return obs, actions, int(clipped.sum()), int(clipped.shape[0] * clipped.shape[1])
 
 
+def g0_tracking_action(current_pos, current_quat, target_pos, target_quat, slot_yaw, step_max):
+    """Bounded slot-frame action that tracks the teacher's next absolute TCP pose from the student's live pose."""
+    import numpy as np
+    from scipy.spatial.transform import Rotation
+    current_pos = np.asarray(current_pos, dtype=float)
+    target_pos = np.asarray(target_pos, dtype=float)
+    current_quat = np.asarray(current_quat, dtype=float)
+    target_quat = np.asarray(target_quat, dtype=float)
+    yaw = np.asarray(slot_yaw, dtype=float)
+    n = len(yaw)
+    if current_pos.shape != (n, 3) or target_pos.shape != (n, 3) or current_quat.shape != (n, 4) or target_quat.shape != (n, 4):
+        raise ValueError('tracking pose arrays must have shapes (env,3)/(env,4), aligned with slot_yaw')
+    if not all(np.isfinite(x).all() for x in (current_pos, target_pos, current_quat, target_quat, yaw)):
+        raise ValueError('tracking pose contains a non-finite value')
+    if (np.linalg.norm(current_quat, axis=1) < 1e-8).any() or (np.linalg.norm(target_quat, axis=1) < 1e-8).any():
+        raise ValueError('tracking pose contains a zero quaternion')
+    Rslot = np.zeros((n, 3, 3))
+    Rslot[:, 0, 0], Rslot[:, 1, 0] = np.cos(yaw), np.sin(yaw)
+    Rslot[:, 0, 1], Rslot[:, 1, 1] = -np.sin(yaw), np.cos(yaw)
+    Rslot[:, 2, 2] = 1.0
+    dp = np.einsum('nij,nj->ni', Rslot.transpose(0, 2, 1), target_pos - current_pos)
+    q0 = Rotation.from_quat(current_quat[:, [1, 2, 3, 0]]).as_matrix()
+    q1 = Rotation.from_quat(target_quat[:, [1, 2, 3, 0]]).as_matrix()
+    dr_world = Rotation.from_matrix(q1 @ q0.transpose(0, 2, 1)).as_rotvec()
+    dr = np.einsum('nij,nj->ni', Rslot.transpose(0, 2, 1), dr_world)
+    actions = np.concatenate([dp, dr], axis=1)
+    caps = np.asarray(step_max, dtype=float)
+    if caps.shape != (6,) or not np.isfinite(caps).all() or (caps <= 0).any():
+        raise ValueError('step_max must be six finite positive per-axis limits')
+    if not np.allclose(caps[:3], caps[0]) or not np.allclose(caps[3:], caps[3]):
+        raise ValueError('tracking vector-norm clipping requires equal component limits per group')
+    clipped = np.zeros(n, dtype=bool)
+    for start in (0, 3):
+        part = actions[:, start:start + 3]
+        norm = np.linalg.norm(part, axis=1, keepdims=True)
+        scale = np.minimum(1.0, caps[start] / np.maximum(norm, 1e-12))
+        clipped |= scale[:, 0] < 1.0 - 1e-12
+        actions[:, start:start + 3] = part * scale
+    return actions.astype(np.float32), clipped
+
+
 def g0_success_mask(seated, in_quadrant, exact):
     """G0's teacher/replay gate: the established seated, in-quadrant, exact-slot criterion."""
     import numpy as np
@@ -775,6 +816,9 @@ def run_replay(args):
         start_joint_err = (torch.rad2deg(env.scene['robot'].data.joint_pos - g0_start['q'])[:, :6]
                            .abs().amax(dim=1).cpu().numpy())
         student_released = np.zeros(n, dtype=bool)
+        replay_action_trace = []
+        replay_action_clipped = 0
+        env._basket_tracking_mode = True
         student_pos_trace, student_quat_trace, student_joint_trace = [], [], []
         student_finger_trace, student_tcp_local_trace, student_rim_trace = [], [], []
         student_held_trace, student_released_trace, student_open_trace = [], [], []
@@ -790,10 +834,22 @@ def run_replay(args):
             student_held_trace.append(diag['predicate'])
             student_released_trace.append(student_released.copy())
             student_open_trace.append(g0_act[:, step, 6] > 0.5)
-            a = torch.as_tensor(g0_act[:, step, :6], dtype=torch.float32, device=dev)
+            # Recompute each command from the student's measured pose to the next teacher
+            # pose.  This is the tracking/DART label semantics; fixed teacher deltas would
+            # replay open-loop and let SafeDiffIK lag accumulate.
+            target_pos = np.asarray(g0_record['next_pos'][step])
+            target_quat = np.asarray(g0_record['next_quat'][step])
+            track_action, track_clipped = g0_tracking_action(
+                (tp - env.scene.env_origins).cpu().numpy(), tq.cpu().numpy(), target_pos, target_quat,
+                slot_yaw, E_CFG()['action']['step_max'])
+            replay_action_clipped += int(track_clipped.sum())
+            replay_action = np.concatenate([track_action, g0_act[:, step, 6:7]], axis=1).astype(np.float32)
+            replay_action_trace.append(replay_action)
+            a = torch.as_tensor(track_action, dtype=torch.float32, device=dev)
             o = torch.as_tensor(g0_act[:, step, 6], dtype=torch.float32, device=dev)
             env.step(E.to_env_action(env, a, o))
             student_released |= g0_act[:, step, 6] > 0.5
+        env._basket_tracking_mode = False
         student_strict_success, st_student = inserted(env)
         student_exact, student_landed, student_detail = g0_seated_exact(
             env, rows, who, st_student, be, pe, held)
@@ -864,7 +920,8 @@ def run_replay(args):
                     open_command_frames_equal=bool(np.array_equal(teacher_open[k], student_open[k])),
                     teacher_grasp_maintained_diagnostic=bool(teacher_grasp_maintained[k]),
                     student_grasp_maintained_diagnostic=bool(student_grasp_maintained[k]))))
-        np.savez_compressed(data_out, obs=g0_obs, act=g0_act.astype(np.float32),
+        replay_act = np.stack(replay_action_trace, axis=1)
+        np.savez_compressed(data_out, obs=g0_obs, act=g0_act.astype(np.float32), replay_act=replay_act,
                             teacher_success=teacher_exact, student_success=student_exact,
                             lifted_at_lift=held,
                             teacher_grasp_maintained=teacher_grasp_maintained,
@@ -896,7 +953,9 @@ def run_replay(args):
                       physical_grasp_at_lift_diagnostic=int((teacher_diag['predicate'] & held).sum()),
                       lifted_at_lift=int(held.sum()), teacher_grasp_maintained_diagnostic=int(teacher_grasp_maintained.sum()),
                       per_quadrant=per_q, episodes=g0_episodes, actions=str(data_out), plans=args.plans,
-                      attach=False, action_hz=E_CFG()['action']['hz'], step_max=E_CFG()['action']['step_max'])
+                      attach=False, action_hz=E_CFG()['action']['hz'], step_max=E_CFG()['action']['step_max'],
+                      replay_tracking_clipped_steps=replay_action_clipped,
+                      replay_tracking_action_semantics='clip(teacher_next_TCP_pose - student_current_TCP_pose); act is clean teacher-state label, replay_act is executed tracking action')
         output.write_text(json.dumps(report, indent=2))
         print('[G0]', json.dumps(report), flush=True)
         env.close()
@@ -1017,6 +1076,7 @@ def run_collect(args):
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     env = ManagerBasedRLEnv(make_cfg(ex['envs'], not args.headless, ex.get('pad_torsion_radius_m', 0.01)))
+    env._basket_tracking_mode = True  # teacher and student actions are corrections from the live TCP state
     n, dev, org = env.num_envs, env.device, env.scene.env_origins
     robot, plate = env.scene['robot'], env.scene['plate']
     aj = env.action_manager.get_term('arm_action')._joint_ids
@@ -1130,6 +1190,8 @@ def run_collect(args):
             stepv[released, 3:] = 0.0
             stepv = E.clip_step(stepv)
             open_ = released.float()
+            # Recomputed from this frame's observation: clean BC label is a tracking correction,
+            # while DART perturbs only the executed copy below.
             label = torch.cat([stepv, open_[:, None]], 1)
             exe = stepv.clone()
             if policy is not None:                               # eval: the BC drives (the expert step is only logged)
@@ -1206,6 +1268,7 @@ def run_realplan(args):
     req = json.loads(Path(args.req).read_text())
     n = args.per_run
     env = ManagerBasedRLEnv(make_cfg(n, not args.headless, E.CFG['expert'].get('pad_torsion_radius_m', 0.01)))
+    env._basket_tracking_mode = True
     env.reset()
     dev = env.device
     robot = env.scene['robot']

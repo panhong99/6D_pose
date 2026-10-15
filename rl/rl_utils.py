@@ -21,6 +21,21 @@ import numpy as np
 import yaml
 
 RL_DIR = Path(__file__).resolve().parent
+ROTATION_HOLD_DEFAULT = False
+
+
+def integrate_spatial_quat(hold_quat, delta_rotvec):
+    """Integrate an env-frame axis-angle delta on the left of scalar-first quaternions (torch tensors)."""
+    import torch
+    delta_rotvec = delta_rotvec.to(dtype=hold_quat.dtype, device=hold_quat.device)
+    angle = torch.linalg.vector_norm(delta_rotvec, dim=-1, keepdim=True)
+    axis = delta_rotvec / angle.clamp(min=1e-9)
+    half = angle * 0.5
+    delta = torch.cat([torch.cos(half), axis * torch.sin(half)], dim=-1)
+    w1, v1 = delta[..., :1], delta[..., 1:]
+    w2, v2 = hold_quat[..., :1], hold_quat[..., 1:]
+    return torch.cat([w1 * w2 - (v1 * v2).sum(-1, keepdim=True),
+                      w1 * v2 + w2 * v1 + torch.cross(v1, v2, dim=-1)], dim=-1)
 
 
 # ---------------------------------------------------------------- config

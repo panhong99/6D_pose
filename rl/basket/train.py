@@ -345,6 +345,7 @@ def run_rl(args):
     c = CFG['rl']
     dev = 'cuda'
     env = ManagerBasedRLEnv(X.make_cfg(args.envs or c['envs'], False, CFG['expert'].get('pad_torsion_radius_m', 0.01)))
+    env._basket_tracking_mode = True  # actions/BC labels are live-state tracking corrections
     env.reset()
 
     # bc==behavior cloning

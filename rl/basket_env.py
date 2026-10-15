@@ -224,6 +224,10 @@ def make_basket_cfg(num_envs, viewer=False, full=True):
             build_basket_usd(usd)
         pos, yaw, _ = slot_frame()
     cfg = pe.make_env_cfg(2, num_envs, viewer=viewer, rim_rel=True)
+    # Basket insertion records/replays absolute teacher pose increments.  Hold the
+    # integrated orientation target so SafeDiffIK can catch up to those increments.
+    # The generic plate/grasp environment leaves this option disabled by default.
+    cfg.actions.arm_action.rotation_hold = True
     cfg.scene.basket = RigidObjectCfg(
         prim_path="{ENV_REGEX_NS}/Basket",
         init_state=RigidObjectCfg.InitialStateCfg(pos=tuple(np.asarray(pos).tolist()), rot=(math.cos(yaw / 2), 0.0, 0.0, math.sin(yaw / 2))),

@@ -689,6 +689,40 @@ class BasketG0ActionTests(unittest.TestCase):
         self.assertEqual(float(act[0, 0, 6]), 1.0)
         self.assertEqual((clipped, frames), (0, 1))
 
+    def test_tracking_action_uses_live_student_pose_and_caps_the_correction(self):
+        mod = self.expert_module()
+        action, clipped = mod.g0_tracking_action(
+            [[-0.001, 0.0, 0.0]], [[1.0, 0.0, 0.0, 0.0]],
+            [[0.002, 0.0, 0.0]], [[1.0, 0.0, 0.0, 0.0]], [0.0],
+            [0.00167] * 3 + [0.0058] * 3)
+        self.assertAlmostEqual(float(np.linalg.norm(action[0, :3])), 0.00167, places=7)
+        self.assertTrue(clipped[0])
+        from scipy.spatial.transform import Rotation
+        target_q_xyzw = Rotation.from_rotvec([0.0, 0.0, 0.01]).as_quat()
+        action, clipped = mod.g0_tracking_action(
+            [[0.0, 0.0, 0.0]], [[1.0, 0.0, 0.0, 0.0]], [[0.0, 0.0, 0.0]],
+            [[target_q_xyzw[3], *target_q_xyzw[:3]]], [0.0], [0.00167] * 3 + [0.0058] * 3)
+        self.assertAlmostEqual(float(np.linalg.norm(action[0, 3:6])), 0.0058, places=7)
+        self.assertTrue(clipped[0])
+
+    def test_rotation_hold_composes_spatial_delta_and_is_opt_in(self):
+        import torch
+        from rl_utils import ROTATION_HOLD_DEFAULT, integrate_spatial_quat
+        q = torch.tensor([[1.0, 0.0, 0.0, 0.0]])
+        d = torch.tensor([[0.0, 0.0, np.deg2rad(10.0)]])
+        q1 = integrate_spatial_quat(q, d)
+        q2 = integrate_spatial_quat(q1, d)
+        expected = torch.tensor([[np.cos(np.deg2rad(10.0)), 0.0, 0.0, np.sin(np.deg2rad(10.0))]], dtype=torch.float32)
+        torch.testing.assert_close(q2, expected, atol=1e-6, rtol=1e-6)
+        self.assertFalse(ROTATION_HOLD_DEFAULT)
+        from scipy.spatial.transform import Rotation
+        qx = Rotation.from_euler('x', 30, degrees=True).as_quat()
+        qx_wxyz = torch.tensor([[qx[3], qx[0], qx[1], qx[2]]], dtype=torch.float32)
+        dy = torch.tensor([[0.0, np.deg2rad(15.0), 0.0]], dtype=torch.float32)
+        qxy = integrate_spatial_quat(qx_wxyz, dy).numpy()[0]
+        expected_xyzw = (Rotation.from_rotvec([0.0, np.deg2rad(15.0), 0.0]) * Rotation.from_quat(qx)).as_quat()
+        np.testing.assert_allclose(qxy, expected_xyzw[[3, 0, 1, 2]], atol=1e-6)
+
     def test_g0_seated_exact_metric_does_not_depend_on_finger_rim_diagnostic(self):
         mod = self.expert_module()
         np.testing.assert_array_equal(
