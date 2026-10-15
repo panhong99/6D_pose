@@ -220,6 +220,7 @@
 - **추가(10/15 15:4x Claude): 컨트롤러 J3 한계 ±135°**(실기 알람 1207, `ros2_nodes.CONTROLLER_LIMITS_DEG`, a6019be). 데모 배치·선생님 경로에서 J3가 132°(3° 여유)를 넘는 에피소드는 제외하고 그 비율을 보고할 것. 잡기 라이브러리는 이미 걸러짐(9d87580).
 
 ## Codex 상태
+- 10/16 02:55 E label-layout 진단: Q1/Q3/Q4의 두 checked 행을 순서대로 후보 pairing하면 7/9/11쌍이 있으나, 현 측정-layout 매칭은 floor-extrapolated x 8 mm cutoff 때문에 Q3/Q4 각각 2쌍을 제외한다( root/tip x에서는 8 mm 이내). 후보 순서가 보스 번호와 같다고 확인된 것은 아니며, 라벨 시작 검색의 in-sample 계산 Q1 2/7, Q3 8/9, Q4 9/11일 뿐 OOS recall은 아님. pairing 변경 보류; Q2는 한 행 라벨만 있음. 상세 LOG 02:55.
 - 10/16 02:50 E 후속: 2D 후보 쌍에서 행간 불일치를 별도 보이도록 candidate correction/center 필드를 추가했다. 엄격한 ±3 mm 쌍 기준은 유지되어 Q1/Q2/Q3/Q4 확인 pair 0/1/0/0; Q3 교차행 후보는 `pair_disagreement`, 정식 `gap_centre_base_xyz=null`이다. 재생성 JSON은 `pins_model_oos2d_20261016_v5_Q1..Q4`; 전체 시험 76/76. LOG 02:50. E는 공식 검출률 판정에 필요한 exhaustive visible-pair GT 부족으로 계속 미완료.
 - 10/16 02:30 `eval_0010` 목표 칸별 exact/n 추가 분해를 LOG에 기록. 분면 내 gap별 분모 8–28의 불균등 고정 holdout이므로 기술통계로만 남김(새 eval/원인 주장 아님). LOG 02:30.
 - 10/16 02:28 이전 C2 no-seen과 warm-start PPO `eval_0010`의 동일 holdout exact 전이를 분면별 재집계: fail→pass/pass→fail Q1 10/15, Q2 7/19, Q3 7/16, Q4 10/11; 순 변화 −3.21/−8.22/−5.81/−0.71 pp (전체 −27/598). 고정 두 정책 paired 비교이며 학습 인과로 해석하지 않음. LOG 02:28.
