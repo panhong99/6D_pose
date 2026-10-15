@@ -3677,3 +3677,15 @@
 4. **단계형 PPO(Codex):** 계획기 데모가 너무 빨라 모방 데이터로 쓰기 어렵다. 넣기 단계는 위의 보정 정책 방식이 실용적이다. 단계형은 잡기 쪽부터 다시 설계할지 보스와 상의.
 5. **진행 중:** E3는 08:1x 검증 50회차 0.687(새 최고)로 아직 학습 중. 15014 평가 전이라 후보는 위 `e3_best.pt`(10회차) 기준 수치를 쓴다.
 6. **한계:** 모두 sim 결과다. 빗살은 강체이고, 랜덤화 범위는 사진·실측에서 추정했다. 실기 성공률은 실기에서 재야 한다.
+
+## 2026-10-16 08:33 Codex — E3 eval_0055 및 train_0058 raw audit
+- CPU 읽기 전용으로 `rl/logs/basket/insert_rl_20261016_noseen_drfull_canon_e3/eval_0055.{json,npz}`를 원시 재집계했다. **401/598=67.1% seated-exact**; Q1–Q4 **88/156 (56.4%), 93/146 (63.7%), 114/155 (73.5%), 106/141 (75.2%)**. JSON `seated_exact`, NPZ `exact`, 독립식 `seated && in_quadrant && landed==target` episode masks **598/598 일치**; JSON/NPZ in-quadrant·landed·target arrays도 각각 **598/598 일치**. obs/action/logp/bias/low 모두 finite.
+- eval50과 eval55의 obs/bias/quadrant/target 입력은 동일. paired 변화 fail→pass **16**, pass→fail **26** (net −10); exact two-sided binomial/McNemar p=**0.164**. eval50 411/598(68.7%)보다 낮지만 단일 고정 holdout의 차이로 확정적 회귀나 개선을 주장하지 않는다.
+- 최신 완결 rollout `train_0058.{json,npz}`는 **110/192=57.3%**, Q1–Q4 **23/49,28/51,27/48,32/44**. JSON/NPZ/독립식 masks **192/192 일치**, arrays finite. 이는 학습 batch이지 heldout 평가가 아니다. `train_0059.log`만 있고 JSON/NPZ가 없어 미완결.
+- 별도 보조 PPO이며 AO G0 SafeDiffIK 재현/BC G2가 아니다. 유효 G0 **11/18=61.1% <95%** 그대로여서 G1/G2 보류. GPU/Isaac·로봇/그리퍼 명령 및 소스·데이터·checkpoint 쓰기는 하지 않았다.
+- 문서 변경 전 전체 `bash calibration/run.sh tests`: **78/78 통과 (33.995 s)**. Sandbox UDP socket 차단 때문에 승인 경로로 같은 명령을 재실행했다.
+
+## 2026-10-16 08:3x Codex — E3 train_0059 / eval_0060 상태
+- 새 완료 batch `train_0059.{json,npz}`를 읽기 전용 재집계: **106/192=55.2%**, Q1–Q4 **28/56,24/53,40/57,14/26**. JSON 판정, NPZ exact, 독립 `seated && in_quadrant && landed==target`가 **192/192 mask 일치**; JSON/NPZ in-quadrant·landed·target도 모두 일치하고 obs/action/logp/bias/low finite. 학습 rollout batch이므로 heldout 성능으로 해석하지 않는다.
+- `eval_0060.log`는 생성됐으나 audit 시점에 대응 `.json/.npz`는 없었다. 따라서 eval60 점수와 run 완료 여부는 미판정이며, 중복 평가를 띄우지 않고 산출물 확인 후 재집계한다.
+- GPU/Isaac·로봇/그리퍼 명령, 코드·데이터·checkpoint 쓰기 없음. AO G0 유효값은 여전히 11/18=61.1%로 95% gate 미달; G1/G2 보류.
