@@ -3547,5 +3547,11 @@
 - This is an auxiliary PPO fixed-seed-15014 sim comparison, not AO G0 SafeDiffIK reproduction or BC G2 holdout (G2's required seed/gate remains unmet). Candidate `e3_best.pt` selection used eval checkpointing; do not call this an approved real-robot policy. CPU-only read-only audit; no GPU/Isaac, robot/gripper, or source/data/checkpoint modification.
 - Documentation-only regression check: `bash calibration/run.sh tests` **78/78 passed (34.709 s)**; sandbox's existing UDP-socket restriction required the permitted rerun.
 
+## 2026-10-16 06:5x Codex — E3 continued-eval audit
+- Recomputed all completed fixed-holdout files `eval_{0000,0005,0010,0015,0020,0025,0030}.{json,npz}` in `rl/logs/basket/insert_rl_20261016_noseen_drfull_canon_e3/`. Each has 598 episodes, JSON `seated_exact` = NPZ `exact` = independent `seated && in_quadrant && landed==target` at **598/598 masks**; obs/action/bias finite throughout. Holdout obs/bias/quadrant/target identical between every adjacent checkpoint.
+- Exact counts (0/5/10/15/20/25/30): **398/598 (66.6%), 392/598 (65.6%), 401/598 (67.1%), 395/598 (66.1%), 400/598 (66.9%), 399/598 (66.7%), 395/598 (66.1%)**. Eval 10 remains the best observed checkpoint; later checkpoints do not improve monotonically. Adjacent paired gain/loss counts: 0→5 **21/27**, 5→10 **23/14**, 10→15 **19/25**, 15→20 **33/28**, 20→25 **31/32**, 25→30 **25/29**.
+- Latest eval30 Q1–Q4: **93/156, 90/146, 107/155, 105/141**; full sequence remains mixed by quadrant. This supplementary E3 PPO curve is not AO G0 or BC G2, and checkpoint-selection/fixed-seed scope limits generalization. G0 latest **11/18=61.1% <95%**; G1/G2 remain blocked. Read-only CPU audit; no GPU/Isaac/robot, source, data or checkpoint changes.
+- Documentation-only regression: `bash calibration/run.sh tests` **78/78 passed (34.304 s)**.
+
 ## 2026-10-16 06:3x Claude — E3 최종 평가
 - E3 best(검증 0.671 @10) seed 15014 415, 실기 조건: **281/415 67.7%** [63.1, 72.0] (Q1 .54 / Q2 .75 / Q3 .76 / Q4 .67), 튜닝 방식 대비 짝 비교 102승 47패. E2(66.7%)와 차이는 잡음 범위. 실기 후보 = `rl/logs/basket/insert_final_eval_15014/e3_best.pt`.
