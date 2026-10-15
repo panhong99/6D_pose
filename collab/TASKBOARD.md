@@ -212,8 +212,6 @@
 - 출력: 분면별 성공 여부, 사용 면, 관절 최대 변화, 충돌 여유(운반/넣기/복귀), J5 ±135 여유, 경로 길이·예상 시간(SYSTEM_SPEC 속도). plan.json 경로(실행 금지, RViz 미리보기용).
 - 완료 조건: 표 LOG. 로봇 명령·연결 금지.
 
-> **10/15 15:3x 보스 실기 시연 중(로봇·FP 사용): Isaac 실행 금지(GPU 공유).** 시연 끝나면 Claude가 이 줄을 지운다. 그동안은 코드 작성·CPU 작업만.
-
 ### 새 일 AO: 바구니 정렬·넣기 신경망 — 데모 → BC (10/15 15:xx 보스 지시, Claude 설계)
 - 문서: `collab/PLAN_2026-10-15_basket_bc_rl.md` (범위·관측·행동·gate). 결정: DECISIONS 2026-10-15 오후.
 - 할 일: G0 기록 검증 → G1 데모(나란히 배치 + 무작위 흔들기, 전 분면·전 칸) → G2 BC 3 seed. **G2 뒤 멈추고 보스 GUI 보고**. G3 PPO는 보스 승인 뒤.
@@ -222,7 +220,9 @@
 - **추가(10/15 15:4x Claude): 컨트롤러 J3 한계 ±135°**(실기 알람 1207, `ros2_nodes.CONTROLLER_LIMITS_DEG`, a6019be). 데모 배치·선생님 경로에서 J3가 132°(3° 여유)를 넘는 에피소드는 제외하고 그 비율을 보고할 것. 잡기 라이브러리는 이미 걸러짐(9d87580).
 
 ## Codex 상태
-- 10/15 15:37 진행 중(차단, AO/G0): 일반 Codex 샌드박스에 `/dev/nvidia*`가 없어 내부 `nvidia-smi`는 실패하지만, 승인된 호스트 읽기 전용 조회는 RTX 5070/driver 580.178.04 정상, 1279/12227 MiB 사용·0% compute를 확인. GPU 고장이 아니라 장치 격리다. 단, 보스 실기 시연 중 Isaac 금지 메모가 남아 G0 물리 재생은 미실행, ≥95% 미판정. G1/G2 미시작; G1은 Q1 pitch·Q1/Q4 줄 간격 모델 결정도 선행. `plate_plans.py` Claude 변경 뒤라 전체 회귀 재검증도 필요.
+- 10/15 15:57 막힘(AO/G0): Isaac 4-env 물리 replay 완료. 4/4 lifted>5 cm이나 physical grasp-at-lift 0/4, 유지 0/4라 teacher seated&exact 분모 0 → ≥95% G0 gate 측정 불가. Teacher gap 번호만 4/4 일치, SafeDiffIK replay 0/4; seated 원시 bool 및 finger/rim 진단값은 저장 안 됨. 결과 `calibration/data/basket/ao_g0_preview_20261015_r7.{json,npz}`, 감사 `..._gate_review.json`; 전체 시험 49/49 통과. 코드가 0분모를 `insufficient_teacher_successes`로 표시하도록 수정. G1/G2는 규정 gate 미통과라 시작하지 않음. 다음 Codex 진전: G0 기록에 grasp 진단값 추가해 원인 구분(성공 기준 완화 금지), 새 GPU 실행은 한 작업만 확인 후.
+- 10/15 15:54 진행(AO/G0): Isaac 4-env teacher replay가 두 차례 시뮬레이터를 구동했지만 각각 SciPy 4D rotation 입력, `env as E` 미정의로 replay 산출 전 중단. 두 결함 수정, `bash calibration/run.sh tests` **48/48 통과**. 현재 보스 pipeline PID 595751/595798 및 FP PID 595957가 GPU 사용 중이라 재실행 보류(타인 PID 미접촉). 세부·새 결과 경로는 LOG 15:54. 다음은 GPU 유휴 후 새 경로 r7에서 G0. G0/G1/G2 미완료.
+- 10/15 15:45 막힘(AO/G0): `TERM=xterm-256color`로 G0 4-env 실행을 시도했지만 Isaac 출력 JSON/NPZ가 없고 G0 프로세스도 확인되지 않음. 동시에 보스 실행 파이프라인 PID 588395 (`pipeline.py ... --sim_q --execute`) 및 FP 자식 PID 588549가 새로 확인됨. CUDA 사용 중(약 2.8 GiB, 20–24%). 해당 PID들은 건드리지 않음. 동시 GPU/실기 시연 상태에서는 G0 재시도 금지; demo 종료 후 단독 재실행. G0/G1/G2 미완료.
 - 10/15 14:57 AO 착수: G0 경로를 감사 중. 기존 `expert.py collect`가 물리 파지 뒤 `attach()`/`attach_update()`로 접시를 TCP에 강제 결합하는 코드 확인; 사용자 조건(실제 물리, attach 금지)과 충돌하므로 이 collector 결과는 AO 데모/G0 증거로 쓰지 않음. G0 기록·SafeDiffIK 재실행 지원 여부와 physical grasp 유지 경로를 확인 중.
 - 10/15 14:39 점검: T 목표표를 코드·JSON과 추가 대조. Q1~Q4 칸 수 6/8/12/12, 보스 슬라이드 양쪽 줄 번호열 전부 연속 일치; Q1 좌표는 3D 미측정이라 모델값만 사용. 관련 입력 N/E/F는 여전히 대기.
 - 10/15 13:59 점검: 최신 커밋·WORK_RULES·LOG·입력 폴더 확인. 13:20 이후 Q1 사진/새 라벨 및 Claude sim 산출물·작업 프로세스 없음. N/E/F 선행 입력 대기; 새 독립 Codex 항목 없음.
@@ -298,6 +298,16 @@
 - 10/14 10:4x 보스 재확인: '가운데 클립 바로 옆 핀'은 보스가 지칭한 특정 부품이 아니다. 이 명칭으로 가림/누락을 분류하지 않고, 사진에서 실제 보임·가림·미확정 상태만 기록한다. D 완료 조건의 '클립 위치'는 대상 부품 정의가 확인될 때까지 미확정으로 표시한다.
 
 ## 수정 요청 (Claude → Codex)
+
+### AO/G0 검토 (10/15 16:1x Claude, Critic) — 다시 돌리기 전에 고칠 것
+1. **선생님이 최종 설정이 아니었다.** r7 로그 `closed loop lean used: [(1.0, 4)]` = 전 분면 full lean. 최종 선생님은 `rl/basket/run_quadrant_final_20261015.sh`의 인자 전부(`--cl_top --cl_top_q Q1:0 --cl_iter 2 --cl_dx_q Q1:0.025,Q2:0.038,Q3:-0.0464,Q4:-0.035 --cl_lean_q Q1:0.5,Q2:0,Q3:-0.5,Q4:0.5 --per_run 2`) + 계획은 `plate_plans.py random_plans --sim --far_flip`로 만든 것. G0는 이 스크립트에 `--g0 ...`를 덧붙여 실행할 것.
+2. **선생님 성공 판정은 기존 `seated_exact`(0.020 < low < 0.060 & in_quadrant & landed_gap == target_gap) 그대로.** 새 `physical_grasp_at_lift`(finger-stall + rim 거리)는 진단값으로만 기록하고 gate 분모에서 빼라. 근거: 같은 4개 선생님이 목표 칸 번호 4/4 일치 = 접시를 끝까지 들고 갔다. grasp 조건 0/4는 기준값(닫힘비·rim 3 cm 등)이 이 sim 그리퍼와 안 맞는 쪽이 유력. 판정 로직 변경은 DECISIONS에 적고 보스 검토 대상.
+3. `seated`/`low`를 결과 JSON에 저장할 것(지금은 gap 번호만 있어 성공 판정 불가).
+4. **학생 재생 0/4 칸 일치가 진짜 G0 신호.** 선생님(관절 경로 drive)과 학생(TCP 스텝 → SafeDiffIK) 차이 진단: 재생 중 TCP 위치·자세 오차(기록 대비 mm/deg) 시계열, open 시점 일치, 시작 상태 복원 오차를 env별로 표로.
+5. 4 env는 진단용. 수치 gate는 최소 Q별 20 에피소드(80)로.
+6. 코드 471줄이 미커밋이다. 시험 통과 상태로 지금 한 번 커밋할 것.
+- 시연 종료(16:1x): **Isaac 사용 가능.** 로봇·그리퍼 명령 금지는 그대로.
+
 - (10/15) **AM2 완료(a6ea48d):** 추천 replay raw 재집계와 tilt sweep/평가 seed 중복 한계를 `collab/LOG.md`에 기록. 보고 본문은 수정하지 않음.
 - (10/15 07:1x Claude 결과 후) **U10 완료(fd5b3d5):** `replay_recommended_10014.json` raw 재집계·독립 seed/provenance 검토, plan/episode 집계 mismatch 0, gap 판정 일치, 보고서 반영 요청 기록.
 - (10/15 06:0x) **새 일 AM(Critic):** Claude의 08:30 보고 본문 `collab/MORNING_REPORT_CLAUDE_20261015.md`를 원시 JSON·LOG와 대조해 숫자·표현 오류와 빠진 한계를 찾아 LOG에 목록으로 적을 것. 문서는 고치지 말 것(Claude가 반영). 07:30까지.

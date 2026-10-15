@@ -2834,3 +2834,76 @@
 - **줄 간격(L–R):** Q1 78 mm, Q4 78 mm(손목 3D 실측도 80 mm), Q2 95, Q3 94. 모델은 전 분면 95 mm(`rows_u ±0.0475`) → **−y 쪽(Q1·Q4) 두 줄은 약 79 mm**로 모델과 다르다.
 - 영향: sim 바구니 모델의 Q1·Q4가 실물과 다르다. 10/14 밤 튜닝 결과(Q1·Q4)와 신경망 데모가 이 모델을 쓴다. 모델 반영은 보스 결정 대기. 확정하려면 자로 Q1 1번→7번 뿌리 거리와 Q1·Q4 두 줄 간격을 재면 된다.
 - Codex: 신경망 작업의 기록 검증(G0)은 진행해도 되지만, **데모 대량 수집(G1)은 바구니 모델 결정 뒤에** 할 것.
+
+## 2026-10-15 15:10 Codex — AO G0 재생 경로 수정 / CPU 파일럿 진행
+- G0 코드를 검토하다 성공 판정 오류 1건을 찾음: 기존 구현은 접시를 놓은 뒤의 열린 그리퍼로 `held`를 다시 검사해, 정상 release도 실패 처리했다. 이제 들기 직후 실물 물리 파지 여부를 저장해 teacher와 재생 양쪽에 같은 자격 조건으로 사용하고, terminal은 기존 기준의 seated(최저점 20–60 mm)·분면 자세·목표 gap으로 판정한다. 이에 대한 CPU 회귀 시험을 추가했다.
+- 관측 시점 오류도 수정: 첫 open 명령 전 상태는 아직 `released=false`; 명령 실행 후 다음 관측부터 `true`로 기록한다. G0는 `--plans --closed_loop --out`을 요구하며 `--attach`나 기존 출력 경로를 거부한다.
+- `python -m py_compile rl/basket/expert.py calibration/tests.py` 통과. 샌드박스 기본 실행은 `pipeline.py`의 UDP socket 생성에서 PermissionError로 막혀, WORK_RULES에 따른 승인 실행 `bash calibration/run.sh tests` 결과 **43/43 통과, 32.4 s**. `git diff --check` 통과.
+- 새 위치 분포 경계(바구니 x 0.757–0.857, y −0.242…−0.142 m, yaw ±10°; 접시 x 0.808–0.928, y 0.259–0.359 m)의 CPU 계획 파일럿 24개를 시작했다. 첫 PID 8 실행은 툴 세션 종료 때 함께 정리되어 계산이 시작되지 않았다(로그에는 setup 요약만, `rows.jsonl` 0 bytes); 그 결과는 제외했다. 재실행 PID 7은 watcher와 같은 유지 세션에서 실행 중이며 로그 `/tmp/ao_g0_plans_11014_20261015_1511.log`; 실제 output path는 완료 후 스크립트가 stdout에 기록한다.
+- Isaac/GPU는 현재 보스 실기 시연 금지 메모 및 오늘 밤 CUDA 자원 분담을 존중해 실행하지 않았다. 따라서 G0 gate 수치는 아직 없고 G1 대량 데모도 시작하지 않았다(바구니 Q1/Q4 모델 수치 결정 선행). 다음: CPU 계획 분면/칸 분포와 유효 plan 수 검증 → Isaac 사용 가능해진 뒤 G0 same-start SafeDiffIK 재생 gate (teacher seated&exact 대비 ≥95%).
+- 파일럿 완료 확인: 24/24 계획 성공(계획기 IK 수준이며 sim episode 성공 아님), 분면 Q1/Q2/Q3/Q4 = 6/6/4/8. 각 성공 row의 계획 파일·5개 다리(to_grasp/lift/to_above/descend/ascend), 목표 gap 범위(각 6/8/12/12), basket/plate/target 좌표 유한성 전부 통과. replay 입력 24행. 표본이 적고 모든 gap을 덮지 않으므로 G1 분포로 재사용하지 않는다. 결과 그림 `calibration/data/basket/random_20261015_151056/random.png`는 계획 배치 시각화이며 물리 결과가 아니다.
+- 코드 재검토에서 G0 기록 시작점이 재겨냥 완료 뒤라 4단계 정렬을 빠뜨린 것을 발견해, 첫 `to_above` 정지 직후로 이동했다. 선택적 `descend_pre` 및 모든 closed-loop re-aim, descent, release 동작이 이제 같은 시작 상태에서 기록·재생된다. 다시 `py_compile` 및 `bash calibration/run.sh tests` 실행: **43/43 통과, 33.884 s**. `git diff --check`도 통과. Isaac 물리 재생은 GPU 금지 창 동안 미수행이므로 gate 판정은 보류.
+
+## 2026-10-15 15:21 Codex — AO/G0 기록 행동 속도 상한 대조
+- `rl/plate_env.py::SafeDiffIKAction.process_actions`는 TCP translation과 rotation 각각을 **3D 벡터 norm** 기준으로 한 정책 스텝 상한에 제한한다. 기존 `g0_actions_from_trace`는 성분별 clip이라 대각선 차분의 norm이 허용량의 최대 √3배가 될 수 있었다. 저장 label을 실제 action semantics와 맞추도록 G0 차분에 동일한 3-vector norm clip을 적용했다. 기존 수치 설정(`rl/basket/config.yaml action.step_max`)은 그대로이고, 속도 상한은 올리지 않았다. DECISIONS의 AO/G0 항목에 기록했다.
+- 대각 XYZ·회전이 각각 norm 상한에서 멈추는 시험을 추가했다. 첫 전체 실행 **44개 중 신규 시험 2개 실패**: 구현에서 clip mask는 (env,time) 2D인데 기존 반환 코드가 3D axis를 참조했다. 반환 집계를 2D mask 합으로 고친 뒤 재실행 `bash calibration/run.sh tests`: **44/44 통과 (34.468 s)**. `python -m py_compile rl/basket/expert.py calibration/tests.py`, `git diff --check` 통과.
+- GPU 확인은 현재 셸 `nvidia-smi`에서 “couldn't communicate with the NVIDIA driver”; 작업판의 보스 실기 시연 중 Isaac 금지 메모도 유지된다. 프로세스 목록에 Isaac/수집 작업 없음. 따라서 G0 물리 재생 및 ≥95% gate는 **미실행/미판정**이며, G1 데모와 G2 학습을 시작하지 않았다. 기존 CPU plan 파일럿 24/24 성공은 IK 계획 생성만을 뜻한다.
+- 다음: Isaac 사용 허용 및 GPU 접근 가능 때 새 출력 경로로 G0 same-start SafeDiffIK 재생; report에서 teacher seated&exact 대비 ≥95% 여부와 분면별 수치를 확인. G1 bulk는 바구니 모델(Q1 pitch, Q1/Q4 row spacing) 결정 후 시작.
+
+## 2026-10-15 15:23 Codex — AO/G0 물리 파지 자격조건 강화
+- G0의 기존 `held_at_lift` 인자는 실제 finger stall이 아니라 `lift > 5 cm` 한 가지만 보던 것을 확인했다. 밀어 올린 접시가 grasp로 계수되지 않도록, G0에서는 lift 후 fingers stall ratio와 plate frame TCP-to-rim 거리 조건을 `plate_env._state`와 동일하게 계산해 teacher 및 SafeDiffIK replay 결과 둘 다에 적용한다. 기존 일반 replay의 legacy `held` 지표/출력은 변경하지 않는다. 비교 metric 정의 변경은 `collab/DECISIONS.md`에 근거와 함께 기록했다.
+- 회귀시험: rim에 TCP, stall 범위 안, lifted이면 통과; finger unstalled / not lifted / TCP off-rim이면 실패. 전체 `bash calibration/run.sh tests`: **45/45 통과 (32.528 s)**. `py_compile` 및 `git diff --check` 통과.
+- G0 물리 실행은 여전히 보류: 현재 `nvidia-smi`는 driver 통신 불가이고 TASKBOARD의 보스 실기 시연 중 Isaac 금지 항목이 남아 있다. teacher 성공 분모와 재생률은 아직 산출되지 않음. 다음은 GPU/Isaac가 허용될 때 신규 경로로 시험하는 것.
+
+## 2026-10-15 15:26 Codex — AO/G0 파지 유지 확인 추가
+- G0는 이제 lift 직후뿐 아니라 기록된 각 pre-release 상태에서 물리 grasp predicate(손가락 stall + TCP가 plate rim 근처)가 유지됐는지 검사한다. 첫 open command 직전의 상태도 확인하고, 그 뒤 열린 finger 상태를 grasp 실패로 오판하지 않도록 release state를 함께 기록한다. SafeDiffIK 재생도 각 pre-release action 직전에 같은 검사를 적용한다. Teacher와 replay 중간에 접시를 놓친 에피소드는 seated/exact로 끝나도 G0 성공 분자에 포함되지 않는다.
+- 새 회귀시험은 (a) rim·stall·lift가 모두 맞아야 grasp, (b) 첫 release 전에 grasp가 유지돼야 인정되는지를 확인한다. `bash calibration/run.sh tests`: **46/46 통과 (35.004 s)**; py_compile 및 `git diff --check` 통과. 자세한 metric 정의는 `collab/DECISIONS.md` AO/G0 항목.
+- 여전히 GPU/Isaac replay 전이라 gate 수치 없음. 현재 드라이버 확인은 `nvidia-smi` 통신 실패였고, 작업판의 실기 시연 중 Isaac 금지 메모가 남아 있다. 새 output path 및 사용 허가 후 G0를 실행해야 한다.
+
+## 2026-10-15 15:29 Codex — AO/G0 기록 무결성 선검사
+- G0 차분 변환은 이제 trace의 `obs/pos/quat/next_pos/next_quat/open` frame 수 일치, pose·yaw·obs finite 여부, quaternion nonzero, release label 0/1, action cap 형상을 검사하고 이상 시 저장 전에 예외로 중단한다. 관측 NaN·trace frame mismatch 거부 회귀시험도 추가했다.
+- 좌표 회전 부호는 IsaacLab 설치 소스 `/home/pan/IsaacLab/source/isaaclab/isaaclab/utils/math.py::apply_delta_pose`에서 대조했다. API는 `rot_delta_quat * source_quat`이므로 월드 축 차분 `q_next * q_current⁻¹`을 틈 프레임으로 회전하는 구현과 맞는다.
+- 전체 `bash calibration/run.sh tests`: **47/47 통과 (35.197 s)**. `python -m py_compile`, `git diff --check` 통과. 실제 G0 물리 재생은 GPU 미가용/사용 금지라 아직 없음.
+
+## 2026-10-15 15:34 Codex — AO/G0 재검증, 후속 학습 차단 확인
+- 재실행한 `bash calibration/run.sh tests`: **47/47 통과 (33.486 s)**. 기본 sandbox는 `calibration/pipeline.py` import 때 UDP socket 생성 권한 오류로 종료됐고, 승인된 실행 경로로 같은 명령을 재실행해 통과했다. 이번 재검증에서는 코드 수정 없음.
+- Gate 판정: **G0는 통과/실패가 아니라 미측정·미판정**이다. teacher 행동 기록과 same-start SafeDiffIK replay 결과 JSON/NPZ가 없어 ≥95% 비교를 계산할 수 없다. 이전 CPU pilot 24/24는 plan/IK 생성 성공이며 physics seating이나 G0 성공이 아니다.
+- 현재 셸 `nvidia-smi`는 NVIDIA driver 통신에 실패했다. TASKBOARD의 “보스 실기 시연 중 Isaac 실행 금지”도 남아 있고, 프로세스 검사에서 Isaac/expert/train/random-plan 작업이나 새 G0 산출물을 찾지 못했다. 따라서 G1 데모 수집과 G2 BC 학습은 시작하지 않았다. 추가로 G1 대량 수집 전 Q1 tine pitch와 Q1/Q4 row-spacing 모델 결정이 LOG 15:10에 선행 조건으로 적혀 있다.
+- 다음 허용 경로: Isaac 금지 해제 및 GPU 가용 확인 뒤 새 출력 경로에서 G0 teacher+same-start SafeDiffIK replay를 실행하고 분면별 seated&exact 비율을 ≥95%와 비교한다. G0 통과와 바구니 모델 결정 전 G1로 넘어가지 않는다. `rl/basket/*`는 TASKBOARD상 Claude 수정 금지 영역이므로 Codex가 동시 수정하지 않았다.
+
+## 2026-10-15 15:35 Codex — 병행 수정 발견에 따른 시험 범위 정정
+- 15:34 시험 종료 뒤 `calibration/plate_plans.py`에 6줄의 미커밋 변경이 새로 나타남(상세 diff는 읽기만 했고 수정하지 않음; Claude 소유 파일). 따라서 47/47은 그 변경 **이전 트리**의 결과이며 현재 공유 트리 전체를 검증한 결과로 확대 해석하지 않는다.
+- 변경이 진행 중일 수 있고 TASKBOARD에서 이 파일을 Claude 수정 금지로 지정하므로 지금 재시험하지 않는다. Claude 수정 완료 후 전체 시험을 다시 돌릴 필요가 있다. AO의 G0 physical replay/G1/G2 상태와 선행조건은 바로 앞 15:34 항목대로 미해결이다.
+
+## 2026-10-15 15:37 Codex — GPU 감지 원인 확정
+- 기본 Codex 샌드박스 안에서는 `/dev/nvidia*` 장치 노드가 없고 `nvidia-smi`가 “couldn't communicate with the NVIDIA driver”로 실패했다. 한편 `/proc/driver/nvidia/version`, `lsmod`, PCI enumeration은 NVIDIA 580.178.04 모듈 로드 및 01:00.0 RTX 장치 바인딩을 보여 장치 자체 부재와는 달랐다.
+- 승인된 호스트의 **읽기 전용** `nvidia-smi`는 성공: RTX 5070, driver 580.178.04 / CUDA 13.0, 12227 MiB 총 메모리 중 1279 MiB 사용, compute utilization 0%. 프로세스 표는 GNOME/X/브라우저 계열만 표시하고 Isaac은 없었다. 결론: 앞선 Codex 조회 실패 원인은 드라이버 고장보다 sandbox의 GPU device-node 격리다. 이번 확인은 GPU 사용/Isaac 실행이 아니다.
+- AO gate는 여전히 막혀 있다. TASKBOARD에 보스 실기 시연 중 Isaac 금지가 남아 있고, G0 same-start physical replay 결과가 없다. 또한 Claude의 미커밋 `calibration/plate_plans.py` 변경 뒤 전체 tests를 재실행해야 한다. 금지 해제와 파일 수정 종료 뒤 G0→G1 순으로 진행한다.
+
+## 2026-10-15 15:45 Codex — G0 Isaac 실행 시도 중 동시 실기 파이프라인 감지
+- 보스의 “시뮬레이션 실험” 요청에 따라 기존 CPU pilot(`random_20261015_151056/replay.jsonl`)에서 Q1/Q2/Q3/Q4 각 1개를 뽑은 4-row dry sample을 `/tmp/ao_g0_preview_20261015.jsonl`로 만들었다. 최초 IsaacLab 실행은 `TERM=dumb`에서 `tabs 4` 오류로 종료. 수정 파일·기존 데이터는 건드리지 않았다.
+- 두 번째 G0 실행 PID 588633은 `[INFO] Using python from: /home/pan/IsaacLab/_isaac_sim/python.sh`까지만 남겼고, JSON/NPZ 결과가 없으며 expert/Isaac 프로세스도 확인되지 않았다. G0 점수는 생성되지 않았다.
+- 재확인 때 보스의 실행 중인 파이프라인 PID 588395 (`calibration/pipeline.py ... --sim_q --execute`, 시작 15:43:43)와 FP 자식 PID 588549가 나타났다. `nvidia-smi`는 약 2833–2870 MiB 사용 및 20–24% 연산을 보였고 프로세스 표에는 이 FP 작업이 잡혔다. 이들은 Codex가 시작한 PID가 아니므로 종료/신호를 보내지 않았다. 중복 시뮬레이션을 막기 위해 G0 재시도는 중단했다.
+- 결론: GPU 장치 자체는 호스트에서 정상 인식되지만 현재 작업 중이다. 이번 turn에서 시뮬레이션 G0 수치·BC 학습은 **얻지 못했다**. 보스 파이프라인/실기 시연 종료 후 GPU 유휴를 확인하고, 우선 4-env G0 preflight를 다시 실행한다. G0 ≥95% 확인 전 G1/G2는 시작하지 않는다. G1은 Q1 pitch 및 Q1/Q4 row-spacing 바구니 모델 결정도 선행 조건이다.
+- 출력/로그: `/tmp/ao_g0_preview_20261015.jsonl`, `/tmp/ao_g0_preview_20261015_retry1.log`; 기대됐던 `/tmp/ao_g0_preview_20261015_retry1.json` 및 `.npz`는 생성되지 않음.
+
+## 2026-10-15 15:54 Codex — AO/G0 Isaac 진단 및 수정
+- 사용자 요청으로 G0 물리 실험을 시도했다(4 env, Q1~Q4 각 기존 CPU pilot plan 1개, `--attach` 없음, seed 11014; 출력은 매번 새 경로). 첫 CUDA 실행은 선생님 replay/closed-loop까지 도달했으나 `g0_actions_from_trace()`가 `(env,time,3,3)` 배열을 SciPy에 넘겨 실패했다. SciPy 입력을 평탄화 후 원래 축으로 복구하도록 수정하고 2 env × 2 frame 회귀시험을 추가했다.
+- 다음 호스트 Isaac 실행은 다시 선생님 closed-loop 2회와 4/4 재해결까지 진행했지만, SafeDiffIK replay 직전에 `E.to_env_action`의 `E` 별칭 미정의로 중단됐다. `run_replay()`에서 역할 모듈 `env as E`를 가져오도록 고쳤다. 두 시뮬레이션은 결과 JSON/NPZ 저장 전에 예외가 발생했으므로 G0 수치나 성공으로 계산하지 않는다.
+- `bash calibration/run.sh tests`: **48/48 통과 (32.248 s)**. 일반 sandbox 테스트 실행은 `pipeline.py` import의 UDP socket 권한으로 막혀, WORK_RULES의 승인 실행 경로에서 통과 확인. CUDA 미노출 일반 sandbox 재실행도 사전 확인으로 분리했다.
+- 다음 재실행 전 GPU 검사에서 보스 실기 파이프라인 PID 595751/595798 (`pipeline.py ... --sim_q --execute`) 및 FoundationPose PID 595957가 실제로 사용 중인 것을 확인했다. `nvidia-smi`: 약 2.8 GiB, 23% compute. 타인 PID는 건드리지 않았고, G0 재시도는 겹치지 않도록 보류한다. 지금까지 실험은 시뮬레이터 안에서만 했으며 로봇/그리퍼 명령을 전송하지 않았다.
+- 현재 변경 파일은 `rl/basket/expert.py`, `calibration/tests.py`; 미커밋. 결과 저장 시 새 경로 `calibration/data/basket/ao_g0_preview_20261015_r7.json` 및 대응 `.npz`를 사용한다. 다음: 위 파이프라인/FP 종료 후 `nvidia-smi` 유휴 재확인 → G0 재실행 → JSON/NPZ와 per-quadrant seated&exact를 독립 검증. G0 ≥95% 이전 G1/G2는 금지, G1은 Q1 pitch·Q1/Q4 row-spacing 모델 결정 대기도 유지.
+
+## 2026-10-15 15:57 Codex — AO/G0 물리 재생 결과
+- 새 출력 `calibration/data/basket/ao_g0_preview_20261015_r7.{json,npz}`에서 IsaacLab/CUDA로 Q1~Q4 각 1 episode(총 4)를 실제 물리 재생했다. `--attach` 없이 teacher의 closed-loop 2회가 모두 4/4 환경에서 IK를 재해결했고, 기록 615 step/episode(30 Hz), 행동 clipping은 4/2460 step, 모든 obs/action 유한값이다.
+- G0는 **통과하지 못했고 판정 가능한 분모도 0**이다: 4/4가 lift 5 cm를 넘었지만 물리 finger-stall + TCP/rim grasp 조건을 lift 시점에 만족한 것은 0/4, release 전 유지 0/4. 그러므로 `teacher seated&exact` 자격 성공은 0이며 ≥95% 재생률을 계산할 수 없다. 선생님 기록의 landed gap 번호는 4/4 목표와 일치했지만, 이는 높이/자세/실물 grasp까지 포함한 성공을 뜻하지 않는다. SafeDiffIK 재생은 목표 gap 일치 0/4였다. 저장 배열에서 앉음 기준의 원시 bool은 저장되지 않았으므로 별도 seated 성공을 주장하지 않는다.
+- 원 실행 JSON은 0분모를 `gate=fail`, `ratio=0.0`으로 표시해 의미가 과도했다. 이를 `insufficient_teacher_successes` / `ratio=null`로 분리하는 gate 함수를 넣고 회귀시험을 추가했다. 새 독립 감사표 `calibration/data/basket/ao_g0_preview_20261015_r7_gate_review.json`이 0분모, 분면별 1 episode, teacher gap match 1/1씩, student match 0/1씩, 유한성 및 미저장 seated 한계를 기록한다. 기존 결과는 덮어쓰지 않았다.
+- `bash calibration/run.sh tests`: **49/49 통과 (32.184 s)**. G0는 물리적으로 들어 올렸다는 것만으로는 grasp 조건을 통과하지 못해 **G0 미통과/표본 부족으로 여기서 중지**한다. 원인 후보는 계획기의 grasp 자세에서의 불완전 접촉 또는 finger-stall/rim 기준과 실제 sim grasp의 불일치이며, 현 trace는 finger/rim 세부값을 저장하지 않아 둘 중 무엇인지 분리할 수 없다. 동일 재시도를 반복하지 말고, 다음은 G0 trace에 lift 시점 finger ratio·TCP plate-local 좌표·rim 오차를 기록한 뒤 grasp 조건을 낮추지 않고 원인을 확인하는 작업이다. G1/G2 BC 학습은 시작하지 않았다.
+- 이 G0 실행 중 보스의 실기 파이프라인과 FP가 시작되어 약 2분 GPU 사용이 겹쳤다. 타인 PID는 건드리지 않았고 Codex는 로봇/그리퍼 명령을 보내지 않았다. GPU 경합이 wall-time에 영향을 줬을 수 있어 이 4건은 진단용이지 대표 성능 근거가 아니다. 결과/진단 경로: `calibration/data/basket/ao_g0_preview_20261015_r7.json`, `.npz`, `_gate_review.json`, `.stdout.log`.
+
+## 2026-10-15 15:0x~16:1x Claude — 보스 실기 시연 (sim 분면 설정 `--sim_q`)
+- 추가: `pipeline.py --sim_q`(19e3f68, 분면별 손목 뒤집기·기울기·겨냥을 sim 값으로; 없으면 기존 동작). 컨트롤러 **J3 한계 ±135°**(알람 1207 at 137.4°, a6019be) + 잡기 라이브러리가 한계 넘는 후보 제외(9d87580). 이 때문에 접시는 로봇에서 약 0.94 m 이상(x ≥ 0.88)에 둬야 정면(phi 0) 잡기가 나온다.
+- 실패 원인 순서: 그리퍼 무응답(USB 허브에서 RS485 변환기 빠짐 → PC 직결로 해결) → 접시 y +0.42 범위 밖(운반 RRT 실패) → J3 137.4° 알람(위 수정) → 알람 1041(설명 미기록, 재연결 후 해소) → 바구니 마커 3개·잔차 12.9 mm 안전 정지.
+- 결과(보스 판정): Q3 핀 6 1차(바구니 x 1.08) 칸 번호 맞음, 놓은 뒤 크게 누움(사진, 약 35~45° 추정). Q2 핀 4(바구니 (0.905, −0.209), 접시 (0.995, +0.40)) 넣기는 됨, 칸 번호 틀림. Q3 핀 6 2차 **성공**, 위에서 볼 때 면이 줄과 약간 비스듬(J1/yaw). Q4 핀 6 **성공**.
+- 모든 시도가 sim 흔들기 범위 밖 배치(바구니 x +10~27 cm, 접시 x +15 cm·y +6 cm)였다. 들기 뒤 FP로 손 안 접시 기울기 4.7~5.1°를 재서 다시 계획(실기는 아직 평균 자세 방식 없음). 기록: `real_pipeline/20261015_1554*`, `_160313_*`, `_160647_*` 등.
+- 다음: Q3 yaw 보정(`--yaw_trim`) 값, Q2 실제 들어간 칸 번호(겨냥 오차 계산), sim 범위 안 배치에서 재시험.
