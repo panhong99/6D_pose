@@ -805,6 +805,37 @@ class BasketG0ActionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'positive'):
             mod.teacher_rate_cap_targets([None], base, 0.0)
 
+    def test_g0_contact_frames_use_filtered_force_threshold_and_none_for_no_contact(self):
+        mod = self.expert_module()
+        forces = np.array([[0.0, 0.9, 1.0, 0.2], [2.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0]])
+        self.assertEqual(mod.g0_first_contact_frames(forces, 1.0), [2, 0, None])
+        with self.assertRaisesRegex(ValueError, 'shape'):
+            mod.g0_first_contact_frames([0.0, 1.2], 1.0)
+        with self.assertRaisesRegex(ValueError, 'finite'):
+            mod.g0_first_contact_frames([[0.0, np.nan]], 1.0)
+        with self.assertRaisesRegex(ValueError, 'non-negative'):
+            mod.g0_first_contact_frames([[0.0, -0.1]], 1.0)
+
+    def test_g0_insert_telemetry_packs_episode_major_finite_frames(self):
+        mod = self.expert_module()
+        samples = [
+            dict(low_m=np.array([.08, .07]), d_bottom_m=np.array([.01, .02]),
+                 normal_err_deg=np.array([3.0, 4.0]), contact_force_n=np.array([0.0, 1.1])),
+            dict(low_m=np.array([.05, .04]), d_bottom_m=np.array([.03, .04]),
+                 normal_err_deg=np.array([5.0, 6.0]), contact_force_n=np.array([2.0, 0.0])),
+        ]
+        packed = mod.g0_stack_insert_telemetry(samples, 2, 1.0)
+        self.assertEqual(packed['low_m'].shape, (2, 2))
+        np.testing.assert_allclose(packed['low_m'], [[.08, .05], [.07, .04]])
+        np.testing.assert_array_equal(packed['contact'], [[False, True], [True, False]])
+        self.assertEqual(packed['first_contact_frame'], [1, 0])
+        empty = mod.g0_stack_insert_telemetry([], 2, 1.0)
+        self.assertEqual(empty['d_bottom_m'].shape, (2, 0))
+        self.assertEqual(empty['first_contact_frame'], [None, None])
+        bad = [dict(sample, normal_err_deg=np.array([np.nan, 0.0])) for sample in samples[:1]]
+        with self.assertRaisesRegex(ValueError, 'non-finite'):
+            mod.g0_stack_insert_telemetry(bad, 2)
+
     def test_rotation_hold_composes_spatial_delta_and_is_opt_in(self):
         import torch
         from rl_utils import ROTATION_HOLD_DEFAULT, integrate_spatial_quat

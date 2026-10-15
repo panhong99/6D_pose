@@ -1123,3 +1123,8 @@ Human 지시: Claude와 Human이 실증하는 동안 Codex가 이 문제의 원�
 - 이유: Q1 phase-gate 결과 8/18 (44.4%) 중 네 episode가 boundary timeout 뒤 open을 못 받았고, 5,991 tracking actions가 clip됐다. 소스를 대조하니 G0 tracking mode가 held target을 현재 TCP로 재기준화하고 step을 1.67 mm로 먼저 clip하므로 10 mm `hold_windup`은 이 branch에서 원인으로 작동하지 않는다. teacher stream이 capped student보다 빠르게 cursor를 전진시켰다는 가설을 검증하기 위한 재생 수정이다.
 - 보존: action speed/rotation caps, safety shield, 충돌 여유 조건, physical-only/attach=false, 성공 기준, 일반 replay behavior는 불변. timeout을 통과 처리하는 것은 sequence 진행만 뜻하고 목표 성공을 의미하지 않는다.
 - 검토 요청: 새 Q1 결과에서 env별 gap/low/seated_exact, release, boundary timeout, target clip timeout을 별도로 확인해 원인을 검증한다. 결과 전에는 G0/G1/G2 gate 상태를 미통과로 유지한다.
+
+## 2026-10-15 AO/G0 opt-in 삽입 접촉 텔레메트리
+- 진단 옵션 `expert.py replay --g0 --g0_telemetry`에서만 Plate↔Basket 필터 PhysX contact sensor를 켠다. 기본 환경/파지 replay의 센서 구성은 바꾸지 않는다.
+- 30 Hz 삽입 control frame마다 physics update 뒤 `low`, slot 기준 `d_bottom`, plate normal 오차, 필터 접촉력 크기를 저장한다. `first_contact_frame`은 삽입-local 0-based frame 중 힘이 1.0 N 이상인 첫 표본이며, 그 이하/무표본은 `null`이다. 시각 해상도는 한 control frame(약 33 ms)이고 1 N은 판정 임계값이지 물리 접촉 자체의 보편 경계가 아니다.
+- Teacher와 SafeDiffIK replay 각각의 시계열은 NPZ에 저장하고 JSON episode에 첫 프레임·표본 수를 남긴다. Telemetry는 진단 전용이며 gate/속도·성공 기준을 바꾸지 않는다. 동일 시드·plan 해시 및 `closed_loop_extra_m`을 JSON provenance에 포함한다.

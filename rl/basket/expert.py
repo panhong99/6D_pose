@@ -10,6 +10,7 @@ replay: every labelled real run (calibration/data/real_pipeline/labels_*.jsonl) 
 collect: (added next) feedback expert in the slot frame -> demos for train.py bc.
 """
 import argparse
+import hashlib
 import json
 import sys
 import time
@@ -51,6 +52,8 @@ def parse_args():
     p.add_argument('--policy', default=None, help='collect: a BC checkpoint drives instead of the expert (evaluation)')
     p.add_argument('--attach', action='store_true', help='replay: rigid in-hand plate after the lift')
     p.add_argument('--g0', action='store_true', help='replay: record teacher slot-frame actions and replay them from the same hover state through SafeDiffIK')
+    p.add_argument('--g0_telemetry', action='store_true',
+                   help='--g0 only: opt-in filtered plate-to-basket contact sensor and per-frame insertion low/d_bottom/normal/contact traces')
     p.add_argument('--g0_joint', action='store_true', help='replay: opt-in joint-PD teacher-reference replay; separate diagnostic, not the SafeDiffIK G0 gate')
     p.add_argument('--closed_loop', action='store_true', help='replay --plans: at the stop above the basket read the plate in the hand and '
                    're-solve the descent so it stands over its target gap (stand-in for measuring the plate there)')
@@ -290,6 +293,8 @@ def drive(env, paths_deg, closed, speed, hold=15, trace=None, trace_phase='motio
             trace['next_pos'].append((tp - env.scene.env_origins).cpu().numpy())
             trace['next_quat'].append(tq.cpu().numpy())
             trace['next_joints'].append(torch.rad2deg(robot.data.joint_pos[:, aj]).cpu().numpy())
+            if trace.get('insert_telemetry_enabled') and trace_phase == 'insert':
+                trace['insert_telemetry'].append(g0_insert_telemetry_sample(env))
     for _ in range(hold):
         record_step()
         sim_steps(env)
@@ -298,6 +303,8 @@ def drive(env, paths_deg, closed, speed, hold=15, trace=None, trace_phase='motio
             trace['next_pos'].append((tp - env.scene.env_origins).cpu().numpy())
             trace['next_quat'].append(tq.cpu().numpy())
             trace['next_joints'].append(torch.rad2deg(robot.data.joint_pos[:, aj]).cpu().numpy())
+            if trace.get('insert_telemetry_enabled') and trace_phase == 'insert':
+                trace['insert_telemetry'].append(g0_insert_telemetry_sample(env))
 
 
 def capture_g0_state(env, pe):
@@ -740,7 +747,7 @@ def E_CFG():
     return E.CFG
 
 
-def make_cfg(n, viewer, torsion_m):
+def make_cfg(n, viewer, torsion_m, contact_telemetry=False):
     """basket env cfg + a torsional friction patch on the plate collider (10/12 night): the sim pinch held the rim at two
     points and the plate swung like a pendulum about the line between the fingers (a turned tool did not turn the
     plate, the real one does); the real 2F-85 pads press a ~22 mm rubber patch."""
@@ -751,7 +758,75 @@ def make_cfg(n, viewer, torsion_m):
     cp.torsional_patch_radius = torsion_m
     cp.min_torsional_patch_radius = torsion_m
     cfg.scene.plate.spawn.collision_props = cp
+    if contact_telemetry:
+        from isaaclab.sensors import ContactSensorCfg
+        # Enable PhysX contact reporting only for the explicitly requested G0 diagnostic.
+        cfg.scene.plate.spawn.activate_contact_sensors = True
+        cfg.scene.basket.spawn.activate_contact_sensors = True
+        cfg.scene.plate_basket_contact = ContactSensorCfg(
+            prim_path='{ENV_REGEX_NS}/Plate',
+            filter_prim_paths_expr=['{ENV_REGEX_NS}/Basket'],
+            history_length=1)
     return cfg
+
+
+G0_CONTACT_THRESHOLD_N = 1.0
+
+
+def g0_first_contact_frames(contact_force_n, threshold_n=G0_CONTACT_THRESHOLD_N):
+    """First 0-based insertion-frame index whose filtered plate/basket force reaches threshold; None means no event."""
+    import numpy as np
+    forces = np.asarray(contact_force_n, dtype=float)
+    threshold = float(threshold_n)
+    if forces.ndim != 2:
+        raise ValueError('contact force trace must have shape (episodes, frames)')
+    if not np.isfinite(forces).all() or np.any(forces < 0):
+        raise ValueError('contact force trace must be finite and non-negative')
+    if not np.isfinite(threshold) or threshold <= 0:
+        raise ValueError('contact force threshold must be finite and positive')
+    result = []
+    for row in forces:
+        hits = np.flatnonzero(row >= threshold)
+        result.append(int(hits[0]) if len(hits) else None)
+    return result
+
+
+def g0_stack_insert_telemetry(samples, num_envs, threshold_n=G0_CONTACT_THRESHOLD_N):
+    """Pack per-step post-physics basket state and filtered contact forces into episode-major arrays."""
+    import numpy as np
+    keys = ('low_m', 'd_bottom_m', 'normal_err_deg', 'contact_force_n')
+    if not samples:
+        packed = {key: np.empty((int(num_envs), 0), dtype=np.float32) for key in keys}
+    else:
+        packed = {}
+        for key in keys:
+            values = [np.asarray(sample[key], dtype=float) for sample in samples]
+            if any(value.shape != (int(num_envs),) for value in values):
+                raise ValueError(f'{key} must have one value per episode and frame')
+            array = np.stack(values, axis=1).astype(np.float32)
+            if not np.isfinite(array).all():
+                raise ValueError(f'{key} telemetry contains non-finite values')
+            packed[key] = array
+    packed['contact'] = packed['contact_force_n'] >= float(threshold_n)
+    packed['first_contact_frame'] = g0_first_contact_frames(packed['contact_force_n'], threshold_n)
+    return packed
+
+
+def g0_insert_telemetry_sample(env):
+    """Read one post-physics frame; the sensor filters plate contacts specifically against the basket rigid body."""
+    import numpy as np
+    import basket_env as be
+    state = be.basket_state(env)
+    sensor = env.scene['plate_basket_contact']
+    matrix = sensor.data.force_matrix_w
+    if matrix is None:
+        raise RuntimeError('filtered plate/basket contact force matrix is unavailable')
+    force = matrix.detach().cpu().numpy().reshape(env.num_envs, -1, 3)
+    force_n = np.linalg.norm(force, axis=-1).max(axis=1)
+    return dict(low_m=state['low'].detach().cpu().numpy(),
+                d_bottom_m=state['d_bottom'].detach().cpu().numpy(),
+                normal_err_deg=state['normal_err'].detach().cpu().numpy(),
+                contact_force_n=force_n)
 
 
 _CL_CALLS = [0]
@@ -953,6 +1028,7 @@ def run_replay(args):
         raise SystemExit('choose exactly one G0 replay mode: --g0 (SafeDiffIK) or --g0_joint (joint reference diagnostic)')
     if g0_requested and (args.attach or not args.closed_loop or not args.plans or not args.out):
         raise SystemExit('--g0/--g0_joint requires --plans, --closed_loop, an explicit new --out path, and no --attach')
+    plans_sha256 = hashlib.sha256(Path(args.plans).read_bytes()).hexdigest() if args.g0_telemetry else None
     if g0_requested:
         if Path(args.out).suffix.lower() == '.npz':
             raise SystemExit('G0 --out must be a JSON path; the paired NPZ uses the same stem')
@@ -976,7 +1052,11 @@ def run_replay(args):
     n = len(rows) * args.per_run
     _CL_POL.update(policy=load_insert_policy(args.cl_policy) if args.cl_policy else None, det=args.cl_policy_det,
                    dr=args.cl_dr, dr_full=args.cl_dr_full, seed=args.seed, cache={})
-    env = ManagerBasedRLEnv(make_cfg(n, not args.headless, E_CFG()['expert'].get('pad_torsion_radius_m', 0.01)))
+    if args.g0_telemetry and not args.g0:
+        raise SystemExit('--g0_telemetry requires the SafeDiffIK --g0 mode (not --g0_joint)')
+    env = ManagerBasedRLEnv(make_cfg(n, not args.headless,
+                                     E_CFG()['expert'].get('pad_torsion_radius_m', 0.01),
+                                     contact_telemetry=args.g0_telemetry))
     env.reset()
     dev = env.device
     who = np.repeat(np.arange(len(rows)), args.per_run)
@@ -1024,7 +1104,8 @@ def run_replay(args):
         g0_record = dict(obs=[], pos=[], quat=[], next_pos=[], next_quat=[], next_joints=[],
                          joint_target_deg=[], joint_speed_deg_s=[], phase=[], open=[],
                          joints=[], physical_held=[], finger_ratio=[], tcp_local=[], rim_distance=[],
-                         released_state=[], released=np.zeros(n, dtype=bool))
+                         released_state=[], released=np.zeros(n, dtype=bool),
+                         insert_telemetry_enabled=args.g0_telemetry, insert_telemetry=[])
         g0_start = capture_g0_state(env, pe)
     if all('descend_pre' in rows[i]['slot'] for i in who):    # taught slot paths only (quadrant plans: to_above -> descend)
         drive(env, L('descend_pre', 'slot'), ~open_, args.speed / 4, trace=g0_record, trace_phase='preinsert',
@@ -1284,6 +1365,8 @@ def run_replay(args):
         phase_1d = phases[0]
         if not np.any(phase_1d == 'insert'):
             raise RuntimeError('G0 trace has no insert-complete phase; refusing to open the gripper')
+        teacher_insert_telemetry = (g0_stack_insert_telemetry(
+            g0_record['insert_telemetry'], n) if args.g0_telemetry else None)
         gate_mask = g0_phase_gate_mask(phase_1d)
         phase_gate_wait_frames = np.zeros(n, dtype=np.int32)
         gate_episode_wait_frames = np.zeros(n, dtype=np.int32)
@@ -1294,6 +1377,7 @@ def run_replay(args):
         student_pos_trace, student_quat_trace, student_joint_trace = [], [], []
         student_finger_trace, student_tcp_local_trace, student_rim_trace = [], [], []
         student_held_trace, student_released_trace, student_open_trace = [], [], []
+        student_insert_telemetry = []
         env._basket_tracking_mode = True
         cursor = 0
         gate_latched = np.zeros(n, dtype=bool)
@@ -1372,6 +1456,8 @@ def run_replay(args):
             o = torch.as_tensor(allowed_open.astype(np.float32), dtype=torch.float32, device=dev)
             env.step(E.to_env_action(env, a, o))
             student_released |= allowed_open
+            if args.g0_telemetry and phase_1d[cursor] == 'insert':
+                student_insert_telemetry.append(g0_insert_telemetry_sample(env))
             if not is_gate:
                 # Time-dilate the recorded targets when SafeDiffIK saturates instead of
                 # advancing the teacher stream faster than the capped student can follow.
@@ -1388,6 +1474,8 @@ def run_replay(args):
                 gate_episode_wait_frames[:] = 0
         env._basket_tracking_mode = False
         student_strict_success, st_student = inserted(env)
+        student_insert_telemetry = (g0_stack_insert_telemetry(
+            student_insert_telemetry, n) if args.g0_telemetry else None)
         student_exact, student_landed, student_detail = g0_seated_exact(
             env, rows, who, st_student, be, pe, held)
         teacher_count = int(teacher_exact.sum())
@@ -1458,7 +1546,14 @@ def run_replay(args):
                     phase_gate_timed_out=bool(phase_gate_timeout[k]),
                     phase_gate_wait_frames=int(phase_gate_wait_frames[k]),
                     teacher_grasp_maintained_diagnostic=bool(teacher_grasp_maintained[k]),
-                    student_grasp_maintained_diagnostic=bool(student_grasp_maintained[k]))))
+                    student_grasp_maintained_diagnostic=bool(student_grasp_maintained[k])),
+                **({'insertion_contact': dict(
+                    threshold_n=G0_CONTACT_THRESHOLD_N,
+                    teacher_first_contact_frame=teacher_insert_telemetry['first_contact_frame'][k],
+                    student_first_contact_frame=student_insert_telemetry['first_contact_frame'][k],
+                    teacher_frames=int(teacher_insert_telemetry['low_m'].shape[1]),
+                    student_frames=int(student_insert_telemetry['low_m'].shape[1]))}
+                    if args.g0_telemetry else {})))
         replay_act = np.stack(replay_action_trace, axis=1)
         np.savez_compressed(data_out, obs=g0_obs, act=g0_act.astype(np.float32), replay_act=replay_act,
                             teacher_success=teacher_exact, student_success=student_exact,
@@ -1483,6 +1578,20 @@ def run_replay(args):
                             replay_phase_gate_timeout=phase_gate_timeout,
                             replay_phase_gate_wait_frames=phase_gate_wait_frames,
                             replay_target_clip_timeout_count=cursor_clip_timeout_count,
+                            **({
+                                'teacher_insert_frame_index': np.arange(teacher_insert_telemetry['low_m'].shape[1], dtype=np.int32),
+                                'teacher_insert_low_m': teacher_insert_telemetry['low_m'],
+                                'teacher_insert_d_bottom_m': teacher_insert_telemetry['d_bottom_m'],
+                                'teacher_insert_normal_err_deg': teacher_insert_telemetry['normal_err_deg'],
+                                'teacher_insert_contact_force_n': teacher_insert_telemetry['contact_force_n'],
+                                'teacher_insert_contact': teacher_insert_telemetry['contact'],
+                                'student_insert_frame_index': np.arange(student_insert_telemetry['low_m'].shape[1], dtype=np.int32),
+                                'student_insert_low_m': student_insert_telemetry['low_m'],
+                                'student_insert_d_bottom_m': student_insert_telemetry['d_bottom_m'],
+                                'student_insert_normal_err_deg': student_insert_telemetry['normal_err_deg'],
+                                'student_insert_contact_force_n': student_insert_telemetry['contact_force_n'],
+                                'student_insert_contact': student_insert_telemetry['contact'],
+                            } if args.g0_telemetry else {}),
                             quadrant=np.asarray([rows[i].get('model_qd', '') for i in who]),
                             pin=np.asarray([rows[i].get('pin', -1) for i in who]),
                             target_gap=np.asarray([rows[i].get('gap', -1) for i in who]))
@@ -1513,6 +1622,20 @@ def run_replay(args):
                                        target_clip_timeout_frames=gate_timeout_frames,
                                        target_clip_timeouts=int(cursor_clip_timeout_count.sum())),
                       replay_tracking_action_semantics='clip(teacher_next_TCP_pose - student_current_TCP_pose); hold each recorded target while a teacher-success SafeDiffIK correction saturates; act is clean teacher-state label, replay_act is executed tracking action')
+        if args.g0_telemetry:
+            report['seed'] = int(args.seed)
+            report['plans_sha256'] = plans_sha256
+            report['insertion_telemetry'] = dict(
+                enabled=True, sensor='filtered plate-to-basket ContactSensor force_matrix_w',
+                contact_threshold_n=G0_CONTACT_THRESHOLD_N,
+                frame_scope='0-based 30 Hz control frames sampled after physics updates during insert phase only; each teacher/student trace has its own frame_index array in the paired NPZ',
+                sample_hz=float(E_CFG()['action']['hz']),
+                npz_keys=dict(teacher=['teacher_insert_low_m', 'teacher_insert_d_bottom_m',
+                                       'teacher_insert_normal_err_deg', 'teacher_insert_contact_force_n',
+                                       'teacher_insert_contact'],
+                              student=['student_insert_low_m', 'student_insert_d_bottom_m',
+                                       'student_insert_normal_err_deg', 'student_insert_contact_force_n',
+                                       'student_insert_contact']))
         output.write_text(json.dumps(report, indent=2))
         print('[G0]', json.dumps(report), flush=True)
         env.close()
