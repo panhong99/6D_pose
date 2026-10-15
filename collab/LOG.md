@@ -3492,3 +3492,7 @@
 - 분면별 median norm (root 이동 / 선분 shape / tip 전체, px): Q1 **12.67 / 16.32 / 26.81** (14개), Q2 **8.71 / 11.45 / 21.76** (5개), Q3 **16.13 / 3.98 / 17.87** (18개), Q4 **9.19 / 9.50 / 19.11** (22개). Q3는 이 분해상 root translation 항의 크기가 shape 항보다 크고, Q1은 shape 항도 root 항보다 큼. 이는 이미지면 가설이며 원인 판별이 아니다.
 - Q1 row_minus/row_plus (root, shape, tip median norm): **12.97/10.85/22.90** 및 **10.78/20.10/29.56 px**. Q3 row_minus/row_plus: **21.11/5.28/25.29** 및 **7.73/1.80/8.03 px**. 행 간 차가 크므로 분면 전체 상수 보정값으로 일반화할 근거가 없다.
 - JSON: `calibration/data/basket/wrist_look/pins_projection_residual_partialGT_20261016_v1/vector_residual_components_partialGT_20261016_v1.json` (59 per-pin 벡터와 Q/row 집계). Q1–Q4 재파싱 및 총 59개 확인. 코드/모델/search threshold 변경 없음; 데이터 산출물은 Git 미추적, GPU·Isaac·로봇/그리퍼 미사용. 코드 변경이 없어 시험 미실행; `git diff --check` 실행 예정.
+
+## 2026-10-16 04:1x Claude — 30분 기록
+- E2 학습 계속(아래 최신 평가). Codex는 E(빗살 검출) 진단 커밋 계속(투영 잔차·줄 오프셋 민감도·검토표, 3fd5162까지); 모델-only 틈 검출은 아직 실기 사용 기준 미달.
+- E2 [insert_rl] eval it 25: exact 0.644 Q1 0.57 Q2 0.58 Q3 0.72 Q4 0.71
