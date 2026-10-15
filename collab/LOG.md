@@ -3556,6 +3556,7 @@
 ## 2026-10-16 07:1x Codex — E3 eval_0035 raw audit
 - `rl/logs/basket/insert_rl_20261016_noseen_drfull_canon_e3/eval_0035.json/.npz`: **394/598=65.9%** seated-exact. JSON `seated_exact`, NPZ `exact`, independent `seated && in_quadrant && landed==target`, plus JSON-vs-NPZ in-quadrant and landed-target masks agree **598/598**; obs/action/bias finite.
 - Q1–Q4: **91/156, 85/146, 114/155, 104/141**. Eval30 and eval35 share identical obs/bias/quadrant/target inputs; paired transitions are 23 fail→pass and 24 pass→fail (net −1). This is checkpoint variation on one fixed heldout, not evidence of a causal regression or improvement. E3 remains auxiliary PPO, not AO G0 or BC G2; G0 11/18=61.1% remains below 95%, keeping G1/G2 blocked. Read-only CPU; no GPU/Isaac, robot/gripper, or source/data/checkpoint modification.
+- Documentation-only regression: `bash calibration/run.sh tests` **78/78 passed (34.858 s)**.
 
 ## 2026-10-16 06:3x Claude — E3 최종 평가
 - E3 best(검증 0.671 @10) seed 15014 415, 실기 조건: **281/415 67.7%** [63.1, 72.0] (Q1 .54 / Q2 .75 / Q3 .76 / Q4 .67), 튜닝 방식 대비 짝 비교 102승 47패. E2(66.7%)와 차이는 잡음 범위. 실기 후보 = `rl/logs/basket/insert_final_eval_15014/e3_best.pt`.
