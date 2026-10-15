@@ -2945,3 +2945,4 @@
 - 추가 noncommuting quaternion composition·현재 학생 pose 추적·속도 cap 회귀 포함 전체시험 **54/54 통과 (35.5 s)**; py_compile 및 `git diff --check` 통과.
 - GPU는 17:14에도 active process 확인: PID **639006**, `/home/pan/pan/6D_pose/real_time_project/main.py --detector yoloe ...`, 676 MiB; 순간 utilization 0%여도 process가 살아 있었다. FoundationPose/camera 작업과 같은 GPU에 Isaac을 겹치지 않고, 타인 PID는 종료하지 않음. G0는 아직 실행하지 않았다.
 - G0 준비 plan: `calibration/data/basket/ao_g0_final_plans_20261015_1635/Q1_plans.jsonl`. Claude/GPU 담당자가 유휴를 확인한 뒤 실행할 미실행 명령: `bash rl/basket/run_quadrant_final_20261015.sh calibration/data/basket/ao_g0_final_plans_20261015_1635/Q1_plans.jsonl calibration/data/basket/ao_g0_tracking_20261015_1715/Q1_g0.json --g0 --seed 11014`. 새 결과 경로여서 기존 파일을 덮지 않는다.
+- 변경 파일 9개를 **9e3926e** (`basket: add opt-in rotation hold and tracking G0 replay`)로 커밋했다. stage 목록에는 source·시험·협업 문서만 포함했으며 데이터/체크포인트는 포함하지 않았다. 커밋 전 전체 회귀시험 종료코드 0, 54/54 pass 확인.
