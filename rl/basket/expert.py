@@ -79,6 +79,7 @@ def parse_args():
                    'lean, dz, yaw corrections on top of the per-quadrant settings, sampled once per env (actions + rewards -> --cl_policy_out)')
     p.add_argument('--cl_policy_out', default='', help='--cl_policy: npz with obs, actions, log-probs and the per-env outcome')
     p.add_argument('--cl_policy_det', action='store_true', help='--cl_policy: use the mean action (evaluation)')
+    p.add_argument('--cl_policy_canon', action='store_true', help='--cl_policy: (10/16) in-hand pose input in the real pipeline frame (x toward the TCP)')
     p.add_argument('--cl_policy_noseen', action='store_true', help='--cl_policy: (10/16) hide the believed gap error from the policy (= real robot without wrist gap detection); the model error itself stays')
     p.add_argument('--cl_dr_full', action='store_true', help='with --cl_dr: also the unobserved errors of align.dr: basket yaw '
                    '(marker fit) and a fixed in-hand plate bias (position mm / tilt deg) in the pose the planner uses')
@@ -831,12 +832,26 @@ def g0_insert_telemetry_sample(env):
 
 
 _CL_CALLS = [0]
-_CL_POL = dict(policy=None, det=False, dr=False, dr_full=False, noseen=False, seed=0, cache={})   # (10/15) insert RL: loaded policy + per-env (obs, act, logp, params)
+_CL_POL = dict(policy=None, det=False, dr=False, dr_full=False, noseen=False, canon=False, seed=0, cache={})   # (10/15) insert RL: loaded policy + per-env (obs, act, logp, params)
 
 INSERT_OBS = 16      # quadrant one-hot 4, gap / 11, basket dx dy dyaw, in-hand plate offset (3) + rotvec (3), believed gap error (2)
 INSERT_ACT = 5       # aim dx, aim dy, lean factor, release dz, yaw about vertical (tanh-squashed, scaled by INSERT_SCALE)
 INSERT_SCALE = (0.03, 0.02, 0.5, 0.01, 4.0)     # m, m, lean factor, m, deg
 INSERT_OBS_SCALE = (1, 1, 1, 1, 1, 10, 10, 5, 10, 10, 10, 0.5, 0.5, 0.5, 100, 100)   # (10/15 21:0x) policy input scale
+
+
+def canonical_hand(H):
+    """(10/16) plate-in-TCP pose with the real pipeline's frame (plate_plans.hand_plate): z = plate normal, x = from the
+    plate centre toward the TCP (in the plate plane).  The sim mesh frame has an arbitrary spin about the normal, so the
+    policy's in-hand rotation input only transfers to the robot in this frame."""
+    import numpy as np
+    c, n = H[:3, 3], H[:3, 2] / np.linalg.norm(H[:3, 2])
+    a = -c - (-c @ n) * n
+    x = a / max(np.linalg.norm(a), 1e-9)
+    Hc = np.eye(4)
+    Hc[:3, :3] = np.stack([x, np.cross(n, x), n], 1)
+    Hc[:3, 3] = c
+    return Hc
 
 
 def insert_policy_params(r, k, H, Tb):
@@ -866,6 +881,8 @@ def insert_policy_params(r, k, H, Tb):
         hand[:3, 3] = rng.normal(0, 1, 3) / np.sqrt(3) * dr['in_hand_mm'] / 1000
     Tb = np.asarray(Tb)
     yaw_b = np.arctan2(Tb[1, 0], Tb[0, 0])
+    if _CL_POL.get('canon'):                                 # (10/16) real-pipeline in-hand frame
+        H = canonical_hand(H)
     obs = np.concatenate([[qd == q for q in ('Q1', 'Q2', 'Q3', 'Q4')], [r.get('gap', 0) / 11.0],
                           [Tb[0, 3] - 0.81, Tb[1, 3] + 0.19, yaw_b], H[:3, 3], R.from_matrix(H[:3, :3]).as_rotvec(), seen]).astype(np.float32)
     act, logp = np.zeros(INSERT_ACT, np.float32), 0.0
@@ -1054,7 +1071,7 @@ def run_replay(args):
                          Tb=json.loads(photo.read_text())['T_base_basket'], grasp=grasp, slot=slot))
     n = len(rows) * args.per_run
     _CL_POL.update(policy=load_insert_policy(args.cl_policy) if args.cl_policy else None, det=args.cl_policy_det,
-                   dr=args.cl_dr, dr_full=args.cl_dr_full, noseen=args.cl_policy_noseen, seed=args.seed, cache={})
+                   dr=args.cl_dr, dr_full=args.cl_dr_full, noseen=args.cl_policy_noseen, canon=args.cl_policy_canon, seed=args.seed, cache={})
     if args.g0_telemetry and not args.g0:
         raise SystemExit('--g0_telemetry requires the SafeDiffIK --g0 mode (not --g0_joint)')
     env = ManagerBasedRLEnv(make_cfg(n, not args.headless,
