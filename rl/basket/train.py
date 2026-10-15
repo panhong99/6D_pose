@@ -535,15 +535,43 @@ def insert_reward(exact, seated, in_quadrant, landed, target):
     return exact.astype(float) + 0.2 * (seated & in_quadrant & ~exact) - 0.05 * miss
 
 
-def insert_replay(plans, out_dir, tag, policy_path, seed, det, per_run, extra):
+FINAL_REPLAY_ARGS = ['--closed_loop', '--cl_top', '--cl_top_q', 'Q1:0', '--cl_iter', '2', '--cl_dx_q', 'Q1:0.025,Q2:0.038,Q3:-0.0464,Q4:-0.035',
+                     '--cl_lean_q', 'Q1:0.5,Q2:0,Q3:-0.5,Q4:0.5']   # = rl/basket/run_quadrant_final_20261015.sh
+
+
+def code_snapshot(out):
+    """(10/15 22:0x) frozen copy of the COMMITTED rl/ code for the replays: a run died when expert.py was half-edited
+    by another agent.  calibration/ and rl/assets, rl/logs are symlinks (data, not code)."""
+    import subprocess
+    snap = out / 'code'
+    if not snap.exists():
+        snap.mkdir(parents=True)
+        files = subprocess.run(['git', 'ls-files', 'rl/*.py', 'rl/*.yaml', 'rl/basket'], cwd=ROOT, capture_output=True, text=True).stdout.split()
+        arch = subprocess.run(['git', 'archive', 'HEAD', *files], cwd=ROOT, capture_output=True).stdout
+        subprocess.run(['tar', '-x', '-C', str(snap)], input=arch, check=True)
+        import shutil
+        for link in ('calibration', 'rl/assets', 'rl/logs'):
+            if (snap / link).exists():                      # git pathspecs also matched some files inside
+                shutil.rmtree(snap / link)
+            (snap / link).symlink_to(ROOT / link)
+        (snap / 'commit.txt').write_text(subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=ROOT, capture_output=True, text=True).stdout)
+    return snap
+
+
+def insert_replay(plans, out_dir, tag, policy_path, seed, det, per_run, extra, code=None):
     """One Isaac replay (subprocess, final per-quadrant settings) with the policy -> transitions npz."""
     import subprocess
-    side = out_dir / f'{tag}.npz'
-    cmd = ['bash', str(ROOT / 'rl/basket/run_quadrant_final_20261015.sh'), str(plans), str(out_dir / f'{tag}.json'),
-           '--per_run', str(per_run), '--seed', str(seed), '--cl_policy', str(policy_path), '--cl_policy_out', str(side)]
+    side = (out_dir / f'{tag}.npz').resolve()
+    io = ['--plans', str(Path(plans).resolve()), '--out', str((out_dir / f'{tag}.json').resolve()), '--per_run', str(per_run),
+          '--seed', str(seed), '--cl_policy', str(Path(policy_path).resolve()), '--cl_policy_out', str(side)]
+    if code:                                                # frozen snapshot (same flags as the final script)
+        cmd = ['env', '-u', 'CONDA_PREFIX', '-u', 'CONDA_DEFAULT_ENV', '/home/pan/IsaacLab/isaaclab.sh', '-p',
+               str(code / 'rl/basket/expert.py'), 'replay', '--headless', *FINAL_REPLAY_ARGS, *io]
+    else:
+        cmd = ['bash', str(ROOT / 'rl/basket/run_quadrant_final_20261015.sh'), io[1], io[3], *io[4:]]
     cmd += (['--cl_policy_det'] if det else []) + extra
     with open(out_dir / f'{tag}.log', 'w') as log:
-        rc = subprocess.run(cmd, cwd=ROOT, stdout=log, stderr=subprocess.STDOUT).returncode
+        rc = subprocess.run(cmd, cwd=code or ROOT, stdout=log, stderr=subprocess.STDOUT).returncode
     if rc != 0 or not side.exists():
         raise RuntimeError(f'replay {tag} failed (rc {rc}), see {out_dir / f"{tag}.log"}')
     d = np.load(side)
@@ -569,6 +597,7 @@ def run_insert_rl(a):
     opt = torch.optim.Adam(pol.parameters(), lr=a.lr or 3e-4)
     extra = (['--cl_dr'] + (['--cl_dr_full'] if a.dr_full else [])) if not a.no_dr else []
     extra += ['--cl_noise_fp', str(ROOT / 'rl/logs/basket/fp_noise_model_20261015.json')] if not a.no_fp_noise else []
+    code = code_snapshot(out) if a.snapshot else None
     hist = []
     (out / 'config.json').write_text(json.dumps(dict(vars(a), plans_n=len(rows), eval_n=len(hold), extra=extra), indent=1, default=str))
 
@@ -576,7 +605,7 @@ def run_insert_rl(a):
         ev = out / 'eval_plans.jsonl'
         ev.write_text(''.join(hold))
         torch.save(pol.state_dict(), out / f'policy_{it:04d}.pt')
-        d, r = insert_replay(ev, out, f'eval_{it:04d}', out / f'policy_{it:04d}.pt', 777, True, 1, extra)
+        d, r = insert_replay(ev, out, f'eval_{it:04d}', out / f'policy_{it:04d}.pt', 777, True, 1, extra, code)
         res = dict(it=it, eval_exact=float(d['exact'].mean()), eval_reward=float(r.mean()),
                    **{f'eval_{q}': float(d['exact'][d['quadrant'] == q].mean()) for q in ('Q1', 'Q2', 'Q3', 'Q4') if (d['quadrant'] == q).any()})
         print(f'[insert_rl] eval it {it}: exact {res["eval_exact"]:.3f} ' + ' '.join(f'{q} {res.get("eval_" + q, float("nan")):.2f}' for q in ('Q1', 'Q2', 'Q3', 'Q4')), flush=True)
@@ -597,7 +626,7 @@ def run_insert_rl(a):
         batch.write_text(''.join(rng.sample(rows, min(a.batch, len(rows)))))
         torch.save(pol.state_dict(), out / 'current.pt')
         t0 = time.time()
-        d, r = insert_replay(batch, out, f'train_{it:04d}', out / 'current.pt', 1000 + it, False, 1, extra)
+        d, r = insert_replay(batch, out, f'train_{it:04d}', out / 'current.pt', 1000 + it, False, 1, extra, code)
         obs, act = torch.as_tensor(d['obs']), torch.as_tensor(d['act'])
         old_logp, ret = torch.as_tensor(d['logp'], dtype=torch.float32), torch.as_tensor(r, dtype=torch.float32)
         with torch.no_grad():
@@ -660,6 +689,7 @@ def parse_args():
     p.add_argument('--epochs', type=int, default=8)
     p.add_argument('--minibatch', type=int, default=32)
     p.add_argument('--no_dr', action='store_true', help='insert_rl: no model-error randomisation')
+    p.add_argument('--snapshot', action='store_true', help='insert_rl: replays run a frozen copy of the committed rl/ code')
     p.add_argument('--no_obs_scale', action='store_true', help='insert_rl: raw inputs (runs before 21:0x)')
     p.add_argument('--dr_full', action='store_true', help='insert_rl: also basket-yaw and in-hand-bias randomisation (unobserved)')
     p.add_argument('--no_fp_noise', action='store_true', help='insert_rl: exact in-hand pose (no FP noise model)')
