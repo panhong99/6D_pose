@@ -948,7 +948,7 @@ def quadrant_checkers(Tbc, q, Tbb, H, tool):
 
 
 def quadrant_plan(Tbb, quadrant, gap, H, tool, start_deg, Tbc, q, grasp_legs=None, tilt_deg=0.0, centre_h=0.18, above_m=0.11,
-                  phi_step=10, seeds=None, yaw_trim_deg=0.0, y_shift_m=None, x_shift_m=None, faces=(1.0, -1.0)):
+                  phi_step=10, seeds=None, yaw_trim_deg=0.0, y_shift_m=None, x_shift_m=None, faces=(1.0, -1.0), y_extra_m=0.0):
     """Plan.json for one quadrant gap from the plate in the hand: to_above (carry, straight or RRT), descend (straight
     down, plate upright, +basket_policy_extra_down_m), ascend (straight up), to_home, abort_home.  -> (path, report)."""
     import ros2_nodes
@@ -963,7 +963,7 @@ def quadrant_plan(Tbb, quadrant, gap, H, tool, start_deg, Tbc, q, grasp_legs=Non
         import basket_env as be
         room = be.B['full']['size_xy'][1] / 2 - 0.012 - q.get('basket_wall_margin_m', 0.01) - PLATE_R - 0.005
         y_shift_m = float(np.clip(0.0, -room - g_[1], room - g_[1])) if abs(g_[1]) > room else 0.0
-    g_[1] += y_shift_m
+    g_[1] += y_shift_m + y_extra_m                          # (10/15 보스) y_extra: per-quadrant real trim on top of the wall shift
     if x_shift_m is None:                                    # (10/14 실기) the plate lands 2-3 cm farther (+x) than planned
         x_shift_m = q.get('basket_quadrant_x_trim_m', 0.0)
     g_[0] += x_shift_m
