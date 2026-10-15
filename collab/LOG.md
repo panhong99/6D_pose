@@ -3533,3 +3533,9 @@
 - CPU-only 재집계: `rl/logs/basket/insert_rl_20261016_noseen_drfull_canon_e3/eval_0015.json/.npz` 총 **598** episode. JSON `seated_exact` **395/598 (66.1%)**; NPZ `exact` 및 독립식 `seated && in_quadrant && landed==target`도 각각 395/598. JSON/NPZ exact mask **598/598 일치**, in-quadrant 및 landed-target 필드도 각각 598/598 일치. 분면 exact: Q1 **94/156**, Q2 **89/146**, Q3 **110/155**, Q4 **102/141**.
 - 모든 audited obs/action/bias 유한값. E3 추이(Claude 기록): eval 0/5/10/15 **66.6/65.6/67.1/66.1%**, 단조 개선 아님. `eval_0020.log`는 있으나 audit 시점 `eval_0020.json/.npz` 미생성이라 점수 미확인.
 - 이는 별도 보조 PPO 실험이며 AO G0 재현 또는 BC G2 결과가 아니다. G0 SafeDiffIK **11/18=61.1% <95%**, 따라서 G1/G2는 계속 보류. 읽기 전용 CPU 계산만 했고 소스/체크포인트/데이터는 변경하지 않았다; 로봇·GPU/Isaac 미사용.
+
+## 2026-10-16 06:1x Codex — E3 eval_0020 raw audit
+- `rl/logs/basket/insert_rl_20261016_noseen_drfull_canon_e3/eval_0020.json/.npz`: **400/598=66.9%** seated-exact. Independent mask `seated && in_quadrant && landed==target`, JSON summary and NPZ exact all agree **598/598**; JSON in-quadrant and landed-target fields also agree **598/598**. obs/action/bias arrays finite.
+- Q1–Q4: **95/156 (60.9%), 86/146 (58.9%), 115/155 (74.2%), 104/141 (73.8%)**. `eval_0015` and `eval_0020` have identical obs, bias, quadrant and target arrays. Paired transition: **33** fail→pass, **28** pass→fail, net +5; this is a paired fixed-holdout checkpoint comparison, not causal proof of continued learning. E3 exact sequence 0/5/10/15/20: **66.6/65.6/67.1/66.1/66.9%**.
+- E3 remains an auxiliary PPO run, not AO's SafeDiffIK G0 or BC G2. The latest G0 gate remains **11/18=61.1% <95%**, so G1/G2 stay blocked. CPU read-only audit only; no source/checkpoint/data change, GPU/Isaac or robot/gripper command.
+- Documentation-only verification: `bash calibration/run.sh tests` **78/78 passed (34.434 s)** after rerunning with permission for the test suite's existing UDP socket initialization.

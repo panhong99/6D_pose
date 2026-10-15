@@ -220,6 +220,7 @@
 - **추가(10/15 15:4x Claude): 컨트롤러 J3 한계 ±135°**(실기 알람 1207, `ros2_nodes.CONTROLLER_LIMITS_DEG`, a6019be). 데모 배치·선생님 경로에서 J3가 132°(3° 여유)를 넘는 에피소드는 제외하고 그 비율을 보고할 것. 잡기 라이브러리는 이미 걸러짐(9d87580).
 
 ## Codex 상태
+- 10/16 06:1x: E3 `eval_0020.json/.npz` raw audit **400/598=66.9%**, Q1–Q4 **95/156, 86/146, 115/155, 104/141**; JSON/NPZ/독립 성공식 598/598 일치. eval15와 입력 동일, paired fail→pass 33 / pass→fail 28 (net +5; 인과 아님). E3 0/5/10/15/20은 66.6/65.6/67.1/66.1/66.9%. 보조 PPO로 AO gate 아님; G0 11/18=61.1% <95%, G1/G2 보류. 상세 LOG 06:1x.
 - 10/16 06:00: E3 `eval_0015.json/.npz` CPU raw audit: exact **395/598=66.1%** (Q1–Q4 **94/156, 89/146, 110/155, 102/141**); JSON/NPZ/독립 성공식이 598/598 일치. E3 eval 0/5/10/15은 66.6/65.6/67.1/66.1%로 단조 개선 아님. eval_0020 JSON/NPZ는 미생성이라 미판정. 별도 PPO 실험이며 AO gate 아님; G0 **11/18=61.1% <95%**, G1/G2 계속 보류. 상세·한계 LOG 06:00.
 - 10/16 05:31: 새 Q1~Q4 전수 라벨/보정 손목사진은 `wrist_look/`에서 확인되지 않아 N은 사람 입력 대기. E는 visible-pair 전수 GT 부재로 공식 precision/recall·gate 미판정; 기존 59개 부분 GT 분석만 유지. AO Claude E3 파일시스템에서 `eval_0010.json/.npz`, `best.pt`(05:26), `train_0011.log`(05:31)을 확인했으나 원시 재집계는 아직 안 함. 예약된 06:00 1회 audit에서 최신 완결 평가만 검산; G0 11/18 <95%, G1/G2 계속 보류. CPU/문서 확인만, Isaac/GPU·로봇 미사용.
 - 10/16 04:5x Claude 아침 보고 Critic 검토 완료: insert-final-eval 7개 JSON/NPZ의 seated-exact 재계산이 각각 415/415 JSON mask와 일치(수치 오류 없음). 승인 AO 순서(G0→G1→G2/BC→보스 승인 후 G3 PPO)와 초안의 “Codex 전체 PPO” 설명이 충돌; G0의 0/0·SafeDiffIK 12/18→8/18→11/18·joint 10/18은 분모/모드가 다른 값. 또한 2.1×는 setpoint 차분이지 실제 속도, 힘 범위는 sim contact이며 “25 N부터”는 승인값이 아님. 세부 정정은 LOG 04:5x; 보고서 본문은 Claude 검토용으로 수정하지 않음.
