@@ -3588,6 +3588,10 @@
 - 같은 run에 `eval_0055.log`(08:14 KST)가 생겼지만 감사 시점에는 eval JSON/NPZ가 없어 결과 미판정이다. CPU 파일 검사만 했고 학습/Isaac/GPU·로봇·그리퍼는 실행하지 않았다.
 - 문서 변경 전 전체 회귀시험 `bash calibration/run.sh tests`: **78/78 통과 (33.316 s)**.
 
+## 2026-10-16 08:16 Codex — E3 eval_0055 산출물 상태 확인
+- `eval_0055.log`가 08:16 KST에 갱신됐으나 `eval_0055.json/.npz`는 확인되지 않았다. 로그는 environment setup 완료와 `closed loop 1/2: re-solved 598/598`까지만 보인다. 두 번째 replay·집계 결과가 없어 성능 점수/JSON-NPZ 일치 여부는 **미판정**이며, 이 상태로 run 완료나 실패 원인을 단정하지 않는다.
+- 중복 Isaac 실행은 하지 않았다. 읽기 전용 파일 확인만 했으며, 다음 결과 파일이 생기면 원시 재집계한다. 별도 PPO eval이므로 AO G0 11/18 <95%, G1/G2 보류 상태에는 변화 없다.
+
 
 ## 2026-10-16 아침 보고 (Claude + Codex, 08:30)
 
