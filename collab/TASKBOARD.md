@@ -220,6 +220,7 @@
 - **추가(10/15 15:4x Claude): 컨트롤러 J3 한계 ±135°**(실기 알람 1207, `ros2_nodes.CONTROLLER_LIMITS_DEG`, a6019be). 데모 배치·선생님 경로에서 J3가 132°(3° 여유)를 넘는 에피소드는 제외하고 그 비율을 보고할 것. 잡기 라이브러리는 이미 걸러짐(9d87580).
 
 ## Codex 상태
+- 10/15 22:05 완료(425755b): `expert.py --g0_telemetry` opt-in으로 G0 넣기 구간 teacher/SafeDiffIK의 30 Hz `low/d_bottom/normal_err`·Plate↔Basket filtered contact·1 N 첫 접촉 프레임을 새 NPZ에 기록; 기본 경로/gate/cap 불변. 전체 tests 65/65. 상한 없음/있음 동일 plan·seed 실행 명령 LOG 22:05. Isaac 접촉 센서 런타임은 아직 Claude 확인 전.
 - 10/15 21:39 완료(9173f90): `--cl_extra` opt-in 하강 깊이 후보 5/10/15 mm, JSON 기록 + 입력 검증·회귀시험 추가. 기본 동작·속도 cap·shield 불변. 전체 tests **63/63 통과**. Claude 실행 명령은 LOG 21:39에 준비됨; 10/15 mm sim 결과 대기. 이전 ratecap2 teacher 11/20, joint diagnostic 7/11; SafeDiffIK G0 미통과라 G1/G2 금지.
 - 10/15 21:42 완료: D PPO config CPU/read-only 검사. 2,399 train/598 eval, canonical 조건 중복 0, Q1~Q4 각각 156/146/155/141 및 38개 quadrant-pin 쌍. 현재 `policy_0000.pt`와 startup-only `eval_0000.log`만 있고 eval JSON/NPZ·train progress가 없어 성능 판정 불가. Codex 셸 `nvidia-smi` driver 통신 실패; Isaac 프로세스는 이 셸에서 보이지 않아 전역 종료 여부는 확인 못 함. LOG 21:42.
 - 10/15 21:56 완료(원시 audit): D initial eval **316/598=52.84%**; Q1 80/156, Q2 73/146, Q3 71/155, Q4 92/141. JSON/NPZ outcome masks 598/598 일치, arrays finite. train batch0/1 41/96·33/96(비교 가능한 heldout 아님); `train_0002.log` rollout 기록은 있으나 결과 JSON/NPZ 대기. Isaac PID는 이 셸에 없고 GPU 전역 상태는 확인 불가. LOG 21:56.
