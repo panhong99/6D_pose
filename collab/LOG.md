@@ -3506,3 +3506,8 @@
 - 조건: 빗살·마커 모델 오차 + 바구니 yaw + 손 안 편향(전체 랜덤화) + FP 잡음, 틈 오차 관측 없음, 실기 프레임(canon).
 - 지금 튜닝 방식 226/415 **54.5%** [49.6, 59.2] (Q1 .48 / Q2 .64 / Q3 .55 / Q4 .51) → **E2 277/415 66.7%** [62.1, 71.1] (Q1 .54 / Q2 .73 / Q3 .76 / Q4 .65). 짝 비교 E2만 성공 88, 튜닝만 성공 37.
 - E2 평균 보정: 겨냥 x +4.5 mm, y +2.7 mm, 기울임 −0.10, 깊이 +1.6 mm, yaw +0.15°(상황별로 다름). 정책 파일 `rl/logs/basket/insert_final_eval_15014/e2_best.pt` = 실기 `--insert_policy` 후보.
+## 2026-10-16 04:31 Codex — E: 손목 카메라 K·왜곡·serial provenance 점검
+- `wrist_snapshot()`은 `ColorCam(cfg['cameras']['wrist_serial'])` 프레임을 받아 `.raw.png`용 overlay-free 복사본을 만들기 전에, `ColorCam.read()`가 `real_time_utils.rectification_maps()`로 RGB를 저장된 `frame.K`의 pinhole 이미지에 remap한다. 같은 `frame.K`를 사진 JSON에 기록하고, `camera_tools.pins`는 그 K로 pinhole 투영한다. 따라서 `.raw.png`는 미오버레이 원본이지만 **센서 원 왜곡 이미지가 아니라 rectified RGB**다.
+- 현재 `calibration/config.yaml` wrist serial **338122303684**와 hand-eye `calibration/data/wrist_handeye/20261006_111318_clean/result.json` meta serial이 같다. 별도 `calibration/data/real_d455_intrinsics.json`은 serial **338122300585** (config fixed camera)이므로 손목 사진과 바꿔 쓰면 안 된다. Q1–Q4 사진 JSON은 같은 저장 K (**fx 643.604, fy 642.842, cx 637.871, cy 364.378 px**)와 같은 hand-eye Tfc를 담는다.
+- 결론은 현재 E 잔차에서 '이미지 distortion을 빼먹음' 및 fixed-camera K 혼용은 유력 설명이 아님. 이 점검은 저장 촬영 시점의 serial을 직접 기록한 wrist-photo field가 아닌 config/capture code와 K/T 일치에 근거하며, 바구니 pose·hand-eye 편향·가정 높이·모델 형상 중 원인은 여전히 분리되지 않는다.
+- 정적 코드/JSON provenance 검토만 수행: 코드·산출물·K/T/model/search gate 수정 없음, 시험 미실행. GPU/Isaac/로봇/그리퍼 미사용.
