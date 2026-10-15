@@ -220,6 +220,10 @@
 - **추가(10/15 15:4x Claude): 컨트롤러 J3 한계 ±135°**(실기 알람 1207, `ros2_nodes.CONTROLLER_LIMITS_DEG`, a6019be). 데모 배치·선생님 경로에서 J3가 132°(3° 여유)를 넘는 에피소드는 제외하고 그 비율을 보고할 것. 잡기 라이브러리는 이미 걸러짐(9d87580).
 
 ## Codex 상태
+- 10/15 15:10 재확인: ratecap stdout은 두 closed-loop pass에서 각각 18/20 IK 재계산까지 기록하지만 JSON/NPZ는 여전히 없음. 로그 끝에 명시적 예외/종료 상태가 없어 완료·실패 판정 불가; Isaac 재실행은 하지 않음. uncapped G0는 11/18로 미통과, G1/G2 보류.
+- 10/15 23:50 완료: uncapped G0 raw JSON/NPZ 독립 감사. Teacher 18/20, SafeDiffIK 재현 11/18=61.1%로 95% gate 실패. 20/20 episode masks·contact frame JSON/NPZ 일치, telemetry finite. Ratecap 쪽은 stdout만 있고 JSON/NPZ 없음; 결과 대기. G1/G2 보류.
+- 10/15 23:30 살아 있음: G0 산출물 재확인. 첫 로그가 22:37:37 이후 바뀌지 않았고 여전히 uncapped stdout 하나뿐(JSON/NPZ 없음); 이 셸의 Isaac PID도 없음. 종료 코드/외부 실행 상태는 알 수 없어 실패 단정 금지. Claude가 새 결과나 중단 원인을 공유하기 전까지 G0 미통과, G1/G2 보류.
+- 10/15 23:10 살아 있음: G0 텔레메트리 코드 검토 완료, Claude 실행 결과를 CPU로 감사 예정. 현재 공유 경로에는 22:37 시각의 uncapped stdout 로그 하나만 있고 JSON/NPZ 없음; 이 셸에서 Isaac PID도 보이지 않음(다른 환경 종료 여부는 미확인). G0 미통과, G1/G2 보류.
 - 10/15 22:05 완료(425755b): `expert.py --g0_telemetry` opt-in으로 G0 넣기 구간 teacher/SafeDiffIK의 30 Hz `low/d_bottom/normal_err`·Plate↔Basket filtered contact·1 N 첫 접촉 프레임을 새 NPZ에 기록; 기본 경로/gate/cap 불변. 전체 tests 65/65. 상한 없음/있음 동일 plan·seed 실행 명령 LOG 22:05. Isaac 접촉 센서 런타임은 아직 Claude 확인 전.
 - 10/15 21:39 완료(9173f90): `--cl_extra` opt-in 하강 깊이 후보 5/10/15 mm, JSON 기록 + 입력 검증·회귀시험 추가. 기본 동작·속도 cap·shield 불변. 전체 tests **63/63 통과**. Claude 실행 명령은 LOG 21:39에 준비됨; 10/15 mm sim 결과 대기. 이전 ratecap2 teacher 11/20, joint diagnostic 7/11; SafeDiffIK G0 미통과라 G1/G2 금지.
 - 10/15 21:42 완료: D PPO config CPU/read-only 검사. 2,399 train/598 eval, canonical 조건 중복 0, Q1~Q4 각각 156/146/155/141 및 38개 quadrant-pin 쌍. 현재 `policy_0000.pt`와 startup-only `eval_0000.log`만 있고 eval JSON/NPZ·train progress가 없어 성능 판정 불가. Codex 셸 `nvidia-smi` driver 통신 실패; Isaac 프로세스는 이 셸에서 보이지 않아 전역 종료 여부는 확인 못 함. LOG 21:42.
@@ -327,6 +331,9 @@
 - 10/14 10:4x 보스 재확인: '가운데 클립 바로 옆 핀'은 보스가 지칭한 특정 부품이 아니다. 이 명칭으로 가림/누락을 분류하지 않고, 사진에서 실제 보임·가림·미확정 상태만 기록한다. D 완료 조건의 '클립 위치'는 대상 부품 정의가 확인될 때까지 미확정으로 표시한다.
 
 ## 수정 요청 (Claude → Codex)
+
+### 00:1x Claude → Codex: 텔레메트리 1차 결과 도착
+- `ao_g0_insert_telemetry_20261015_2210/uncapped/Q1_g0.{json,npz}` 완료(선생님 18/20, 재생 11/18, `insertion_telemetry` 포함). 상한 있는 실행(`ratecap/`)은 진행 중. 상한 없는 선생님의 접촉·하강 기록부터 분석 시작하라(2시간째 커밋 없음).
 
 ### 22:0x Claude → Codex
 - insert_rl 감사는 이번 것으로 충분(다음은 02:00). 걸림 분석에 필요한 텔레메트리가 없다고 했으니(a5f72bb) **지금 그 기록을 opt-in으로 추가**(넣기 구간 프레임별 `low`, `d_bottom`, 법선 오차, 첫 접촉 프레임)하고, 상한 있는/없는 선생님 두 실행 명령을 LOG에. Claude가 바로 돌린다.
