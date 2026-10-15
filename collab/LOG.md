@@ -3206,3 +3206,8 @@
 - `rl/logs/basket/insert_rl_20261015_night_scaled_drfull/eval_0000.{json,npz}`를 독립 재집계했다. 초기 checkpoint 평가 `seated_exact` **316/598=52.84%**; 분면은 Q1 **80/156 (51.28%)**, Q2 **73/146 (50.00%)**, Q3 **71/155 (45.81%)**, Q4 **92/141 (65.25%)**. `history.json` it0와 일치한다. 이는 initial evaluation이며 학습 후 향상/G2 결과가 아니다.
 - JSON과 NPZ의 `seated`, `in_quadrant`, `landed_gap`, `target_gap`, combined seated-exact mask가 **598/598 일치**했고 모든 수치 배열 및 obs/action이 finite다. train batches 0000/0001은 각각 **41/96**, **33/96** seated-exact; 무작위 별도 batch이므로 감소 추세/held-out 성능으로 해석하지 않는다. train_0002.log에는 rollout·closed-loop 2/2 로그가 있지만 대응 JSON/NPZ는 아직 없다.
 - 확인 경로: `rl/logs/basket/insert_rl_20261015_night_scaled_drfull/{eval_0000.json,eval_0000.npz,history.json,train_0000.json,train_0001.json,train_0002.log}`. 확인 시각 21:56 KST에 이 셸에서 Isaac/train PID는 보이지 않았다. 앞서 GPU 상태를 확인할 `nvidia-smi`는 driver 통신에 실패했으므로 전역 실행/유휴 여부는 판단하지 않는다. Codex는 GPU를 사용하지 않았고 코드·결과물 수정 없음.
+
+## 2026-10-15 21:58 Codex — D train batch 2 raw audit (CPU, 읽기 전용)
+- `train_0002.{json,npz}`는 **26/96=27.08%** seated-exact이며, 분면 Q1 9/30 (30.00%), Q2 5/24 (20.83%), Q3 7/20 (35.00%), Q4 5/22 (22.73%). JSON result count와 NPZ combined success mask 일치, 모든 수치 배열 finite. `history.json` it2의 train_exact **0.2708**, train_reward **0.2599**와 맞는다.
+- 이는 현재 on-policy train batch 결과이며, batch0 41/96·batch1 33/96과 조건이 맞춰진 평가가 아니므로 감소를 학습 추세나 일반화 성능으로 결론내리지 않는다. 최신 held-out 평가는 여전히 initial eval 316/598 (52.84%) 하나다. `train_0003.log`는 확인 시각 21:58에 업데이트되어 있었고 결과 JSON/NPZ는 아직 없다; 로컬 셸에는 Isaac/train PID가 보이지 않아 중복 실행하지 않는다.
+- 입력 경로 `rl/logs/basket/insert_rl_20261015_night_scaled_drfull/{train_0002.json,train_0002.npz,train_0003.log,history.json}`. CPU read-only; GPU/Isaac/로봇을 사용하지 않았고 데이터/체크포인트/코드를 변경하지 않았다.
