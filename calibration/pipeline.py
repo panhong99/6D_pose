@@ -635,7 +635,7 @@ def run_plate(args):
                 sys.path.insert(0, str(ROOT / 'rl'))
                 import basket_env as be
                 sq = C['basket_quadrant_sim'][mq]
-                sim_kw = dict(tilt_deg=sq['lean'] * be.B['full']['tine_lean_deg'][mq], centre_h=sq['centre_h'],
+                sim_kw = dict(tilt_deg=sq['lean'] * be.B['full']['tine_lean_deg'][mq], centre_h=sq['centre_h'] + q.get('basket_quadrant_sim_real_dh_m', 0.0),
                               x_shift_m=sq['aim_m'] if args.x_shift is None else args.x_shift,
                               faces=(-1.0, 1.0) if sq['flip'] else (1.0, -1.0))
                 print(f'   sim 설정 {mq}: {sq} -> 기울기 {sim_kw["tilt_deg"]:+.2f} deg, 겨냥 {sim_kw["x_shift_m"]:+.4f} m', flush=True)
