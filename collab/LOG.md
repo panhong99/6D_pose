@@ -2999,3 +2999,4 @@
 - Codex는 기존 코드·모델·학습 데이터/가중치를 수정하지 않았다. 결과·상태만 공유문서에 기록했다.
 - 18:32 Claude가 위 opt-in hook을 `c9884db`로 커밋했다. 변경은 `--cl_dr_full`일 때만 marker yaw 및 고정 hand pose bias를 planner belief에 추가한다; 기본 경로는 유지. 앞서 검증한 run `config.json`의 `extra`는 `--cl_dr`, `--cl_noise_fp`뿐이라 eval 0/5는 `--cl_dr_full` 평가가 아니다. `row_scale` 랜덤화는 현재도 연결되지 않았다.
 - c9884db 이후 `bash calibration/run.sh tests` 재실행: **54/54 통과, 35.607 s**. 다만 `tests.py`에 `--cl_dr_full` 전용 시험이 없어 이 결과는 전체 회귀 통과이지 새 랜덤화의 기능 검증은 아니다. 현재 설정의 실제 sim 성능은 새 랜덤화 실행 전까지 미확인. Codex는 Isaac/GPU를 사용하지 않았고 Claude 소유 코드도 수정하지 않았다.
+- 18:36 재점검: 앞서 불완전했던 `train_0006`은 이후 JSON/NPZ까지 저장됐고 `train_0006`~`train_0008` batch가 완결(각 38/96, 40/96, 43/96 seated_exact; 학습 배치 지표라 홀드아웃 평가 아님). `history.json` 최신은 it=8, 마지막 평가 여전히 eval 5(61.54%). 새 `train_0009.log`는 두 closed-loop 중 첫 부분(94/96 re-solved)까지만 있고 JSON/NPZ 및 eval 10 없음. 로그 파일은 18:36:21까지 갱신됐으나 이 셸에서는 학습/Isaac PID가 안 보이고 `nvidia-smi`도 드라이버 통신 실패; 실행 중/중단 원인 모두 단정하지 않으며 중복 Isaac은 시작하지 않는다.
