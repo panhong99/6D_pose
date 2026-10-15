@@ -79,6 +79,7 @@ def parse_args():
                    'lean, dz, yaw corrections on top of the per-quadrant settings, sampled once per env (actions + rewards -> --cl_policy_out)')
     p.add_argument('--cl_policy_out', default='', help='--cl_policy: npz with obs, actions, log-probs and the per-env outcome')
     p.add_argument('--cl_policy_det', action='store_true', help='--cl_policy: use the mean action (evaluation)')
+    p.add_argument('--cl_policy_noseen', action='store_true', help='--cl_policy: (10/16) hide the believed gap error from the policy (= real robot without wrist gap detection); the model error itself stays')
     p.add_argument('--cl_dr_full', action='store_true', help='with --cl_dr: also the unobserved errors of align.dr: basket yaw '
                    '(marker fit) and a fixed in-hand plate bias (position mm / tilt deg) in the pose the planner uses')
     p.add_argument('--cl_dr', action='store_true', help='--closed_loop: (10/15) per env model error from config align.dr: the planner aims at '
@@ -830,7 +831,7 @@ def g0_insert_telemetry_sample(env):
 
 
 _CL_CALLS = [0]
-_CL_POL = dict(policy=None, det=False, dr=False, dr_full=False, seed=0, cache={})   # (10/15) insert RL: loaded policy + per-env (obs, act, logp, params)
+_CL_POL = dict(policy=None, det=False, dr=False, dr_full=False, noseen=False, seed=0, cache={})   # (10/15) insert RL: loaded policy + per-env (obs, act, logp, params)
 
 INSERT_OBS = 16      # quadrant one-hot 4, gap / 11, basket dx dy dyaw, in-hand plate offset (3) + rotvec (3), believed gap error (2)
 INSERT_ACT = 5       # aim dx, aim dy, lean factor, release dz, yaw about vertical (tanh-squashed, scaled by INSERT_SCALE)
@@ -855,6 +856,8 @@ def insert_policy_params(r, k, H, Tb):
         dr = E_CFG()['align']['dr']
         bias = np.array([rng.uniform(-1, 1) * dr['gap_x_m'][qd], rng.uniform(-1, 1) * dr['gap_y_m']])
     seen = bias + rng.normal(0, 0.002, 2)
+    if _CL_POL['noseen']:
+        seen = np.zeros(2)
     yaw_bias, hand = 0.0, np.eye(4)
     if _CL_POL['dr'] and _CL_POL['dr_full']:                # unobserved: marker yaw error, in-hand plate pose bias
         dr = E_CFG()['align']['dr']
@@ -1051,7 +1054,7 @@ def run_replay(args):
                          Tb=json.loads(photo.read_text())['T_base_basket'], grasp=grasp, slot=slot))
     n = len(rows) * args.per_run
     _CL_POL.update(policy=load_insert_policy(args.cl_policy) if args.cl_policy else None, det=args.cl_policy_det,
-                   dr=args.cl_dr, dr_full=args.cl_dr_full, seed=args.seed, cache={})
+                   dr=args.cl_dr, dr_full=args.cl_dr_full, noseen=args.cl_policy_noseen, seed=args.seed, cache={})
     if args.g0_telemetry and not args.g0:
         raise SystemExit('--g0_telemetry requires the SafeDiffIK --g0 mode (not --g0_joint)')
     env = ManagerBasedRLEnv(make_cfg(n, not args.headless,
