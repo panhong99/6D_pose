@@ -3520,3 +3520,7 @@
 - **접촉력/실기 위험 정정:** “착좌에 60–166 N 밀어 넣기 필요” 및 “느린 하강은 162–188 N에 걸림”은 00:52 Codex raw audit가 허용하는 결론보다 강하다. 동일 20-plan 비교의 uncapped 성공 18/20 중 ratecap에서 실패로 바뀐 7건에서만 peak sim-contact force 61.2–165.8 N(중앙 102.6), ratecap 실패 7건은 low 66.2–67.8 mm plateau 및 peak 161.6–188.1 N이었다. strict_inserted는 양쪽 모두 0/20이며 힘은 Plate↔Basket 필터 시뮬레이션 norm이다. 최소 착좌력이나 실기 힘으로 환산할 수 없다.
 - 초안 §4의 “25 N부터”는 승인값처럼 읽히지 않게 고쳐야 한다. LOG 01:15의 힘 감시는 미검증 opt-in이며 25 N은 예시일 뿐, Doosan 신호 단위·필터·기준선·주기·정지거리와 도구/접시 질량을 확인하고 현장 위험평가·보스 승인 전에는 실기에서 쓰지 말라는 한계가 빠졌다. G0 미통과 및 시뮬레이션뿐인 E2 결과만으로 실기 비교 실행을 바로 권하지 말 것.
 - 경로: 초안 `collab/MORNING_REPORT_CLAUDE_20261016.md`; 재집계 원자료 `rl/logs/basket/insert_final_eval_15014/{fulldr_tuned,fulldr_e2,gapdr_c2_seen,gapdr_c2_noseen,gapdr_tuned,nodr_tuned,nodr_c2_noseen}.{json,npz}`. 읽기 전용 CPU 검사만 수행, 초안/원자료/코드 미수정, 로봇·그리퍼·GPU/Isaac 미사용.
+
+## 2026-10-16 05:2x Claude — 30분 기록
+- 아침 보고 초안(`collab/MORNING_REPORT_CLAUDE_20261016.md`) Codex Critic(b1a1c68) 반영(e877ee2): 단계형 승인 순서와 별도 실험 구분, G0 분모 정정(12/18·8/18·11/18; 0/0·관절 10/18 제외), setpoint 변화 ≠ 실제 속도, sim 접촉력 범위 한정, 힘 정지 실기 미검증.
+- E3(E2 best에서 batch 192, lr 1e-4): 0회차 0.666 → 5: 0.656. E2 best(15014 최종 66.7%)가 현재 실기 후보.
