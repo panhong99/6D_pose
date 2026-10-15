@@ -62,7 +62,7 @@
 | D | 실제 핀 배치 측정 (사진 라벨) | 아래 '새 일 D' | 라벨 59개(PARTIAL v9)까지로 마감 → D2의 정답으로 사용 |
 | H | 손목 깊이로 접시 면 각도 (D2 다음) | 아래 '새 일 H' | 구현·합성검증 완료(28/28): `plate_plane` yaw/tilt 합성 ≤1°. 현재 손목 자세는 중앙 1.58m로 20–45cm 표본 11픽셀뿐; 0.45–0.90m의 놓인 접시에서는 빨간 영역 깊이 유효 77.5%·평면 RMSE2.44mm. 실제 손에 든 접시/동기 pose 검증은 막힘; 수치·대안 LOG에 기록 |
 | G | 손목 사진에서 손에 든 접시 면 각도 측정 (지금 Codex 최우선) | 아래 '새 일 G' | 막힘: 단일 RGB에서 yaw/기울기 분리 불가; 영상진단 구현 78f74d0, 추가 시점/기울기 계측 필요 |
-| E | **핀 검출기 개선 + 정답 평가** (D의 정답으로) | 아래 '새 일 E' | 진행 중 (b87e294): label-seeded 48/59; model-only 2D checked-tip 8/59, confirmed pair 1. 02:58 행 x 매칭 민감도: 바닥 외삽에서 Q3/Q4 각 2쌍 누락, root/tip 높이에서는 후보 순서 짝 전부 8mm 이내. 번호 대응·visible-pair GT 미확정이라 규칙/80% gate는 미변경. 상세 LOG 02:40·02:58. |
+| E | **핀 검출기 개선 + 정답 평가** (D의 정답으로) | 아래 '새 일 E' | 진행 중(진단 6cb379f): label-seeded 48/59(조건부); model-only accepted-tip hit 8/59 at 5 px. Q1 residual miss branch telemetry exposed; no gate relaxed. Exhaustive visible-pin GT/row-number mapping is missing, so formal precision/recall/80% gate and production targeting remain unvalidated. LOG 03:29·03:33. |
 | F | marker 5/2.5 cm 비교 | 보스가 작은 마커를 붙이면 `basket_stats`로 같은 조건 측정 | 대기(보스) |
 | AF | **실물 접시 앉음 높이·기울기 측정 절차** | 보스가 Q1~Q4에 손으로 놓고 기록할 1장 절차·표, 로봇 명령 없음 | 완료(dce780d; 38/38 시험, LOG 기록) |
 | AG | **Q1 손 안 접시 퍼짐 원인 오프라인 분석** | `replay_q1nt_l05.json`의 들기 직후 `in_hand`와 운반·재겨냥 후 `pre`를 FK 기준으로 비교; regrip 비인과 한계 구분 | 완료(66b9681; Q1 pre y std 9.94 mm, 정확 시점·regrip 인과는 미확정) |
