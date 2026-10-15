@@ -3564,6 +3564,12 @@
 - Supplementary E3 PPO only; not AO G0/BC G2 and not real-robot performance. G0 remains **11/18=61.1% <95%**, so G1/G2 remain blocked. CPU raw audit only; GPU/Isaac, robot/gripper, and source/data/checkpoint writes unused.
 - Documentation-only regression: `bash calibration/run.sh tests` **78/78 passed (34.875 s)**.
 
+## 2026-10-16 07:5x Codex — E3 eval_0045 raw audit
+- `rl/logs/basket/insert_rl_20261016_noseen_drfull_canon_e3/eval_0045.json/.npz`: **399/598=66.7%** seated-exact. JSON summary, NPZ exact, independent `seated && in_quadrant && landed==target`, and JSON in-quadrant/landed-target comparisons all match **598/598**; obs/action/bias finite.
+- Q1–Q4: **93/156, 91/146, 109/155, 106/141**. Eval40 and eval45 have identical obs/bias/quadrant/target; paired changes are 23 fail→pass and 31 pass→fail (net −8). The latest checkpoint falls below eval40 and the learning curve remains non-monotone on this fixed holdout.
+- Auxiliary PPO only, not AO G0/BC G2 or real-world performance. G0 remains 11/18=61.1% (<95%), so G1/G2 blocked. CPU read-only audit; no GPU/Isaac, robot/gripper, or source/data/checkpoint write.
+- Documentation-only regression: `bash calibration/run.sh tests` **78/78 passed (34.649 s)**.
+
 ## 2026-10-16 06:3x Claude — E3 최종 평가
 - E3 best(검증 0.671 @10) seed 15014 415, 실기 조건: **281/415 67.7%** [63.1, 72.0] (Q1 .54 / Q2 .75 / Q3 .76 / Q4 .67), 튜닝 방식 대비 짝 비교 102승 47패. E2(66.7%)와 차이는 잡음 범위. 실기 후보 = `rl/logs/basket/insert_final_eval_15014/e3_best.pt`.
 
