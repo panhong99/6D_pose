@@ -173,6 +173,12 @@ def plan_from_library(r,az,q,Tbc,plate_z=None):
     for i in candidates:
         with contextlib.redirect_stdout(io.StringIO()):
             plans.append(_library_plan_candidate(lib,int(i),r,az,q,checks,plate_z))
+    lo,hi=np.array(__import__('ros2_nodes').joint_limits_deg()).T   # (10/15 실기) controller J3 +-135: skip, don't alarm
+    for p in plans:
+        bad=[n for n,leg in p['legs'].items() if not ((np.array(leg['waypoints_deg'])>lo+3)&(np.array(leg['waypoints_deg'])<hi-3)).all()]
+        if bad:
+            p['accepted']=False
+            p['reasons']=list(p.get('reasons',[]))+[f'controller joint limit (3 deg margin) in {",".join(bad)}']
     valid=[p for p in plans if p['accepted']]
     def score(p):
         clearance=min(leg['min_clearance_straight_m'] for leg in p['legs'].values())
