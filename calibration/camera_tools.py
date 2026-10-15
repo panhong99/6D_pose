@@ -756,6 +756,7 @@ def _pin_match(img, context, p0, p1, Tcb, K, axis, search_mm=8.0, axis_y=None, s
             return fallback
     return dict(status=status, correction_mm=float(offsets[j]) if status == 'detected' else None,
                 candidate_mm=float(offsets[j]), ridge_score=round(score, 3), support=round(support, 3),
+                continuity_ratio=round(float(continuous[j]), 3),
                 visible_fraction=round(visibility[j], 3), model_uv=_pin_project(np.stack([p0, p1]), Tcb, K)[0].tolist(),
                 detected_uv=fitted.tolist())
 

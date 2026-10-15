@@ -518,13 +518,19 @@ class CameraPinTests(unittest.TestCase):
             r = self.match(self.fixture(dx))
             self.assertEqual(r['status'], 'detected')
             self.assertAlmostEqual(r['correction_mm'], dx, delta=0.5)
+            self.assertGreaterEqual(r['continuity_ratio'], 0.45)
+            self.assertLessEqual(r['continuity_ratio'], 1.0)
 
     def test_blank_floor_holes_not_pin(self):
         import cv2
         image = np.full((240, 320, 3), 230, np.uint8)
         for y in range(128, 176, 10):
             cv2.circle(image, (190, y), 2, (20, 20, 20), -1)
-        self.assertNotEqual(self.match(image)['status'], 'detected')
+        result = self.match(image)
+        self.assertNotEqual(result['status'], 'detected')
+        self.assertIn('continuity_ratio', result)
+        self.assertGreaterEqual(result['continuity_ratio'], 0.0)
+        self.assertLessEqual(result['continuity_ratio'], 1.0)
 
     def test_pin_continuity_bridges_only_short_internal_crossings(self):
         import camera_tools as camera
