@@ -635,11 +635,31 @@ def _pin_longest_run(mask):
     return int((edges[1::2]-edges[::2]).max()) if len(edges) else 0
 
 
-def _pin_match(img, context, p0, p1, Tcb, K, axis, search_mm=8.0):
+def _solve_pin_pixel_offset(delta_px, jacobian_px_per_mm, search_mm, max_residual_px=12.0):
+    """Solve a local basket x/y tip offset from pixels; return None if ill-conditioned/out of bounds."""
+    J = np.asarray(jacobian_px_per_mm, float)
+    delta = np.asarray(delta_px, float)
+    if J.shape != (2, 2) or delta.shape != (2,) or not np.isfinite(J).all() or not np.isfinite(delta).all():
+        return None
+    if np.linalg.cond(J) > 40:
+        return None
+    correction = np.linalg.solve(J, delta)
+    residual = delta - J @ correction
+    if np.any(np.abs(correction) >= search_mm) or np.linalg.norm(residual) > max_residual_px:
+        return None
+    return correction, residual
+
+
+def _pin_match(img, context, p0, p1, Tcb, K, axis, search_mm=8.0, axis_y=None, search_radius_px=19):
     """Local dark-wire ridge fit. No depth estimate from a guessed plate plane; offsets translate the 3D pin.
     Evaluate only the exposed upper tine, away from floor mesh and rail. Reject plate/marker occlusion and weak fits."""
     gray, excluded, lines = context
     h, w = gray.shape
+    # A 2-D fit must use the image-line endpoint to resolve both basket axes together.
+    # The stripe scan below intentionally remains the legacy one-axis implementation.
+    if axis_y is not None:
+        return _pin_line_match(context, p0, p1, Tcb, K, axis, search_mm,
+                               axis_y=axis_y, search_radius_px=search_radius_px)
     t = np.linspace(0.53, 0.98, 40)
     points = p0[None]+t[:, None]*(p1-p0)[None]
     model, depth = _pin_project(points, Tcb, K)
@@ -701,7 +721,7 @@ def _pin_match(img, context, p0, p1, Tcb, K, axis, search_mm=8.0):
                 detected_uv=fitted.tolist())
 
 
-def _pin_line_match(context, p0, p1, Tcb, K, axis, search_mm):
+def _pin_line_match(context, p0, p1, Tcb, K, axis, search_mm, axis_y=None, search_radius_px=19):
     """Hough fallback for small errors transverse to the x-only model fit. Report unresolved pixel residual explicitly."""
     gray, excluded, lines = context
     uv, depth = _pin_project(np.stack([p0+(p1-p0)*0.53, p1]), Tcb, K)
@@ -709,9 +729,15 @@ def _pin_line_match(context, p0, p1, Tcb, K, axis, search_mm):
     length = np.linalg.norm(tangent)
     direction = tangent/length
     normal = np.array([-direction[1], direction[0]])
-    J = (_pin_project(p1[None]+axis[None]*0.001, Tcb, K)[0][0]-uv[1])
-    if np.linalg.norm(J) < 0.3:
+    Jx = _pin_project(p1[None]+axis[None]*0.001, Tcb, K)[0][0]-uv[1]
+    if np.linalg.norm(Jx) < 0.3:
         return None
+    J = Jx
+    if axis_y is not None:
+        Jy = _pin_project(p1[None]+np.asarray(axis_y)[None]*0.001, Tcb, K)[0][0]-uv[1]
+        J = np.column_stack([Jx, Jy])
+        if not np.isfinite(J).all() or np.linalg.cond(J) > 40:
+            return None
     candidates = []
     h, w = gray.shape
     for line in lines:
@@ -720,7 +746,7 @@ def _pin_line_match(context, p0, p1, Tcb, K, axis, search_mm):
         if L < 0.55*length or L > 2.5*length or abs(np.dot(d/L, direction)) < 0.90:
             continue
         tip = a if np.linalg.norm(a-uv[1]) < np.linalg.norm(b-uv[1]) else b
-        if np.linalg.norm(tip-uv[1]) > 19:
+        if np.linalg.norm(tip-uv[1]) > search_radius_px:
             continue
         t = np.linspace(0.12, 0.9, 24)
         coords = a[None]+t[:, None]*d
@@ -746,23 +772,217 @@ def _pin_line_match(context, p0, p1, Tcb, K, axis, search_mm):
         if _pin_longest_run(ridge_mask)/len(ridge_mask) < 0.45:
             continue
         delta = best[2]-uv[1]
-        dx = float(np.dot(delta, J)/np.dot(J, J))
-        residual = delta-J*dx
-        if abs(dx) >= search_mm or np.linalg.norm(residual) > 12:
+        if axis_y is None:
+            correction = np.array([float(np.dot(delta, J)/np.dot(J, J))])
+            residual = delta-J*correction[0]
+        else:
+            solved = _solve_pin_pixel_offset(delta, J, search_mm)
+            if solved is None:
+                continue
+            correction, residual = solved
+        if axis_y is None and (np.any(np.abs(correction) >= search_mm) or np.linalg.norm(residual) > 12):
             continue
-        candidates.append((float(best[0]), float(best[1]), dx, residual, best[2]))
+        candidates.append((float(best[0]), float(best[1]), correction, residual, best[2]))
     if not candidates:
         return None
     candidates.sort(key=lambda c: -c[0])
     best = candidates[0]
-    if any(c[0] > best[0]-3 and abs(c[2]-best[2]) > 3 for c in candidates[1:]):
+    if any(c[0] > best[0]-3 and np.linalg.norm(c[2]-best[2]) > 3 for c in candidates[1:]):
         return None
     base_uv = _pin_project(np.stack([p0, p1]), Tcb, K)[0]
     corrected = base_uv+(best[4]-base_uv[1])[None]
-    return dict(status='detected', method='hough_ridge', correction_mm=round(best[2], 3), candidate_mm=round(best[2], 3),
+    result = dict(status='detected', method='hough_ridge', correction_mm=round(float(best[2][0]), 3), candidate_mm=round(float(best[2][0]), 3),
                 ridge_score=round(best[0], 3), support=round(best[1], 3), visible_fraction=1.0,
                 transverse_residual_px=round(float(np.linalg.norm(best[3])), 3),
                 model_uv=base_uv.tolist(), detected_uv=corrected.tolist())
+    if axis_y is not None:
+        result['correction_xy_mm'] = np.round(best[2], 3).tolist()
+    return result
+
+
+def _gap_xy_offset(model_xy, detections):
+    """Return measured-minus-model gap offset; x needs both bracket tines in each row, y needs both rows."""
+    model_xy = np.asarray(model_xy, float)
+    by_row = {}
+    for item in detections:
+        if item.get('status') != 'detected' or 'correction_xy_mm' not in item:
+            continue
+        by_row.setdefault(item['row'], []).append(item)
+    row_centres = {}
+    for row, items in by_row.items():
+        edges = {item['edge'] for item in items}
+        if not items:
+            continue
+        offsets = np.asarray([item['correction_xy_mm'] for item in items], float) / 1000.0
+        local = np.asarray([item['model_local_xy_m'] for item in items], float) + offsets
+        row_centres[row] = dict(xy=np.mean(local, axis=0).tolist(), edges=sorted(edges), count=len(items))
+    if len(row_centres) < 2:
+        return dict(status='insufficient_rows', measured_xy_m=None, measured_minus_model_mm=None,
+                    x_mm=None, y_mm=None, row_centres=row_centres)
+    centre_xy = np.mean([v['xy'] for v in row_centres.values()], axis=0)
+    rows_complete = all({'low_x', 'high_x'} <= set(v['edges']) for v in row_centres.values())
+    return dict(status='detected' if rows_complete else 'partial', measured_xy_m=centre_xy.tolist(),
+                measured_minus_model_mm=np.round((centre_xy-model_xy)*1000, 3).tolist(),
+                x_mm=round(float((centre_xy[0]-model_xy[0])*1000), 3) if rows_complete else None,
+                y_mm=round(float((centre_xy[1]-model_xy[1])*1000), 3), row_centres=row_centres)
+
+
+def _checked_gap_root_offset(audit_path, quadrant, pin):
+    """Use previously human-checked 3-D tine roots; this is a separate geometry prior, not photo detection."""
+    audit_path = Path(audit_path)
+    if not audit_path.is_file():
+        return dict(status='missing_checked_layout', source=str(audit_path))
+    audit = json.loads(audit_path.read_text())
+    by_row = {}
+    for item in audit.get('pins', []):
+        if item.get('quadrant') != quadrant or item.get('visibility') != 'complete':
+            continue
+        by_row.setdefault(item['image_row'], {})[int(item['number'])] = item
+    row_centres = {}
+    for row, pins in by_row.items():
+        if pin not in pins or pin+1 not in pins:
+            continue
+        pair = (pins[pin], pins[pin+1])
+        actual = np.mean([np.asarray(v['root_basket_xyz_mm'], float)[:2] for v in pair], axis=0)
+        model = np.mean([[float(v['root_model_x_mm']), float(v['model_row_y_mm'])] for v in pair], axis=0)
+        row_centres[row] = dict(actual_xy_mm=actual.tolist(), model_xy_mm=model.tolist(),
+                                measured_minus_model_mm=(actual-model).tolist(),
+                                source_pin_numbers=[pin, pin+1])
+    if len(row_centres) < 2:
+        return dict(status='insufficient_checked_rows', source=str(audit_path), row_centres=row_centres)
+    actual = np.mean([v['actual_xy_mm'] for v in row_centres.values()], axis=0)
+    model = np.mean([v['model_xy_mm'] for v in row_centres.values()], axis=0)
+    actual_z = float(np.mean([np.mean([audit_pin['root_basket_xyz_mm'][2] for audit_pin in
+                                      (by_row[row][pin], by_row[row][pin+1])]) for row in row_centres]))
+    return dict(status='measured_prior', source=str(audit_path.resolve()), rows=len(row_centres),
+                visible_checked_tines=2*len(row_centres), actual_gap_root_centre_basket_xy_mm=actual.tolist(),
+                model_gap_root_centre_basket_xy_mm=model.tolist(),
+                root_z_basket_mm=actual_z,
+                measured_minus_model_xy_mm=np.round(actual-model, 3).tolist(), row_centres=row_centres,
+                provenance='mean of the human-checked rail-root coordinates for adjacent tine numbers pin,pin+1 in both basket rows; not detected in this current wrist photo')
+
+
+def wrist_gap_error(meta_path, out, quadrant=None, pin=None, search_mm=35.0, layout_audit=None):
+    """Offline-only 2D model-vs-visible-tine gap measurement from one saved wrist-above photo."""
+    meta_path, out = Path(meta_path), Path(out)
+    meta = json.loads(meta_path.read_text())
+    raw_path = meta_path.with_name(meta_path.name.replace('.json', '.raw.png'))
+    if not raw_path.is_file():
+        raise FileNotFoundError(raw_path)
+    run_dir = meta_path.parent
+    states = run_dir/'robot_state.jsonl'
+    done = None
+    if states.is_file():
+        import json as _json
+        for line in states.read_text().splitlines():
+            try:
+                event = _json.loads(line)
+            except ValueError:
+                continue
+            if event.get('kind') == 'event' and event.get('event') == 'done' and event.get('insert') == 'quadrant':
+                done = event
+    quadrant = quadrant or (done or {}).get('quadrant')
+    pin = int(pin if pin is not None else (done or {}).get('pin', 0))
+    if quadrant not in ('Q1', 'Q2', 'Q3', 'Q4') or pin < 1:
+        raise ValueError('need a saved quadrant-insert completion or explicit --quadrant and --pin')
+    img = cv2.imread(str(raw_path))
+    if img is None:
+        raise FileNotFoundError(raw_path)
+    Tbb = np.asarray(meta['T_base_basket'], float)
+    Tbc = np.asarray(meta['T_base_flange'], float) @ np.asarray(meta['T_flange_cam'], float)
+    K = np.asarray(meta['K'], float)
+    if Tbb.shape != (4, 4) or Tbc.shape != (4, 4) or K.shape != (3, 3) or not all(
+            np.isfinite(v).all() for v in (Tbb, Tbc, K)):
+        raise ValueError('saved T_base_basket, flange/camera transforms and K are required')
+    from plate_plans import basket_gaps, pin_gap, robot_quadrants
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]/'rl'))
+    import basket_env as be
+    model_qd = robot_quadrants(Tbb)[quadrant]
+    gap_index = int(pin_gap(Tbb, model_qd, pin))
+    model_gap = np.asarray(basket_gaps()[model_qd][gap_index], float)
+    if search_mm <= 0 or search_mm > 50:
+        raise ValueError('search_mm must be within (0, 50]')
+    # Select the four model tines bracketing this numbered slot: two x-adjacent tips on each of its two y rows.
+    geometry = basket_pins_in_base(Tbb)
+    Tbi = np.linalg.inv(Tbb)
+    pair_y = be.B['full']['pair_centres_y'][0 if model_qd in ('Q2', 'Q3') else 1]
+    local_pins = []
+    for p0, p1 in geometry:
+        local = (Tbi @ np.r_[p0, 1.0])[:3]
+        is_far = model_qd in ('Q1', 'Q2')
+        if ((local[0] > be.B['full'].get('clip_x', 0.0)) == is_far
+                and abs(local[1] - pair_y) < 0.06):
+            local_pins.append((local, p0, p1))
+    xvals = sorted({round(float(v[0][0]), 6) for v in local_pins})
+    if gap_index + 1 >= len(xvals):
+        raise ValueError(f'{model_qd} slot index {gap_index} has no two model tine boundaries')
+    x_edges = (xvals[gap_index], xvals[gap_index+1])
+    row_ys = [float(pair_y+dy) for dy in be.B['pins']['rows_u']]
+    axis_x, axis_y = Tbb[:3, 0], Tbb[:3, 1]
+    Tcb = np.linalg.inv(Tbc)
+    context = _pin_image_context(img, load_config())
+    detections = []
+    for row_id, y in enumerate(row_ys):
+        for edge, x in zip(('low_x', 'high_x'), x_edges):
+            local, p0, p1 = min(local_pins, key=lambda v: abs(v[0][0]-x)+abs(v[0][1]-y))
+            if abs(local[0]-x) > 0.002 or abs(local[1]-y) > 0.002:
+                raise ValueError('could not associate model tine with one of four target-gap corners')
+            match = _pin_match(img, context, p0, p1, Tcb, K, axis_x, search_mm=search_mm,
+                               axis_y=axis_y, search_radius_px=70)
+            model_tip_uv = _pin_project(np.asarray([p1]), Tcb, K)[0][0]
+            detection = dict(match or {})
+            detection.update(row=f'row_{row_id}', edge=edge, model_local_xy_m=local[:2].tolist(),
+                             model_tip_uv=model_tip_uv.tolist(),
+                             status='unseen' if match is None else match['status'])
+            detections.append(detection)
+    offset = _gap_xy_offset(model_gap[:2], detections)
+    if layout_audit is None:
+        layout_audit = Path(__file__).resolve().parent/'data/basket/realQ_verified_3d_model_audit_20261014_v5/verified_pin_3d_model_comparison.json'
+    checked_prior = _checked_gap_root_offset(layout_audit, quadrant, pin)
+    view = img.copy()
+    model_world = (Tbb @ np.r_[model_gap[:2], np.mean([be.B['full']['floor_z']+be.B['pins']['height'] for _ in row_ys]), 1.0])[:3]
+    model_uv = _pin_project(model_world[None], Tcb, K)[0][0]
+    for item in detections:
+        p = tuple(np.rint(item['model_tip_uv']).astype(int))
+        colour = (0, 180, 255) if item['status'] == 'detected' else (120, 120, 120)
+        cv2.circle(view, p, 6, colour, 2)
+        if item['status'] == 'detected':
+            q = tuple(np.rint(item['detected_uv'][1]).astype(int))
+            cv2.arrowedLine(view, p, q, (30, 220, 40), 2, tipLength=.25)
+            cv2.putText(view, f"{item['row']} {item['edge']} {item['correction_xy_mm'][0]:+.1f},{item['correction_xy_mm'][1]:+.1f}mm",
+                        (p[0]+5, p[1]-4), cv2.FONT_HERSHEY_SIMPLEX, .42, (30, 220, 40), 1, cv2.LINE_AA)
+    mc = tuple(np.rint(model_uv).astype(int))
+    cv2.drawMarker(view, mc, (255, 80, 0), cv2.MARKER_CROSS, 22, 2)
+    if checked_prior['status'] == 'measured_prior':
+        root_z = checked_prior['root_z_basket_mm']/1000.0
+        prior_model = np.r_[np.asarray(checked_prior['model_gap_root_centre_basket_xy_mm'])/1000.0, root_z]
+        prior_actual = np.r_[np.asarray(checked_prior['actual_gap_root_centre_basket_xy_mm'])/1000.0, root_z]
+        prior_uv, _ = _pin_project((Tbb @ np.c_[np.stack([prior_model, prior_actual]), np.ones(2)].T).T[:, :3], Tcb, K)
+        pm, pa = [tuple(np.rint(v).astype(int)) for v in prior_uv]
+        cv2.drawMarker(view, pm, (255, 80, 0), cv2.MARKER_CROSS, 18, 2)
+        cv2.drawMarker(view, pa, (255, 0, 255), cv2.MARKER_DIAMOND, 16, 2)
+        cv2.arrowedLine(view, pm, pa, (255, 0, 255), 2, tipLength=.25)
+        cv2.putText(view, f'checked 3D roots pin {pin}: dx/dy '
+                    f'{checked_prior["measured_minus_model_xy_mm"][0]:+.1f}/'
+                    f'{checked_prior["measured_minus_model_xy_mm"][1]:+.1f} mm',
+                    (12, 52), cv2.FONT_HERSHEY_SIMPLEX, .55, (255, 0, 255), 2, cv2.LINE_AA)
+    candidate_count = sum(v['status'] == 'detected' for v in detections)
+    text = f'{quadrant} pin {pin} -> {model_qd}, photo candidates {candidate_count}/4 (unverified); '
+    text += (f'delta slot xy {offset["x_mm"]},{offset["y_mm"]} mm' if offset['status'] == 'detected'
+             else f'delta status {offset["status"]}; partial y={offset["y_mm"]} mm')
+    cv2.putText(view, text, (12, 26), cv2.FONT_HERSHEY_SIMPLEX, .65, (0, 255, 255), 2, cv2.LINE_AA)
+    result = dict(source=str(meta_path.resolve()), image=str(raw_path.resolve()),
+                  commanded_quadrant=quadrant, commanded_pin=pin, model_quadrant=model_qd,
+                  model_gap_index_robot_to_far=gap_index, model_gap_centre_basket_xy_m=model_gap[:2].tolist(),
+                  frame='basket/slot aligned: x along tine row, y transverse across rows; positive delta = physical minus model',
+                  photo_candidate_matches=candidate_count, photo_candidate_count=4, photo_visible_tines_verified=None,
+                  detection_confidence='unverified: no current-photo ground-truth labels; Hough candidates may be adjacent wires or rails',
+                  detections=detections, photo_measurement=offset, checked_3d_layout_prior=checked_prior,
+                  accuracy_note='Photo detections are unlabelled Hough candidates and are not accuracy evidence. The separate checked_3d_layout_prior uses earlier human-checked roots, assumes the same basket geometry, and is not a current-photo verification. Marker pose, hand-eye, height and basket differences remain uncertainty. Diagnostic only; no command correction.')
+    out.mkdir(parents=True, exist_ok=False)
+    cv2.imwrite(str(out/'gap_error.png'), view)
+    (out/'gap_error.json').write_text(json.dumps(result, indent=2))
+    return result
 
 
 def _gap_number_candidate(Tbb, quadrant, x_m, gaps=None):
@@ -1500,7 +1720,7 @@ def plate_angle(req, out, radius_m=0.134):
 if __name__ == '__main__':
     cfg = load_config()
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument('mode', choices=('preview', 'marker', 'probe', 'locate', 'basket', 'wrist_look', 'pre_photo', 'pins', 'basket_stats', 'pin_layout', 'plate_angle', 'plate_plane', 'model_overlay', 'slot_targets'))
+    p.add_argument('mode', choices=('preview', 'marker', 'probe', 'locate', 'basket', 'wrist_look', 'pre_photo', 'pins', 'basket_stats', 'pin_layout', 'plate_angle', 'plate_plane', 'model_overlay', 'slot_targets', 'gap_error'))
     p.add_argument('--define', action='store_true', help='basket: define the basket frame / marker layout now')
     p.add_argument('--define_current', action='store_true', help='basket: marker layout in today\'s known basket frame (10/12)')
     p.add_argument('--golden', default=None, help='basket --define: also store this full teaching\'s slot in the basket frame')
@@ -1515,6 +1735,10 @@ if __name__ == '__main__':
     p.add_argument('--out', type=Path, help='pins / basket_stats: new output directory')
     p.add_argument('--labels', type=Path, help='pin_layout: checked pin root/tip pixel labels JSON')
     p.add_argument('--layout', type=Path, help='pins: measured pin layout JSON, offline diagnostic only')
+    p.add_argument('--quadrant', choices=('Q1', 'Q2', 'Q3', 'Q4'), help='gap_error: commanded robot quadrant override')
+    p.add_argument('--pin', type=int, help='gap_error: commanded pin number override')
+    p.add_argument('--gap_search_mm', type=float, default=35.0,
+                   help='gap_error: local 2-D projected tip search radius in basket x/y, millimetres')
     p.add_argument('--plate_radius_m', type=float, default=0.134, help='plate_angle: assumed dish outer radius')
     p.add_argument('--rgb', type=Path, help='plate_plane: saved BGR/RGB image readable by OpenCV')
     p.add_argument('--depth', type=Path, help='plate_plane: colour-aligned depth in metres as .npy')
@@ -1551,6 +1775,15 @@ if __name__ == '__main__':
         if not a.req or not a.out:
             p.error('plate_angle requires --req and --out')
         plate_angle(a.req, a.out, a.plate_radius_m)
+    elif a.mode == 'gap_error':
+        if not a.req or not a.out:
+            p.error('gap_error requires --req wrist_above.json and --out <new directory>')
+        result = wrist_gap_error(a.req, a.out, a.quadrant, a.pin, a.gap_search_mm)
+        print(json.dumps(dict(out=str(a.out), quadrant=result['commanded_quadrant'], pin=result['commanded_pin'],
+                              photo_candidate_matches=result['photo_candidate_matches'],
+                              photo_measurement=result['photo_measurement'],
+                              checked_3d_layout_prior=result['checked_3d_layout_prior']),
+                         ensure_ascii=False))
     elif a.mode == 'model_overlay':
         model_overlay(a.req, a.out)
     elif a.mode == 'slot_targets':

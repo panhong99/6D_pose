@@ -464,6 +464,65 @@ class CameraPinTests(unittest.TestCase):
         self.assertEqual(r['status'], 'occluded')
         self.assertIsNone(r['correction_mm'])
 
+    def test_projected_2d_tine_offset_solver_and_singularity_guard(self):
+        import camera_tools as camera
+        J = np.array([[3.2, -0.7], [0.4, 2.6]])
+        expected = np.array([6.0, -4.0])
+        solved = camera._solve_pin_pixel_offset(J @ expected, J, 35.0)
+        np.testing.assert_allclose(solved[0], expected, atol=1e-10)
+        self.assertIsNone(camera._solve_pin_pixel_offset(np.array([100., 100.]), J, 35.0))
+        self.assertIsNone(camera._solve_pin_pixel_offset(np.array([1., 1.]), np.array([[1., 1.], [1., 1.00001]]), 35.0))
+
+    def test_2d_hough_match_recovers_synthetic_xy_shift(self):
+        import cv2
+        import camera_tools as camera
+        K = np.array([[1500., 0, 320], [0, 1500., 240], [0, 0, 1.]])
+        Tcb = np.eye(4)
+        p0, p1 = np.array([.06, -.04, 1.]), np.array([.06, .06, 1.])
+        axis_x, axis_y = np.array([1., 0, 0]), np.array([0., 1, 0])
+        expected = np.array([6., -4.])
+        image = np.full((480, 640, 3), 230, np.uint8)
+        moved = np.stack([p0, p1]) + axis_x[None]*expected[0]/1000 + axis_y[None]*expected[1]/1000
+        uv, _ = camera._pin_project(moved, Tcb, K)
+        cv2.line(image, tuple(np.rint(uv[0]).astype(int)), tuple(np.rint(uv[1]).astype(int)), (30, 30, 30), 3)
+        result = camera._pin_match(image, camera._pin_image_context(image, camera.load_config()),
+                                   p0, p1, Tcb, K, axis_x, search_mm=15, axis_y=axis_y,
+                                   search_radius_px=30)
+        self.assertEqual(result['status'], 'detected')
+        np.testing.assert_allclose(result['correction_xy_mm'], expected, atol=2.)
+
+    def test_gap_xy_offset_requires_both_edges_for_x(self):
+        import camera_tools as camera
+        detections = []
+        for row, y, y_offset in (('a', -.0475, 4.), ('b', .0475, 4.)):
+            for edge, x, x_offset in (('low_x', .10, 2.), ('high_x', .12, 2.)):
+                detections.append(dict(status='detected', correction_xy_mm=[x_offset, y_offset], row=row,
+                                       edge=edge, model_local_xy_m=[x, y]))
+        full = camera._gap_xy_offset([.11, 0.], detections)
+        self.assertEqual(full['status'], 'detected')
+        self.assertAlmostEqual(full['x_mm'], 2.)
+        self.assertAlmostEqual(full['y_mm'], 4.)
+        partial = camera._gap_xy_offset([.11, 0.], detections[:-1])
+        self.assertEqual(partial['status'], 'partial')
+        self.assertIsNone(partial['x_mm'])
+        self.assertAlmostEqual(partial['y_mm'], 4.)
+
+    def test_checked_layout_gap_prior_uses_both_checked_rows(self):
+        import camera_tools as camera
+        entries = []
+        for row, y, dy in (('a', 10., -8.), ('b', 30., 6.)):
+            for number, x, dx in ((4, 100., 2.), (5, 118., 4.)):
+                entries.append(dict(quadrant='Q2', image_row=row, number=number, visibility='complete',
+                                    root_basket_xyz_mm=[x+dx, y+dy, -95.], root_model_x_mm=x,
+                                    model_row_y_mm=y))
+        with tempfile.TemporaryDirectory() as tmp:
+            audit = Path(tmp)/'audit.json'
+            audit.write_text(json.dumps(dict(pins=entries)))
+            result = camera._checked_gap_root_offset(audit, 'Q2', 4)
+        self.assertEqual(result['status'], 'measured_prior')
+        np.testing.assert_allclose(result['measured_minus_model_xy_mm'], [3., -1.])
+        self.assertEqual(result['visible_checked_tines'], 4)
+
     def test_label_ray_intersection_recovers_known_pin_points(self):
         Tbb = np.eye(4)
         Tbb[:3, 3] = [.8, .15, .14]
