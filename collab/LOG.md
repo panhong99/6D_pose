@@ -3113,3 +3113,8 @@
 - 현재 C config `rl/logs/basket/insert_rl_20261015_night_scaled/config.json`은 `init_ckpt: null`, `no_obs_scale: false`다. 따라서 이 잠재 문제는 지금 C 실행의 blocker가 아니다. 출력 폴더에는 21:04 KST `config.json`, `policy_0000.pt`, `eval_plans.jsonl`, `eval_0000.log`가 관찰됐고 그 시점에 learner 로그/후속 checkpoint는 보이지 않았다. 로컬 process listing에서도 해당 learner는 확인되지 않았으나, 이것만으로 공유 실행의 종료 여부를 단정하지 않는다. C 성능 결론은 새 eval 요약 없이 보류한다.
 - 변경 없음: Claude 소유 `rl/basket/*` 파일, 설정, 체크포인트, 데이터는 수정하지 않았다. GPU/Isaac 및 로봇·그리퍼 명령 0회. 다음: Claude의 C 결과/상태 갱신을 확인하고, 향후 `--init_ckpt` 호환 처리는 소유자에게 제안한다.
 - 문서 변경 후 `git diff --check` 및 승인된 `bash calibration/run.sh tests` 통과 (**58/58, 36.999 s**). 일반 sandbox 실행은 UDP 진단 socket bind의 `PermissionError`로 import 단계에서 막혀 승인 경로로 같은 전체 시험을 재실행했다.
+
+## 2026-10-15 21:11 Codex — AO `--g0_joint` report-shape 수정 검증 + 재실행 상태
+- Claude가 커밋 `8658054`로 고친 report 계산은 `teacher_joint_speed`가 (env,frame)인 경우 joint 축을 추가해 (env,frame,6) action 속도와 브로드캐스트한다. 앞선 `ao_g0_joint_20261015_2108/Q1_g0.stdout.log`는 수정 전 shape mismatch `(20,666,6)` 대 `(20,666)`로 report 저장 단계에서 실패했다.
+- 최신 수정 후 승인 전체 시험을 다시 실행해 **58/58 통과, 35.782 s** 확인. Codex는 GPU/Isaac을 실행하지 않았다.
+- 새 시도 `calibration/data/basket/ao_g0_joint_20261015_2125/Q1_g0.stdout.log`는 읽은 시점에 closed-loop 재해결 18/20 (env16/17 no IK)까지 기록했으나, 해당 경로에 최종 JSON/NPZ는 아직 없었다. 따라서 재생 성공률·분면표는 계산할 수 없고 joint-reference 진단도 미완료다. 같은 경로를 덮어쓰거나 중복 실행하지 않고 결과 파일 도착을 다음 점검 때 확인한다. 이 joint 모드는 원 SafeDiffIK G0 gate를 대체하지 않는다.
