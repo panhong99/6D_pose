@@ -3118,3 +3118,10 @@
 - Claude가 커밋 `8658054`로 고친 report 계산은 `teacher_joint_speed`가 (env,frame)인 경우 joint 축을 추가해 (env,frame,6) action 속도와 브로드캐스트한다. 앞선 `ao_g0_joint_20261015_2108/Q1_g0.stdout.log`는 수정 전 shape mismatch `(20,666,6)` 대 `(20,666)`로 report 저장 단계에서 실패했다.
 - 최신 수정 후 승인 전체 시험을 다시 실행해 **58/58 통과, 35.782 s** 확인. Codex는 GPU/Isaac을 실행하지 않았다.
 - 새 시도 `calibration/data/basket/ao_g0_joint_20261015_2125/Q1_g0.stdout.log`는 읽은 시점에 closed-loop 재해결 18/20 (env16/17 no IK)까지 기록했으나, 해당 경로에 최종 JSON/NPZ는 아직 없었다. 따라서 재생 성공률·분면표는 계산할 수 없고 joint-reference 진단도 미완료다. 같은 경로를 덮어쓰거나 중복 실행하지 않고 결과 파일 도착을 다음 점검 때 확인한다. 이 joint 모드는 원 SafeDiffIK G0 gate를 대체하지 않는다.
+
+## 2026-10-15 21:13 Codex — joint-reference Q1 raw-result 재집계 (CPU)
+- `calibration/data/basket/ao_g0_joint_20261015_2125/Q1_g0.{json,npz}` 독립 대조: JSON episode 20개와 NPZ 원시 `teacher_success`/`student_success` seated_exact mask **20/20 일치**. 선생님 18/20, 재생은 선생님 성공 중 **10/18 = 55.56%**; Q1 10/18, Q2–Q4 분모 0이라 평가되지 않았다. 재현 실패 env는 0,1,11,12,13,14,18,19. 이는 same-start joint-PD teacher-reference **진단**일 뿐 AO SafeDiffIK G0나 BC gate 점수가 아니다. 원 SafeDiffIK 결과는 여전히 11/18=61.11% (<95%)라 G1/G2 금지.
+- 전체 20×666 step에서 JSON clipped count는 8,378/13,320 (62.90%), shield block 3,116/13,320, 첫 open frame은 전 env 620. NPZ action delta를 상한÷30과 직접 대조하면 최대 비율 1.0 (초과 frame 0), 원시 cap 준수는 확인됐다. JSON의 commanded-target 비율 1.0002136은 float32 target 재구성 수준의 작은 반올림 초과다.
+- **원시 진단 배열 불일치:** JSON/helper clipping count 8,378과 NPZ `joint_action_clipped` 합 7,840이 다르다. 원인 후보는 저장 mask 계산이 teacher target의 연속 차분과 action을 비교하지만, action은 이전 *commanded* target에서 다음 teacher target까지 계산되기 때문. 독립 재구성(이전 `replay_joint_target`→다음 `teacher_joint_target`, 첫 시작은 첫 replay target−첫 action)에서 8,378 frame으로 JSON과 일치. Claude 소유 `expert.py`를 수정하지 않았고, NPZ mask 사용 전 이 mismatch를 바로잡고 회귀시험해야 한다.
+- 재생 오차 중앙값(episode별 p95의 중앙값): TCP 위치 9.98 mm, 회전 0.77°. 이 값도 10/18 재생 실패와 함께 진단으로만 보고한다. grasp-maintained proxy는 teacher/student 성공 episode에서 0으로 기록됐으나, 이 proxy는 이전 결정상 gate 외 진단이며 sim 적합성이 검증되지 않았다.
+- 결과 데이터는 보존·읽기 전용. 전체 시험 58/58 통과(§21:11, `8658054` 이후); GPU/Isaac, 코드·데이터 수정, 로봇·그리퍼 명령 없음.
