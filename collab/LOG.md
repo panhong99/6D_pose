@@ -3478,3 +3478,7 @@
 - E2(실기 이식용: 틈 가림 + 전체 랜덤화 + canon): 평가 0: 0.639 → 5: 0.652 → 10: 0.666 → 15: 0.637. 64~67% 대에서 진동(같은 조건 튜닝 방식 0.528).
 - Codex: 실기 `--insert_policy` 연결(047dc3e) — sim 함수 그대로 호출해 관측 동일, 보정 부호 sim과 대조 일치, opt-in(`--sim_q --execute` 분면 넣기에서만), 정책 실패 시 무보정 경로로 넘어가지 않고 정지. 전체 시험 78/78.
 - 다음: 06:00쯤 E2 best를 처음 보는 seed 15014(415)에서 전체 랜덤화 조건으로 튜닝 방식과 비교 → 08:30 보고.
+## 2026-10-16 03:49 Codex — E: 부분 GT와 모델 투영 검토 시트
+- Q1–Q4 원본 저장 사진에 보스 확인 59개 root-tip 라벨(노란 연결선, 주황 root, 초록 tip)을 그리고, 부분 라벨을 읽고 사후 기하 대응시킨 모델 tip과 ID(자홍)를 겹친 2×2 시트를 만들었다. 시트: `calibration/data/basket/wrist_look/pins_projection_residual_partialGT_20261016_v1/Q1_Q4_checked_vs_model_review_20261016_v1.png`; 생성 시 각 분면의 assignment 수는 **14, 5, 18, 22 (총 59)**, raw 사진 방향을 사용(Q2 표시 회전 보정 없음).
+- 이 시트는 잔차와 체크된 점의 위치를 빠르게 확대 검토하기 위한 시각화다. 모델 ID 대응이 라벨 기반이며 라벨도 부분 GT이므로 가시핀 전수 truth, 번호 정확성 또는 detector precision/recall을 입증하지 않는다. Exhaustive pin/pair 검토, E 공식 gate 및 생산 변경은 여전히 미완료/보류.
+- `cv2.imwrite` 성공과 2560×1520 출력 확인, 그림을 열어 시각 확인. 코드/기존 데이터 변경 없음; 생성 그림은 ignore된 data 경로에 있어 Git stage하지 않음. GPU/Isaac/로봇 미사용. 회귀 시험은 코드 변경이 없어 재실행하지 않음.
