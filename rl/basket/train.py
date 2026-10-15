@@ -550,10 +550,15 @@ def code_snapshot(out):
         arch = subprocess.run(['git', 'archive', 'HEAD', *files], cwd=ROOT, capture_output=True).stdout
         subprocess.run(['tar', '-x', '-C', str(snap)], input=arch, check=True)
         import shutil
-        for link in ('calibration', 'rl/assets', 'rl/logs'):
-            if (snap / link).exists():                      # git pathspecs also matched some files inside
-                shutil.rmtree(snap / link)
-            (snap / link).symlink_to(ROOT / link)
+        for d in ('rl/assets', 'rl/logs'):                  # data folders: git pathspecs also matched some files inside
+            if (snap / d).exists():
+                shutil.rmtree(snap / d)
+        for top in ROOT.iterdir():                          # everything outside rl/ (calibration, assets, IL, ...) = live
+            if top.name not in ('rl', '.git') and not (snap / top.name).exists():
+                (snap / top.name).symlink_to(top)
+        for sub in (ROOT / 'rl').iterdir():                 # rl/ data and anything not archived (assets, logs, ...)
+            if not (snap / 'rl' / sub.name).exists():
+                (snap / 'rl' / sub.name).symlink_to(sub)
         (snap / 'commit.txt').write_text(subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=ROOT, capture_output=True, text=True).stdout)
     return snap
 
