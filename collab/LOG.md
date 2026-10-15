@@ -3318,6 +3318,11 @@
 - 범위/한계: 59개는 네 원본 이미지의 부분 라벨이고 그 라벨에서 검색 위치를 역투영했으므로 같은 사진에 대한 in-sample 결과다. 이 시험으로 precision, exhaustive visible-pair recall, pin numbering, 새로운 camera pose에서의 일반화 또는 실제 gap-centre x/y 오차를 주장할 수 없다. 특히 Q1 50%로 quadrant 전부의 80% 조건도 통과하지 못함. 다음 단계는 miss-case 확대 시각검토 후 보수적 개선안 검증, 그리고 독립된 plate-free target view에 exhaustive 보임/가림·번호 GT 확보.
 - 코드 변경 없음; 분석에 쓴 detector는 `7e49b3a`, 그 전체 회귀시험은 73/73 통과 기록(01:42). 카메라·로봇·GPU 명령 없음.
 
+## 2026-10-16 01:55 Codex — E miss-case audit
+- 59개 GT line-localized JSON 결과를 label index별 실패 목록으로 확장했다(`pin_detector_eval_20261016_v1/summary.json` → `all_misses`). 미검출 13개: Q1 7, Q2 1, Q3 1, Q4 4.
+- Q1 6개와 Q4 2개의 `weak_line`은 저장된 ridge score ≥14와 support ≥0.55인데도 거부됐다. 현재 코드의 나머지 `weak_line` 기준인 longest-continuity <0.45가 원인 후보로 추론된다; 연속성 값을 직접 저장하지 않아 원인 확정은 아니다. 나머지는 Q1 support 부족 1, Q2 usable visibility 0.5인 1, Q3 support 0.525인 1, Q4 search-boundary 1·ambiguous 1이다.
+- 이 결과만으로 continuity threshold를 낮추지 않는다: 59개는 부분 GT이고 exhaustive negatives/precision이 없으며, Q1/Q4의 Hough 후보가 철망·레일과 혼동되는지 확대 육안 확인이 필요하다. 이 목록과 표시 PNG를 보스 검토용으로 준비; 코드 변화 없음.
+
 ## 2026-10-16 01:1x Claude — 30분 기록: 틈 검출 없을 때의 가치
 - C2 평가 25회차 **0.828**(Q1 .85 / Q2 .79 / Q3 .83 / Q4 .84, 최고). D3(전체 랜덤화) 0.759 @10.
 - C2 최고 정책을 **틈 오차 관측을 가리고**(`--cl_policy_noseen`, ca4c875) 같은 598개로 평가: **0.684**(Q1 .60 / Q2 .64 / Q3 .77 / Q4 .73). 기준(튜닝 방식) 0.554 → 틈 검출 없이 +13%p, 틈 검출(손목 카메라)까지 +14%p 더. 출력 `rl/logs/basket/insert_eval_noseen_20261016/`.
