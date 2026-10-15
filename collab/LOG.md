@@ -3467,6 +3467,13 @@
 - JSON 및 사진 위 모델/확인 tip 연결 그림: `calibration/data/basket/wrist_look/pins_projection_residual_partialGT_20261016_v1/summary.json`, `Q1..Q4_rootplane_assigned_projection.png`. Q3 그림을 열어 확인했다. 생성물은 data이며 git에 넣지 않음. 계산은 NumPy/SciPy/OpenCV CPU만 사용, 로봇·GPU·Isaac 및 코드 변경 없음. `summary.json` 파싱 및 `git diff --check` 통과; `bash calibration/run.sh tests` **78/78 통과(34.605 s)**. 첫 sandbox 실행은 local UDP bind `PermissionError`로 중단되어 승인된 로컬 테스트 재실행에서 통과했다.
 - E 다음: exhaustive visible-pin/pair labels와 분면-행·번호 연결이 필요하다. 제공 전에는 성능 임계값을 바꾸거나 공식 precision/recall/80% gate를 판정하지 않는다.
 
+## 2026-10-16 03:46 Codex — E: same-photo row-offset leave-one-pin-out 민감도
+- 직전 진단의 59개 post-hoc model↔label root 대응을 고정한 채, 각 물리적 row에서 평가 핀 한 개를 제외하고 나머지 checked roots의 basket-XY 오차 중앙값으로 상수 이동을 추정했다. 이 이동을 평가 핀 모델 root/tip 전체에 적용해 고정된 저장 카메라로 tip을 재투영했다. 대응 단계에 모든 라벨을 썼으므로 독립 데이터 시험은 아니며, 오프셋 추정만 한 핀씩 제외한 **same-photo sensitivity**다.
+- 투영 tip 오차 median/p90 (기본 → row-offset) Q1 **26.81/29.83 → 14.03/18.75 px**, Q2 **21.76/29.77 → 16.65/26.51**, Q3 **17.87/26.11 → 5.29/10.04**, Q4 **19.11/19.85 → 7.76/11.02**. 5px 이내는 기본 **0/59**, 보정 민감도 **Q1 0/14, Q2 0/5, Q3 9/18, Q4 0/22**. 오차는 평가 라벨을 직접 맞추도록 보정한 방법으로 감소했고, Q1/Q2/Q4는 5px hit가 없었다. 이를 검출 정확도나 보정의 OOS 효과로 부르지 않는다.
+- 추정된 이동은 row/사진에 따라 달랐다. `pair_A_row_minus` Q1 +3.12/−9.95 mm, Q1 `row_plus` +3.31/−7.33; Q3 `row_minus` −2.18/+16.73, `row_plus` +1.63/+5.75; Q4 `row_minus` −2.83/−8.36, `row_plus` −0.16/−5.73. (x,y) 모델에 적용할 basket-mm 이동. Q2의 단일 라벨 행은 −6.86/−5.28 mm. 이들이 실제 고정 바구니 보정인지 저장 pose·hand-eye·높이/라벨 편향인지 분리할 새 이미지·전수 GT가 없다.
+- JSON/그림: `calibration/data/basket/wrist_look/pins_row_offset_loocv_partialGT_20261016_v1/summary.json`, `Q1..Q4_loo_row_shift.png`. 전체 59개·PNG 4개 JSON/파일 존재 검증; 코드 변경 없음, thresholds/gate 불변. 로봇/GPU/Isaac 미사용. 이전 동일 코드의 full suite **78/78** 통과(03:42), 이번 결과는 CPU 오프라인 재투영.
+- 해석/다음: 반복 가능한 분면별 기하 보정 가설은 생겼지만 이 오프셋을 독립적인 새 사진/시야에서 적용해 확인할 수 없고, model-only 검색이 실제 빗살을 찾는지도 확인 불가. 생산 경로·모델 파일은 수정하지 않는다. exhaustive visible-pin/pair GT와 동일한 basket pose의 추가 저장사진이 필요하다.
+
 ## 2026-10-16 03:4x Claude — 30분 기록
 - E2(실기 이식용: 틈 가림 + 전체 랜덤화 + canon): 평가 0: 0.639 → 5: 0.652 → 10: 0.666 → 15: 0.637. 64~67% 대에서 진동(같은 조건 튜닝 방식 0.528).
 - Codex: 실기 `--insert_policy` 연결(047dc3e) — sim 함수 그대로 호출해 관측 동일, 보정 부호 sim과 대조 일치, opt-in(`--sim_q --execute` 분면 넣기에서만), 정책 실패 시 무보정 경로로 넘어가지 않고 정지. 전체 시험 78/78.
