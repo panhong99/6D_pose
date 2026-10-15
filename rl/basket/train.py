@@ -575,8 +575,12 @@ def insert_replay(plans, out_dir, tag, policy_path, seed, det, per_run, extra, c
     else:
         cmd = ['bash', str(ROOT / 'rl/basket/run_quadrant_final_20261015.sh'), io[1], io[3], *io[4:]]
     cmd += (['--cl_policy_det'] if det else []) + extra
-    with open(out_dir / f'{tag}.log', 'w') as log:
-        rc = subprocess.run(cmd, cwd=code or ROOT, stdout=log, stderr=subprocess.STDOUT).returncode
+    for attempt in range(3):                                # (10/15 23:4x) Isaac sometimes crashes at start-up (kit getenv
+        with open(out_dir / f'{tag}.log', 'w' if not attempt else 'a') as log:   # segfault, telemetry regex): retry
+            rc = subprocess.run(cmd, cwd=code or ROOT, stdout=log, stderr=subprocess.STDOUT).returncode
+        if rc == 0 and side.exists():
+            break
+        print(f'[insert_rl] replay {tag} failed (rc {rc}), attempt {attempt + 1}/3', flush=True)
     if rc != 0 or not side.exists():
         raise RuntimeError(f'replay {tag} failed (rc {rc}), see {out_dir / f"{tag}.log"}')
     d = np.load(side)
