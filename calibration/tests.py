@@ -658,5 +658,128 @@ class BasketGeometryClearanceTests(unittest.TestCase):
         self.assertAlmostEqual(horizontal, .51, places=9)
         self.assertIsNone(missing)
 
+
+class BasketG0ActionTests(unittest.TestCase):
+    @staticmethod
+    def expert_module():
+        import importlib.util
+
+        root = Path(__file__).resolve().parents[1]
+        spec = importlib.util.spec_from_file_location('basket_expert_g0_test', root / 'rl/basket/expert.py')
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
+
+    def test_recorded_tcp_delta_is_transformed_to_slot_frame_and_kept_under_caps(self):
+        mod = self.expert_module()
+        trace = dict(
+            obs=[np.zeros((1, 17), np.float32)],
+            pos=[np.array([[0.0, 0.0, 0.0]])],
+            quat=[np.array([[1.0, 0.0, 0.0, 0.0]])],
+            next_pos=[np.array([[0.0, 0.001, 0.0]])],
+            next_quat=[np.array([[1.0, 0.0, 0.0, 0.0]])],
+            open=[np.array([1.0])],
+        )
+        obs, act, clipped, frames = mod.g0_actions_from_trace(
+            trace, [np.pi / 2], [0.00167, 0.00167, 0.00167, 0.0058, 0.0058, 0.0058])
+        self.assertEqual(obs.shape, (1, 1, 17))
+        self.assertEqual(act.shape, (1, 1, 7))
+        self.assertAlmostEqual(float(act[0, 0, 0]), 0.001, places=6)
+        self.assertAlmostEqual(float(act[0, 0, 1]), 0.0, places=6)
+        self.assertEqual(float(act[0, 0, 6]), 1.0)
+        self.assertEqual((clipped, frames), (0, 1))
+
+    def test_g0_seated_exact_metric_does_not_depend_on_finger_rim_diagnostic(self):
+        mod = self.expert_module()
+        np.testing.assert_array_equal(
+            mod.g0_success_mask([True, True, False], [True, True, True], [True, False, True]),
+            [True, False, False])
+
+    def test_g0_zero_teacher_denominator_is_not_reported_as_a_failed_rate(self):
+        mod = self.expert_module()
+        self.assertEqual(mod.g0_gate_status(0, 0), ('insufficient_teacher_successes', None))
+        self.assertEqual(mod.g0_gate_status(20, 19), ('pass', 0.95))
+        self.assertEqual(mod.g0_gate_status(20, 18), ('fail', 0.9))
+        with self.assertRaises(ValueError):
+            mod.g0_gate_status(1, 2)
+
+    def test_g0_lift_requires_the_existing_physical_finger_and_rim_checks(self):
+        mod = self.expert_module()
+        # Match plate_env._state: stalled fingers plus TCP on the plate rim; a 5 cm lift alone is insufficient.
+        tcp_local = np.array([[0.128, 0.0, 0.016], [0.128, 0.0, 0.016],
+                              [0.128, 0.0, 0.016], [0.0, 0.0, 0.016]])
+        result = mod.g0_physical_grasp([0.7, 0.2, 0.7, 0.7], tcp_local,
+                                       [True, True, False, True], [0.5, 0.97], 0.128, 0.016, 0.03)
+        np.testing.assert_array_equal(result, [True, False, False, False])
+
+    def test_g0_requires_physical_grasp_until_the_first_release_action(self):
+        mod = self.expert_module()
+        held = [np.array([True, True]), np.array([True, False]), np.array([False, False])]
+        released = [np.array([False, False]), np.array([False, False]), np.array([True, True])]
+        np.testing.assert_array_equal(mod.g0_trace_grasp_maintained(held, released), [True, False])
+
+    def test_recorded_diagonal_action_respects_vector_speed_caps(self):
+        from scipy.spatial.transform import Rotation
+        mod = self.expert_module()
+        q_xyzw = Rotation.from_rotvec([0.005, 0.005, 0.0]).as_quat()
+        trace = dict(
+            obs=[np.zeros((1, 17), np.float32)],
+            pos=[np.zeros((1, 3))], quat=[np.array([[1.0, 0.0, 0.0, 0.0]])],
+            next_pos=[np.array([[0.002, 0.002, 0.0]])],
+            next_quat=[np.array([[q_xyzw[3], q_xyzw[0], q_xyzw[1], q_xyzw[2]]])],
+            open=[np.array([0.0])])
+        _, act, clipped, frames = mod.g0_actions_from_trace(
+            trace, [0.0], [0.00167] * 3 + [0.0058] * 3)
+        self.assertAlmostEqual(float(np.linalg.norm(act[0, 0, :3])), 0.00167, places=7)
+        self.assertAlmostEqual(float(np.linalg.norm(act[0, 0, 3:6])), 0.0058, places=7)
+        self.assertTrue((np.abs(act[0, 0, :6]) <= np.array([0.00167] * 3 + [0.0058] * 3)).all())
+        self.assertEqual((clipped, frames), (1, 1))
+
+    def test_rotation_trace_supports_multiple_envs_and_frames(self):
+        from scipy.spatial.transform import Rotation
+        mod = self.expert_module()
+        identity = np.array([1.0, 0.0, 0.0, 0.0])
+        rz = Rotation.from_rotvec([0.0, 0.0, 0.002]).as_quat()
+        quat_xyzw = np.array([rz[3], rz[0], rz[1], rz[2]])
+        trace = dict(
+            obs=[np.zeros((2, 17), np.float32) for _ in range(2)],
+            pos=[np.zeros((2, 3)) for _ in range(2)],
+            quat=[np.tile(identity, (2, 1)) for _ in range(2)],
+            next_pos=[np.zeros((2, 3)) for _ in range(2)],
+            next_quat=[np.tile(quat_xyzw, (2, 1)) for _ in range(2)],
+            open=[np.array([0.0, 1.0]), np.array([1.0, 0.0])])
+        obs, act, clipped, frames = mod.g0_actions_from_trace(
+            trace, [0.0, 0.2], [0.00167] * 3 + [0.0058] * 3)
+        self.assertEqual(obs.shape, (2, 2, 17))
+        self.assertEqual(act.shape, (2, 2, 7))
+        np.testing.assert_allclose(act[..., 5], 0.002, atol=1e-7)
+        np.testing.assert_array_equal(act[..., 6], [[0.0, 1.0], [1.0, 0.0]])
+        self.assertEqual((clipped, frames), (0, 4))
+
+    def test_g0_refuses_nonfinite_or_misaligned_trace(self):
+        mod = self.expert_module()
+        base = dict(obs=[np.zeros((1, 17), np.float32)], pos=[np.zeros((1, 3))],
+                    quat=[np.array([[1.0, 0.0, 0.0, 0.0]])], next_pos=[np.zeros((1, 3))],
+                    next_quat=[np.array([[1.0, 0.0, 0.0, 0.0]])], open=[np.array([0.0])])
+        bad_nan = dict(base, obs=[np.full((1, 17), np.nan, np.float32)])
+        with self.assertRaisesRegex(ValueError, 'non-finite'):
+            mod.g0_actions_from_trace(bad_nan, [0.0], [0.00167] * 3 + [0.0058] * 3)
+        bad_length = dict(base, next_pos=[])
+        with self.assertRaisesRegex(ValueError, 'same nonzero frame count'):
+            mod.g0_actions_from_trace(bad_length, [0.0], [0.00167] * 3 + [0.0058] * 3)
+
+    def test_g0_pose_error_reports_translation_and_quaternion_angle(self):
+        from scipy.spatial.transform import Rotation
+        mod = self.expert_module()
+        q = Rotation.from_euler('z', 4, degrees=True).as_quat()[[3, 0, 1, 2]]
+        dp, dr = mod.g0_pose_error([[0, 0, 0]], [[1, 0, 0, 0]], [[.003, 0, 0]], [q])
+        np.testing.assert_allclose(dp, [.003])
+        np.testing.assert_allclose(np.degrees(dr), [4.0], atol=1e-6)
+
+    def test_g0_first_true_handles_per_episode_open_timing(self):
+        mod = self.expert_module()
+        self.assertEqual(mod.g0_first_true([[False, True, True], [False, False, True], [False, False, False]]),
+                         [1, 2, None])
+
 if __name__ == '__main__':
     unittest.main()

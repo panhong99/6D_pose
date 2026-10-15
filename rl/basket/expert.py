@@ -39,6 +39,7 @@ def parse_args():
     p.add_argument('--residual', default=None, help='realplan: residual RL checkpoint on top of --policy (BC)')
     p.add_argument('--policy', default=None, help='collect: a BC checkpoint drives instead of the expert (evaluation)')
     p.add_argument('--attach', action='store_true', help='replay: rigid in-hand plate after the lift')
+    p.add_argument('--g0', action='store_true', help='replay: record teacher slot-frame actions and replay them from the same hover state through SafeDiffIK')
     p.add_argument('--closed_loop', action='store_true', help='replay --plans: at the stop above the basket read the plate in the hand and '
                    're-solve the descent so it stands over its target gap (stand-in for measuring the plate there)')
     p.add_argument('--cl_dz', type=float, default=0.0, help='--closed_loop: raise the insert end by this [m] (plate bottom vs the rail)')
@@ -152,7 +153,7 @@ def set_basket(env, T_list, ids=None):
     env.scene['basket'].write_root_pose_to_sim(pose, env_ids=idt)
 
 
-def drive(env, paths_deg, closed, speed, hold=15):
+def drive(env, paths_deg, closed, speed, hold=15, trace=None):
     """Every env along its own joint waypoint path (list of (k, 6) deg arrays, None = stay) in the same number of
     steps (the longest path at `speed` deg/s), fingers closed / open per env, then `hold` settle steps."""
     import numpy as np
@@ -170,6 +171,24 @@ def drive(env, paths_deg, closed, speed, hold=15):
         dense.append((pts, np.r_[0, np.cumsum(seg)]))
     total = max(float(s[-1]) for _, s in dense)
     steps = max(1, int(total / speed * 30))
+    import env as basket_obs
+    def record_step():
+        if trace is None:
+            return
+        trace['open'].append(~np.asarray(closed, dtype=bool).copy())
+        diag = g0_physical_grasp_diagnostics(env, pe)
+        trace['physical_held'].append(diag['predicate'])
+        trace['finger_ratio'].append(diag['finger_ratio'])
+        trace['tcp_local'].append(diag['tcp_local'])
+        trace['rim_distance'].append(diag['rim_distance'])
+        trace['released_state'].append(trace['released'].copy())
+        released = torch.as_tensor(trace['released'], dtype=torch.bool, device=env.device)
+        obs, _ = basket_obs.observe(env, released)
+        tp, tq = pe.tcp_pose(env)
+        trace['obs'].append(obs.cpu().numpy())
+        trace['pos'].append((tp - env.scene.env_origins).cpu().numpy())
+        trace['quat'].append(tq.cpu().numpy())
+        trace['joints'].append(torch.rad2deg(robot.data.joint_pos[:, aj]).cpu().numpy())
     for i in range(1, steps + 1):
         for k, (pts, s) in enumerate(dense):
             if s[-1] <= 0:
@@ -184,9 +203,285 @@ def drive(env, paths_deg, closed, speed, hold=15):
         q[:, fj] = torch.where(shut[:, None],
                                torch.full_like(q[:, fj], pe.FINGER_CLOSED), torch.zeros_like(q[:, fj]))
         robot.set_joint_position_target(q)
+        record_step()
         sim_steps(env)
+        if trace is not None:
+            trace['released'] |= ~np.asarray(closed, dtype=bool)
+            tp, tq = pe.tcp_pose(env)
+            trace['next_pos'].append((tp - env.scene.env_origins).cpu().numpy())
+            trace['next_quat'].append(tq.cpu().numpy())
     for _ in range(hold):
+        record_step()
         sim_steps(env)
+        if trace is not None:
+            tp, tq = pe.tcp_pose(env)
+            trace['next_pos'].append((tp - env.scene.env_origins).cpu().numpy())
+            trace['next_quat'].append(tq.cpu().numpy())
+
+
+def capture_g0_state(env, pe):
+    """Exact same-process state needed to replay a recorded insertion segment."""
+    robot, plate, basket = env.scene['robot'], env.scene['plate'], env.scene['basket']
+    tcp, tcp_quat = pe.tcp_pose(env)
+    return dict(q=robot.data.joint_pos.clone(), qd=robot.data.joint_vel.clone(),
+                plate_pose=plate.data.root_pose_w.clone(), plate_vel=plate.data.root_vel_w.clone(),
+                basket_pose=basket.data.root_pose_w.clone(), basket_vel=basket.data.root_vel_w.clone(),
+                tcp_pos=(tcp - env.scene.env_origins).clone(), tcp_quat=tcp_quat.clone(),
+                slot=env._slot.clone())
+
+
+def restore_g0_state(env, saved):
+    """Restore robot, plate, basket and SafeDiffIK controller to a recorded hover state."""
+    import torch
+    robot, plate, basket = env.scene['robot'], env.scene['plate'], env.scene['basket']
+    ids = torch.arange(env.num_envs, device=env.device)
+    robot.write_joint_state_to_sim(saved['q'], saved['qd'])
+    robot.set_joint_position_target(saved['q'])
+    plate.write_root_pose_to_sim(saved['plate_pose'])
+    plate.write_root_velocity_to_sim(saved['plate_vel'])
+    basket.write_root_pose_to_sim(saved['basket_pose'])
+    basket.write_root_velocity_to_sim(saved['basket_vel'])
+    env._slot.copy_(saved['slot'])
+    env.scene.write_data_to_sim()
+    env.sim.forward()
+    arm = env.action_manager.get_term('arm_action')
+    arm.reset(ids)
+    arm._safe_target[:] = saved['q'][:, arm._joint_ids]
+    arm.orientation_locked[:] = False
+    env._pp = None
+
+
+def g0_actions_from_trace(trace, slot_yaw, step_max):
+    """Convert sampled teacher FK motion to bounded slot-frame TCP deltas + open labels."""
+    import numpy as np
+    from scipy.spatial.transform import Rotation
+    fields = ('obs', 'pos', 'quat', 'next_pos', 'next_quat', 'open')
+    lengths = {name: len(trace[name]) for name in fields}
+    if not lengths['pos'] or len(set(lengths.values())) != 1:
+        raise ValueError(f'G0 trace fields must have the same nonzero frame count: {lengths}')
+    obs = np.stack(trace['obs'], axis=1).astype(np.float32)
+    pos = np.stack(trace['pos'], axis=1)
+    quat = np.stack(trace['quat'], axis=1)
+    nxt = np.stack(trace['next_pos'], axis=1)
+    nq = np.stack(trace['next_quat'], axis=1)
+    yaw = np.asarray(slot_yaw, dtype=float)
+    n, t = pos.shape[:2]
+    if pos.shape != (n, t, 3) or nxt.shape != (n, t, 3) or quat.shape != (n, t, 4) or nq.shape != (n, t, 4):
+        raise ValueError(f'G0 TCP pose trace has invalid shapes: pos={pos.shape}, quat={quat.shape}, next={nxt.shape}/{nq.shape}')
+    if obs.ndim != 3 or obs.shape[:2] != (n, t) or yaw.shape != (n,):
+        raise ValueError(f'G0 observation/yaw shapes do not match pose trace: obs={obs.shape}, yaw={yaw.shape}, poses={(n, t)}')
+    open_signal = np.stack(trace['open'], axis=1).astype(float)
+    if open_signal.shape != (n, t) or not np.isfinite(open_signal).all() or not np.isin(open_signal, (0.0, 1.0)).all():
+        raise ValueError('G0 open labels must be one binary value per environment and recorded frame')
+    if not all(np.isfinite(x).all() for x in (obs, pos, quat, nxt, nq, yaw)):
+        raise ValueError('G0 observation or TCP trace contains a non-finite value')
+    if (np.linalg.norm(quat, axis=2) < 1e-8).any() or (np.linalg.norm(nq, axis=2) < 1e-8).any():
+        raise ValueError('G0 TCP trace contains a zero quaternion')
+    Rslot = np.zeros((len(yaw), 3, 3))
+    Rslot[:, 0, 0], Rslot[:, 1, 0] = np.cos(yaw), np.sin(yaw)
+    Rslot[:, 0, 1], Rslot[:, 1, 1] = -np.sin(yaw), np.cos(yaw)
+    Rslot[:, 2, 2] = 1.0
+    dp = np.einsum('nij,ntj->nti', Rslot.transpose(0, 2, 1), nxt - pos)
+    q0 = Rotation.from_quat(quat[..., [1, 2, 3, 0]].reshape(-1, 4)).as_matrix().reshape(*quat.shape[:2], 3, 3)
+    q1 = Rotation.from_quat(nq[..., [1, 2, 3, 0]].reshape(-1, 4)).as_matrix().reshape(*nq.shape[:2], 3, 3)
+    # scipy Rotation accepts a stack shaped (N, 3, 3), not (env, time, 3, 3).
+    # Flatten the batch/time axes for conversion and restore them for slot-frame rotation.
+    relative = (q1 @ q0.transpose(0, 1, 3, 2)).reshape(-1, 3, 3)
+    rvw = Rotation.from_matrix(relative).as_rotvec().reshape(n, t, 3)
+    drv = np.einsum('nij,ntj->nti', Rslot.transpose(0, 2, 1), rvw)
+    raw = np.concatenate([dp, drv], axis=2)
+    # SafeDiffIKAction caps the translation and rotation *vector norms* per policy step.
+    # Component-wise clipping alone can command up to sqrt(3) times the intended speed
+    # on a diagonal, and would leave the saved BC labels different from the executed delta.
+    caps = np.asarray(step_max, dtype=float)
+    if caps.shape != (6,) or not np.isfinite(caps).all() or (caps <= 0).any():
+        raise ValueError('step_max must be six finite positive per-axis limits')
+    if not np.allclose(caps[:3], caps[0]) or not np.allclose(caps[3:], caps[3]):
+        raise ValueError('G0 vector-norm clipping requires equal per-axis limits within translation/rotation groups')
+    actions = raw.copy()
+    clipped = np.zeros(raw.shape[:2], dtype=bool)
+    for start in (0, 3):
+        part = actions[..., start:start + 3]
+        norm = np.linalg.norm(part, axis=2, keepdims=True)
+        cap = float(caps[start])  # config uses equal limits for each component in each 3-vector
+        scale = np.minimum(1.0, cap / np.maximum(norm, 1e-12))
+        clipped |= scale[..., 0] < 1.0 - 1e-12
+        actions[..., start:start + 3] = part * scale
+    actions = actions.astype(np.float32)
+    actions = np.concatenate([actions, open_signal.astype(np.float32)[..., None]], axis=2)
+    return obs, actions, int(clipped.sum()), int(clipped.shape[0] * clipped.shape[1])
+
+
+def g0_success_mask(seated, in_quadrant, exact):
+    """G0's teacher/replay gate: the established seated, in-quadrant, exact-slot criterion."""
+    import numpy as np
+    return (np.asarray(seated, dtype=bool) & np.asarray(in_quadrant, dtype=bool)
+            & np.asarray(exact, dtype=bool))
+
+
+def g0_gate_status(teacher_success_count, reproduced_count, threshold=0.95):
+    """A zero teacher-success denominator is unassessable, never a rate of zero."""
+    teacher_success_count = int(teacher_success_count)
+    reproduced_count = int(reproduced_count)
+    if teacher_success_count < 0 or reproduced_count < 0 or reproduced_count > teacher_success_count:
+        raise ValueError('G0 reproduced count must be within the nonnegative teacher-success denominator')
+    if teacher_success_count == 0:
+        return 'insufficient_teacher_successes', None
+    ratio = reproduced_count / teacher_success_count
+    return ('pass' if ratio >= float(threshold) else 'fail'), ratio
+
+
+def g0_first_true(values):
+    """First true index per episode; None means the signal never became true."""
+    import numpy as np
+    x = np.asarray(values, dtype=bool)
+    if x.ndim != 2:
+        raise ValueError('G0 boolean trace must have shape (episode, frame)')
+    result = []
+    for row in x:
+        found = np.flatnonzero(row)
+        result.append(int(found[0]) if found.size else None)
+    return result
+
+
+def g0_physical_grasp(finger_ratio, tcp_in_plate, lifted, finger_stall, rim_r, rim_dz, held_circle_tol):
+    """Physical grasp qualification from the same finger-stall/rim-circle test as plate_env._state."""
+    import numpy as np
+    finger = np.asarray(finger_ratio, dtype=float)
+    local = np.asarray(tcp_in_plate, dtype=float)
+    lift = np.asarray(lifted, dtype=bool)
+    if local.shape != (finger.size, 3) or lift.shape != finger.shape:
+        raise ValueError('finger, local TCP and lift masks must have aligned batch dimensions')
+    d_circle = np.sqrt((np.linalg.norm(local[:, :2], axis=1) - float(rim_r)) ** 2
+                       + (local[:, 2] - float(rim_dz)) ** 2)
+    lo, hi = map(float, finger_stall)
+    return (lift & (finger > lo) & (finger < hi) & (d_circle < float(held_circle_tol)))
+
+
+def g0_physical_hold_from_env(env, pe):
+    """Diagnostic predicate only; not part of AO G0's seated_exact denominator."""
+    return g0_physical_grasp_diagnostics(env, pe)['predicate']
+
+
+def g0_physical_grasp_diagnostics(env, pe):
+    """Raw finger/TCP-to-rim values and the current physical-grasp proxy for diagnosis."""
+    import numpy as np
+    from isaaclab.utils.math import quat_conjugate, quat_apply
+    plate = env.scene['plate']
+    tcp, _ = pe.tcp_pose(env)
+    local = quat_apply(quat_conjugate(plate.data.root_quat_w), tcp - plate.data.root_pos_w)
+    finger = pe.finger_closure(env).cpu().numpy()
+    local = local.cpu().numpy()
+    radial_error = np.linalg.norm(local[:, :2], axis=1) - float(pe.G['rim_r'])
+    height_error = local[:, 2] - float(pe.G['rim_dz'])
+    rim_distance = np.hypot(radial_error, height_error)
+    lo, hi = map(float, pe.T['finger_stall'])
+    finger_ok = (finger > lo) & (finger < hi)
+    rim_ok = rim_distance < float(pe.T['held_circle_tol'])
+    return dict(predicate=finger_ok & rim_ok, finger_ratio=finger, tcp_local=local,
+                radial_error=radial_error, height_error=height_error,
+                rim_distance=rim_distance, finger_ok=finger_ok, rim_ok=rim_ok,
+                finger_stall=[lo, hi], rim_radius=float(pe.G['rim_r']),
+                rim_dz=float(pe.G['rim_dz']), rim_tolerance=float(pe.T['held_circle_tol']))
+
+
+def g0_trace_grasp_maintained(physical_held, released_state):
+    """Every recorded pre-release action state must still satisfy the physical hold predicate."""
+    import numpy as np
+    held = np.stack(physical_held, axis=1).astype(bool)
+    released = np.stack(released_state, axis=1).astype(bool)
+    if held.size == 0 or held.shape != released.shape:
+        raise ValueError('physical hold and release traces must have identical shapes')
+    return np.all(held | released, axis=1)
+
+
+def g0_seated_exact(env, rows, who, st, be, pe, lifted_at_lift):
+    """Established replay seated_exact metric; physical finger/rim checks are diagnostics only."""
+    import math
+    import numpy as np
+    import torch
+    plate = env.scene['plate']
+    up = pe.body_axis(plate.data.root_quat_w, 2)
+    seated = (st['low'] < 0.060) & (st['low'] > 0.020)
+    landed = np.full(env.num_envs, -1, dtype=int)
+    pc = (plate.data.root_pos_w - env.scene.env_origins).cpu().numpy()
+    pq = plate.data.root_quat_w.cpu().numpy()
+    from scipy.spatial.transform import Rotation
+    f = be.B['full']
+    zh = f['floor_z'] + 0.10
+    for k, i in enumerate(who):
+        r = rows[i]
+        qd = r.get('model_qd')
+        if qd not in ('Q1', 'Q2', 'Q3', 'Q4'):
+            continue
+        Tb = np.asarray(r['Tb'])
+        Rp = Rotation.from_quat(pq[k][[1, 2, 3, 0]]).as_matrix()
+        Ti = np.linalg.inv(Tb)
+        c = (Ti @ np.r_[pc[k] + 0.01 * Rp[:, 2], 1.0])[:3]
+        m = Ti[:3, :3] @ Rp[:, 2]
+        if abs(m[0]) < 0.5:
+            continue
+        x = c[0] - m[2] * (zh - c[2]) / m[0]
+        far, left = {'Q1': (1, 0), 'Q2': (1, 1), 'Q3': (0, 1), 'Q4': (0, 0)}[qd]
+        yc = f['pair_centres_y'][0 if left else 1]
+        cf = f['clip_first_m']
+        half = cf[qd] + f['tine_pitch'][qd] * np.arange(f['tines_from_clip'][qd])
+        xs = np.sort(f.get('clip_x', 0.0) + (half if far else -half))
+        xs -= np.tan(np.radians(f['tine_lean_deg'][qd])) * (zh - f['floor_z'])
+        g = int(np.searchsorted(xs, x)) - 1
+        if 0 <= g < len(xs) - 1 and abs(c[1] - yc) < 0.06:
+            landed[k] = g
+    target = np.asarray([int(rows[i].get('gap', -1)) for i in who])
+    qd = [rows[i].get('model_qd') for i in who]
+    up_np = up.cpu().numpy()
+    yaw_err = np.full(env.num_envs, 180.0)
+    lean = np.degrees(np.arcsin(np.abs(up_np[:, 2]).clip(max=1.0)))
+    lean_limit = np.zeros(env.num_envs)
+    for k, q in enumerate(qd):
+        if q not in ('Q1', 'Q2', 'Q3', 'Q4'):
+            continue
+        nvec = np.asarray(rows[who[k]]['Tb'])[:3, 0]
+        uh = up_np[k, :2]
+        nh = nvec[:2]
+        cosang = abs(float(uh @ nh)) / max(float(np.linalg.norm(uh) * np.linalg.norm(nh)), 1e-9)
+        yaw_err[k] = math.degrees(math.acos(np.clip(cosang, -1.0, 1.0)))
+        lean_limit[k] = abs(float(be.B['full']['tine_lean_deg'][q])) + 12.0
+    quadrant_ok = (yaw_err < 15.0) & (lean < lean_limit) & (st['low'].cpu().numpy() < 0.095)
+    in_quadrant = np.asarray(lifted_at_lift, dtype=bool) & quadrant_ok & (landed >= 0)
+    exact = (landed == target) & (target >= 0)
+    low = st['low'].cpu().numpy()
+    result = g0_success_mask(seated.cpu().numpy(), in_quadrant, exact)
+    details = dict(seated=seated.cpu().numpy(), in_quadrant=in_quadrant,
+                   exact=exact, low_m=low, yaw_error_deg=yaw_err, lean_deg=lean,
+                   quadrant_ok=quadrant_ok)
+    return result, landed, details
+
+
+def g0_pose_error(reference_pos, reference_quat_wxyz, actual_pos, actual_quat_wxyz):
+    """Per-sample TCP translation [m] and shortest quaternion angle [rad]."""
+    import numpy as np
+    rp, ap = np.asarray(reference_pos, float), np.asarray(actual_pos, float)
+    rq, aq = np.asarray(reference_quat_wxyz, float), np.asarray(actual_quat_wxyz, float)
+    if rp.shape != ap.shape or rq.shape != aq.shape or rp.shape[:-1] != rq.shape[:-1] or rp.shape[-1] != 3 or rq.shape[-1] != 4:
+        raise ValueError('G0 reference/actual TCP pose arrays must align as (...,3) and (...,4)')
+    if not all(np.isfinite(a).all() for a in (rp, ap, rq, aq)):
+        raise ValueError('G0 TCP pose comparison contains a non-finite value')
+    rn = np.linalg.norm(rq, axis=-1, keepdims=True)
+    an = np.linalg.norm(aq, axis=-1, keepdims=True)
+    if (rn < 1e-9).any() or (an < 1e-9).any():
+        raise ValueError('G0 TCP pose comparison contains a zero quaternion')
+    dot = np.abs(np.sum((rq / rn) * (aq / an), axis=-1)).clip(0.0, 1.0)
+    return np.linalg.norm(ap - rp, axis=-1), 2.0 * np.arccos(dot)
+
+
+def g0_error_summary(values, scale=1.0):
+    """Compact finite max/mean/p95 summary after applying a display scale."""
+    import numpy as np
+    x = np.asarray(values, dtype=float) * float(scale)
+    x = x[np.isfinite(x)]
+    return dict(count=int(x.size), mean=float(x.mean()) if x.size else None,
+                p95=float(np.percentile(x, 95)) if x.size else None,
+                max=float(x.max()) if x.size else None)
 
 
 def inserted(env, still_window=30):
@@ -356,6 +651,11 @@ def run_replay(args):
     from isaaclab.envs import ManagerBasedRLEnv
     import basket_env as be
     import plate_env as pe
+    import env as E
+    if args.g0 and (args.attach or not args.closed_loop or not args.plans or not args.out):
+        raise SystemExit('--g0 requires --plans, --closed_loop, an explicit new --out path, and no --attach')
+    if args.g0 and Path(args.out).exists():
+        raise SystemExit(f'G0 refuses to overwrite {args.out}')
     runs = [] if args.plans else [json.loads(l) for l in open(args.labels)]
     rows = []
     for r in ([json.loads(l) for l in open(args.plans)] if args.plans else []):   # planned, not run: 'outcome' = planned
@@ -398,6 +698,11 @@ def run_replay(args):
     drive(env, L('lift', 'grasp'), ~open_, args.speed, hold=60)
     lift = env.scene['plate'].data.root_pos_w[:, 2] - env.scene.env_origins[:, 2] - pe.REST_Z
     held = (lift > 0.05).cpu().numpy()
+    # Keep the old >5 cm lift metric for in-quadrant classification. Finger/rim checks are
+    # serialized diagnostics only; they are not part of the established seated_exact gate.
+    physical_lift_diagnostic = None
+    if args.g0:
+        physical_lift_diagnostic = g0_physical_grasp_diagnostics(env, pe)
     ti = robot.find_bodies('tcp')[0][0]                        # (10/13) the plate in the hand after the lift, world poses
     in_hand = dict(tcp_pos=(robot.data.body_pos_w[:, ti] - env.scene.env_origins).cpu().numpy().tolist(),
                    tcp_quat=robot.data.body_quat_w[:, ti].cpu().numpy().tolist(),
@@ -407,8 +712,16 @@ def run_replay(args):
     if args.attach:                                            # rigid in-hand plate (see attach), no extra noise
         attach(env, torch.as_tensor(held, device=dev))
     drive(env, L('to_above', 'slot'), ~open_, args.speed)
+    # G0 starts at the first stop above the basket, before any closed-loop re-aim (stage 4).
+    g0_record = None
+    g0_start = None
+    if args.g0:
+        g0_record = dict(obs=[], pos=[], quat=[], next_pos=[], next_quat=[], open=[],
+                         joints=[], physical_held=[], finger_ratio=[], tcp_local=[], rim_distance=[],
+                         released_state=[], released=np.zeros(n, dtype=bool))
+        g0_start = capture_g0_state(env, pe)
     if all('descend_pre' in rows[i]['slot'] for i in who):    # taught slot paths only (quadrant plans: to_above -> descend)
-        drive(env, L('descend_pre', 'slot'), ~open_, args.speed / 4)
+        drive(env, L('descend_pre', 'slot'), ~open_, args.speed / 4, trace=g0_record)
     descend, ascend = L('descend', 'slot'), L('ascend', 'slot')
     if args.closed_loop:                                       # (10/14) re-aim from the plate actually in the hand
         fix = first_fix = None
@@ -429,7 +742,7 @@ def run_replay(args):
             if it == 0:
                 first_fix = fix
             print(f"[replay] closed loop {it + 1}/{args.cl_iter}: re-solved {new_ok}/{n} (with kept earlier aims {sum(a is not None for a, _ in fix)})", flush=True)
-            drive(env, [a for a, _ in fix], ~open_, args.speed / 4, hold=30)
+            drive(env, [a for a, _ in fix], ~open_, args.speed / 4, hold=30, trace=g0_record)
         descend = [b if b is not None else d for (_, b), d in zip(fix, descend)]
         top_ = first_fix if first_fix is not None else fix   # (10/14 night) a lower re-aim: back up through it to the first stop
         ascend = [np.vstack([b[::-1], a] + ([t[0]] if t[0] is not None and t is not f_ else [])) if b is not None else u
@@ -440,12 +753,154 @@ def run_replay(args):
                plate_pos=(env.scene['plate'].data.root_pos_w - env.scene.env_origins).cpu().numpy().tolist(),
                plate_quat=env.scene['plate'].data.root_quat_w.cpu().numpy().tolist(),
                joints=robot.data.joint_pos[:, :6].cpu().numpy().tolist())
-    drive(env, descend, ~open_, args.speed / 20, hold=30)
+    drive(env, descend, ~open_, args.speed / 20, hold=30, trace=g0_record)
     trace = dict(descended=dict(pos=(env.scene['plate'].data.root_pos_w - env.scene.env_origins).cpu().numpy().tolist(), quat=env.scene['plate'].data.root_quat_w.cpu().numpy().tolist()))   # (10/14) where the plate moves after the descent
     if args.attach:
         detach(env, torch.ones(n, dtype=torch.bool, device=dev))
-    drive(env, [None] * n, open_, args.speed, hold=45)         # release
+    drive(env, [None] * n, open_, args.speed, hold=45, trace=g0_record)         # release
     trace['released'] = dict(pos=(env.scene['plate'].data.root_pos_w - env.scene.env_origins).cpu().numpy().tolist(), quat=env.scene['plate'].data.root_quat_w.cpu().numpy().tolist())
+    if args.g0:
+        teacher_strict_success, st_teacher = inserted(env)
+        teacher_grasp_maintained = g0_trace_grasp_maintained(g0_record['physical_held'], g0_record['released_state'])
+        teacher_exact, teacher_landed, teacher_detail = g0_seated_exact(
+            env, rows, who, st_teacher, be, pe, held)
+        slot_yaw = env._slot[:, 3].cpu().numpy()
+        g0_obs, g0_act, clip_count, frame_count = g0_actions_from_trace(
+            g0_record, slot_yaw, E_CFG()['action']['step_max'])
+        restore_g0_state(env, g0_start)
+        restored_tcp, restored_quat = pe.tcp_pose(env)
+        start_pos_err, start_rot_err = g0_pose_error(
+            g0_start['tcp_pos'].cpu().numpy(), g0_start['tcp_quat'].cpu().numpy(),
+            (restored_tcp - env.scene.env_origins).cpu().numpy(), restored_quat.cpu().numpy())
+        start_joint_err = (torch.rad2deg(env.scene['robot'].data.joint_pos - g0_start['q'])[:, :6]
+                           .abs().amax(dim=1).cpu().numpy())
+        student_released = np.zeros(n, dtype=bool)
+        student_pos_trace, student_quat_trace, student_joint_trace = [], [], []
+        student_finger_trace, student_tcp_local_trace, student_rim_trace = [], [], []
+        student_held_trace, student_released_trace, student_open_trace = [], [], []
+        for step in range(g0_act.shape[1]):
+            tp, tq = pe.tcp_pose(env)
+            student_pos_trace.append((tp - env.scene.env_origins).cpu().numpy())
+            student_quat_trace.append(tq.cpu().numpy())
+            student_joint_trace.append(torch.rad2deg(env.scene['robot'].data.joint_pos[:, :6]).cpu().numpy())
+            diag = g0_physical_grasp_diagnostics(env, pe)
+            student_finger_trace.append(diag['finger_ratio'])
+            student_tcp_local_trace.append(diag['tcp_local'])
+            student_rim_trace.append(diag['rim_distance'])
+            student_held_trace.append(diag['predicate'])
+            student_released_trace.append(student_released.copy())
+            student_open_trace.append(g0_act[:, step, 6] > 0.5)
+            a = torch.as_tensor(g0_act[:, step, :6], dtype=torch.float32, device=dev)
+            o = torch.as_tensor(g0_act[:, step, 6], dtype=torch.float32, device=dev)
+            env.step(E.to_env_action(env, a, o))
+            student_released |= g0_act[:, step, 6] > 0.5
+        student_strict_success, st_student = inserted(env)
+        student_exact, student_landed, student_detail = g0_seated_exact(
+            env, rows, who, st_student, be, pe, held)
+        teacher_count = int(teacher_exact.sum())
+        reproduced = int((teacher_exact & student_exact).sum())
+        gate, ratio = g0_gate_status(teacher_count, reproduced)
+        output = Path(args.out)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        data_out = output.with_suffix('.npz')
+        if data_out.exists():
+            raise SystemExit(f'G0 refuses to overwrite {data_out}')
+        teacher_open = np.stack(g0_record['open'], axis=1).astype(bool)
+        student_open = np.stack(student_open_trace, axis=1).astype(bool)
+        student_grasp_maintained = g0_trace_grasp_maintained(student_held_trace, student_released_trace)
+        teacher_pos = np.stack(g0_record['pos'], axis=1)
+        teacher_quat = np.stack(g0_record['quat'], axis=1)
+        student_pos = np.stack(student_pos_trace, axis=1)
+        student_quat = np.stack(student_quat_trace, axis=1)
+        tcp_pos_err, tcp_rot_err = g0_pose_error(teacher_pos, teacher_quat, student_pos, student_quat)
+        teacher_joints = np.stack(g0_record['joints'], axis=1)
+        student_joints = np.stack(student_joint_trace, axis=1)
+        joint_err_deg = np.max(np.abs(teacher_joints - student_joints), axis=2)
+        teacher_finger = np.stack(g0_record['finger_ratio'], axis=1)
+        student_finger = np.stack(student_finger_trace, axis=1)
+        teacher_tcp_local = np.stack(g0_record['tcp_local'], axis=1)
+        student_tcp_local = np.stack(student_tcp_local_trace, axis=1)
+        teacher_rim = np.stack(g0_record['rim_distance'], axis=1)
+        student_rim = np.stack(student_rim_trace, axis=1)
+        g0_episodes = []
+        teacher_open_idx = g0_first_true(teacher_open)
+        student_open_idx = g0_first_true(student_open)
+        teacher_diag = physical_lift_diagnostic
+        for k in range(n):
+            g0_episodes.append(dict(
+                quadrant=rows[who[k]].get('model_qd'), pin=int(rows[who[k]].get('pin', -1)),
+                target_gap=int(rows[who[k]].get('gap', -1)),
+                teacher=dict(seated=bool(teacher_detail['seated'][k]),
+                             in_quadrant=bool(teacher_detail['in_quadrant'][k]),
+                             exact=bool(teacher_detail['exact'][k]),
+                             low_mm=float(teacher_detail['low_m'][k] * 1000),
+                             landed_gap=int(teacher_landed[k]),
+                             strict_inserted=bool(teacher_strict_success[k])),
+                student=dict(seated=bool(student_detail['seated'][k]),
+                             in_quadrant=bool(student_detail['in_quadrant'][k]),
+                             exact=bool(student_detail['exact'][k]),
+                             low_mm=float(student_detail['low_m'][k] * 1000),
+                             landed_gap=int(student_landed[k]),
+                             strict_inserted=bool(student_strict_success[k])),
+                teacher_physical_lift_diagnostic=dict(
+                    lifted_gt_50mm=bool(held[k]), finger_ratio=float(teacher_diag['finger_ratio'][k]),
+                    finger_stall_ok=bool(teacher_diag['finger_ok'][k]),
+                    tcp_plate_local_m=teacher_diag['tcp_local'][k].tolist(),
+                    rim_radial_error_mm=float(teacher_diag['radial_error'][k] * 1000),
+                    rim_height_error_mm=float(teacher_diag['height_error'][k] * 1000),
+                    tcp_rim_distance_mm=float(teacher_diag['rim_distance'][k] * 1000),
+                    rim_ok=bool(teacher_diag['rim_ok'][k]),
+                    finger_stall_range=teacher_diag['finger_stall'],
+                    rim_distance_tolerance_mm=teacher_diag['rim_tolerance'] * 1000),
+                start_restore=dict(tcp_position_error_mm=float(start_pos_err[k] * 1000),
+                                   tcp_orientation_error_deg=float(np.degrees(start_rot_err[k])),
+                                   joint_max_error_deg=float(start_joint_err[k])),
+                replay_alignment=dict(
+                    tcp_position_error_mm=g0_error_summary(tcp_pos_err[k], 1000.0),
+                    tcp_orientation_error_deg=g0_error_summary(tcp_rot_err[k], 180.0 / np.pi),
+                    joint_max_error_deg=g0_error_summary(joint_err_deg[k]),
+                    teacher_first_open_frame=teacher_open_idx[k],
+                    student_first_open_command_frame=student_open_idx[k],
+                    open_command_frames_equal=bool(np.array_equal(teacher_open[k], student_open[k])),
+                    teacher_grasp_maintained_diagnostic=bool(teacher_grasp_maintained[k]),
+                    student_grasp_maintained_diagnostic=bool(student_grasp_maintained[k]))))
+        np.savez_compressed(data_out, obs=g0_obs, act=g0_act.astype(np.float32),
+                            teacher_success=teacher_exact, student_success=student_exact,
+                            lifted_at_lift=held,
+                            teacher_grasp_maintained=teacher_grasp_maintained,
+                            student_grasp_maintained_diagnostic=student_grasp_maintained,
+                            teacher_landed_gap=teacher_landed, student_landed_gap=student_landed,
+                            teacher_seated=teacher_detail['seated'], student_seated=student_detail['seated'],
+                            teacher_in_quadrant=teacher_detail['in_quadrant'], student_in_quadrant=student_detail['in_quadrant'],
+                            teacher_low_m=teacher_detail['low_m'], student_low_m=student_detail['low_m'],
+                            teacher_physical_finger_ratio=teacher_finger, student_physical_finger_ratio=student_finger,
+                            teacher_physical_tcp_plate_local_m=teacher_tcp_local, student_physical_tcp_plate_local_m=student_tcp_local,
+                            teacher_physical_tcp_rim_distance_m=teacher_rim, student_physical_tcp_rim_distance_m=student_rim,
+                            teacher_tcp_position_error_m=tcp_pos_err, teacher_tcp_orientation_error_rad=tcp_rot_err,
+                            tcp_max_joint_error_deg=joint_err_deg, teacher_open_command=teacher_open,
+                            student_open_command=student_open,
+                            quadrant=np.asarray([rows[i].get('model_qd', '') for i in who]),
+                            pin=np.asarray([rows[i].get('pin', -1) for i in who]),
+                            target_gap=np.asarray([rows[i].get('gap', -1) for i in who]))
+        per_q = {}
+        for qd in ('Q1', 'Q2', 'Q3', 'Q4'):
+            m = np.asarray([rows[i].get('model_qd') == qd for i in who])
+            denom = int((teacher_exact & m).sum())
+            num_ok = int((teacher_exact & student_exact & m).sum())
+            per_q[qd] = dict(teacher_success=denom, reproduced=num_ok,
+                             ratio=(num_ok / denom if denom else None))
+        report = dict(gate=gate, criterion='same-start SafeDiffIK replay / teacher seated & in_quadrant & exact successes >= 0.95',
+                      seated_exact_definition='0.020 m < low < 0.060 m AND in_quadrant AND landed_gap == target_gap; finger/rim metrics diagnostic only',
+                      teacher_seated_exact=teacher_count, reproduced_seated_exact=reproduced,
+                      reproduction_ratio=ratio, clipped_tcp_steps=clip_count, recorded_tcp_steps=frame_count,
+                      physical_grasp_at_lift_diagnostic=int((teacher_diag['predicate'] & held).sum()),
+                      lifted_at_lift=int(held.sum()), teacher_grasp_maintained_diagnostic=int(teacher_grasp_maintained.sum()),
+                      per_quadrant=per_q, episodes=g0_episodes, actions=str(data_out), plans=args.plans,
+                      attach=False, action_hz=E_CFG()['action']['hz'], step_max=E_CFG()['action']['step_max'])
+        output.write_text(json.dumps(report, indent=2))
+        print('[G0]', json.dumps(report), flush=True)
+        env.close()
+        return
     drive(env, ascend, open_, args.speed / 4)
     trace['ascended'] = dict(pos=(env.scene['plate'].data.root_pos_w - env.scene.env_origins).cpu().numpy().tolist(), quat=env.scene['plate'].data.root_quat_w.cpu().numpy().tolist())
     ok, st = inserted(env)

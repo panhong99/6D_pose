@@ -1075,3 +1075,12 @@ Human 지시: Claude와 Human이 실증하는 동안 Codex가 이 문제의 원�
 - 선행 조건: Q1 빗살 간격 실측, Q4 줄 간격 확인(실측 7.9 cm vs 모델 9.5 cm). 두 값이 틀리면 정렬 보상이 틀린 정렬을 가르친다.
 - 비전 모델의 역할(보스 15:xx 보충): 바구니 안 **장애물(이미 거치된 접시 등)을 비전으로 인지해 피하면서 지정 칸에 거치**하는 단계에서 쓴다. 이 단계가 연구 부분이고, 지금(빈 바구니, 6D pose 벡터)은 엔지니어링 단계다.
 - 상태: 빈 바구니 BC는 작업 AO(`collab/PLAN_2026-10-15_basket_bc_rl.md`)로 Codex에 넘김.
+
+## 2026-10-15 AO/G0: 기록 행동에도 실행기의 벡터 속도 상한 적용
+- 결정: `expert.py --g0`가 teacher의 FK 차분을 틈 좌표계로 바꿀 때 XYZ와 회전 XYZ 각각을 성분별 clip하지 않고, 각 3-vector의 norm을 `config.yaml action.step_max` 상한으로 줄인다.
+- 이유: `SafeDiffIKAction.process_actions`는 한 정책 스텝에서 TCP 이동량과 회전량을 각각 벡터 norm으로 제한한다. 축별 clip만 하면 대각선 행동이 최대 √3배가 되어 저장 라벨과 실제 적용 행동이 달라질 수 있다. 각 성분 상한은 기존 설정 그대로이며 높이지 않는다.
+- (10/15 16:1x Claude 수정) 위 물리 finger-stall + TCP-to-rim 조건은 **진단 전용**이며 G0 분모에서 제외한다. G0는 기존 `seated_exact`를 그대로 쓴다: `0.020 < low < 0.060 m` AND 기존 `in_quadrant` 조건 AND `landed_gap == target_gap`. 이 변경은 기준 완화가 아니라 앞서 추가된 grasp-qualified 조건을 철회하고 기존 판정과 일치시키는 것이다. lift > 5 cm는 기존 `in_quadrant`의 조건으로만 유지한다.
+- G0 산출물에는 release 후 raw `low`/`seated`/`in_quadrant`/`exact`을 teacher와 SafeDiffIK 양쪽에 저장한다. finger closure와 TCP plate-local 좌표·rim 거리/오차는 lift와 insertion trace에 남겨 기존 진단 기준의 sim 적합성을 분리해 본다. 같은 시작점 복원 오차, recorded-vs-replay TCP 위치·자세와 관절 오차, 최초 open-command frame도 에피소드별로 남긴다.
+- G0 기록 전처리는 frame 길이/shape, finite 값, nonzero quaternion, binary release label, per-axis 설정 일치도도 검사하고 잘못된 기록을 거부한다.
+- 확인: 대각 이동·회전 상한, finger/rim 진단, 기존 `seated_exact` 분모, 시작 복원·replay 오차 요약, env별 open label, NaN/frame 불일치 회귀시험. 수정 후 `bash calibration/run.sh tests` **51/51 통과 (32.4 s)**. G0 teacher 실행은 최종 `run_quadrant_final_20261015.sh` 인자 전체로 해야 한다.
+- 보스 검토: 이 선택은 teacher 차분을 기존 실행기 상한에 맞추는 기록 전처리이며, G0 재생 결과와 함께 확인한다.
