@@ -729,6 +729,20 @@ class BasketG0ActionTests(unittest.TestCase):
         np.testing.assert_allclose(action[:, :, :6], command_delta)
         self.assertTrue((np.abs(action[:, :, :6]) <= per_frame_cap + 1e-7).all())
         np.testing.assert_array_equal(action[..., 6], [[0.0, 1.0], [0.0, 0.0]])
+        previous_commanded = np.concatenate([np.zeros((2, 1, 6)), commanded[:, :-1]], axis=1)
+        clipped_mask = mod.g0_joint_action_clipped_mask(target, previous_commanded, action[..., :6])
+        self.assertEqual(int(clipped_mask.sum()), clipped)
+        np.testing.assert_array_equal(clipped_mask, [[True, True], [False, False]])
+
+    def test_joint_action_clip_mask_uses_previous_commanded_target(self):
+        mod = self.expert_module()
+        target = np.array([[[2, 0, 0, 0, 0, 0], [3, 0, 0, 0, 0, 0]]], dtype=float)
+        previous = np.array([[[0, 0, 0, 0, 0, 0], [1, 0, 0, 0, 0, 0]]], dtype=float)
+        action = np.array([[[1, 0, 0, 0, 0, 0], [1, 0, 0, 0, 0, 0]]], dtype=float)
+        # The second teacher target moves only 1 degree from the first teacher target,
+        # but 2 degrees from the previous commanded target after the first clip.
+        np.testing.assert_array_equal(
+            mod.g0_joint_action_clipped_mask(target, previous, action), [[True, True]])
 
     def test_joint_reference_actions_reject_bad_shapes_nan_and_speed(self):
         mod = self.expert_module()

@@ -419,6 +419,22 @@ def g0_joint_actions_from_trace(trace, initial_joint_deg, hz=30.0):
     return target.astype(np.float32), commanded.astype(np.float32), action, int(clipped.sum()), int(n * t)
 
 
+def g0_joint_action_clipped_mask(teacher_target_deg, previous_commanded_deg, action_delta_deg, tolerance=1e-6):
+    """Mark frames clipped relative to the previous commanded target, matching the joint-action contract."""
+    import numpy as np
+    target = np.asarray(teacher_target_deg, dtype=float)
+    previous = np.asarray(previous_commanded_deg, dtype=float)
+    action = np.asarray(action_delta_deg, dtype=float)
+    if target.ndim != 3 or target.shape[2] != 6 or previous.shape != target.shape or action.shape != target.shape:
+        raise ValueError('joint target, previous command, and action must align as (env, time, 6)')
+    if not all(np.isfinite(value).all() for value in (target, previous, action)):
+        raise ValueError('joint clipping-mask inputs must be finite')
+    if not np.isfinite(tolerance) or tolerance < 0:
+        raise ValueError('joint clipping-mask tolerance must be finite and nonnegative')
+    raw_delta = target - previous
+    return np.any(np.abs(action - raw_delta) > float(tolerance), axis=2)
+
+
 def g0_tracking_action(current_pos, current_quat, target_pos, target_quat, slot_yaw, step_max):
     """Bounded slot-frame action that tracks the teacher's next absolute TCP pose from the student's live pose."""
     import numpy as np
@@ -1186,8 +1202,10 @@ def run_replay(args):
                 per_q[qd] = dict(teacher_success=denom, reproduced=num_ok,
                                  ratio=(num_ok / denom if denom else None))
             initial_target = torch.rad2deg(g0_start['q'][:, arm_joint_ids]).cpu().numpy()
-            raw_joint_delta = np.diff(np.concatenate([initial_target[:, None, :], teacher_joint_target], axis=1), axis=1)
-            joint_action_clipped = np.any(np.abs(joint_actions[..., :6] - raw_joint_delta) > 1e-6, axis=2)
+            previous_commanded_target = np.concatenate(
+                [initial_target[:, None, :], replay_joint_target[:, :-1, :]], axis=1)
+            joint_action_clipped = g0_joint_action_clipped_mask(
+                teacher_joint_target, previous_commanded_target, joint_actions[..., :6])
             commanded_joint_delta = np.diff(
                 np.concatenate([initial_target[:, None, :], replay_joint_target], axis=1), axis=1)
             commanded_joint_speed = np.abs(commanded_joint_delta) * 30.0
