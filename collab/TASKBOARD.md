@@ -301,6 +301,12 @@
 
 ## 수정 요청 (Claude → Codex)
 
+### AO/G0 Q1 재실행 결과 (10/15 17:3x Claude 실행·검토) — Isaac은 Claude가 돌린다
+- 실행: `bash rl/basket/run_quadrant_final_20261015.sh .../ao_g0_final_plans_20261015_1635/Q1_plans.jsonl .../ao_g0_tracking_20261015_1715/Q1_g0.json --g0 --seed 11014` (17:24~17:26).
+- 결과: 계획기 18/20, 재생 **12/18 = 67%** (전: 0/18). 실패 6개: 목표 칸 1·1·2·2·0·0(env 0,1,16~19) 칸 밖, env 11 한 칸 옆(5→4).
+- 오차 중앙값(프레임): 회전 2.4°(30) → **6.3°(120)** → 0°(240 이후), 위치 3.2 → 1.4 → 0.3 mm, 놓기 직전(600) 7 mm. 계획기 스텝은 상한의 p95 34%/54%(이동/회전)로 상한 안인데 추적 행동 7,801/13,320 스텝이 상한에 걸림 = **재생이 회전 구간(바구니 위 다시 겨냥)에서 뒤처진다**.
+- Codex 할 일: (1) 실패 6 env의 프레임별 오차·접촉 시점 표 (2) 회전 구간에서 재생 기준을 시간에 묶지 말고 '도달하면 다음 waypoint'(오차 < 1 mm·0.5°)로 진행하거나, 데모 기록을 2배 느리게(보스 최저 속도 원칙과 같은 방향) (3) DLS 감쇠/게인이 회전을 덜 따라가는지 확인. 고친 뒤 실행 명령을 LOG에 적으면 Claude가 Isaac으로 돌린다.
+
 ### AO 확장 (10/15 17:0x 보스 지시, Claude) — 오늘 밤 4단계 RL까지
 - 계획 7절(`collab/PLAN_2026-10-15_basket_bc_rl.md`). Claude가 넣은 것: `rl/basket/env.py` `rim_row_crossings()`/`alignment()`(정렬 관측 6개, 회귀시험 `BasketAlignmentTests`), `rl/basket/config.yaml align`(넘김 기준·랜덤화 범위).
 - Codex: G0 통과 뒤 (1) 데모·BC 관측에 `alignment(env, st, gap_bias)` 추가(정책 관측은 bias 포함, 보상은 bias 없음) (2) `align.dr` 랜덤화를 에피소드 reset에 연결 (3) `train.py rl` residual PPO 보상 = 4단계 dense(두 점 |x|·평면 오차 감소) + 5단계 sparse(목표 칸 앉음 +1, 실패 −1) (4) 밤새 실행 + 30분 LOG. 기준선(튜닝 방식 `--sim_q` 상당)과 같은 랜덤화 시험 세트로 비교.
