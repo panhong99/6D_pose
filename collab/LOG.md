@@ -3482,3 +3482,8 @@
 - Q1–Q4 원본 저장 사진에 보스 확인 59개 root-tip 라벨(노란 연결선, 주황 root, 초록 tip)을 그리고, 부분 라벨을 읽고 사후 기하 대응시킨 모델 tip과 ID(자홍)를 겹친 2×2 시트를 만들었다. 시트: `calibration/data/basket/wrist_look/pins_projection_residual_partialGT_20261016_v1/Q1_Q4_checked_vs_model_review_20261016_v1.png`; 생성 시 각 분면의 assignment 수는 **14, 5, 18, 22 (총 59)**, raw 사진 방향을 사용(Q2 표시 회전 보정 없음).
 - 이 시트는 잔차와 체크된 점의 위치를 빠르게 확대 검토하기 위한 시각화다. 모델 ID 대응이 라벨 기반이며 라벨도 부분 GT이므로 가시핀 전수 truth, 번호 정확성 또는 detector precision/recall을 입증하지 않는다. Exhaustive pin/pair 검토, E 공식 gate 및 생산 변경은 여전히 미완료/보류.
 - `cv2.imwrite` 성공과 2560×1520 출력 확인, 그림을 열어 시각 확인. 코드/기존 데이터 변경 없음; 생성 그림은 ignore된 data 경로에 있어 Git stage하지 않음. GPU/Isaac/로봇 미사용. 회귀 시험은 코드 변경이 없어 재실행하지 않음.
+## 2026-10-16 03:52 Codex — E: 체크된 핀 투영 잔차를 root·방향·길이로 분해
+- 직전 59개 root-XY 기반 사후 대응은 그대로 고정하고, raw 사진의 checked root→tip 선분과 대응 모델의 투영 root→tip 선분을 비교했다. 방향각은 이미지 평면에서 GT 선분→모델 선분의 부호각, 길이차는 모델−라벨 픽셀 길이다. 이 분해는 점 위치 잔차를 모양/배치 성분으로 읽기 위한 same-photo label-assisted 진단이며 detector score가 아니다.
+- 분면별 (n; 선분 방향각 중앙값; |각도| p90; 길이차 중앙값; root 잔차 중앙값; tip 잔차 중앙값): Q1 **14; −11.23°; 16.24°; +14.12 px; 12.67 px; 26.81 px**. Q2 **5; −3.52°; 9.74°; −10.29 px; 8.71 px; 21.76 px**. Q3 **18; −1.63°; 8.69°; +2.27 px; 16.13 px; 17.87 px**. Q4 **22; +3.55°; 7.89°; +8.44 px; 9.19 px; 19.11 px**.
+- Q3는 root 점 오차와 tip 오차 중앙값 차가 1.75 px, 선분 모양 차가 상대적으로 작아 평면상 병진 성분 가설과 양립한다. Q1은 방향 및 길이 편향도 함께 보여 단일 상수이동으로 설명하기 어렵다는 가설이다. root/tip 픽셀과 높이 평면·hand-eye 오차가 섞여 있으므로 3D 기하 원인은 확정할 수 없다.
+- JSON: `calibration/data/basket/wrist_look/pins_projection_residual_partialGT_20261016_v1/vector_shape_diagnostic_partialGT_20261016_v1.json` (59 per-pin 항목 + 분면/행 요약). JSON 재파싱·분면별 항목수 합계 **59** 확인. 그림/산출물은 data라 Git 미추적; source 코드·threshold·생산 모델 변경 없음. 로봇/GPU/Isaac 사용 안 함; 코드 미변경으로 회귀 미실행.
