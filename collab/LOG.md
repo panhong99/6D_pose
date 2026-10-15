@@ -3553,5 +3553,12 @@
 - Latest eval30 Q1–Q4: **93/156, 90/146, 107/155, 105/141**; full sequence remains mixed by quadrant. This supplementary E3 PPO curve is not AO G0 or BC G2, and checkpoint-selection/fixed-seed scope limits generalization. G0 latest **11/18=61.1% <95%**; G1/G2 remain blocked. Read-only CPU audit; no GPU/Isaac/robot, source, data or checkpoint changes.
 - Documentation-only regression: `bash calibration/run.sh tests` **78/78 passed (34.304 s)**.
 
+## 2026-10-16 07:1x Codex — E3 eval_0035 raw audit
+- `rl/logs/basket/insert_rl_20261016_noseen_drfull_canon_e3/eval_0035.json/.npz`: **394/598=65.9%** seated-exact. JSON `seated_exact`, NPZ `exact`, independent `seated && in_quadrant && landed==target`, plus JSON-vs-NPZ in-quadrant and landed-target masks agree **598/598**; obs/action/bias finite.
+- Q1–Q4: **91/156, 85/146, 114/155, 104/141**. Eval30 and eval35 share identical obs/bias/quadrant/target inputs; paired transitions are 23 fail→pass and 24 pass→fail (net −1). This is checkpoint variation on one fixed heldout, not evidence of a causal regression or improvement. E3 remains auxiliary PPO, not AO G0 or BC G2; G0 11/18=61.1% remains below 95%, keeping G1/G2 blocked. Read-only CPU; no GPU/Isaac, robot/gripper, or source/data/checkpoint modification.
+
 ## 2026-10-16 06:3x Claude — E3 최종 평가
 - E3 best(검증 0.671 @10) seed 15014 415, 실기 조건: **281/415 67.7%** [63.1, 72.0] (Q1 .54 / Q2 .75 / Q3 .76 / Q4 .67), 튜닝 방식 대비 짝 비교 102승 47패. E2(66.7%)와 차이는 잡음 범위. 실기 후보 = `rl/logs/basket/insert_final_eval_15014/e3_best.pt`.
+
+## 2026-10-16 07:1x Claude — 30분 기록
+- E3 계속(최신: eval it 35: exact 0.659 Q1 0.58 Q2 0.58 Q3 0.74 Q4 0.74). 실기 후보 e3_best 확정(15014 67.7%). 아침 보고 초안 Codex 검토 반영 완료, 08:30에 LOG에 올림.
