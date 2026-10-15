@@ -26,6 +26,14 @@
 
 날짜별 진행을 누적한다. 최신 항목을 아래에 추가한다. 실험 결과는 metric 수치와 log 경로를 함께 남긴다.
 
+## 2026-10-15 AO 착수 — G0 경로/물리 조건 감사
+- 지시: 새 일 AO의 G0 기록 검증부터 진행. G1은 4분면 전 칸 무작위의 clean+DART 데모, G2는 BC 3 seed와 seed 12014 홀드아웃 seated&exact ≥90%; G2 후 GUI/표 보고에서 중지. G3 PPO는 승인 전 시작 금지.
+- 확인: 기존 `rl/basket/expert.py collect`는 `grasped_start()` 이후 접시를 `attach()`하고 매 물리 스텝 `attach_update()`로 TCP에 강제 결합한다. 따라서 이 collector는 이번 AO의 “실제 물리만, attach 금지” 조건을 충족하지 않으며 G0/G1 증거로 사용할 수 없다. `rl/basket/env.py` 관측은 현재 17차원이며 요청된 두 점 오차·기울기 차이·분면 one-hot 확장이 아직 없다. collector 저장 형식도 초기화/제어기 재생용 시작 상태와 G0 재생 판정을 포함하지 않는다.
+- 상태/조치: Isaac 수집이나 학습은 아직 시작하지 않았다. 호스트 `nvidia-smi`는 NVIDIA driver 통신 실패를 반환했고, 프로세스 검색에서는 다른 Isaac/학습 프로세스를 찾지 못했다. 올바른 Isaac Python GPU 확인은 미완료다. 물리 파지 유지·기록 재생을 만족하는 G0 구현 및 launcher 확인을 계속한다.
+- 경로: 코드 `rl/basket/expert.py`, `rl/basket/env.py`, 숫자 `rl/basket/config.yaml`; 결과 파일 없음.
+- 다음: existing physical grasp contact path 검증, action/observation schema와 deterministic start replay G0 구현 가능성 확인. 임계치 실패 시 원인을 기록하고 G1로 넘어가지 않는다.
+- 작성자: Codex
+
 포맷:
 
 ```
@@ -2819,3 +2827,10 @@
 - `calibration/data/basket/slot_targets_20261014_codex_v1.json`을 생성 코드와 대조했다. 목표 수는 Q1/Q2/Q3/Q4 각각 **6/8/12/12 (총 38)**이고, 각 분면의 두 슬라이드 행은 모델 빗살 수와 맞는 1..N 번호열이다. `pin_gap`은 원거리 번호 1을 역순 모델 인덱스에 연결한다.
 - 회귀 코드는 `calibration/tests.py`의 `BasketGapNumbering` 및 `SlotTargetGenerationTests`에서 전체/역방향 인덱스, 범위 오류, 목표표 재생성·기존 파일 덮어쓰기 거부를 검사한다. 마지막 전체 시험은 13:20 점검에서 **41/41 통과**; 이후 코드 변경은 없다.
 - Q1은 3D 측정 빗살 좌표가 없어 JSON의 해당 목표가 `model_only_no_3d`다. 나머지 분면도 측정 오차·클립 주변 외삽 한계는 결과 제한사항에 남겨 둔다. GPU/Isaac/로봇 미사용.
+
+## 2026-10-15 15:1x Claude — Q1 빗살 간격·줄 간격: 보스 사진(10/14)에서 추정
+- 방법: 보스 전체 사진 `boss_slide_20261014/boss_slide_full.png`의 빗살 뿌리 픽셀(Codex `tines_refined_codex.json`)과 Q2~Q4 3D 실측(`wrist_look/tines_3d_claude_20261014.json`, 66점)으로 사진→바구니 평면 호모그래피를 맞춤. 적합 평균 3.8 mm. 분면 하나를 빼고 맞춘 검증: 절대 위치 오차 9~21 mm(사용 불가), **간격 오차 −3~+12%**.
+- **Q1 빗살 간격 ≈ 24 mm**(아래 줄 24.9, 위 줄 22.6; 검증 오차를 감안하면 약 21~27 mm). 모델은 30 mm(보스 눈대중) → 모델이 크다.
+- **줄 간격(L–R):** Q1 78 mm, Q4 78 mm(손목 3D 실측도 80 mm), Q2 95, Q3 94. 모델은 전 분면 95 mm(`rows_u ±0.0475`) → **−y 쪽(Q1·Q4) 두 줄은 약 79 mm**로 모델과 다르다.
+- 영향: sim 바구니 모델의 Q1·Q4가 실물과 다르다. 10/14 밤 튜닝 결과(Q1·Q4)와 신경망 데모가 이 모델을 쓴다. 모델 반영은 보스 결정 대기. 확정하려면 자로 Q1 1번→7번 뿌리 거리와 Q1·Q4 두 줄 간격을 재면 된다.
+- Codex: 신경망 작업의 기록 검증(G0)은 진행해도 되지만, **데모 대량 수집(G1)은 바구니 모델 결정 뒤에** 할 것.
