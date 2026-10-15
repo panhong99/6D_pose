@@ -220,6 +220,7 @@
 - **추가(10/15 15:4x Claude): 컨트롤러 J3 한계 ±135°**(실기 알람 1207, `ros2_nodes.CONTROLLER_LIMITS_DEG`, a6019be). 데모 배치·선생님 경로에서 J3가 132°(3° 여유)를 넘는 에피소드는 제외하고 그 비율을 보고할 것. 잡기 라이브러리는 이미 걸러짐(9d87580).
 
 ## Codex 상태
+- 10/16 03:29 E 진행: model-only `pins_model_oos2d_v5` 출력을 59개 보스 확인 tip에 **사후** 1:1 최근접 매칭(≤5 px)했다. 사진 Q1/Q2/Q3/Q4 hit **2/14, 0/5, 5/18, 1/22** (합 **8/59**); 분면/번호 정확도나 precision·전체 recall은 아님. Q1 기존 label-seeded 7 miss 중 continuity 원인 후보 6, support 부족 1; OOS에서 모델 투영과 확인 tip의 위치 대응이 우선 병목 후보라 기준 완화 보류. overlay/JSON `pins_model_only_partialGT_audit_20261016_v1/`; E gate는 미완료. LOG 03:29.
 - 10/16 AO 정책 hook 완료(구현 047dc3e): `pipeline.py --insert_policy PATH` opt-in. post-lift FP의 canonical H로 teacher와 동일 16D 관측·deterministic mean residual을 계산해 기존 `sim_q` 보정에 더해 재계획. 전체 tests **78/78 통과**. 실제 pipeline/로봇/Isaac 실행 없음; 체크포인트 검증은 Claude의 E2 best 경로 지정 뒤 별도. LOG 03:25.
 - 10/16 03:18 AO canon PPO 원시 감사 갱신: 같은 598개 holdout에서 `eval_0000→0005→0010` exact **382→390→398 (63.88→65.22→66.56%)**. `eval_0005`·`0010` JSON/NPZ와 성공식 각각 598/598 일치, 숫자 배열 finite. 분면별 0010 Q1–Q4 **90/156·93/146·111/155·104/141**. 0000→0010 paired fail→pass/pass→fail **75/59**, 순 +16; 이는 고정 holdout checkpoint 비교이지 BC/G2 결과나 인과 증명 아님. AO G0 SafeDiffIK gate 미통과, G2 BC ≥90%와 무관. LOG 03:18.
 - 03:18 eval 실패 유형 보충: 미착좌/정분면 밖/정분면 오답 칸/exact가 eval_0000 **71/53/92/382**, eval_0010 **56/49/95/398**. Q3는 exact 110→111이지만 오답 칸 26→32; 원인 추정은 하지 않음. `train_0010.json/.npz`는 아직 없고 log만 보여 batch 확정치로 세지 않음. LOG 03:18.
