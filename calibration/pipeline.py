@@ -222,10 +222,11 @@ def ros_node_command(mode, *extra):
     return ['/usr/bin/python3', '-u', str(HERE / 'ros2_nodes.py'), mode, *[str(e) for e in extra]]
 
 
-def mover_command(args, path, leg, go_per='waypoint', opening_done=False, smooth=False, vel=None):
+def mover_command(args, path, leg, go_per='waypoint', opening_done=False, smooth=False, vel=None, tool_force_limit_n=None):
     cmd = ros_node_command('mover', '--plan', path, '--leg', leg, '--robot_id', args.robot_id, '--controller_ns', args.controller_ns,
                            '--go_per', go_per, *(['--opening_done'] if opening_done else []),
                            *(['--smooth', '--auto'] if smooth else []),
+                           *(['--tool-force-limit-n', tool_force_limit_n] if tool_force_limit_n is not None else []),
                            *(['--vel_deg_s', vel, '--acc_deg_s2', vel] if vel else []))
     if args.execute:
         cmd.append('--execute')
@@ -798,27 +799,29 @@ def run_plate(args):
 
             cur = dict(plan=splan)                                  # the pre-stop correction swaps in a shifted plan
 
-            def sleg(name):
+            def sleg(name, tool_force_limit_n=None):
                 # (10/13 보스) only the plate's way down is slow; every other leg runs at the one speed vel_deg_s
                 v = {'descend_pre': q.get('basket_pre_vel_deg_s', vel), 'to_policy_start': q.get('basket_pre_vel_deg_s', vel),
                      'descend': q.get('basket_insert_vel_deg_s', vel), 'shift': q.get('basket_insert_vel_deg_s', vel),
                      'policy_descend': q.get('basket_policy_vel_deg_s', 1.0)}.get(name, vel)
                 print(f'\n=== slot {k} {name}: one smooth spline at {v} deg/s ===', flush=True)
                 rec.event('leg_start', leg=f'slot{k}_{name}', vel_deg_s=v, smooth=True)
-                children.run_mover(mover_command(args, cur['plan'], name, 'leg', opening_done=True, smooth=True, vel=v), env)
+                children.run_mover(mover_command(args, cur['plan'], name, 'leg', opening_done=True, smooth=True, vel=v,
+                                                 tool_force_limit_n=tool_force_limit_n), env)
                 rec.event('leg_end', leg=f'slot{k}_{name}')
 
-            def mleg(parts, name, v):                         # merged legs: one spline, no stop between them
+            def mleg(parts, name, v, tool_force_limit_n=None): # merged legs: one spline, no stop between them
                 mp = merged_plan(parts, name)
                 if mp is None:                                  # too many waypoints: the legs one after another
                     print(f'   [merged] {name}: 묶을 수 없음 -> 구간별 실행', flush=True)
                     for pp, lg in parts:
                         cur['plan'] = pp
-                        sleg(lg)
+                        sleg(lg, tool_force_limit_n if lg == 'descend' else None)
                     return
                 print(f'\n=== slot {k} {name}: ONE spline ({len(parts)} legs) at {v} deg/s ===', flush=True)
                 rec.event('leg_start', leg=f'slot{k}_{name}', vel_deg_s=v, smooth=True, merged=[lg for _, lg in parts])
-                children.run_mover(mover_command(args, mp, name, 'leg', opening_done=True, smooth=True, vel=v), env)
+                children.run_mover(mover_command(args, mp, name, 'leg', opening_done=True, smooth=True, vel=v,
+                                                 tool_force_limit_n=tool_force_limit_n), env)
                 rec.event('leg_end', leg=f'slot{k}_{name}')
             if 'to_above' in json.loads(Path(splan).read_text())['legs']:     # golden / basket: four stages
                 def look(tag):                                      # read-only wrist photo + model pins (10/12)
@@ -902,7 +905,8 @@ def run_plate(args):
                 if args.insert == 'quadrant':                  # straight down at the insert speed, release, straight up + home
                     if merge:
                         look('above')
-                    mleg([(splan, 'descend')], 'insert', q.get('basket_quadrant_vel_deg_s', q.get('basket_policy_vel_deg_s', 1.0)))
+                    mleg([(splan, 'descend')], 'insert', q.get('basket_quadrant_vel_deg_s', q.get('basket_policy_vel_deg_s', 1.0)),
+                         tool_force_limit_n=args.insert_force_limit_n)
                     choose_gripper(f'slot{k}_release')
                     mleg([(splan, 'ascend'), (splan, 'to_home')], 'retreat', vel)
                     rec.event('done', place=args.place, quadrant=args.quadrant, pin=args.pin, insert='quadrant', merged=merge)
@@ -1093,6 +1097,8 @@ def parse_args(argv=None):
                    'lean, aim, wrist flip; 10/15) instead of the real trims; --x_shift still overrides the aim')
     p.add_argument('--pin', type=int, default=5, help='--insert quadrant: pin-pair number in the quadrant, 1 = farthest from '
                    'the robot (wrist image top -> bottom); the plate goes into the gap just robot-side of that pair')
+    p.add_argument('--insert-force-limit-n', type=float, default=None,
+                   help='OPT-IN real --place basket --insert quadrant only: stop the insert spline if base-frame tool-force norm exceeds N; default off')
     p.add_argument('--auto', action='store_true', help='plate: no Human answers after the opening phrase: gripper '
                    'closes at the grasp pose (if FP says the plate did not move) and opens at the insert; stops go on')
     p.add_argument('--stop_at_above', action='store_true',
@@ -1121,6 +1127,11 @@ def parse_args(argv=None):
             p.error(f'--{name} must be positive and finite')
     if not np.isfinite(a.tool_length_m) or a.tool_length_m < 0 or a.conf > 1:
         p.error('tool length must be nonnegative; conf must be <= 1')
+    if a.insert_force_limit_n is not None:
+        if not np.isfinite(a.insert_force_limit_n) or a.insert_force_limit_n <= 0:
+            p.error('--insert-force-limit-n must be finite and > 0')
+        if not (a.execute and a.task == 'plate' and a.place == 'basket' and a.insert == 'quadrant' and not a.offline_test):
+            p.error('--insert-force-limit-n requires --task plate --execute --place basket --insert quadrant; default remains off')
     if a.execute and not sys.stdin.isatty():
         p.error('--execute requires an interactive terminal')
     return a

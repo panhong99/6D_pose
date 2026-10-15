@@ -3279,6 +3279,13 @@
 
 - Verification: `git diff --check` 통과. 최초 `bash calibration/run.sh tests`는 pipeline UDP 소켓 권한으로 막혔고, 승인된 경로 재실행은 **65/65 통과(36.252 s)**. 문서 두 파일만 커밋; 코드·시뮬레이션 데이터·체크포인트 변경 없음.
 
+## 2026-10-16 01:15–01:20 Codex — insert force-stop 설계·opt-in 구현
+- `calibration/pipeline.py --insert-force-limit-n N`은 기본 None이며, 실제 `--execute --place basket --insert quadrant`일 때만 허용한다. 값은 해당 `descend` spline mover에만 전달되고 다른 단계 및 기존 기본 경로는 그대로 둔다. Mover는 움직임 전 `GetToolForce`와 `MoveStop` 서비스 가용성을 확인하고 base-frame wrench baseline을 검사한 뒤 하강을 시작한다.
+- Spline 진행 중 bounded `GetToolForce(ref=DR_BASE)` polling을 한다. 6-vector의 첫 세 성분(힘 N) 유클리드 norm이 설정값을 **초과**하면 `MoveStop(stop_mode=1 / DR_QSTOP)`을 한 번 요청한다. 토크 세 성분은 판정에 섞지 않는다. 서비스 실패/시간초과, 잘못된 shape/비유한값, 모니터 오류/timeout도 fail-closed stop을 요청한다. stop response `success`는 요청 수락 신호일 뿐 실제 정지 완료나 정지거리를 입증하지 않는다.
+- 초과/센서 실패 뒤 mover는 비정상 종료하여 pipeline이 release/retreat/retry로 자동 진행하지 않는다. 보스가 고를 hold-vs-raise 행동은 구현하지 않았다. **25 N은 예시일 뿐 승인된 안전값이 아니며 실기에 적용 금지**: Doosan 신호 정의·영점/필터·응답주기·정지거리 및 도구/접시를 포함한 위험평가가 미완료다. 기존 sim 접촉 N을 실기 값으로 환산하지 않는다.
+- 회귀는 가짜 6축 wrench sequence와 fake clock/future로 하한, 문턱 등호, 초과, 센서 실패 및 executor 오류를 검사한다. 중간 2회 전체 시험은 CLI spell mismatch와 test assertion 문구 오류로 실패해 고쳤다. 최종 `bash calibration/run.sh tests` **68/68 통과(35.145 s)**; `git diff --check`, `py_compile` 통과.
+- 실제 ROS/Doosan service, 로봇, Isaac/GPU는 호출하지 않았다. 따라서 Doosan API response의 물리적 의미·20 Hz 감시 실효성·QSTOP 제동 성능은 미검증이며 DECISIONS 항목은 보스 승인 대기 초안이다.
+
 ## 2026-10-16 01:1x Claude — 30분 기록: 틈 검출 없을 때의 가치
 - C2 평가 25회차 **0.828**(Q1 .85 / Q2 .79 / Q3 .83 / Q4 .84, 최고). D3(전체 랜덤화) 0.759 @10.
 - C2 최고 정책을 **틈 오차 관측을 가리고**(`--cl_policy_noseen`, ca4c875) 같은 598개로 평가: **0.684**(Q1 .60 / Q2 .64 / Q3 .77 / Q4 .73). 기준(튜닝 방식) 0.554 → 틈 검출 없이 +13%p, 틈 검출(손목 카메라)까지 +14%p 더. 출력 `rl/logs/basket/insert_eval_noseen_20261016/`.

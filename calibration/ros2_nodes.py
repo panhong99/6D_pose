@@ -55,6 +55,63 @@ def call(rclpy, node, client, request, timeout):
     return future.result() if future.done() else None
 
 
+def force_limit_sample(tool_wrench, limit_n, request_stop):
+    """Apply the opt-in tool-force guard to one Doosan [Fx,Fy,Fz,Mx,My,Mz] sample.
+
+    The norm uses only the first three base-frame components (N); torque components are
+    validated but never mixed into the force threshold. `request_stop` is called once
+    on a strict threshold exceedance. Pure/fake samples can exercise this offline.
+    """
+    if not np.isfinite(limit_n) or limit_n <= 0:
+        raise ValueError('force limit must be finite and positive')
+    wrench = np.asarray(tool_wrench, dtype=float)
+    if wrench.shape != (6,) or not np.isfinite(wrench).all():
+        raise ValueError('GetToolForce must return six finite force/torque values')
+    force_n = float(np.linalg.norm(wrench[:3]))
+    tripped = force_n > float(limit_n)
+    return dict(force_n=force_n, tripped=tripped,
+                stop_requested=bool(request_stop()) if tripped else False)
+
+
+def monitor_spline_force(spline_future, spin_once, read_tool_force, request_stop, limit_n,
+                         timeout_s, poll_hz=20.0, clock=time.monotonic):
+    """Monitor while a spline future runs; on stale/bad telemetry or force trip, stop and abort.
+
+    `read_tool_force` must be bounded (the ROS adapter uses a 0.25 s service timeout).
+    A monitor fault never lets the caller continue to release or retreat automatically.
+    """
+    if not np.isfinite(poll_hz) or poll_hz <= 0 or not np.isfinite(timeout_s) or timeout_s <= 0:
+        raise ValueError('monitor rate and timeout must be finite and positive')
+    deadline = clock() + timeout_s
+    next_poll = clock()
+    period = 1.0 / poll_hz
+    while not spline_future.done():
+        now = clock()
+        if now >= deadline:
+            return dict(status='timeout', stop_requested=bool(request_stop()))
+        try:
+            spin_once(min(0.01, deadline - now))
+        except Exception as exc:
+            return dict(status='monitor_error', error=str(exc), stop_requested=bool(request_stop()))
+        if spline_future.done():
+            break
+        now = clock()
+        if now >= next_poll:
+            try:
+                wrench = read_tool_force()
+                if wrench is None:
+                    raise RuntimeError('GetToolForce returned no successful sample')
+                sample = force_limit_sample(wrench, limit_n, request_stop)
+            except Exception as exc:
+                return dict(status='sensor_error', error=str(exc), stop_requested=bool(request_stop()))
+            if sample['tripped']:
+                return dict(status='force_limit', **sample)
+            next_poll = clock() + period
+    if not spline_future.done():
+        return dict(status='timeout', stop_requested=bool(request_stop()))
+    return dict(status='complete', result=spline_future.result())
+
+
 # ================================================================ flange: read-only pose stream
 
 def run_flange(a):
@@ -189,6 +246,8 @@ def mover_args(argv=None):
     p.add_argument('--auto', action='store_true', help='with --opening_done and --smooth: no go prompt (pipeline decides)')
     p.add_argument('--go_per', choices=('waypoint', 'leg'), default='waypoint',
                    help='leg: one go starts the whole leg (moves still stop at each waypoint and every check still runs)')
+    p.add_argument('--tool-force-limit-n', type=float, default=None,
+                   help='OPT-IN: during this smooth leg, Q-stop if base-frame GetToolForce norm exceeds this N; no release/retreat follows')
     p.add_argument('--robot_id', default='dsr01')
     p.add_argument('--controller_ns', default='dsr_controller2')
     return p.parse_args(argv)
@@ -215,6 +274,13 @@ def validate(args, plan):
         problems.append(f'--vel_deg_s {args.vel_deg_s} must be > 0')
     if not np.isfinite(args.acc_deg_s2) or args.acc_deg_s2 <= 0:
         problems.append(f'--acc_deg_s2 {args.acc_deg_s2} must be > 0')
+    if args.tool_force_limit_n is not None:
+        if not np.isfinite(args.tool_force_limit_n) or args.tool_force_limit_n <= 0:
+            problems.append('--tool-force-limit-n must be finite and > 0')
+        if not args.smooth:
+            problems.append('--tool-force-limit-n is only supported for one smooth spline leg')
+        if args.leg not in ('insert', 'descend'):
+            problems.append('--tool-force-limit-n is only supported on insert/descend legs')
     if not plan.get('accepted'):
         problems.append('plan is not accepted: ' + '; '.join(plan.get('reasons', [])))
     if not plan.get('dry_run'):
@@ -279,9 +345,18 @@ def run_mover(argv=None):
     move_joint = node.create_client(MoveJoint, f'{prefix}/motion/move_joint')
     move_spline = node.create_client(MoveSplineJoint, f'{prefix}/motion/move_spline_joint')
     stop = node.create_client(MoveStop, f'{prefix}/motion/move_stop')
+    get_tool_force = None
+    GetToolForce = None
+    if args.tool_force_limit_n is not None:
+        from dsr_msgs2.srv import GetToolForce
+        get_tool_force = node.create_client(GetToolForce, f'{prefix}/aux_control/get_tool_force')
     for client in (get_posj, move_joint):
         if not client.wait_for_service(timeout_sec=10.0):
             sys.exit(f'service {client.srv_name} not available (bringup running? control granted to this PC?)')
+    if get_tool_force is not None and not get_tool_force.wait_for_service(timeout_sec=3.0):
+        sys.exit(f'service {get_tool_force.srv_name} not available; force-guarded spline refused')
+    if get_tool_force is not None and not stop.wait_for_service(timeout_sec=3.0):
+        sys.exit(f'service {stop.srv_name} not available; force-guarded spline refused')
 
     def current():
         res = call(rclpy, node, get_posj, GetCurrentPosj.Request(), 3.0)
@@ -293,9 +368,18 @@ def run_mover(argv=None):
         try:
             req = MoveStop.Request()
             req.stop_mode = 1                       # DR_QSTOP: quick stop (never starts a motion)
-            call(rclpy, node, stop, req, 2.0)
+            res = call(rclpy, node, stop, req, 2.0)
+            return bool(res is not None and res.success)
         except Exception:
-            pass
+            return False
+
+    def read_tool_force():
+        req = GetToolForce.Request()
+        req.ref = DR_BASE
+        res = call(rclpy, node, get_tool_force, req, 0.25)
+        if res is None or not res.success:
+            return None
+        return res.tool_force
 
     print(f'\nThis will move the REAL robot, {"ONE smooth spline through the leg" if args.smooth else "one confirmed move at a time"}, '
           f'at {args.vel_deg_s} deg/s.')
@@ -337,7 +421,34 @@ def run_mover(argv=None):
             req.vel, req.acc = [float(args.vel_deg_s)] * 6, [float(args.acc_deg_s2)] * 6
             req.time, req.mode, req.sync_type = 0.0, 0, 0                  # absolute, synchronous
             print(f'\nspline: {len(targets)} waypoints, joint travel {span:.1f} deg, ~{span / args.vel_deg_s:.0f} s', flush=True)
-            res = call(rclpy, node, move_spline, req, span / args.vel_deg_s * 3 + 30)
+            move_timeout = span / args.vel_deg_s * 3 + 30
+            if get_tool_force is None:
+                res = call(rclpy, node, move_spline, req, move_timeout)
+            else:
+                # Baseline before motion: reject a pre-existing overload without moving.
+                try:
+                    baseline = force_limit_sample(read_tool_force(), args.tool_force_limit_n, lambda: False)
+                except (TypeError, ValueError, RuntimeError) as exc:
+                    sys.exit(f'force guard has no valid baseline; spline refused: {exc}')
+                if baseline['tripped']:
+                    sys.exit(f'force guard baseline {baseline["force_n"]:.1f} N exceeds '
+                             f'{args.tool_force_limit_n:.1f} N; spline refused without motion')
+                spline_future = move_spline.call_async(req)
+                monitored = monitor_spline_force(
+                    spline_future,
+                    lambda timeout: rclpy.spin_once(node, timeout_sec=timeout),
+                    read_tool_force, request_stop, args.tool_force_limit_n, move_timeout)
+                if monitored['status'] != 'complete':
+                    if monitored['status'] == 'force_limit':
+                        print(f'FORCE LIMIT: {monitored["force_n"]:.1f} N > {args.tool_force_limit_n:.1f} N; '
+                              f'DR_QSTOP requested (accepted={monitored["stop_requested"]}). '
+                              'Automatic gripper release/retreat is disabled; Human must decide hold vs raise.', flush=True)
+                    else:
+                        print(f'FORCE GUARD {monitored["status"]}: {monitored.get("error", "")}; '
+                              f'DR_QSTOP requested (accepted={monitored["stop_requested"]}). '
+                              'Automatic gripper release/retreat is disabled.', flush=True)
+                    sys.exit('force-guarded spline aborted; no automatic continuation')
+                res = monitored['result']
             if res is None or not res.success:
                 request_stop()
                 sys.exit('controller did not accept / complete the spline - stopped, nothing retried')

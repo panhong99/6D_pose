@@ -1128,3 +1128,10 @@ Human 지시: Claude와 Human이 실증하는 동안 Codex가 이 문제의 원�
 - 진단 옵션 `expert.py replay --g0 --g0_telemetry`에서만 Plate↔Basket 필터 PhysX contact sensor를 켠다. 기본 환경/파지 replay의 센서 구성은 바꾸지 않는다.
 - 30 Hz 삽입 control frame마다 physics update 뒤 `low`, slot 기준 `d_bottom`, plate normal 오차, 필터 접촉력 크기를 저장한다. `first_contact_frame`은 삽입-local 0-based frame 중 힘이 1.0 N 이상인 첫 표본이며, 그 이하/무표본은 `null`이다. 시각 해상도는 한 control frame(약 33 ms)이고 1 N은 판정 임계값이지 물리 접촉 자체의 보편 경계가 아니다.
 - Teacher와 SafeDiffIK replay 각각의 시계열은 NPZ에 저장하고 JSON episode에 첫 프레임·표본 수를 남긴다. Telemetry는 진단 전용이며 gate/속도·성공 기준을 바꾸지 않는다. 동일 시드·plan 해시 및 `closed_loop_extra_m`을 JSON provenance에 포함한다.
+
+## 2026-10-16 Codex 초안 — 실기 quadrant 삽입 힘 감시 (보스 승인 대기)
+- 범위: `--task plate --place basket --insert quadrant`의 straight-down `descend` spline에만 CLI opt-in `--insert-force-limit-n N`을 제공한다. 기본값 `None`이라 기존 움직임에는 monitor가 붙지 않는다. mover도 `insert/descend` smooth leg만 받아들이며, lift/carry/release/retreat에는 전달하지 않는다.
+- 신호와 판정: `GetToolForce(ref=DR_BASE)`의 6축 wrench에서 첫 3개 힘 성분만 써서 `||F_xyz||₂ > N`이면 즉시 `MoveStop(stop_mode=1 / DR_QSTOP)`를 요청한다. 토크(Nm)를 힘 임계값에 섞지 않는다. spline 시작 직전에도 baseline을 읽어 이미 초과했거나 응답/형식이 유효하지 않으면 이동을 시작하지 않는다. 이동 중 service 응답 실패/0.25 s timeout, 비유한값, 잘못된 shape, monitor timeout도 fail-closed로 QSTOP 요청 및 비정상 종료한다.
+- 정지 후 파이프라인은 gripper open, 자동 상승/후퇴, retry를 하지 않는다. 물체가 손에 든 채 정지할지 올릴지는 보스 결정 및 사람 감독 사항이다. QSTOP 서비스 호출의 `success`만 기록하며 실제 정지거리/정지 달성을 뜻하는 피드백으로 간주하지 않는다.
+- 회귀는 ROS/로봇 없이 가짜 wrench 시계열(하한·문턱과 같음·초과·센서 단절)을 helper에 넣어 stop 요청 횟수/판정을 검사한다. 이것은 서비스 주기·응답 지연·컨트롤러의 QSTOP 실효성을 실증하지 않는다.
+- **25 N은 예시 파라미터일 뿐 승인된 안전 한계가 아니다.** 낮은 값도 실기에서 쓰지 말 것. 먼저 Doosan API의 외력 기준/필터링·영점·좌표계·주기·응답 실패 동작을 문서/실기 비작동 상태에서 검증하고, tool/gripper/plate/fixture 질량·가속도 및 stopping distance를 포함한 현장 위험 평가와 보스 승인이 필요하다. `GetToolForce`의 TCP·센서 의미가 확인되지 않았고 sim contact N은 실기 tool force로 환산되지 않는다. 실기 실행은 별도 사람 승인 전 금지.

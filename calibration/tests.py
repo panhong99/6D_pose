@@ -168,8 +168,24 @@ class Pipeline(unittest.TestCase):
         args = pipeline.parse_args([])
         for leg in ('approach', 'return'):
             self.assertNotIn('--execute', pipeline.mover_command(args, Path('plan.json'), leg))
+        self.assertIsNone(args.insert_force_limit_n)
+        self.assertNotIn('--tool-force-limit-n', pipeline.mover_command(args, Path('plan.json'), 'insert',
+                                                                        smooth=True, tool_force_limit_n=None))
+        guarded = pipeline.mover_command(args, Path('plan.json'), 'insert', smooth=True, tool_force_limit_n=25.0)
+        self.assertEqual(guarded[guarded.index('--tool-force-limit-n') + 1], '25.0')
+        guarded_argv = ['--task', 'plate', '--execute', '--place', 'basket', '--insert', 'quadrant', '--quadrant', 'Q1',
+                        '--insert-force-limit-n', '25']
+        with patch.object(pipeline.sys, 'stdin', SimpleNamespace(isatty=lambda: True)):
+            guarded_args = pipeline.parse_args(guarded_argv)
+        self.assertEqual(guarded_args.insert_force_limit_n, 25.0)
+        self.assertIn('--tool-force-limit-n', pipeline.mover_command(
+            guarded_args, Path('plan.json'), 'insert', smooth=True, tool_force_limit_n=guarded_args.insert_force_limit_n))
+        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+            pipeline.parse_args(['--task', 'cube', *guarded_argv[1:]])
         with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
             pipeline.parse_args(['--offline-test', '--execute'])
+        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+            pipeline.parse_args(['--insert-force-limit-n', '25'])  # opt-in is only allowed for a real quadrant execute
         plan = dict(dry_run=True, accepted=True, offline_test=True, execution_allowed=False, created=time.strftime('%Y-%m-%d %H:%M:%S'),
                     margin_m=.1, legs=dict(approach=dict(waypoints_deg=[[0] * 6, [10] * 6], min_clearance_straight_m=.12)))
         self.assertTrue(nodes.validate(nodes.mover_args(['--plan', 'unused', '--leg', 'approach']), plan)[1])
@@ -177,6 +193,76 @@ class Pipeline(unittest.TestCase):
             for value in ('-1', 'nan'):                    # no upper limit since 2026-10-13 (boss); only > 0, finite
                 a = nodes.mover_args(['--plan', 'unused', '--leg', 'approach', option, value])
                 self.assertTrue(nodes.validate(a, dict(plan, offline_test=False, execution_allowed=True))[1])
+        for value in ('0', '-1', 'nan'):
+            a = nodes.mover_args(['--plan', 'unused', '--leg', 'insert', '--smooth', '--tool-force-limit-n', value])
+            self.assertTrue(any('tool-force-limit' in problem for problem in nodes.validate(
+                a, dict(plan, offline_test=False, execution_allowed=True))[1]))
+
+    def test_force_guard_fake_wrench_series_requests_one_stop_on_norm_exceedance(self):
+        class Clock:
+            now = 0.0
+
+            def __call__(self):
+                return self.now
+
+            def spin(self, timeout):
+                self.now += timeout
+
+        class PendingSpline:
+            def done(self):
+                return False
+
+            def result(self):
+                raise AssertionError('tripped spline must not be treated as completed')
+
+        clock, stops = Clock(), []
+        samples = iter(([10., 0, 0, 0, 0, 0], [24.9, 0, 0, 0, 0, 0],
+                        [15., 20., 0.1, 0, 0, 0], [0., 0, 0, 0, 0, 0]))
+        result = nodes.monitor_spline_force(PendingSpline(), clock.spin, lambda: next(samples),
+                                            lambda: stops.append(clock()) or True, 25.0,
+                                            timeout_s=10.0, poll_hz=20.0, clock=clock)
+        self.assertEqual(result['status'], 'force_limit')
+        self.assertGreater(result['force_n'], 25.0)  # norm([15,20,0.1]); torque is excluded
+        self.assertEqual(len(stops), 1)
+
+    def test_force_guard_equal_threshold_does_not_stop_and_bad_sensor_does(self):
+        stops = []
+        sample = nodes.force_limit_sample([15., 20., 0., 900., 0., 0.], 25.0,
+                                          lambda: stops.append('trip') or True)
+        self.assertFalse(sample['tripped'])  # strict >; only force xyz contributes
+        self.assertEqual(stops, [])
+
+        class Clock:
+            now = 0.0
+
+            def __call__(self):
+                return self.now
+
+            def spin(self, timeout):
+                self.now += timeout
+
+        class PendingSpline:
+            def done(self):
+                return False
+
+        clock = Clock()
+        result = nodes.monitor_spline_force(PendingSpline(), clock.spin, lambda: None,
+                                            lambda: stops.append('sensor') or True, 25.0,
+                                            timeout_s=1.0, poll_hz=20.0, clock=clock)
+        self.assertEqual(result['status'], 'sensor_error')
+        self.assertEqual(stops, ['sensor'])
+
+    def test_force_guard_monitor_exception_requests_stop(self):
+        class PendingSpline:
+            def done(self):
+                return False
+
+        stops = []
+        result = nodes.monitor_spline_force(PendingSpline(), lambda _timeout: (_ for _ in ()).throw(RuntimeError('executor')),
+                                            lambda: [0.] * 6, lambda: stops.append(True) or True,
+                                            25.0, timeout_s=1.0)
+        self.assertEqual(result['status'], 'monitor_error')
+        self.assertEqual(stops, [True])
 
     def run_with_fake_io(self, execute=False, refused=False):
         """Real planner + synthetic sensor streams; no process, ROS, socket or camera."""
