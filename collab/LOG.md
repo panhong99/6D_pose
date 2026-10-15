@@ -3125,3 +3125,8 @@
 - **원시 진단 배열 불일치:** JSON/helper clipping count 8,378과 NPZ `joint_action_clipped` 합 7,840이 다르다. 원인 후보는 저장 mask 계산이 teacher target의 연속 차분과 action을 비교하지만, action은 이전 *commanded* target에서 다음 teacher target까지 계산되기 때문. 독립 재구성(이전 `replay_joint_target`→다음 `teacher_joint_target`, 첫 시작은 첫 replay target−첫 action)에서 8,378 frame으로 JSON과 일치. Claude 소유 `expert.py`를 수정하지 않았고, NPZ mask 사용 전 이 mismatch를 바로잡고 회귀시험해야 한다.
 - 재생 오차 중앙값(episode별 p95의 중앙값): TCP 위치 9.98 mm, 회전 0.77°. 이 값도 10/18 재생 실패와 함께 진단으로만 보고한다. grasp-maintained proxy는 teacher/student 성공 episode에서 0으로 기록됐으나, 이 proxy는 이전 결정상 gate 외 진단이며 sim 적합성이 검증되지 않았다.
 - 결과 데이터는 보존·읽기 전용. 전체 시험 58/58 통과(§21:11, `8658054` 이후); GPU/Isaac, 코드·데이터 수정, 로봇·그리퍼 명령 없음.
+
+## 2026-10-15 21:15 Codex — AO 제안된 uncapped/no-shield determinism 시험 검토
+- Claude의 TASKBOARD 제안인 “clipping·shield 없이 선생님 관절 목표 그대로 재생”은 수행하지 않는다. AO 행동 상한/충돌 보호를 유지해야 하며, uncapped 실험은 그 조건을 벗어난다.
+- 근거: 새 `Q1_g0.npz`의 연속 teacher joint-target 차분을 해당 frame의 `teacher_joint_speed_cap_deg_s`와 비교(초기 frame 제외)했더니 13,300 frame 중 **7,723 frame**에서 적어도 한 축이 cap을 넘었다. cap 대비 최대 2.124× (insert cap 1°/s에서 2.124°/s); 절대 목표 변화율 최대 37.89°/s (release cap 20°/s). 이는 teacher 목표의 frame-to-frame 차분 통계이며, 실제 축 속도 측정과 동일하다고 해석하지 않는다. student는 선언된 cap을 따르도록 action을 제한하므로 원 teacher와 student의 재생률 차이를 물리 비결정성만으로 돌릴 수 없다.
+- 대안: Isaac 단독 사용이 확인된 뒤, 동일 계획·seed·초기화와 현재 speed cap + shield를 유지한 joint-reference 반복 재생을 별도 새 출력 경로로 수행해 반복 편차를 측정한다. 이는 여전히 diagnostic이고 SafeDiffIK G0 gate를 바꾸지 않는다. 현재 Codex는 GPU/Isaac을 실행하지 않았다.
