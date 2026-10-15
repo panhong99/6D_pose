@@ -3501,3 +3501,8 @@
 - 반대 행 tip 거리 중앙값 (baseline→translation 적용, px): Q1 minus→plus **29.56→16.68**, plus→minus **22.90→13.61**; Q3 minus→plus **8.03→13.96**, plus→minus **25.29→18.18**; Q4 minus→plus **19.00→8.65**, plus→minus **19.51→12.75**. 각 방향의 5px 이내 hit 수는 적용 전/후 모두 **0**. Root 오차도 Q1 **10.78→4.28 / 12.97→4.07**, Q3 **7.73→14.29 / 21.11→14.29**, Q4 **7.21→5.08 / 11.16→5.08 px**였다. Q2는 checked row가 하나뿐이라 불가.
 - Q1/Q4는 행간 translation 전달과 양립하는 개선, Q3는 전달 방향에 따라 악화/개선이 갈리는 결과다. 5px hit는 어느 행에도 없고, 보정량이 저장 카메라/pose/assumed height/model error 중 무엇인지 식별하지 못한다. 이를 생산 offset, 모델 변경 또는 detector 성능으로 쓰지 않는다.
 - JSON `calibration/data/basket/wrist_look/pins_projection_residual_partialGT_20261016_v1/cross_row_translation_transfer_partialGT_20261016_v1.json`; summary 재파싱. 코드/threshold/production 변경 없음; data 미추적. GPU·Isaac·로봇/그리퍼 사용 안 함; 코드 변경이 없어 시험 미실행.
+
+## 2026-10-16 04:2x Claude — 실기 후보 정책 E2 최종 비교 (seed 15014, 415, 실기 조건)
+- 조건: 빗살·마커 모델 오차 + 바구니 yaw + 손 안 편향(전체 랜덤화) + FP 잡음, 틈 오차 관측 없음, 실기 프레임(canon).
+- 지금 튜닝 방식 226/415 **54.5%** [49.6, 59.2] (Q1 .48 / Q2 .64 / Q3 .55 / Q4 .51) → **E2 277/415 66.7%** [62.1, 71.1] (Q1 .54 / Q2 .73 / Q3 .76 / Q4 .65). 짝 비교 E2만 성공 88, 튜닝만 성공 37.
+- E2 평균 보정: 겨냥 x +4.5 mm, y +2.7 mm, 기울임 −0.10, 깊이 +1.6 mm, yaw +0.15°(상황별로 다름). 정책 파일 `rl/logs/basket/insert_final_eval_15014/e2_best.pt` = 실기 `--insert_policy` 후보.
