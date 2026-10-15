@@ -3327,3 +3327,14 @@
 - C2 평가 25회차 **0.828**(Q1 .85 / Q2 .79 / Q3 .83 / Q4 .84, 최고). D3(전체 랜덤화) 0.759 @10.
 - C2 최고 정책을 **틈 오차 관측을 가리고**(`--cl_policy_noseen`, ca4c875) 같은 598개로 평가: **0.684**(Q1 .60 / Q2 .64 / Q3 .77 / Q4 .73). 기준(튜닝 방식) 0.554 → 틈 검출 없이 +13%p, 틈 검출(손목 카메라)까지 +14%p 더. 출력 `rl/logs/basket/insert_eval_noseen_20261016/`.
 - Codex 접촉력 분석(3465140): sim 착좌 60~166 N 밀어 넣기, 느린 하강은 67 mm에서 162~188 N으로 끼임 → 실기 힘 제한 설계를 Codex 다음 일로(27b6aae). 단계형 G0는 오늘 밤 보류.
+
+## 2026-10-16 01:58 Codex — AO no-seen PPO 평가 원시 재집계 (CPU/read-only)
+- `rl/logs/basket/insert_eval_noseen_20261016/noseen.json`의 598행을 다시 집계했다. 기준식 `seated_exact = seated && in_quadrant && landed_gap == target_gap`과 JSON 요약은 **598/598 일치**. 총 **409/598 = 68.39%**; 분면별 Q1 **94/156 = 60.26%**, Q2 **93/146 = 63.70%**, Q3 **119/155 = 76.77%**, Q4 **103/141 = 73.05%**로 LOG의 반올림 수치와 일치한다. `in_quadrant`, `quadrant_ok`, `held`, `seated_in_quadrant`, `landed_gap`, `target_gap`도 결과 행과 벡터가 각각 598/598 일치했다.
+- 같은 산출물의 `eval_plans.jsonl`을 `rl/logs/basket/insert_rl_20261015_night_scaled_drfull/eval_plans.jsonl`과 비교했다. 두 파일은 598개 행·조건의 정규화된 사양과 순서가 모두 같고, 계획 파일 경로도 각각 598개 고유했다. 이름 충돌 10개는 서로 다른 pose/plan이므로 이름만으로 중복제거하면 안 된다. 모든 결과 행은 `real=planned`; `P1 gate 0/0`은 시뮬레이션 seated-exact 점수가 아니라 실기 재현 gate의 분모다.
+- 이 no-seen PPO 평가는 별도 보조 수치이며 AO G0 SafeDiffIK gate(현재 미통과)나 AO G2 BC 3-seed ≥90% 기준을 충족하지 않는다. 별도 baseline 0.554와 인과 비교는 여기서 재검증하지 않았다. 최신 `insert_rl_20261016_noseen_drfull/train_0009.json`은 학습 batch **40/96**; `eval_0010.log`는 있으나 짝 JSON/NPZ를 확인하지 못해 새 평가 점수는 산출하지 않았다. 진행 중인 Isaac/GPU 및 Claude 소유 코드는 건드리지 않았다.
+
+## 2026-10-16 02:07 Codex — no-seen PPO 새 eval_0010 원시 검증
+- 재점검 시 새 `eval_0010.json/.npz`가 완성되어 있어 평가 0/5/10 원자료를 모두 다시 집계했다. `seated_exact = (0.020 < final.low < 0.060) && in_quadrant && (landed_gap == target_gap)` 재계산은 세 회차 각각 JSON row 및 NPZ와 **598/598 일치**. eval_0010의 seated/in-quadrant/landed/target 요약 배열도 JSON row와 일치한다. 모든 row는 `real=planned`다.
+- eval0→5→10은 **378/598 (63.21%) → 384/598 (64.21%) → 382/598 (63.88%)**. eval5→10은 실패→성공 40, 성공→실패 42 (순 −2)로 단조 개선이 없다. eval10 Q1 **89/156 (57.05%)**, Q2 **81/146 (55.48%)**, Q3 **110/155 (70.97%)**, Q4 **102/141 (72.34%)**. 반면 앞선 C2 no-seen 별도 평가는 409/598 (68.39%)였으며 그 `obs/bias/quadrant/target` 배열은 eval10과 완전 동일; C2 no-seen→현재 eval10 쌍 전이는 실패→성공 34, 성공→실패 61 (순 −27)다. 이 비교는 두 고정 정책의 paired 결과이며 인과적 학습효과로 해석하지 않는다.
+- `config.json`에서 현 run은 `noseen=true`, full DR + FP noise이며 warm-start `insert_rl_20261015_night_scaled_drfull3/current.pt` (`drfull3` config에는 no-seen 설정 없음)에서 시작했다. 따라서 이는 full-observation checkpoint에서 관측 마스킹 조건으로 fine-tune한 결과지, 처음부터 no-seen으로 학습한 독립 정책이 아니다. train_0009 40/96은 학습 batch 지표와 분리한다. 이 PPO 평가로 AO G0 SafeDiffIK 또는 G2 BC gate 통과를 주장할 수 없고 G0 미통과는 유지한다.
+- 처음 전체 시험은 pipeline 가짜 입력 안정자세 테스트 1건 오류(72/73); 해당 단독 재시험은 1/1 통과했고 전체 재시험 `bash calibration/run.sh tests` **73/73 통과 (34.7 s)**. 코드 변경 없음. 평가/가중치/데이터 미수정, GPU·로봇 미사용.
