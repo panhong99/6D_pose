@@ -1085,6 +1085,11 @@ Human 지시: Claude와 Human이 실증하는 동안 Codex가 이 문제의 원�
 - 확인: 대각 이동·회전 상한, finger/rim 진단, 기존 `seated_exact` 분모, 시작 복원·replay 오차 요약, env별 open label, NaN/frame 불일치 회귀시험. 수정 후 `bash calibration/run.sh tests` **51/51 통과 (32.4 s)**. G0 teacher 실행은 최종 `run_quadrant_final_20261015.sh` 인자 전체로 해야 한다.
 - 보스 검토: 이 선택은 teacher 차분을 기존 실행기 상한에 맞추는 기록 전처리이며, G0 재생 결과와 함께 확인한다.
 
+## 2026-10-15 AO/G0: opt-in teacher joint-target rate cap
+- `expert.py`에 `--teacher_rate_cap` 옵션을 둔다. 켰을 때만 `drive()`가 waypoint 관절 목표를 retime해 30 Hz 프레임별 목표 변화량이 해당 phase의 기존 `speed/30` 이하가 되게 한다. phase 전환은 직전 명령 목표에서 이어진다. 기본 실행 경로는 이전 보간식을 그대로 쓴다.
+- 이는 PD **목표 갱신률** 제한이며 실제 관절 물리 속도 보증으로 해석하지 않는다. phase 값은 변경·상향하지 않고 safety shield·충돌물리·`seated_exact` 성공 기준도 그대로 둔다.
+- capped teacher의 seated_exact와 capped+shield joint-reference 재현은 새 산출 경로의 진단이다. 높은 joint-reference 일치율만으로 SafeDiffIK TCP G0 통과나 BC gate 통과를 선언하지 않는다. SafeDiffIK G0는 기존 ≥95% 조건으로 별도 확인한다.
+
 ## 2026-10-15 AO/G0 재개: 바구니 회전 hold + 추적형 SafeDiffIK replay
 - 결정: generic `SafeDiffIKActionCfg.rotation_hold` 기본값은 꺼 두고 `basket_env.make_basket_cfg()`에서만 켠다. 바구니 실행기가 쓰는 spatial delta 규약에 맞춰 `hold_quat ← δ ⊗ hold_quat`으로 목표 회전을 적분한다. TCP 회전 속도 상한은 기존 10°/s 그대로다.
 - G0 replay는 저장된 고정 FK delta를 반복하지 않고, 매 프레임 실제 학생 TCP 현재 pose에서 선생님 trace의 다음 절대 TCP pose까지 slot frame 오차를 계산한 후 기존 5 cm/s·10°/s step norm 제한으로 자른다. 그 실행 action은 `replay_act`; 선생님 상태에서 만든 원본 clean action `act`와 분리 저장한다.

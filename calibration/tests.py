@@ -748,6 +748,41 @@ class BasketG0ActionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'binary'):
             mod.g0_joint_actions_from_trace(bad_open, np.zeros((1, 6)))
 
+    def test_teacher_rate_cap_retimes_each_path_and_reaches_its_endpoint(self):
+        mod = self.expert_module()
+        initial = np.zeros((3, 6), dtype=float)
+        paths = [np.array([[1.0, -2.0, 0, 0, 0, 0], [2.0, -2.0, 0, 0, 0, 0]]),
+                 np.array([[0.0, 0.5, 0, 0, 0, 0]]), None]
+        target = mod.teacher_rate_cap_targets(paths, initial, speed_deg_s=6.0, hz=30.0)
+        self.assertEqual(target.shape[0], 3)
+        self.assertGreater(target.shape[1], 1)
+        delta = np.diff(np.concatenate([initial[:, None], target], axis=1), axis=1)
+        self.assertLessEqual(float(np.max(np.abs(delta))), 6.0 / 30.0 + 1e-7)
+        np.testing.assert_allclose(target[0, -1], paths[0][-1], atol=1e-10)
+        np.testing.assert_allclose(target[1, -1], paths[1][-1], atol=1e-10)
+        np.testing.assert_allclose(target[2], 0.0, atol=0.0)
+
+    def test_teacher_rate_cap_phase_change_starts_from_prior_commanded_target(self):
+        mod = self.expert_module()
+        initial = np.zeros((1, 6), dtype=float)
+        first = mod.teacher_rate_cap_targets([np.array([[2.0, 0, 0, 0, 0, 0]])], initial, 20.0, 30.0)
+        second = mod.teacher_rate_cap_targets([np.array([[1.0, 0, 0, 0, 0, 0]])], first[:, -1], 1.0, 30.0)
+        delta = np.diff(np.concatenate([first[:, -1:, :], second], axis=1), axis=1)
+        self.assertLessEqual(float(np.max(np.abs(delta))), 1.0 / 30.0 + 1e-7)
+        np.testing.assert_allclose(second[0, -1], [1, 0, 0, 0, 0, 0], atol=1e-10)
+
+    def test_teacher_rate_cap_rejects_invalid_inputs(self):
+        mod = self.expert_module()
+        base = np.zeros((1, 6), dtype=float)
+        with self.assertRaisesRegex(ValueError, 'initial joint'):
+            mod.teacher_rate_cap_targets([None], np.zeros((1, 5)), 1.0)
+        with self.assertRaisesRegex(ValueError, 'path count'):
+            mod.teacher_rate_cap_targets([], base, 1.0)
+        with self.assertRaisesRegex(ValueError, 'finite'):
+            mod.teacher_rate_cap_targets([np.full((1, 6), np.nan)], base, 1.0)
+        with self.assertRaisesRegex(ValueError, 'positive'):
+            mod.teacher_rate_cap_targets([None], base, 0.0)
+
     def test_rotation_hold_composes_spatial_delta_and_is_opt_in(self):
         import torch
         from rl_utils import ROTATION_HOLD_DEFAULT, integrate_spatial_quat

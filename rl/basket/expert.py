@@ -31,6 +31,8 @@ def parse_args():
     p.add_argument('--per_run', type=int, default=16, help='replay: envs per real run')
     p.add_argument('--jitter_mm', type=float, default=2.0, help='replay: plate xy jitter (FP noise)')
     p.add_argument('--speed', type=float, default=20.0, help='sim joint speed for transport legs (deg/s)')
+    p.add_argument('--teacher_rate_cap', action='store_true',
+                   help='opt-in: retime teacher PD targets so each 30 Hz joint-target step respects the existing phase speed')
     p.add_argument('--out', default=None)
     p.add_argument('--seed', type=int, default=0)
     p.add_argument('--debug', action='store_true')
@@ -162,7 +164,44 @@ def set_basket(env, T_list, ids=None):
     env.scene['basket'].write_root_pose_to_sim(pose, env_ids=idt)
 
 
-def drive(env, paths_deg, closed, speed, hold=15, trace=None, trace_phase='motion'):
+def teacher_rate_cap_targets(paths_deg, initial_joint_deg, speed_deg_s, hz=30.0):
+    """Sample joint waypoint paths without any per-frame target delta exceeding speed/hz."""
+    import numpy as np
+    initial = np.asarray(initial_joint_deg, dtype=float)
+    speed = float(speed_deg_s)
+    if initial.ndim != 2 or initial.shape[1] != 6 or not np.isfinite(initial).all():
+        raise ValueError(f'initial joint targets must be finite (env, 6), got {initial.shape}')
+    if len(paths_deg) != initial.shape[0]:
+        raise ValueError('joint path count must match the initial environment count')
+    if not np.isfinite(speed) or speed <= 0 or not np.isfinite(hz) or hz <= 0:
+        raise ValueError('teacher rate cap and frame rate must be finite and positive')
+    dense = []
+    for k, path in enumerate(paths_deg):
+        if path is None or len(path) == 0:
+            pts = initial[k:k + 1]
+        else:
+            path = np.asarray(path, dtype=float)
+            if path.ndim != 2 or path.shape[1] != 6 or not np.isfinite(path).all():
+                raise ValueError(f'joint path {k} must be finite with shape (waypoints, 6)')
+            pts = np.vstack([initial[k], path])
+        seg = np.abs(np.diff(pts, axis=0)).max(1) if len(pts) > 1 else np.zeros(0)
+        dense.append((pts, np.r_[0.0, np.cumsum(seg)]))
+    total = max(float(s[-1]) for _, s in dense)
+    steps = max(1, int(np.ceil(total * float(hz) / speed)))
+    targets = np.repeat(initial[:, None, :], steps, axis=1)
+    if total <= 0:
+        return targets
+    for k, (pts, s) in enumerate(dense):
+        if s[-1] <= 0:
+            continue
+        t = np.minimum(float(s[-1]), total * np.arange(1, steps + 1, dtype=float) / steps)
+        j = np.clip(np.searchsorted(s, t, side='right') - 1, 0, len(pts) - 2)
+        f = (t - s[j]) / np.maximum(s[j + 1] - s[j], 1e-12)
+        targets[k] = pts[j] + (pts[j + 1] - pts[j]) * f[:, None]
+    return targets
+
+
+def drive(env, paths_deg, closed, speed, hold=15, trace=None, trace_phase='motion', rate_cap=False):
     """Every env along its own joint waypoint path (list of (k, 6) deg arrays, None = stay) in the same number of
     steps (the longest path at `speed` deg/s), fingers closed / open per env, then `hold` settle steps."""
     import numpy as np
@@ -173,13 +212,25 @@ def drive(env, paths_deg, closed, speed, hold=15, trace=None, trace_phase='motio
     fj = [robot.joint_names.index(j) for j in ('left_finger_joint', 'right_finger_joint')]
     q = robot.data.joint_pos.clone()
     now = torch.rad2deg(q[:, aj]).cpu().numpy()
+    if rate_cap:
+        previous = getattr(env, '_teacher_rate_cap_target_deg', None)
+        if previous is not None:
+            previous = np.asarray(previous, dtype=float)
+            if previous.shape == now.shape and np.isfinite(previous).all():
+                now = previous.copy()
+        q[:, aj] = torch.as_tensor(np.radians(now), dtype=q.dtype, device=q.device)
     dense = []
     for k, p in enumerate(paths_deg):
         pts = np.vstack([now[k], p]) if p is not None and len(p) else now[k][None]
         seg = np.abs(np.diff(pts, axis=0)).max(1) if len(pts) > 1 else np.zeros(0)
         dense.append((pts, np.r_[0, np.cumsum(seg)]))
     total = max(float(s[-1]) for _, s in dense)
-    steps = max(1, int(total / speed * 30))
+    if rate_cap:
+        rate_targets = teacher_rate_cap_targets(paths_deg, now, speed, 30.0)
+        steps = rate_targets.shape[1]
+    else:
+        rate_targets = None
+        steps = max(1, int(total / speed * 30))
     import env as basket_obs
     def record_step():
         if trace is None:
@@ -202,19 +253,24 @@ def drive(env, paths_deg, closed, speed, hold=15, trace=None, trace_phase='motio
         trace['quat'].append(tq.cpu().numpy())
         trace['joints'].append(torch.rad2deg(robot.data.joint_pos[:, aj]).cpu().numpy())
     for i in range(1, steps + 1):
-        for k, (pts, s) in enumerate(dense):
-            if s[-1] <= 0:
-                continue
-            t = min(s[-1], total * i / steps)
-            j = min(np.searchsorted(s, t, 'right') - 1, len(pts) - 2)
-            f = (t - s[j]) / max(s[j + 1] - s[j], 1e-9)
-            q[k, aj] = torch.tensor(np.radians(pts[j] + (pts[j + 1] - pts[j]) * f), dtype=torch.float32, device=env.device)
+        if rate_cap:
+            q[:, aj] = torch.as_tensor(np.radians(rate_targets[:, i - 1]), dtype=q.dtype, device=q.device)
+        else:
+            for k, (pts, s) in enumerate(dense):
+                if s[-1] <= 0:
+                    continue
+                t = min(s[-1], total * i / steps)
+                j = min(np.searchsorted(s, t, 'right') - 1, len(pts) - 2)
+                f = (t - s[j]) / max(s[j + 1] - s[j], 1e-9)
+                q[k, aj] = torch.tensor(np.radians(pts[j] + (pts[j + 1] - pts[j]) * f), dtype=torch.float32, device=env.device)
         shut = torch.as_tensor(closed, device=env.device)
         if getattr(env, '_attach', None) is not None:
             shut = shut & ~env._attach['on']
         q[:, fj] = torch.where(shut[:, None],
                                torch.full_like(q[:, fj], pe.FINGER_CLOSED), torch.zeros_like(q[:, fj]))
         robot.set_joint_position_target(q)
+        if rate_cap:
+            env._teacher_rate_cap_target_deg = torch.rad2deg(q[:, aj]).cpu().numpy().copy()
         record_step()
         sim_steps(env)
         if trace is not None:
@@ -914,9 +970,9 @@ def run_replay(args):
         sim_steps(env)
     L = lambda leg, src: [np.asarray(rows[i][src][leg]['waypoints_deg']) for i in who]   # noqa: E731
     open_ = np.zeros(n, bool)
-    drive(env, L('to_grasp', 'grasp'), open_, args.speed)
-    drive(env, [None] * n, ~open_, args.speed, hold=30)       # close (stalls on the rim)
-    drive(env, L('lift', 'grasp'), ~open_, args.speed, hold=60)
+    drive(env, L('to_grasp', 'grasp'), open_, args.speed, rate_cap=args.teacher_rate_cap)
+    drive(env, [None] * n, ~open_, args.speed, hold=30, rate_cap=args.teacher_rate_cap)       # close (stalls on the rim)
+    drive(env, L('lift', 'grasp'), ~open_, args.speed, hold=60, rate_cap=args.teacher_rate_cap)
     lift = env.scene['plate'].data.root_pos_w[:, 2] - env.scene.env_origins[:, 2] - pe.REST_Z
     held = (lift > 0.05).cpu().numpy()
     # Keep the old >5 cm lift metric for in-quadrant classification. Finger/rim checks are
@@ -932,7 +988,7 @@ def run_replay(args):
                    joints=robot.data.joint_pos[:, :6].cpu().numpy().tolist())
     if args.attach:                                            # rigid in-hand plate (see attach), no extra noise
         attach(env, torch.as_tensor(held, device=dev))
-    drive(env, L('to_above', 'slot'), ~open_, args.speed)
+    drive(env, L('to_above', 'slot'), ~open_, args.speed, rate_cap=args.teacher_rate_cap)
     # G0 starts at the first stop above the basket, before any closed-loop re-aim (stage 4).
     g0_record = None
     g0_start = None
@@ -942,8 +998,12 @@ def run_replay(args):
                          joints=[], physical_held=[], finger_ratio=[], tcp_local=[], rim_distance=[],
                          released_state=[], released=np.zeros(n, dtype=bool))
         g0_start = capture_g0_state(env, pe)
+        if args.teacher_rate_cap:
+            g0_arm_ids = env.action_manager.get_term('arm_action')._joint_ids
+            env._teacher_rate_cap_target_deg = torch.rad2deg(g0_start['q'][:, g0_arm_ids]).cpu().numpy().copy()
     if all('descend_pre' in rows[i]['slot'] for i in who):    # taught slot paths only (quadrant plans: to_above -> descend)
-        drive(env, L('descend_pre', 'slot'), ~open_, args.speed / 4, trace=g0_record, trace_phase='preinsert')
+        drive(env, L('descend_pre', 'slot'), ~open_, args.speed / 4, trace=g0_record, trace_phase='preinsert',
+              rate_cap=args.teacher_rate_cap)
     descend, ascend = L('descend', 'slot'), L('ascend', 'slot')
     if args.closed_loop:                                       # (10/14) re-aim from the plate actually in the hand
         fix = first_fix = None
@@ -965,7 +1025,7 @@ def run_replay(args):
                 first_fix = fix
             print(f"[replay] closed loop {it + 1}/{args.cl_iter}: re-solved {new_ok}/{n} (with kept earlier aims {sum(a is not None for a, _ in fix)})", flush=True)
             drive(env, [a for a, _ in fix], ~open_, args.speed / 4, hold=30, trace=g0_record,
-                  trace_phase=f'reaim_{it}')
+                  trace_phase=f'reaim_{it}', rate_cap=args.teacher_rate_cap)
         descend = [b if b is not None else d for (_, b), d in zip(fix, descend)]
         top_ = first_fix if first_fix is not None else fix   # (10/14 night) a lower re-aim: back up through it to the first stop
         ascend = [np.vstack([b[::-1], a] + ([t[0]] if t[0] is not None and t is not f_ else [])) if b is not None else u
@@ -976,11 +1036,13 @@ def run_replay(args):
                plate_pos=(env.scene['plate'].data.root_pos_w - env.scene.env_origins).cpu().numpy().tolist(),
                plate_quat=env.scene['plate'].data.root_quat_w.cpu().numpy().tolist(),
                joints=robot.data.joint_pos[:, :6].cpu().numpy().tolist())
-    drive(env, descend, ~open_, args.speed / 20, hold=30, trace=g0_record, trace_phase='insert')
+    drive(env, descend, ~open_, args.speed / 20, hold=30, trace=g0_record, trace_phase='insert',
+          rate_cap=args.teacher_rate_cap)
     trace = dict(descended=dict(pos=(env.scene['plate'].data.root_pos_w - env.scene.env_origins).cpu().numpy().tolist(), quat=env.scene['plate'].data.root_quat_w.cpu().numpy().tolist()))   # (10/14) where the plate moves after the descent
     if args.attach:
         detach(env, torch.ones(n, dtype=torch.bool, device=dev))
-    drive(env, [None] * n, open_, args.speed, hold=45, trace=g0_record, trace_phase='release')         # release
+    drive(env, [None] * n, open_, args.speed, hold=45, trace=g0_record, trace_phase='release',
+          rate_cap=args.teacher_rate_cap)         # release
     trace['released'] = dict(pos=(env.scene['plate'].data.root_pos_w - env.scene.env_origins).cpu().numpy().tolist(), quat=env.scene['plate'].data.root_quat_w.cpu().numpy().tolist())
     if g0_requested:
         teacher_strict_success, st_teacher = inserted(env)
@@ -1138,6 +1200,7 @@ def run_replay(args):
                 replay_mode='joint_pd_teacher_reference',
                 gate='not_evaluated',
                 safe_diffik_g0_gate='not_evaluated_by_g0_joint',
+                teacher_rate_capped=bool(args.teacher_rate_cap),
                 gate_scope='same physical PD/safety-shield replay of recorded teacher joint targets; diagnostic only, not the Cartesian SafeDiffIK G0 or BC gate',
                 joint_reference_gate_status=joint_ref_status,
                 criterion='teacher seated_exact episodes reproduced by the joint-PD teacher-reference replay',
@@ -1403,7 +1466,8 @@ def run_replay(args):
             num_ok = int((teacher_exact & student_exact & m).sum())
             per_q[qd] = dict(teacher_success=denom, reproduced=num_ok,
                              ratio=(num_ok / denom if denom else None))
-        report = dict(gate=gate, criterion='same-start SafeDiffIK replay / teacher seated & in_quadrant & exact successes >= 0.95',
+        report = dict(gate=gate, teacher_rate_capped=bool(args.teacher_rate_cap),
+                      criterion='same-start SafeDiffIK replay / teacher seated & in_quadrant & exact successes >= 0.95',
                       seated_exact_definition='0.020 m < low < 0.060 m AND in_quadrant AND landed_gap == target_gap; finger/rim metrics diagnostic only',
                       teacher_seated_exact=teacher_count, reproduced_seated_exact=reproduced,
                       reproduction_ratio=ratio, clipped_tcp_steps=clip_count, recorded_tcp_steps=frame_count,
@@ -1425,7 +1489,7 @@ def run_replay(args):
         print('[G0]', json.dumps(report), flush=True)
         env.close()
         return
-    drive(env, ascend, open_, args.speed / 4)
+    drive(env, ascend, open_, args.speed / 4, rate_cap=args.teacher_rate_cap)
     trace['ascended'] = dict(pos=(env.scene['plate'].data.root_pos_w - env.scene.env_origins).cpu().numpy().tolist(), quat=env.scene['plate'].data.root_quat_w.cpu().numpy().tolist())
     ok, st = inserted(env)
     ok = ok.cpu().numpy() & held
@@ -1579,6 +1643,8 @@ def run_collect(args):
     for b in range(args.batches):
         rng = np.random.default_rng(args.seed * 1000 + b)
         s0 = bt.grasped_start(env, args, rng)
+        if args.teacher_rate_cap:
+            env._teacher_rate_cap_target_deg = None
         attach(env, s0['ok'], ex['in_hand_mm'], ex['in_hand_deg'], seed=args.seed * 1000 + b)
         Ts = []                                                   # random reachable-ish basket poses around the centre
         for k in range(n):
@@ -1614,7 +1680,8 @@ def run_collect(args):
                 plans.append(None)
                 live[k] = False
         closed = np.ones(n, bool)
-        drive(env, [p if p is not None else None for p in plans], closed, args.speed, hold=20)
+        drive(env, [p if p is not None else None for p in plans], closed, args.speed, hold=20,
+              rate_cap=args.teacher_rate_cap)
         if args.save_starts:                                    # RL start states: robot at `above`, plate attached
             a_ = env._attach
             np.savez_compressed(out / f'starts_{args.seed:02d}{b:03d}.npz', live=live,
@@ -1831,7 +1898,8 @@ def run_realplan(args):
     print(f"[realplan] link_6 sim vs FK {fk_check * 1000:.1f} mm; policy start tcp {above[:3, 3].round(3).tolist()} "
           f"(max joint move {np.abs(np.degrees(q_start) - req['above_deg']).max():.1f} deg)", flush=True)
     detach(env, torch.zeros(n, dtype=torch.bool, device=dev))
-    drive(env, [np.degrees(q_start)[None]] * n, np.zeros(n, bool), 10.0, hold=15)
+    drive(env, [np.degrees(q_start)[None]] * n, np.zeros(n, bool), 10.0, hold=15,
+          rate_cap=args.teacher_rate_cap)
     to_start = [list(req['above_deg']), np.degrees(q_start).round(3).tolist()]
     arm.reset(torch.arange(n, device=dev))
     arm.orientation_locked[:] = False
