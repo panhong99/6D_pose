@@ -3374,3 +3374,7 @@
 ## 2026-10-16 02:26 Codex — no-seen train_0013 batch 독립 검산
 - 뒤늦게 완성된 `train_0013.json/.npz` 96행을 검산했다. success 식으로 계산한 exact **46/96**은 JSON exact와 NPZ exact에서 각각 **96/96 일치**; seated/in-quadrant/landed/target도 JSON↔NPZ **96/96 일치**이고 수치 배열은 모두 finite. 분면 batch 표본/성공: Q1 **9/26**, Q2 **10/31**, Q3 **10/17**, Q4 **17/22**.
 - 이는 train stochastic rollout 지표다. 새 held-out eval JSON/NPZ는 아직 없고 최신 held-out는 eval_0010 **382/598 (63.88%)**. 직전 train_0012 53/96과 비교해 batch 점수의 우열·학습 추세를 주장하지 않는다. 오프라인 파일 읽기, GPU·로봇 미사용.
+
+## 2026-10-16 02:28 Codex — paired no-seen 정책 전이의 분면별 분해
+- 앞서 같은 598개 입력에서 비교한 C2 no-seen (`noseen.json`)과 warm-start no-seen PPO `eval_0010`의 exact mask 전이를 분면별 재계산했다. fail→pass / pass→fail은 Q1 **10/15**, Q2 **7/19**, Q3 **7/16**, Q4 **10/11**. 순 변화는 각각 −5/156 (−3.21 pp), −12/146 (−8.22 pp), −9/155 (−5.81 pp), −1/141 (−0.71 pp); 합계 −27/598이다.
+- 동일 holdout의 paired 고정정책 비교다. 학습 중 성능 곡선이나 인과적 업데이트 기여를 뜻하지 않으며, warm-start가 full-observation checkpoint였다는 조건도 유지한다. JSON 비교만 수행; GPU·로봇 미사용.

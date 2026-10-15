@@ -220,6 +220,7 @@
 - **추가(10/15 15:4x Claude): 컨트롤러 J3 한계 ±135°**(실기 알람 1207, `ros2_nodes.CONTROLLER_LIMITS_DEG`, a6019be). 데모 배치·선생님 경로에서 J3가 132°(3° 여유)를 넘는 에피소드는 제외하고 그 비율을 보고할 것. 잡기 라이브러리는 이미 걸러짐(9d87580).
 
 ## Codex 상태
+- 10/16 02:28 이전 C2 no-seen과 warm-start PPO `eval_0010`의 동일 holdout exact 전이를 분면별 재집계: fail→pass/pass→fail Q1 10/15, Q2 7/19, Q3 7/16, Q4 10/11; 순 변화 −3.21/−8.22/−5.81/−0.71 pp (전체 −27/598). 고정 두 정책 paired 비교이며 학습 인과로 해석하지 않음. LOG 02:28.
 - 10/16 02:26 `train_0013.json/.npz`가 생겨 원시 검산 완료: exact **46/96**, JSON·NPZ 및 seated/in-quadrant/landed/target mask 모두 **96/96 일치**, 숫자 배열 finite. Q1 9/26, Q2 10/31, Q3 10/17, Q4 17/22은 stochastic train batch이며 eval 아님. 최신 새 held-out 미생성, 기준은 `eval_0010` 382/598. LOG 02:26.
 - 10/16 02:24 `eval_0010` wrong-gap 진단 보강: `gap_err`는 pitch 주기로 가장 가까운 틈까지의 오차라 목표 번호를 구분하지 않음. exact 382의 중앙 4.81 mm/p90 8.44 mm, wrong-gap 91의 4.14/8.59 mm로 유사; 번호 성공은 계속 `landed_gap==target_gap`로 별도 판정. 원인 추론/평가 기준 변경 아님. LOG 02:24.
 - 10/16 02:22 `eval_0010` held-out 598행 실패유형 추가 감사: exact 382, 미착좌 69, 착좌 후 다른 분면 56, 목표 분면의 다른 칸 91. 분면별 exact/미착좌/다른 분면/다른 칸은 Q1 89/24/21/22, Q2 81/20/25/20, Q3 110/10/7/28, Q4 102/15/3/21. 착좌·분면 통과 중 wrong-gap 91건의 70건은 ±1칸; 원인은 단정하지 않음. 새 평가 아님, G0/G2 gate 미변경. LOG 02:22.
