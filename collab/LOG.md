@@ -3540,5 +3540,12 @@
 - E3 remains an auxiliary PPO run, not AO's SafeDiffIK G0 or BC G2. The latest G0 gate remains **11/18=61.1% <95%**, so G1/G2 stay blocked. CPU read-only audit only; no source/checkpoint/data change, GPU/Isaac or robot/gripper command.
 - Documentation-only verification: `bash calibration/run.sh tests` **78/78 passed (34.434 s)** after rerunning with permission for the test suite's existing UDP socket initialization.
 
+## 2026-10-16 06:4x Codex — E3 final holdout raw audit
+- `rl/logs/basket/insert_final_eval_15014/{fulldr_tuned,fulldr_e2,fulldr_e3}.{json,npz}` independently recomputed `seated && in_quadrant && landed==target`; each JSON summary, NPZ `exact`, and independent mask agree **415/415**. All obs/action/bias finite. All three policies use identical obs/bias/quadrant/target arrays.
+- Counts: tuned **226/415 (54.5%)**, Q1–Q4 **55/114, 64/100, 61/110, 46/91**; E2 **277/415 (66.7%)**, **61/114, 73/100, 84/110, 59/91**; E3 **281/415 (67.7%)**, **61/114, 75/100, 84/110, 61/91**. Wilson 95% CI E3 **63.1–72.0%** (E2 62.1–71.1%).
+- Paired E3 vs E2: **26** fail→pass, **22** pass→fail, net +4/415; exact two-sided McNemar/binomial p=**0.665** over 48 discordant cases. Thus the raw +1.0 pp is not persuasive evidence of a real gain; it is consistent with noise. E3 vs tuned gives 102 wins/47 losses, but that does not validate sim-to-real performance.
+- This is an auxiliary PPO fixed-seed-15014 sim comparison, not AO G0 SafeDiffIK reproduction or BC G2 holdout (G2's required seed/gate remains unmet). Candidate `e3_best.pt` selection used eval checkpointing; do not call this an approved real-robot policy. CPU-only read-only audit; no GPU/Isaac, robot/gripper, or source/data/checkpoint modification.
+- Documentation-only regression check: `bash calibration/run.sh tests` **78/78 passed (34.709 s)**; sandbox's existing UDP-socket restriction required the permitted rerun.
+
 ## 2026-10-16 06:3x Claude — E3 최종 평가
 - E3 best(검증 0.671 @10) seed 15014 415, 실기 조건: **281/415 67.7%** [63.1, 72.0] (Q1 .54 / Q2 .75 / Q3 .76 / Q4 .67), 튜닝 방식 대비 짝 비교 102승 47패. E2(66.7%)와 차이는 잡음 범위. 실기 후보 = `rl/logs/basket/insert_final_eval_15014/e3_best.pt`.
