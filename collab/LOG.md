@@ -3352,3 +3352,12 @@
 ## 2026-10-16 02:14 Codex — no-seen 최신 train batch 직렬화 감사
 - `train_0009–0011.{json,npz}` 각 96행의 success를 `0.020<final.low<0.060 && in_quadrant && landed_gap==target_gap`로 독립 재계산했다. JSON의 `seated_exact` 및 NPZ `exact`와 96/96 일치, seated mask도 96/96 일치했고 numeric NPZ 배열은 모두 finite. Raw train-batch 수는 40/96, 46/96, 48/96이다. 세 배치는 별도 stochastic rollout이라 이를 단조 향상으로 해석하지 않는다.
 - 02:14 점검 시 `eval_0015.json/.npz`는 아직 생성되지 않았다. 따라서 최신 유효 held-out 수치는 `eval_0010`의 382/598=63.88%로 유지하고 train batch를 평가 점수에 섞지 않았다. 오프라인 읽기 전용, 코드/데이터/체크포인트·GPU·로봇 미사용.
+
+## 2026-10-16 02:18 Codex — PPO train 범위 초과 source의 생성 인자 확인
+- `random_20261015_003713/summary.json` args는 basket x `[0.707,0.907]`, y `[-0.292,-0.092]`, yaw `0°`; 이는 새 중심 `(0.807,-0.192)` 기준 x/y 각각 ±0.10 m 표집이다. `random_20261015_173724/summary.json` args는 x `[0.76,0.96]`, y `[-0.24,-0.14]`, yaw `0°`; 즉 x 중심 0.86 m로 최신 지정 중심보다 +0.053 m이고 폭 0.20 m다. 현재 no-seen train source가 이 두 묶음을 포함한다는 것을 확인했다.
+- 이 메타데이터는 넓거나 다른 중심의 표집이 실제 생성 인자였음을 확인하지만, 현재 AO run에 포함하는 것이 의도된 robust augmentation인지 stale/다른 배치 데이터 유입인지는 설명하지 않는다. held-out 598개는 앞선 범위 audit대로 지정 경계 안에 있고 train/eval condition overlap 0. 잘못된 학습 범위라고 단정하지 말고, Claude 또는 보스가 의도 확인 전에는 결과를 “새 배치 범위 전용”이라고 부르지 않는다. 요약 JSON 읽기만 수행; 원본 데이터·코드·GPU·로봇 미사용.
+
+## 2026-10-16 02:20 Codex — 최신 PPO train_0012 직렬화 확인
+- 새 `train_0012.json/.npz` 96행을 독립 재집계했다. `0.020 < low < 0.060 && in_quadrant && landed_gap == target_gap`는 **53/96**이며 JSON `seated_exact`, NPZ `exact`와 각각 **96/96 일치**. seated·in-quadrant·landed·target 배열도 JSON↔NPZ 각각 96/96 일치하고 수치 배열은 모두 finite.
+- 학습 batch 분면 표본은 Q1 **13/25**, Q2 **12/24**, Q3 **17/29**, Q4 **11/18**. 이 96행은 stochastic train rollout이므로 holdout eval 향상으로 해석하지 않는다. 새 `eval_0015` 및 `train_0013.json`은 아직 없어 held-out 최신 결과는 그대로 `eval_0010` **382/598 (63.88%)**; `train_0013.log`만 존재하며 완료 배치로 세지 않았다.
+- 오프라인 JSON/NPZ만 읽음. 데이터·코드·체크포인트 수정 없음, GPU·로봇 미사용.
