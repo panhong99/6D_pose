@@ -198,6 +198,75 @@ class Pipeline(unittest.TestCase):
             self.assertTrue(any('tool-force-limit' in problem for problem in nodes.validate(
                 a, dict(plan, offline_test=False, execution_allowed=True))[1]))
 
+    def test_basket_insert_policy_uses_expert_observation_and_mean_mapping(self):
+        import importlib.util
+        import torch
+        expert_path = Path(__file__).resolve().parents[1] / 'rl' / 'basket' / 'expert.py'
+        old_path = list(pipeline.sys.path)
+        spec = importlib.util.spec_from_file_location('basket_expert_policy_contract_test', expert_path)
+        expert = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(expert)
+
+        class MeanPolicy(torch.nn.Module):
+            def forward(self, obs):
+                mean = torch.tensor([0.1, -0.2, 0.3, -0.4, 0.5], dtype=obs.dtype, device=obs.device)
+                return mean[None].expand(obs.shape[0], -1), torch.ones_like(mean)[None].expand(obs.shape[0], -1)
+
+        old_pol = dict(expert._CL_POL)
+        try:
+            expert._CL_POL.update(policy=MeanPolicy(), det=True, dr=False, dr_full=False,
+                                  noseen=True, canon=True, seed=0, cache={})
+            H = make_T(R.from_euler('xyz', [12, -8, 25], degrees=True).as_matrix(), [0.04, -0.01, 0.11])
+            Tbb = make_T(R.from_euler('z', 3.0, degrees=True).as_matrix(), [0.807, -0.192, 0.04])
+            got = pipeline.basket_insert_policy_params(expert, 'Q3', 7, H, Tbb)
+
+            Hc = expert.canonical_hand(H)
+            yaw_b = np.arctan2(Tbb[1, 0], Tbb[0, 0])
+            expected_obs = np.concatenate(([0, 0, 1, 0], [7 / 11.0],
+                [Tbb[0, 3] - 0.81, Tbb[1, 3] + 0.19, yaw_b], Hc[:3, 3],
+                R.from_matrix(Hc[:3, :3]).as_rotvec(), [0, 0])).astype(np.float32)
+            np.testing.assert_allclose(got['obs'], expected_obs, atol=1e-7, rtol=0)
+            raw = np.array([0.1, -0.2, 0.3, -0.4, 0.5])
+            scaled = np.tanh(raw) * np.array(expert.INSERT_SCALE)
+            np.testing.assert_allclose(got['act'], raw, atol=1e-7, rtol=0)
+            for key, value in zip(('dx', 'dy', 'lean', 'dz', 'yaw'), scaled):
+                self.assertAlmostEqual(got[key], float(value), places=6)
+
+            adjusted, yaw = pipeline.apply_basket_insert_policy(
+                dict(x_shift_m=0.03, y_extra_m=0.005, tilt_deg=6.25, centre_h=0.165), -1.0, got, 12.5)
+            self.assertAlmostEqual(adjusted['x_shift_m'], 0.03 + scaled[0], places=6)
+            self.assertAlmostEqual(adjusted['y_extra_m'], 0.005 + scaled[1], places=6)
+            self.assertAlmostEqual(adjusted['tilt_deg'], 6.25 + scaled[2] * 12.5, places=6)
+            self.assertAlmostEqual(adjusted['centre_h'], 0.165 + scaled[3], places=6)
+            self.assertAlmostEqual(yaw, -1.0 + scaled[4], places=6)
+        finally:
+            expert._CL_POL.clear()
+            expert._CL_POL.update(old_pol)
+            pipeline.sys.path[:] = old_path
+
+    def test_insert_policy_cli_is_opt_in_and_requires_real_sim_q_quadrant_mode(self):
+        self.assertIsNone(pipeline.parse_args([]).insert_policy)
+        with tempfile.TemporaryDirectory() as tmp:
+            ckpt = Path(tmp) / 'policy.pt'
+            ckpt.write_bytes(b'test placeholder')
+            base = ['--task', 'plate', '--place', 'basket', '--insert', 'quadrant', '--quadrant', 'Q1', '--sim_q']
+            valid = [*base, '--execute', '--insert_policy', str(ckpt)]
+            with patch.object(pipeline.sys, 'stdin', SimpleNamespace(isatty=lambda: True)):
+                args = pipeline.parse_args(valid)
+            self.assertEqual(args.insert_policy, ckpt)
+            invalid = (
+                ['--task', 'plate', '--place', 'basket', '--insert', 'quadrant', '--quadrant', 'Q1', '--sim_q',
+                 '--insert_policy', str(ckpt)],
+                ['--task', 'plate', '--place', 'basket', '--insert', 'quadrant', '--quadrant', 'Q1', '--execute',
+                 '--insert_policy', str(ckpt)],
+                ['--task', 'plate', '--place', 'basket', '--insert', 'quadrant', '--execute', '--sim_q',
+                 '--insert_policy', str(ckpt)],
+            )
+            for argv in invalid:
+                with patch.object(pipeline.sys, 'stdin', SimpleNamespace(isatty=lambda: True)), \
+                        contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+                    pipeline.parse_args(argv)
+
     def test_force_guard_fake_wrench_series_requests_one_stop_on_norm_exceedance(self):
         class Clock:
             now = 0.0

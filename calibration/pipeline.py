@@ -459,6 +459,40 @@ def plate_cfg(policy):
     return {**C['plate_rl'], **C['plate_ik_bc']} if policy == 'ik_bc' else dict(C['plate_rl'])
 
 
+def load_basket_insert_policy(path):
+    """Load the deterministic, CPU-only basket insertion policy for the opt-in real pipeline."""
+    expert_dir = str(ROOT / 'rl' / 'basket')
+    if expert_dir not in sys.path:
+        sys.path.insert(0, expert_dir)
+    import expert
+    policy = expert.load_insert_policy(path)
+    expert._CL_POL.update(policy=policy, det=True, dr=False, dr_full=False, noseen=True,
+                          canon=True, seed=0, cache={})
+    return expert
+
+
+def basket_insert_policy_params(expert, quadrant, gap, H, Tbb):
+    """Use the same deterministic 16D/5D policy implementation as sim, with real-canonical H and unseen gap error."""
+    row = dict(name='real_pipeline', model_qd=quadrant, gap=int(gap))
+    # `insert_policy_params` owns obs scaling, canonical_hand, tanh and INSERT_SCALE; DR is off and noseen is on.
+    expert._CL_POL.update(det=True, dr=False, dr_full=False, noseen=True, canon=True, cache={})
+    result = expert.insert_policy_params(row, 0, np.asarray(H, dtype=float), np.asarray(Tbb, dtype=float))
+    if (not np.isfinite(result['obs']).all() or not np.isfinite(result['act']).all()
+            or not all(np.isfinite(result[k]) for k in ('dx', 'dy', 'lean', 'dz', 'yaw'))):
+        raise RuntimeError('insert policy returned non-finite observation/action; refusing insertion replan')
+    return result
+
+
+def apply_basket_insert_policy(sim_kw, yaw_trim_deg, correction, tine_lean_deg):
+    """Add the learned residual to the existing per-quadrant sim_q settings without changing any cap."""
+    result = dict(sim_kw)
+    result['x_shift_m'] = float(result['x_shift_m']) + float(correction['dx'])
+    result['y_extra_m'] = float(result.get('y_extra_m', 0.0)) + float(correction['dy'])
+    result['tilt_deg'] = float(result['tilt_deg']) + float(correction['lean']) * float(tine_lean_deg)
+    result['centre_h'] = float(result['centre_h']) + float(correction['dz'])
+    return result, float(yaw_trim_deg) + float(correction['yaw'])
+
+
 def run_export_server(args):
     """Foreground warm Isaac export server for the selected plate policy (Ctrl+C stops it).  Start it once, in its
     own terminal, before the pipeline runs; restart it after changing the plate_rl / plate_ik_bc checkpoint."""
@@ -497,6 +531,7 @@ def run_plate(args):
     """FoundationPose plate -> BC+RL rollout plan -> supervised legs with the gripper in between.
     Legs: to_ready, grasp, [close + object check], lift, [Human: lower?], lower, [open], retreat, to_home."""
     q, udp = plate_cfg(args.plate_policy), C['udp']
+    insert_policy_expert = load_basket_insert_policy(args.insert_policy) if args.insert_policy else None
     if args.no_library:                                     # the 10/8 validated mode: sim rollout per plate (export)
         q.pop('library', None)
     t_path = (args.t_base_cam or latest_t_base_cam()).resolve()
@@ -763,6 +798,21 @@ def run_plate(args):
                 from plate_plans import hand_plate, pin_gap, quadrant_plan, robot_quadrants
                 n_now = Tn[:3, :3] @ plate_upright(Tbc @ T)[:3, :3].T @ [0, 0, 1.0]   # change since the flat plate: FP's ~2-4 deg bias cancels
                 H2, tool2 = hand_plate(rec.last['posj'], root, n_now)
+                if insert_policy_expert is not None:
+                    sim_kw_before_policy, yaw_before_policy = dict(sim_kw), qs['yaw']
+                    correction = basket_insert_policy_params(insert_policy_expert, mq,
+                                                               pin_gap(basket_T, mq, args.pin), H2, basket_T)
+                    sim_kw, qs['yaw'] = apply_basket_insert_policy(
+                        sim_kw, qs['yaw'], correction, be.B['full']['tine_lean_deg'][mq])
+                    rec.event('insert_policy_correction', checkpoint=str(args.insert_policy.resolve()),
+                              observation=np.asarray(correction['obs']).astype(float).tolist(),
+                              raw_mean=np.asarray(correction['act']).astype(float).tolist(),
+                              dx_m=correction['dx'], dy_m=correction['dy'], lean=correction['lean'],
+                              dz_m=correction['dz'], yaw_deg=correction['yaw'],
+                              applied=sim_kw)
+                    print(f'   삽입 정책 평균 보정: dx {correction["dx"]:+.4f} m, dy {correction["dy"]:+.4f} m, '
+                          f'lean {correction["lean"]:+.3f}, dz {correction["dz"]:+.4f} m, yaw {correction["yaw"]:+.2f} deg',
+                          flush=True)
                 print(f'   들어 올린 뒤 접시 (FP): 기울기 {tilt_now:.1f} deg (잡기 전 {tilt:.1f}) -> 손 안 접시 자세로 넣기 경로 다시 계산',
                       flush=True)
                 H_old = qs['H'], qs['tool']
@@ -770,6 +820,10 @@ def run_plate(args):
                 again, rep2 = qplan(rec.last['posj'])
                 if again is None:
                     qs['H'], qs['tool'] = H_old
+                    if insert_policy_expert is not None:
+                        sim_kw, qs['yaw'] = sim_kw_before_policy, yaw_before_policy
+                        raise RuntimeError(f'policy-corrected insert plan refused ({rep2["tried"][:3]}); '
+                                           'will not fall back to the uncorrected pre-lift plan')
                 if again is not None:
                     early = again
                     rec.event('replan_after_lift', plan=str(again), tilt_deg=tilt_now, plate_root=[float(v) for v in root],
@@ -778,6 +832,8 @@ def run_plate(args):
                 else:
                     print(f'   다시 계산 실패 ({rep2["tried"][:3]}): 처음 계획으로 진행', flush=True)
             else:
+                if insert_policy_expert is not None:
+                    raise RuntimeError('--insert_policy needs a fresh post-lift FoundationPose plate pose; refusing the uncorrected fallback')
                 print('   FP 접시 없음: 처음 계획으로 진행', flush=True)
         if args.place == 'teach':
             k = args.slot or next_slot()
@@ -1095,6 +1151,8 @@ def parse_args(argv=None):
                    'from the robot) [m]; default config basket_quadrant_x_trim_m')
     p.add_argument('--sim_q', action='store_true', help='--insert quadrant: use config basket_quadrant_sim (Isaac per-quadrant '
                    'lean, aim, wrist flip; 10/15) instead of the real trims; --x_shift still overrides the aim')
+    p.add_argument('--insert_policy', '--insert-policy', type=Path, default=None,
+                   help='OPT-IN: apply the deterministic mean of a basket insert PPO checkpoint after lift, using canonical hand pose and unseen gap error; requires --task plate --place basket --insert quadrant --sim_q --execute')
     p.add_argument('--pin', type=int, default=5, help='--insert quadrant: pin-pair number in the quadrant, 1 = farthest from '
                    'the robot (wrist image top -> bottom); the plate goes into the gap just robot-side of that pair')
     p.add_argument('--insert-force-limit-n', type=float, default=None,
@@ -1132,6 +1190,12 @@ def parse_args(argv=None):
             p.error('--insert-force-limit-n must be finite and > 0')
         if not (a.execute and a.task == 'plate' and a.place == 'basket' and a.insert == 'quadrant' and not a.offline_test):
             p.error('--insert-force-limit-n requires --task plate --execute --place basket --insert quadrant; default remains off')
+    if a.insert_policy is not None:
+        if not (a.task == 'plate' and a.place == 'basket' and a.insert == 'quadrant' and a.quadrant
+                and a.sim_q and a.execute and not a.offline_test):
+            p.error('--insert_policy requires --task plate --place basket --insert quadrant --quadrant Q1..Q4 --sim_q --execute')
+        if not a.insert_policy.is_file():
+            p.error(f'--insert_policy checkpoint does not exist: {a.insert_policy}')
     if a.execute and not sys.stdin.isatty():
         p.error('--execute requires an interactive terminal')
     return a
