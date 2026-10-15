@@ -562,8 +562,8 @@ def run_insert_rl(a):
     rng = random.Random(a.seed)
     torch.manual_seed(a.seed)
     sys.path.insert(0, str(HERE))
-    from expert import INSERT_ACT, INSERT_OBS
-    pol = M.InsertPolicy(INSERT_OBS, INSERT_ACT, init_std=a.init_std)
+    from expert import INSERT_ACT, INSERT_OBS, INSERT_OBS_SCALE
+    pol = M.InsertPolicy(INSERT_OBS, INSERT_ACT, init_std=a.init_std, obs_scale=None if a.no_obs_scale else INSERT_OBS_SCALE)
     if a.init_ckpt:
         pol.load_state_dict(torch.load(a.init_ckpt, map_location='cpu'))
     opt = torch.optim.Adam(pol.parameters(), lr=a.lr or 3e-4)
@@ -660,6 +660,7 @@ def parse_args():
     p.add_argument('--epochs', type=int, default=8)
     p.add_argument('--minibatch', type=int, default=32)
     p.add_argument('--no_dr', action='store_true', help='insert_rl: no model-error randomisation')
+    p.add_argument('--no_obs_scale', action='store_true', help='insert_rl: raw inputs (runs before 21:0x)')
     p.add_argument('--dr_full', action='store_true', help='insert_rl: also basket-yaw and in-hand-bias randomisation (unobserved)')
     p.add_argument('--no_fp_noise', action='store_true', help='insert_rl: exact in-hand pose (no FP noise model)')
     p.add_argument('--init_std', type=float, default=0.3, help='insert_rl: initial exploration std (pre-tanh; 0.3 ~ 9 mm aim)')

@@ -637,6 +637,7 @@ _CL_POL = dict(policy=None, det=False, dr=False, dr_full=False, seed=0, cache={}
 INSERT_OBS = 16      # quadrant one-hot 4, gap / 11, basket dx dy dyaw, in-hand plate offset (3) + rotvec (3), believed gap error (2)
 INSERT_ACT = 5       # aim dx, aim dy, lean factor, release dz, yaw about vertical (tanh-squashed, scaled by INSERT_SCALE)
 INSERT_SCALE = (0.03, 0.02, 0.5, 0.01, 4.0)     # m, m, lean factor, m, deg
+INSERT_OBS_SCALE = (1, 1, 1, 1, 1, 10, 10, 5, 10, 10, 10, 0.5, 0.5, 0.5, 100, 100)   # (10/15 21:0x) policy input scale
 
 
 def insert_policy_params(r, k, H, Tb):
@@ -684,7 +685,8 @@ def load_insert_policy(path):
     import torch
     from model import InsertPolicy
     pol = InsertPolicy(INSERT_OBS, INSERT_ACT)
-    pol.load_state_dict(torch.load(path, map_location='cpu'))
+    sd = torch.load(path, map_location='cpu')
+    pol.load_state_dict(sd, strict='obs_scale' in sd)        # runs before 21:0x saved no input scale (= ones)
     return pol.eval()
 
 

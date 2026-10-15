@@ -103,8 +103,11 @@ class InsertPolicy(nn.Module):
     the pre-tanh correction (expert.INSERT_SCALE).  The mean head starts at 0 = the hand-tuned settings, so iteration 0
     IS the current method; a separate value head is the baseline."""
 
-    def __init__(self, obs_dim, act_dim, hidden=(128, 128), init_std=0.5):
+    def __init__(self, obs_dim, act_dim, hidden=(128, 128), init_std=0.5, obs_scale=None):
         super().__init__()
+        # (10/15 21:0x) fixed input scale: the believed gap error is ~5 mm (0.005) next to O(1) inputs, so the first
+        # runs never used it (aim residual 5.7 -> 6.6 mm).  Old checkpoints have no buffer -> ones (same behaviour).
+        self.register_buffer('obs_scale', torch.ones(obs_dim) if obs_scale is None else torch.as_tensor(obs_scale, dtype=torch.float32))
         self.mu = mlp([obs_dim, *hidden, act_dim], 'elu')
         self.v = mlp([obs_dim, *hidden, 1], 'elu')
         nn.init.zeros_(self.mu[-1].weight)
@@ -112,7 +115,7 @@ class InsertPolicy(nn.Module):
         self.log_std = nn.Parameter(torch.full((act_dim,), float(torch.log(torch.tensor(init_std)))))
 
     def forward(self, obs):
-        return self.mu(obs), self.log_std.exp().expand(obs.shape[0], -1)
+        return self.mu(obs * self.obs_scale), self.log_std.exp().expand(obs.shape[0], -1)
 
     def value(self, obs):
-        return self.v(obs)[..., 0]
+        return self.v(obs * self.obs_scale)[..., 0]
