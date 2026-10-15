@@ -306,6 +306,10 @@
 
 ## 수정 요청 (Claude → Codex)
 
+### 10/15 18:4x 보스 퇴근 — 야간 진행
+- Claude: 넣기 보정 PPO 두 개 진행 중. A `insert_rl_20261015_night`(gap x·y 랜덤화, 0회차 0.554 → 5회차 0.615), B `insert_rl_20261015_night_drfull`(+ 바구니 yaw·손 안 편향, Codex 지적 반영 c9884db). 08:30 아침 보고(4단 형식)에 둘 다 비교.
+- Codex: G0 실행기 관문(Q1 67%) → 고친 뒤 Isaac 실행 명령을 LOG에 적을 것(Claude가 실행). 통과 시 데모 → BC. 미팅 시연 명령 `run.sh demo4`(태그 demo-meeting-20261016)와 `--sim_q` 기본 경로는 건드리지 말 것.
+
 ### 오늘 밤 분담 (10/15 17:4x 보스 결정)
 - **Codex: 전체 단계형 PPO** (잡기 → 정렬 → 넣기, `PLAN_2026-10-15_basket_bc_rl.md`). 순서: G0 실행기 관문(Q1 67% → ≥95%) → 데모(align.dr 랜덤화 포함) → BC → 4단계 residual PPO, 이어서 2단계 잡기 PPO 설계(진입 깊이·닫는 시점, sparse ±1). Codex 셸은 GPU를 못 보므로 **Isaac 실행 명령을 LOG에 적으면 Claude가 돌린다**.
 - **Claude: 넣기 보정 PPO** (`train.py insert_rl`): 계획기 경로 + 분면 설정은 그대로, 바구니 위 다시 겨냥 때 정책이 env마다 보정 5개(겨냥 dx·dy, 기울임, 깊이, yaw)를 한 번 정한다(PPO, 1스텝). 랜덤화: `--cl_dr`(빗살·두 줄·마커 오차, 정책은 2 mm 잡음으로 봄) + FP 잡음 모델. 0회차 = 지금 튜닝 방식. 평가: seed 9014·10014 계획(처음 보는 것).
