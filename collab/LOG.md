@@ -3106,3 +3106,10 @@
 ## 2026-10-15 21:1x Claude — 넣기 PPO 정체 원인과 C 실행
 - A(gap 랜덤화) 평가 20~35회차 0.63~0.66 정체. eval npz 분석: 정책의 겨냥 보정이 모델 오차를 상쇄하지 못함(남은 겨냥 오차 |x| 평균 0회차 5.7 → 35회차 6.6 mm). 오차 3 mm 미만 env 성공 0.76~0.78, 8 mm 초과 0.42~0.44. 오른 몫은 기울임 −0.09·깊이 +0.9 mm 같은 평균 보정. 원인: 관측 '믿는 틈 오차'가 m 단위(~0.005)라 다른 입력 대비 너무 작아 신경망이 쓰지 않음.
 - 수정(4325e10): 정책 입력 고정 스케일(틈 오차 ×100 등), 예전 체크포인트는 그대로 로드. A 중지(최고 0.664, `best.pt` 보존), **C `insert_rl_20261015_night_scaled`** 시작(A와 같은 조건 + 스케일). B(drfull)는 계속(0.627 @30).
+
+## 2026-10-15 21:09 Codex — C PPO obs-scale warm-start 호환성 감사 (CPU/read-only)
+- `rl/basket/model.py`의 `InsertPolicy`는 새 `obs_scale` persistent buffer를 갖는다. inference 경로 `expert.load_insert_policy()`는 key 유무에 따라 `strict`를 지정해 구형 checkpoint를 로드하고, 빠진 buffer는 기본 ones로 남겨 과거 raw-input 동작을 보존한다.
+- 잠재 호환성 문제: `rl/basket/train.py`의 `insert_rl --init_ckpt` 경로는 새 정책을 `INSERT_OBS_SCALE`로 초기화한 뒤 `load_state_dict()`를 strict 기본값으로 호출한다. 스케일 도입 전 checkpoint에는 `obs_scale`가 없어 warm-start가 즉시 missing-key 오류로 끝날 수 있다. 단순히 `strict=False`만 쓰면 구형 입력 동작을 보존할지 새 스케일을 적용할지 모호하므로, checkpoint 키에 따른 명시적 호환 로직과 회귀시험이 필요하다.
+- 현재 C config `rl/logs/basket/insert_rl_20261015_night_scaled/config.json`은 `init_ckpt: null`, `no_obs_scale: false`다. 따라서 이 잠재 문제는 지금 C 실행의 blocker가 아니다. 출력 폴더에는 21:04 KST `config.json`, `policy_0000.pt`, `eval_plans.jsonl`, `eval_0000.log`가 관찰됐고 그 시점에 learner 로그/후속 checkpoint는 보이지 않았다. 로컬 process listing에서도 해당 learner는 확인되지 않았으나, 이것만으로 공유 실행의 종료 여부를 단정하지 않는다. C 성능 결론은 새 eval 요약 없이 보류한다.
+- 변경 없음: Claude 소유 `rl/basket/*` 파일, 설정, 체크포인트, 데이터는 수정하지 않았다. GPU/Isaac 및 로봇·그리퍼 명령 0회. 다음: Claude의 C 결과/상태 갱신을 확인하고, 향후 `--init_ckpt` 호환 처리는 소유자에게 제안한다.
+- 문서 변경 후 `git diff --check` 및 승인된 `bash calibration/run.sh tests` 통과 (**58/58, 36.999 s**). 일반 sandbox 실행은 UDP 진단 socket bind의 `PermissionError`로 import 단계에서 막혀 승인 경로로 같은 전체 시험을 재실행했다.
