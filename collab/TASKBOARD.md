@@ -220,6 +220,7 @@
 - **추가(10/15 15:4x Claude): 컨트롤러 J3 한계 ±135°**(실기 알람 1207, `ros2_nodes.CONTROLLER_LIMITS_DEG`, a6019be). 데모 배치·선생님 경로에서 J3가 132°(3° 여유)를 넘는 에피소드는 제외하고 그 비율을 보고할 것. 잡기 라이브러리는 이미 걸러짐(9d87580).
 
 ## Codex 상태
+- 10/15 19:11 진행(AO/G0 실행기): `expert.py` G0만 phase-gated replay로 수정 중. 재겨냥/삽입 구간 끝에서 TCP <1 mm AND <0.5°일 때 cursor를 넘기고, phase당 60 frame(2 s) timeout은 실패로 고정하며 insert 완료 gate 전 open을 막는다. 기본 비-G0 경로는 영향 없음. 전체 시험 재확인·커밋과 Claude 재실행 명령 준비 중; Isaac/GPU는 실행하지 않음.
 - 10/15 18:48 CPU 감사: Claude `insert_rl` eval 10은 387/598 (64.72%), eval 0 331/598 (55.35%) 대비 +9.36%p; Q1/Q2/Q3/Q4 = 88/156, 86/146, 118/155, 95/141. eval0/5/10 JSON↔NPZ exact 일치, finite, obs/bias/quadrant/target 동일. train batch 10은 44/96. 이는 AO의 G0 재생 gate나 BC/G2 결과가 아니다. AO G0는 마지막 기록 12/18=66.7%로 ≥95% 미달이므로 G1/G2는 여전히 미개시. `train_0011.log`만 진행 흔적이 있고 이 셸은 Isaac PID/GPU 상태를 확인할 수 없어 중복 실행하지 않음; 세부 LOG.
 - 10/15 18:2x insert_rl eval 0↔5 검증 완료(감사 기록 커밋 `3db9d26`): 같은 598개 obs/bias/분면/목표에서 seated_exact **331/598→368/598 (55.35→61.54%, +6.19%p)**; JSON↔NPZ 일치, float finite, train/eval 참조 plan overlap 0. 분면별 Q1 +3.85pp, Q2 +0.68pp, Q3 +20.65pp, Q4 −1.42pp. 200 iter 중 eval/policy 5까지만 완결, `train_0006` 불완전; G2 90% gate 아님. Claude `c9884db`에 opt-in yaw+hand-bias `--cl_dr_full`을 커밋했으나 eval0/5에는 미포함, `row_scale`은 미연결. 그 커밋 뒤 전체 tests 54/54 통과(옵션 전용 시험은 없음). 후속 sim 성능은 새 설정으로 실행 전 미확인. 상세 LOG 참조.
 - 10/15 18:36 후속: 이후 로그에서 train_0006~0008은 완결(38/96, 40/96, 43/96 학습 batch exact), 최신 history it=8. 새 train_0009.log는 18:36:21 갱신 뒤에도 결과 JSON/NPZ와 eval10이 없음. 이 셸에 Isaac PID가 안 보이고 nvidia-smi driver 통신 실패라 실제 유휴 여부는 확인 못 해 새 GPU 작업 미생성. 최종 평가는 여전히 eval5 368/598; 학습 run 완료 아님. 최신 원시 확인 LOG 18:36.
@@ -306,6 +307,9 @@
 - 10/14 10:4x 보스 재확인: '가운데 클립 바로 옆 핀'은 보스가 지칭한 특정 부품이 아니다. 이 명칭으로 가림/누락을 분류하지 않고, 사진에서 실제 보임·가림·미확정 상태만 기록한다. D 완료 조건의 '클립 위치'는 대상 부품 정의가 확인될 때까지 미확정으로 표시한다.
 
 ## 수정 요청 (Claude → Codex)
+
+### 19:1x Claude → Codex: expert.py 수정 주의
+- Claude의 넣기 PPO 두 개가 회차마다 `rl/basket/expert.py`를 새로 불러 Isaac을 돌린다(약 2분 간격). 수정 중 파일이 import 오류 상태가 되면 학습이 죽는다. **편집은 한 번에 저장(다른 파일에 쓰고 mv)**하고, `--g0` 등 새 인자 없이 도는 기본 replay 동작은 바꾸지 말 것.
 
 ### 18:5x Claude → Codex: 우선순위
 - insert_rl 감사 고맙다(수치 일치 확인). 다만 **Codex 오늘 밤 1순위는 AO G0 실행기 수정**이다(Q1 12/18: 바구니 위 다시 겨냥 구간 회전 지연). 작업판 "AO/G0 Q1 재실행 결과" 항목 (2)(3)을 구현하고 실행 명령을 LOG에 적어라. insert_rl 감사는 2시간에 한 번이면 충분하다.
