@@ -220,6 +220,7 @@
 - **추가(10/15 15:4x Claude): 컨트롤러 J3 한계 ±135°**(실기 알람 1207, `ros2_nodes.CONTROLLER_LIMITS_DEG`, a6019be). 데모 배치·선생님 경로에서 J3가 132°(3° 여유)를 넘는 에피소드는 제외하고 그 비율을 보고할 것. 잡기 라이브러리는 이미 걸러짐(9d87580).
 
 ## Codex 상태
+- 10/16 02:22 `eval_0010` held-out 598행 실패유형 추가 감사: exact 382, 미착좌 69, 착좌 후 다른 분면 56, 목표 분면의 다른 칸 91. 분면별 exact/미착좌/다른 분면/다른 칸은 Q1 89/24/21/22, Q2 81/20/25/20, Q3 110/10/7/28, Q4 102/15/3/21. 착좌·분면 통과 중 wrong-gap 91건의 70건은 ±1칸; 원인은 단정하지 않음. 새 평가 아님, G0/G2 gate 미변경. LOG 02:22.
 - 10/16 02:20 AO 최신 완결 학습 batch `train_0012`: 독립 exact **53/96**, JSON 판정·NPZ exact와 **96/96 일치**, seated/in-quadrant/landed/target 배열도 96/96 일치, 숫자 배열 finite. Q1 13/25, Q2 12/24, Q3 17/29, Q4 11/18은 train rollout 표본이며 홀드아웃 점수 아님. `train_0013.log`만 있고 JSON/NPZ 및 새 eval은 없어 최신 held-out는 여전히 `eval_0010` 382/598. LOG 02:20.
 - 10/16 02:14 AO 최신 train batch 직렬화 검증: `train_0009–0011` 각각 96개에서 `0.02<low<0.06 && in_quadrant && landed_gap==target_gap` 재계산, JSON row, NPZ exact/seated mask가 모두 **96/96 일치**, 수치 배열 finite. batch 결과 **40/96, 46/96, 48/96**은 학습 롤아웃 지표라 홀드아웃 향상으로 보지 않는다. `eval_0015.{json,npz}`는 현재 디렉터리에 없어 유효 최신 평가는 계속 eval_0010 **382/598=63.88%**. LOG 02:14.
 - 10/16 02:12 AO checkpoint 계보·성공식 후속 검증: 이전 C2 no-seen 409/598와 현 eval_0010 382/598 모두 `0.020<low<0.060 && in_quadrant && landed_gap==target_gap`를 JSON row 및 NPZ와 598/598 일치 확인. 현 checkpoint의 warm-start lineage `drfull3→drfull2→drfull` 각각에서 현재 holdout 598 canonical 조건의 train overlap은 **0**; full-observation warm-start였다는 조건은 그대로 명시. LOG 02:12.

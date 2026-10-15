@@ -3361,3 +3361,8 @@
 - 새 `train_0012.json/.npz` 96행을 독립 재집계했다. `0.020 < low < 0.060 && in_quadrant && landed_gap == target_gap`는 **53/96**이며 JSON `seated_exact`, NPZ `exact`와 각각 **96/96 일치**. seated·in-quadrant·landed·target 배열도 JSON↔NPZ 각각 96/96 일치하고 수치 배열은 모두 finite.
 - 학습 batch 분면 표본은 Q1 **13/25**, Q2 **12/24**, Q3 **17/29**, Q4 **11/18**. 이 96행은 stochastic train rollout이므로 holdout eval 향상으로 해석하지 않는다. 새 `eval_0015` 및 `train_0013.json`은 아직 없어 held-out 최신 결과는 그대로 `eval_0010` **382/598 (63.88%)**; `train_0013.log`만 존재하며 완료 배치로 세지 않았다.
 - 오프라인 JSON/NPZ만 읽음. 데이터·코드·체크포인트 수정 없음, GPU·로봇 미사용.
+
+## 2026-10-16 02:22 Codex — eval_0010 실패 유형 분해
+- 동일한 598개 held-out 결과에서 우선순위가 겹치지 않도록 `not seated → seated but out-of-quadrant → seated/in-quadrant but wrong gap → exact` 순으로 분해했다. exact **382**, 미착좌 **69**, 착좌했으나 다른 분면 **56**, 올바른 분면의 다른 칸 **91**. 합계 598; 앞서 검증한 JSON/NPZ exact mask 일치 598/598 기준과 맞는다.
+- 분면별 (exact / 미착좌 / 다른 분면 / 다른 칸): Q1 **89/24/21/22** (156), Q2 **81/20/25/20** (146), Q3 **110/10/7/28** (155), Q4 **102/15/3/21** (141). 착좌+분면 통과 473개에서 목표와 실제 간 signed gap 차는 −1 **33**, +1 **37**, ±2 **11** 등이며, 따라서 70/91의 wrong-gap은 한 칸 차이지만 이를 목표값 정렬의 원인으로 단정하지 않는다.
+- 이는 `eval_0010` 한 체크포인트의 진단 분해이지 새로운 평가나 학습 개선이 아니다. 같은 holdout 표본·추론 조건의 독립 분면 분석이며 G0/G2 gate 상태는 미변경. 원자료 오프라인 읽기, GPU·로봇 미사용.
