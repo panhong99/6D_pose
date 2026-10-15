@@ -62,6 +62,8 @@ def parse_args():
                    'lean, dz, yaw corrections on top of the per-quadrant settings, sampled once per env (actions + rewards -> --cl_policy_out)')
     p.add_argument('--cl_policy_out', default='', help='--cl_policy: npz with obs, actions, log-probs and the per-env outcome')
     p.add_argument('--cl_policy_det', action='store_true', help='--cl_policy: use the mean action (evaluation)')
+    p.add_argument('--cl_dr_full', action='store_true', help='with --cl_dr: also the unobserved errors of align.dr: basket yaw '
+                   '(marker fit) and a fixed in-hand plate bias (position mm / tilt deg) in the pose the planner uses')
     p.add_argument('--cl_dr', action='store_true', help='--closed_loop: (10/15) per env model error from config align.dr: the planner aims at '
                    'a shifted gap (tine model / marker error); the policy sees that shift with 2 mm noise (stand-in for wrist gap detection)')
     p.add_argument('--hold_view', action='store_true', help='replay with the viewer: keep the window open at the end until it is closed')
@@ -574,7 +576,7 @@ def make_cfg(n, viewer, torsion_m):
 
 
 _CL_CALLS = [0]
-_CL_POL = dict(policy=None, det=False, dr=False, seed=0, cache={})   # (10/15) insert RL: loaded policy + per-env (obs, act, logp, params)
+_CL_POL = dict(policy=None, det=False, dr=False, dr_full=False, seed=0, cache={})   # (10/15) insert RL: loaded policy + per-env (obs, act, logp, params)
 
 INSERT_OBS = 16      # quadrant one-hot 4, gap / 11, basket dx dy dyaw, in-hand plate offset (3) + rotvec (3), believed gap error (2)
 INSERT_ACT = 5       # aim dx, aim dy, lean factor, release dz, yaw about vertical (tanh-squashed, scaled by INSERT_SCALE)
@@ -598,6 +600,12 @@ def insert_policy_params(r, k, H, Tb):
         dr = E_CFG()['align']['dr']
         bias = np.array([rng.uniform(-1, 1) * dr['gap_x_m'][qd], rng.uniform(-1, 1) * dr['gap_y_m']])
     seen = bias + rng.normal(0, 0.002, 2)
+    yaw_bias, hand = 0.0, np.eye(4)
+    if _CL_POL['dr'] and _CL_POL['dr_full']:                # unobserved: marker yaw error, in-hand plate pose bias
+        dr = E_CFG()['align']['dr']
+        yaw_bias = float(rng.uniform(-1, 1) * dr['yaw_deg'])
+        hand[:3, :3] = R.from_rotvec(rng.normal(0, 1, 3) / np.sqrt(3) * np.radians(dr['in_hand_deg'])).as_matrix()
+        hand[:3, 3] = rng.normal(0, 1, 3) / np.sqrt(3) * dr['in_hand_mm'] / 1000
     Tb = np.asarray(Tb)
     yaw_b = np.arctan2(Tb[1, 0], Tb[0, 0])
     obs = np.concatenate([[qd == q for q in ('Q1', 'Q2', 'Q3', 'Q4')], [r.get('gap', 0) / 11.0],
@@ -612,7 +620,7 @@ def insert_policy_params(r, k, H, Tb):
             act = a[0].numpy()
     s = np.tanh(act) * np.array(INSERT_SCALE)
     c[k] = dict(obs=obs, act=act, logp=logp, bias=bias, dx=float(s[0] + bias[0]), dy=float(s[1] + bias[1]),
-                lean=float(s[2]), dz=float(s[3]), yaw=float(s[4]))
+                lean=float(s[2]), dz=float(s[3]), yaw=float(s[4] + yaw_bias), hand=hand)
     return c[k]
 
 
@@ -684,9 +692,11 @@ def closed_loop_paths(env, rows, who, above_m=0.11, extra=0.005, dz=0.0, lean=1.
             ln_, dz_ = (lean_q or {}).get(r['model_qd'], lean), (dz_q or {}).get(r['model_qd'], dz)
             dx_ = (pin_dx or {}).get(r['model_qd'], {}).get(str(r.get('pin')), (dx_q or {}).get(r['model_qd'], dx))
             dy_ = yaw_ = 0.0
+            Hp = H
             if pol is not None:                              # (10/15 insert RL) policy correction + the env's model error
                 ln_, dz_, dx_, dy_, yaw_ = ln_ + pol['lean'], dz_ + pol['dz'], dx_ + pol['dx'], pol['dy'], pol['yaw']
-            path = _cl_one(kin, tool, be, r, Tb, Rp, H, qs[k], ln_ * lf, above_m, extra, dz_, dx_, (top_q or {}).get(r['model_qd'], top), (edge_q or {}).get(r['model_qd']), wide=wide, dy=dy_, yaw_deg=yaw_)
+                Hp = H @ pol['hand']                         # the planner's (biased) belief of the plate in the hand
+            path = _cl_one(kin, tool, be, r, Tb, Rp, Hp, qs[k], ln_ * lf, above_m, extra, dz_, dx_, (top_q or {}).get(r['model_qd'], top), (edge_q or {}).get(r['model_qd']), wide=wide, dy=dy_, yaw_deg=yaw_)
             if len(path) == 13:
                 lean_used.append(lf if not wide else 1.01)
                 break
@@ -776,7 +786,7 @@ def run_replay(args):
                          Tb=json.loads(photo.read_text())['T_base_basket'], grasp=grasp, slot=slot))
     n = len(rows) * args.per_run
     _CL_POL.update(policy=load_insert_policy(args.cl_policy) if args.cl_policy else None, det=args.cl_policy_det,
-                   dr=args.cl_dr, seed=args.seed, cache={})
+                   dr=args.cl_dr, dr_full=args.cl_dr_full, seed=args.seed, cache={})
     env = ManagerBasedRLEnv(make_cfg(n, not args.headless, E_CFG()['expert'].get('pad_torsion_radius_m', 0.01)))
     env.reset()
     dev = env.device

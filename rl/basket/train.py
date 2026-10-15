@@ -567,7 +567,7 @@ def run_insert_rl(a):
     if a.init_ckpt:
         pol.load_state_dict(torch.load(a.init_ckpt, map_location='cpu'))
     opt = torch.optim.Adam(pol.parameters(), lr=a.lr or 3e-4)
-    extra = ['--cl_dr'] if not a.no_dr else []
+    extra = (['--cl_dr'] + (['--cl_dr_full'] if a.dr_full else [])) if not a.no_dr else []
     extra += ['--cl_noise_fp', str(ROOT / 'rl/logs/basket/fp_noise_model_20261015.json')] if not a.no_fp_noise else []
     hist = []
     (out / 'config.json').write_text(json.dumps(dict(vars(a), plans_n=len(rows), eval_n=len(hold), extra=extra), indent=1, default=str))
@@ -660,6 +660,7 @@ def parse_args():
     p.add_argument('--epochs', type=int, default=8)
     p.add_argument('--minibatch', type=int, default=32)
     p.add_argument('--no_dr', action='store_true', help='insert_rl: no model-error randomisation')
+    p.add_argument('--dr_full', action='store_true', help='insert_rl: also basket-yaw and in-hand-bias randomisation (unobserved)')
     p.add_argument('--no_fp_noise', action='store_true', help='insert_rl: exact in-hand pose (no FP noise model)')
     p.add_argument('--init_std', type=float, default=0.3, help='insert_rl: initial exploration std (pre-tanh; 0.3 ~ 9 mm aim)')
     p.add_argument('--data', help='bc: demo folder with batch_*.npz (expert.py collect)')
