@@ -3414,7 +3414,7 @@
 ## 2026-10-16 02:58 Codex — E 높이 평면별 후보 짝 매칭 민감도
 - v9 checked labels의 두 행에서 각 행을 basket-x 순으로 정렬하고 같은 순번끼리만 비교했다(보스 번호 대응으로 확정한 pair가 아님). 각 후보의 두 끝점 x 차가 8 mm 이내인 개수는 바닥 외삽 `base_basket_xyz`에서 Q1 **7/7**, Q3 **7/9**, Q4 **9/11**; 실제 라벨 높이인 레일 접합 `root_at_rail_basket_xyz`에서는 **7/7, 9/9, 11/11**; 가정 tip 높이 `top_basket_xyz`에서는 **7/7, 9/9, 11/11**이었다. Q3/Q4는 바닥 외삽에서 각각 2쌍을 놓치지만 root/tip 평면에서는 이 순서 후보들이 기준 안에 든다.
 - 이는 두 라벨 행의 순서와 부분 표본에 조건부인 연관 민감도이지 정답 pair precision/recall이 아니다. tip 좌표도 가정된 높이 평면 역투영이므로 독립 실측 GT가 아니다. `wrist_pins(layout=...)`의 기존 base-x greedy pairing이나 번호 규칙은 바꾸지 않았다. 보스 번호 검증 및 exhaustive visible-pair 분모가 없어서 E의 80% gate·공식 지표는 미판정.
-- 계산은 부분 라벨 JSON의 basket-frame 좌표를 읽은 CPU 오프라인 분석이며 새 파일·코드·데이터를 만들지 않았다. 로봇·그리퍼·GPU 미사용.
+- 계산은 부분 라벨 JSON의 basket-frame 좌표를 읽은 CPU 오프라인 분석이며 새 파일·코드·데이터를 만들지 않았다. `git diff --check` 및 `bash calibration/run.sh tests` **76/76 통과 (34.231 s)**. 첫 sandbox 실행은 `pipeline.py` UDP socket 생성 권한으로 차단됐고 승인된 전체 재실행에서 통과. 로봇·그리퍼·GPU 미사용.
 
 ## 2026-10-16 03:0x Claude — 30분 기록
 - 실기 이식 문제 발견·수정: sim 정책의 손 안 회전 입력이 접시 메시의 임의 회전(법선 둘레)을 포함 → 실기 `hand_plate` 프레임(x = 중심→TCP)과 뜻이 다름. `canonical_hand()` + `--canon`(7d7243a), 73° 돌린 시험 자세에서 실기 H와 차이 0. 이전 정책(C2, E)은 sim 결과로만 유효하고 실기에 그대로 쓰지 않는다.

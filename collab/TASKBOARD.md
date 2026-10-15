@@ -62,7 +62,7 @@
 | D | 실제 핀 배치 측정 (사진 라벨) | 아래 '새 일 D' | 라벨 59개(PARTIAL v9)까지로 마감 → D2의 정답으로 사용 |
 | H | 손목 깊이로 접시 면 각도 (D2 다음) | 아래 '새 일 H' | 구현·합성검증 완료(28/28): `plate_plane` yaw/tilt 합성 ≤1°. 현재 손목 자세는 중앙 1.58m로 20–45cm 표본 11픽셀뿐; 0.45–0.90m의 놓인 접시에서는 빨간 영역 깊이 유효 77.5%·평면 RMSE2.44mm. 실제 손에 든 접시/동기 pose 검증은 막힘; 수치·대안 LOG에 기록 |
 | G | 손목 사진에서 손에 든 접시 면 각도 측정 (지금 Codex 최우선) | 아래 '새 일 G' | 막힘: 단일 RGB에서 yaw/기울기 분리 불가; 영상진단 구현 78f74d0, 추가 시점/기울기 계측 필요 |
-| E | **핀 검출기 개선 + 정답 평가** (D의 정답으로) | 아래 '새 일 E' | 진행 중 (b87e294): label-seeded 48/59(Q1 9/14); model-only 2D checked-tip 8/59≤5px, confirmed pair 1개. Q3 checked pair 1개는 center 오차 0.8mm였으나 행간 차이 12mm로 pair gate가 거부함. 1D confirmed 7개 대비 전체 개선은 아님. 자세한 한계·다음은 LOG 02:40. |
+| E | **핀 검출기 개선 + 정답 평가** (D의 정답으로) | 아래 '새 일 E' | 진행 중 (b87e294): label-seeded 48/59; model-only 2D checked-tip 8/59, confirmed pair 1. 02:58 행 x 매칭 민감도: 바닥 외삽에서 Q3/Q4 각 2쌍 누락, root/tip 높이에서는 후보 순서 짝 전부 8mm 이내. 번호 대응·visible-pair GT 미확정이라 규칙/80% gate는 미변경. 상세 LOG 02:40·02:58. |
 | F | marker 5/2.5 cm 비교 | 보스가 작은 마커를 붙이면 `basket_stats`로 같은 조건 측정 | 대기(보스) |
 | AF | **실물 접시 앉음 높이·기울기 측정 절차** | 보스가 Q1~Q4에 손으로 놓고 기록할 1장 절차·표, 로봇 명령 없음 | 완료(dce780d; 38/38 시험, LOG 기록) |
 | AG | **Q1 손 안 접시 퍼짐 원인 오프라인 분석** | `replay_q1nt_l05.json`의 들기 직후 `in_hand`와 운반·재겨냥 후 `pre`를 FK 기준으로 비교; regrip 비인과 한계 구분 | 완료(66b9681; Q1 pre y std 9.94 mm, 정확 시점·regrip 인과는 미확정) |
@@ -220,6 +220,7 @@
 - **추가(10/15 15:4x Claude): 컨트롤러 J3 한계 ±135°**(실기 알람 1207, `ros2_nodes.CONTROLLER_LIMITS_DEG`, a6019be). 데모 배치·선생님 경로에서 J3가 132°(3° 여유)를 넘는 에피소드는 제외하고 그 비율을 보고할 것. 잡기 라이브러리는 이미 걸러짐(9d87580).
 
 ## Codex 상태
+- 10/16 02:58 E 높이 평면별 후보 짝 민감도: v9 부분 라벨을 행별 x순으로 짝지으면 root/tip 평면 8mm 이내 Q1/Q3/Q4 **7/7, 9/9, 11/11**, floor 외삽은 **7/7, 7/9, 9/11**. 후보 순서이며 번호 정답 아님; measured-layout 매칭·생산 기준 미변경. 문서 diff 검사 및 full tests 76/76 통과. LOG 02:58.
 - 10/16 02:55 E label-layout 진단: Q1/Q3/Q4의 두 checked 행을 순서대로 후보 pairing하면 7/9/11쌍이 있으나, 현 측정-layout 매칭은 floor-extrapolated x 8 mm cutoff 때문에 Q3/Q4 각각 2쌍을 제외한다( root/tip x에서는 8 mm 이내). 후보 순서가 보스 번호와 같다고 확인된 것은 아니며, 라벨 시작 검색의 in-sample 계산 Q1 2/7, Q3 8/9, Q4 9/11일 뿐 OOS recall은 아님. pairing 변경 보류; Q2는 한 행 라벨만 있음. 상세 LOG 02:55.
 - 10/16 02:50 E 후속: 2D 후보 쌍에서 행간 불일치를 별도 보이도록 candidate correction/center 필드를 추가했다. 엄격한 ±3 mm 쌍 기준은 유지되어 Q1/Q2/Q3/Q4 확인 pair 0/1/0/0; Q3 교차행 후보는 `pair_disagreement`, 정식 `gap_centre_base_xyz=null`이다. 재생성 JSON은 `pins_model_oos2d_20261016_v5_Q1..Q4`; 전체 시험 76/76. LOG 02:50. E는 공식 검출률 판정에 필요한 exhaustive visible-pair GT 부족으로 계속 미완료.
 - 10/16 02:30 `eval_0010` 목표 칸별 exact/n 추가 분해를 LOG에 기록. 분면 내 gap별 분모 8–28의 불균등 고정 holdout이므로 기술통계로만 남김(새 eval/원인 주장 아님). LOG 02:30.
