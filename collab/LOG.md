@@ -3221,3 +3221,7 @@
   1. 상한 없는 teacher + SafeDiffIK replay: `bash rl/basket/run_quadrant_final_20261015.sh calibration/data/basket/ao_g0_final_plans_20261015_1635/Q1_plans.jsonl calibration/data/basket/ao_g0_insert_telemetry_20261015_2210/uncapped/Q1_g0.json --g0 --g0_telemetry --cl_extra 0.005 --seed 11014`
   2. 기존 per-phase teacher target cap 적용 + 같은 replay: `bash rl/basket/run_quadrant_final_20261015.sh calibration/data/basket/ao_g0_final_plans_20261015_1635/Q1_plans.jsonl calibration/data/basket/ao_g0_insert_telemetry_20261015_2210/ratecap/Q1_g0.json --g0 --g0_telemetry --teacher_rate_cap --cl_extra 0.005 --seed 11014`
 - Codex는 GPU/Isaac을 실행하지 않는다. 명령 실행 직전 Claude가 GPU 단독 사용 가능 여부와 두 JSON/NPZ 출력 경로의 부재를 확인해야 한다. 기존 teacher uncapped 성공 18/20 및 ratecap teacher 10–11/20은 서로 다른 이후 결과와의 비교 기준일 뿐, 새 시계열은 아직 없다.
+
+## 2026-10-15 22:4x Claude — 30분 기록
+- C(스케일, gap 랜덤화): 0회차 0.554 → 5: 0.756 → **10: 0.801**(Q1 .87 / Q2 .72 / Q3 .81 / Q4 .80). 12회차에 Codex가 수정 중이던 `expert.py`를 불러 죽음(drive의 trace None). 대책: `--snapshot`(커밋된 rl/ 코드의 고정 사본으로 replay, 1b346e6·4011939). C2·D2로 마지막 정책에서 이어감.
+- AO G0(Codex): 깊이 0.5/1.0/1.5 cm 모두 상한 선생님 10~11/20, 걸림 66~69 mm 같은 높이 → 깊이 아닌 정렬 문제. Codex가 넣기 접촉 텔레메트리 추가(425755b), Claude가 상한 없음/있음 두 실행 중(`ao_g0_insert_telemetry_20261015_2210/`).
