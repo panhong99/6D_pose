@@ -1092,6 +1092,11 @@ Human 지시: Claude와 Human이 실증하는 동안 Codex가 이 문제의 원�
 - BC collector는 매 30 Hz마다 현재 sim 관측으로 오차를 재계산해 clean label을 저장한 뒤 DART 잡음만 실행 행동에 더하는 feedback 방식이다. `run_collect()`/`run_realplan()`/PPO env에도 basket tracking mode를 켜 이 action을 현재 TCP 기준 보정으로 실행한다. 단, `run_collect()`은 접시 `attach()`를 아직 호출하므로 AO 요구의 attach 없는 물리 수집을 G1 전에 고쳐야 한다.
 - 수정: `rl/rl_utils.py`, `rl/plate_env.py`, `rl/basket_env.py`, `rl/basket/expert.py`, `rl/basket/train.py`, `calibration/tests.py`. 회귀: `bash calibration/run.sh tests` **54/54 통과**. G0 새 물리 gate는 미실행. 17:14 호스트 GPU에는 실시간 FoundationPose PID 639006이 남아 있어 Codex는 Isaac을 겹쳐 시작하지 않았다. G0 95% 전 G1/G2 불가.
 
+## 2026-10-15 AO/G0: 관절 기준 재생은 별도 진단 모드로만 추가
+- Claude의 최신 작업판 handoff에 따라 `expert.py --g0_joint`를 추가한다. 선생님이 각 30 Hz 프레임에 명령한 6축 PD joint target을 기록하고, 라벨은 이전에 명령한 joint target에서 다음 teacher target까지의 관절별 델타를 해당 phase의 기존 deg/s cap ÷ 30으로 제한해 만든다. 재생은 이 목표를 기존 PD target rate limiter와 safety shield에 넣고, 같은 프레임의 open label을 쓴다. attach는 금지다.
+- **승인된 BC 계약이나 원래 G0 대체가 아니다.** 현재 AO 계획의 정책 행동은 slot-frame TCP delta + open이고 원 G0는 SafeDiffIK 재현이다. 관절 재생은 SafeDiffIK를 우회하므로 JSON에 `safe_diffik_g0_gate=not_evaluated_by_g0_joint` 및 진단 범위를 명시한다. joint-reference 재현율이 높아도 원 G0 통과·BC 실행 가능성으로 세지 않는다. 기존 `--g0` 경로는 유지한다.
+- Q1 Isaac 실행은 Claude 담당이며 결과는 별도 경로에 쓴다. joint diagnostic threshold 95%는 재생 비교 지표일 뿐 계획 gate가 아니다; G1/G2는 SafeDiffIK G0 통과 전 시작하지 않는다.
+
 ## 2026-10-15 19:30 AO/G0 — SafeDiffIK 속도 상한을 보존하는 기록 cursor 진행
 - 변경: G0 replay에서 학생의 translation/rotation correction이 기존 action cap에 걸리면, 현재 기록 TCP pose를 따라잡을 때까지 해당 recorded frame을 유지한다. 경계 timeout은 진단 flag로 남기고 replay를 재개한다; insert boundary 전에 release를 허용하지 않으며 기존 seated_exact 판정만 G0 분자/분모로 쓴다. 개별 target의 연속 clipping이 60 frame이면 진단 count 후 진행해 hang을 막는다.
 - 이유: Q1 phase-gate 결과 8/18 (44.4%) 중 네 episode가 boundary timeout 뒤 open을 못 받았고, 5,991 tracking actions가 clip됐다. 소스를 대조하니 G0 tracking mode가 held target을 현재 TCP로 재기준화하고 step을 1.67 mm로 먼저 clip하므로 10 mm `hold_windup`은 이 branch에서 원인으로 작동하지 않는다. teacher stream이 capped student보다 빠르게 cursor를 전진시켰다는 가설을 검증하기 위한 재생 수정이다.

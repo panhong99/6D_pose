@@ -705,6 +705,49 @@ class BasketG0ActionTests(unittest.TestCase):
         self.assertAlmostEqual(float(np.linalg.norm(action[0, 3:6])), 0.0058, places=7)
         self.assertTrue(clipped[0])
 
+    def test_joint_reference_actions_follow_targets_and_respect_per_frame_speed_caps(self):
+        mod = self.expert_module()
+        trace = dict(
+            joint_target_deg=[np.array([[1.0, -2.0, 0.0, 0.0, 0.0, 0.0],
+                                        [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]]),
+                              np.array([[1.5, -2.2, 0.0, 0.0, 0.0, 0.0],
+                                        [0.2, 0.0, 0.0, 0.0, 0.0, 0.0]])],
+            joint_speed_deg_s=[np.array([30.0, 6.0]), np.array([15.0, 6.0])],
+            open=[np.array([0.0, 0.0]), np.array([1.0, 0.0])])
+        target, commanded, action, clipped, frames = mod.g0_joint_actions_from_trace(
+            trace, [[0.0] * 6, [0.0] * 6], hz=30.0)
+        self.assertEqual(target.shape, (2, 2, 6))
+        self.assertEqual(commanded.shape, (2, 2, 6))
+        self.assertEqual(action.shape, (2, 2, 7))
+        self.assertEqual((clipped, frames), (2, 4))
+        np.testing.assert_allclose(action[0, :, 0], [1.0, 0.5])
+        np.testing.assert_allclose(action[0, :, 1], [-1.0, -0.5])
+        np.testing.assert_allclose(commanded[0], [[1.0, -1.0, 0, 0, 0, 0],
+                                                 [1.5, -1.5, 0, 0, 0, 0]])
+        command_delta = np.diff(np.concatenate([np.zeros((2, 1, 6)), commanded], axis=1), axis=1)
+        per_frame_cap = np.array([[30.0, 15.0], [6.0, 6.0]])[:, :, None] / 30.0
+        np.testing.assert_allclose(action[:, :, :6], command_delta)
+        self.assertTrue((np.abs(action[:, :, :6]) <= per_frame_cap + 1e-7).all())
+        np.testing.assert_array_equal(action[..., 6], [[0.0, 1.0], [0.0, 0.0]])
+
+    def test_joint_reference_actions_reject_bad_shapes_nan_and_speed(self):
+        mod = self.expert_module()
+        base = dict(joint_target_deg=[np.zeros((1, 6))],
+                    joint_speed_deg_s=[np.array([30.0])], open=[np.array([0.0])])
+        with self.assertRaisesRegex(ValueError, 'shape'):
+            mod.g0_joint_actions_from_trace(base, np.zeros((2, 6)))
+        bad_nan = dict(base, joint_target_deg=[np.full((1, 6), np.nan)])
+        with self.assertRaisesRegex(ValueError, 'non-finite'):
+            mod.g0_joint_actions_from_trace(bad_nan, np.zeros((1, 6)))
+        bad_speed = dict(base, joint_speed_deg_s=[np.array([0.0])])
+        with self.assertRaisesRegex(ValueError, 'positive'):
+            mod.g0_joint_actions_from_trace(bad_speed, np.zeros((1, 6)))
+        with self.assertRaisesRegex(ValueError, 'positive'):
+            mod.g0_joint_actions_from_trace(base, np.zeros((1, 6)), hz=0.0)
+        bad_open = dict(base, open=[np.array([0.5])])
+        with self.assertRaisesRegex(ValueError, 'binary'):
+            mod.g0_joint_actions_from_trace(bad_open, np.zeros((1, 6)))
+
     def test_rotation_hold_composes_spatial_delta_and_is_opt_in(self):
         import torch
         from rl_utils import ROTATION_HOLD_DEFAULT, integrate_spatial_quat

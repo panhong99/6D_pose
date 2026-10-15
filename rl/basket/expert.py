@@ -40,6 +40,7 @@ def parse_args():
     p.add_argument('--policy', default=None, help='collect: a BC checkpoint drives instead of the expert (evaluation)')
     p.add_argument('--attach', action='store_true', help='replay: rigid in-hand plate after the lift')
     p.add_argument('--g0', action='store_true', help='replay: record teacher slot-frame actions and replay them from the same hover state through SafeDiffIK')
+    p.add_argument('--g0_joint', action='store_true', help='replay: opt-in joint-PD teacher-reference replay; separate diagnostic, not the SafeDiffIK G0 gate')
     p.add_argument('--closed_loop', action='store_true', help='replay --plans: at the stop above the basket read the plate in the hand and '
                    're-solve the descent so it stands over its target gap (stand-in for measuring the plate there)')
     p.add_argument('--cl_dz', type=float, default=0.0, help='--closed_loop: raise the insert end by this [m] (plate bottom vs the rail)')
@@ -184,6 +185,8 @@ def drive(env, paths_deg, closed, speed, hold=15, trace=None, trace_phase='motio
         if trace is None:
             return
         trace['phase'].append(np.full(env.num_envs, trace_phase, dtype=object))
+        trace['joint_speed_deg_s'].append(np.full(env.num_envs, float(speed), dtype=np.float32))
+        trace['joint_target_deg'].append(torch.rad2deg(q[:, aj]).cpu().numpy())
         trace['open'].append(~np.asarray(closed, dtype=bool).copy())
         diag = g0_physical_grasp_diagnostics(env, pe)
         trace['physical_held'].append(diag['predicate'])
@@ -321,6 +324,43 @@ def g0_actions_from_trace(trace, slot_yaw, step_max):
     actions = actions.astype(np.float32)
     actions = np.concatenate([actions, open_signal.astype(np.float32)[..., None]], axis=2)
     return obs, actions, int(clipped.sum()), int(clipped.shape[0] * clipped.shape[1])
+
+
+def g0_joint_actions_from_trace(trace, initial_joint_deg, hz=30.0):
+    """Build per-joint delta labels to recorded PD goals, bounded by the teacher's phase speed."""
+    import numpy as np
+    required = ('joint_target_deg', 'joint_speed_deg_s', 'open')
+    if any(name not in trace for name in required):
+        raise ValueError(f'joint G0 trace is missing fields: {[x for x in required if x not in trace]}')
+    target = np.stack(trace['joint_target_deg'], axis=1).astype(float)
+    speed = np.stack(trace['joint_speed_deg_s'], axis=1).astype(float)
+    opened = np.stack(trace['open'], axis=1).astype(float)
+    initial = np.asarray(initial_joint_deg, dtype=float)
+    if target.ndim != 3 or target.shape[2] != 6 or target.shape[1] == 0:
+        raise ValueError(f'joint G0 targets must have shape (env, nonempty time, 6), got {target.shape}')
+    n, t = target.shape[:2]
+    if speed.shape != (n, t) or opened.shape != (n, t) or initial.shape != (n, 6):
+        raise ValueError(f'joint G0 target/speed/open/start shapes do not align: {target.shape}, {speed.shape}, {opened.shape}, {initial.shape}')
+    if not np.isfinite(target).all() or not np.isfinite(speed).all() or not np.isfinite(opened).all() or not np.isfinite(initial).all():
+        raise ValueError('joint G0 trace contains a non-finite value')
+    if not np.isfinite(hz) or hz <= 0 or (speed <= 0).any():
+        raise ValueError('joint G0 frame rate and teacher speed caps must be finite and positive')
+    if not np.isin(opened, (0.0, 1.0)).all():
+        raise ValueError('joint G0 open labels must be binary')
+    cap = speed[..., None] / float(hz)
+    current = initial.copy()
+    commanded = np.empty_like(target)
+    action = np.zeros((n, t, 7), dtype=np.float32)
+    clipped = np.zeros((n, t), dtype=bool)
+    for frame in range(t):
+        delta = target[:, frame] - current
+        bounded = np.clip(delta, -cap[:, frame], cap[:, frame])
+        clipped[:, frame] = np.any(np.abs(bounded - delta) > 1e-6, axis=1)
+        current = current + bounded
+        commanded[:, frame] = current
+        action[:, frame, :6] = bounded.astype(np.float32)
+        action[:, frame, 6] = opened[:, frame].astype(np.float32)
+    return target.astype(np.float32), commanded.astype(np.float32), action, int(clipped.sum()), int(n * t)
 
 
 def g0_tracking_action(current_pos, current_quat, target_pos, target_quat, slot_yaw, step_max):
@@ -824,10 +864,17 @@ def run_replay(args):
     import basket_env as be
     import plate_env as pe
     import env as E
-    if args.g0 and (args.attach or not args.closed_loop or not args.plans or not args.out):
-        raise SystemExit('--g0 requires --plans, --closed_loop, an explicit new --out path, and no --attach')
-    if args.g0 and Path(args.out).exists():
-        raise SystemExit(f'G0 refuses to overwrite {args.out}')
+    g0_requested = bool(args.g0 or args.g0_joint)
+    if args.g0 and args.g0_joint:
+        raise SystemExit('choose exactly one G0 replay mode: --g0 (SafeDiffIK) or --g0_joint (joint reference diagnostic)')
+    if g0_requested and (args.attach or not args.closed_loop or not args.plans or not args.out):
+        raise SystemExit('--g0/--g0_joint requires --plans, --closed_loop, an explicit new --out path, and no --attach')
+    if g0_requested:
+        if Path(args.out).suffix.lower() == '.npz':
+            raise SystemExit('G0 --out must be a JSON path; the paired NPZ uses the same stem')
+        existing = [p for p in (Path(args.out), Path(args.out).with_suffix('.npz')) if p.exists()]
+        if existing:
+            raise SystemExit(f'G0 refuses to overwrite {existing[0]}')
     runs = [] if args.plans else [json.loads(l) for l in open(args.labels)]
     rows = []
     for r in ([json.loads(l) for l in open(args.plans)] if args.plans else []):   # planned, not run: 'outcome' = planned
@@ -875,7 +922,7 @@ def run_replay(args):
     # Keep the old >5 cm lift metric for in-quadrant classification. Finger/rim checks are
     # serialized diagnostics only; they are not part of the established seated_exact gate.
     physical_lift_diagnostic = None
-    if args.g0:
+    if g0_requested:
         physical_lift_diagnostic = g0_physical_grasp_diagnostics(env, pe)
     ti = robot.find_bodies('tcp')[0][0]                        # (10/13) the plate in the hand after the lift, world poses
     in_hand = dict(tcp_pos=(robot.data.body_pos_w[:, ti] - env.scene.env_origins).cpu().numpy().tolist(),
@@ -889,8 +936,9 @@ def run_replay(args):
     # G0 starts at the first stop above the basket, before any closed-loop re-aim (stage 4).
     g0_record = None
     g0_start = None
-    if args.g0:
-        g0_record = dict(obs=[], pos=[], quat=[], next_pos=[], next_quat=[], next_joints=[], phase=[], open=[],
+    if g0_requested:
+        g0_record = dict(obs=[], pos=[], quat=[], next_pos=[], next_quat=[], next_joints=[],
+                         joint_target_deg=[], joint_speed_deg_s=[], phase=[], open=[],
                          joints=[], physical_held=[], finger_ratio=[], tcp_local=[], rim_distance=[],
                          released_state=[], released=np.zeros(n, dtype=bool))
         g0_start = capture_g0_state(env, pe)
@@ -934,14 +982,17 @@ def run_replay(args):
         detach(env, torch.ones(n, dtype=torch.bool, device=dev))
     drive(env, [None] * n, open_, args.speed, hold=45, trace=g0_record, trace_phase='release')         # release
     trace['released'] = dict(pos=(env.scene['plate'].data.root_pos_w - env.scene.env_origins).cpu().numpy().tolist(), quat=env.scene['plate'].data.root_quat_w.cpu().numpy().tolist())
-    if args.g0:
+    if g0_requested:
         teacher_strict_success, st_teacher = inserted(env)
         teacher_grasp_maintained = g0_trace_grasp_maintained(g0_record['physical_held'], g0_record['released_state'])
         teacher_exact, teacher_landed, teacher_detail = g0_seated_exact(
             env, rows, who, st_teacher, be, pe, held)
         slot_yaw = env._slot[:, 3].cpu().numpy()
-        g0_obs, g0_act, clip_count, frame_count = g0_actions_from_trace(
-            g0_record, slot_yaw, E_CFG()['action']['step_max'])
+        if args.g0:
+            g0_obs, g0_act, clip_count, frame_count = g0_actions_from_trace(
+                g0_record, slot_yaw, E_CFG()['action']['step_max'])
+        else:
+            g0_obs, g0_act, clip_count, frame_count = None, None, 0, 0
         restore_g0_state(env, g0_start)
         restored_tcp, restored_quat = pe.tcp_pose(env)
         start_pos_err, start_rot_err = g0_pose_error(
@@ -949,6 +1000,190 @@ def run_replay(args):
             (restored_tcp - env.scene.env_origins).cpu().numpy(), restored_quat.cpu().numpy())
         start_joint_err = (torch.rad2deg(env.scene['robot'].data.joint_pos - g0_start['q'])[:, :6]
                            .abs().amax(dim=1).cpu().numpy())
+        if args.g0_joint:
+            # This diagnostic replays the recorded joint-PD reference.  It deliberately
+            # bypasses SafeDiffIK and must never be reported as the Cartesian G0 gate.
+            teacher_joint_target, replay_joint_target, joint_actions, joint_clip_count, joint_frame_count = \
+                g0_joint_actions_from_trace(
+                    g0_record, torch.rad2deg(g0_start['q'][:, env.action_manager.get_term('arm_action')._joint_ids])
+                    .cpu().numpy(), hz=30.0)
+            teacher_joint_actual = np.stack(g0_record['next_joints'], axis=1).astype(np.float32)
+            teacher_joint_speed = np.stack(g0_record['joint_speed_deg_s'], axis=1).astype(np.float32)
+            teacher_open_joint = np.stack(g0_record['open'], axis=1).astype(bool)
+            joint_phases = np.stack(g0_record['phase'], axis=1).astype(str)
+            if (teacher_joint_actual.shape != teacher_joint_target.shape or
+                    teacher_joint_speed.shape != teacher_joint_target.shape[:2] or
+                    teacher_open_joint.shape != teacher_joint_target.shape[:2] or
+                    joint_phases.shape != teacher_joint_target.shape[:2] or
+                    not np.all(joint_phases == joint_phases[:1])):
+                raise RuntimeError('joint G0 teacher traces are not aligned across frames/environments')
+
+            arm = env.action_manager.get_term('arm_action')
+            arm_joint_ids = arm._joint_ids
+            initial_actual = torch.rad2deg(robot.data.joint_pos[:, arm_joint_ids]).cpu().numpy()
+            student_joint_actual_trace, student_joint_speed_trace = [], []
+            student_tcp_pos_trace, student_tcp_quat_trace = [], []
+            student_joint_open_trace, student_joint_blocked_trace = [], []
+            student_held_trace, student_released_trace = [], []
+            student_released = np.zeros(n, dtype=bool)
+            zero_tcp = torch.zeros((n, 6), dtype=torch.float32, device=dev)
+            env._basket_tracking_mode = False
+            try:
+                for frame in range(teacher_joint_target.shape[1]):
+                    env._candidate_joint_replay_target = torch.as_tensor(
+                        np.deg2rad(replay_joint_target[:, frame]), dtype=torch.float32, device=dev)
+                    speed_values = teacher_joint_speed[:, frame]
+                    if not np.allclose(speed_values, speed_values[0], rtol=0.0, atol=1e-6):
+                        raise RuntimeError('joint replay currently requires one shared teacher speed cap per vector frame')
+                    env._arm_joint_speed_rad_s = float(np.deg2rad(speed_values[0]))
+                    open_frame = teacher_open_joint[:, frame]
+                    env.step(E.to_env_action(env, zero_tcp,
+                                             torch.as_tensor(open_frame.astype(np.float32), device=dev)))
+                    student_released |= open_frame
+                    student_joint_actual_trace.append(
+                        torch.rad2deg(robot.data.joint_pos[:, arm_joint_ids]).cpu().numpy())
+                    student_joint_speed_trace.append(
+                        torch.rad2deg(robot.data.joint_vel[:, arm_joint_ids]).cpu().numpy())
+                    tcp_now, quat_now = pe.tcp_pose(env)
+                    student_tcp_pos_trace.append((tcp_now - env.scene.env_origins).cpu().numpy())
+                    student_tcp_quat_trace.append(quat_now.cpu().numpy())
+                    student_joint_open_trace.append(open_frame.copy())
+                    student_joint_blocked_trace.append(arm.blocked.cpu().numpy().copy())
+                    student_held_trace.append(g0_physical_grasp_diagnostics(env, pe)['predicate'])
+                    student_released_trace.append(student_released.copy())
+            finally:
+                env._candidate_joint_replay_target = None
+                env._arm_joint_speed_rad_s = None
+                env._basket_tracking_mode = False
+
+            student_joint_actual = np.stack(student_joint_actual_trace, axis=1).astype(np.float32)
+            student_joint_speed = np.stack(student_joint_speed_trace, axis=1).astype(np.float32)
+            student_tcp_pos = np.stack(student_tcp_pos_trace, axis=1)
+            student_tcp_quat = np.stack(student_tcp_quat_trace, axis=1)
+            student_joint_open = np.stack(student_joint_open_trace, axis=1).astype(bool)
+            student_joint_blocked = np.stack(student_joint_blocked_trace, axis=1).astype(bool)
+            joint_error_deg = np.max(np.abs(teacher_joint_actual - student_joint_actual), axis=2)
+            tcp_position_error_m, tcp_orientation_error_rad = g0_pose_error(
+                np.stack(g0_record['next_pos'], axis=1), np.stack(g0_record['next_quat'], axis=1),
+                student_tcp_pos, student_tcp_quat)
+            joint_numeric = (teacher_joint_actual, teacher_joint_speed, joint_actions, replay_joint_target,
+                             student_joint_actual, student_joint_speed, joint_error_deg,
+                             tcp_position_error_m, tcp_orientation_error_rad)
+            if not all(np.isfinite(values).all() for values in joint_numeric):
+                raise RuntimeError('joint G0 teacher/student replay produced a non-finite numeric trace')
+            student_strict_success, st_student = inserted(env)
+            student_exact, student_landed, student_detail = g0_seated_exact(
+                env, rows, who, st_student, be, pe, held)
+            teacher_count = int(teacher_exact.sum())
+            reproduced = int((teacher_exact & student_exact).sum())
+            joint_ref_status, joint_ref_ratio = g0_gate_status(teacher_count, reproduced)
+
+            output = Path(args.out)
+            output.parent.mkdir(parents=True, exist_ok=True)
+            data_out = output.with_suffix('.npz')
+            if output.exists() or data_out.exists():
+                raise SystemExit(f'G0 refuses to overwrite {output if output.exists() else data_out}')
+            teacher_open_idx = g0_first_true(teacher_open_joint)
+            student_open_idx = g0_first_true(student_joint_open)
+            teacher_grasp_maintained = g0_trace_grasp_maintained(
+                g0_record['physical_held'], g0_record['released_state'])
+            student_grasp_maintained = g0_trace_grasp_maintained(
+                student_held_trace, student_released_trace)
+            episodes = []
+            for k in range(n):
+                episodes.append(dict(
+                    quadrant=rows[who[k]].get('model_qd'), pin=int(rows[who[k]].get('pin', -1)),
+                    target_gap=int(rows[who[k]].get('gap', -1)),
+                    teacher=dict(seated=bool(teacher_detail['seated'][k]),
+                                 in_quadrant=bool(teacher_detail['in_quadrant'][k]),
+                                 exact=bool(teacher_detail['exact'][k]),
+                                 seated_exact=bool(teacher_exact[k]),
+                                 low_mm=float(teacher_detail['low_m'][k] * 1000),
+                                 landed_gap=int(teacher_landed[k])),
+                    student=dict(seated=bool(student_detail['seated'][k]),
+                                 in_quadrant=bool(student_detail['in_quadrant'][k]),
+                                 exact=bool(student_detail['exact'][k]),
+                                 seated_exact=bool(student_exact[k]),
+                                 low_mm=float(student_detail['low_m'][k] * 1000),
+                                 landed_gap=int(student_landed[k]),
+                                 strict_inserted=bool(student_strict_success[k])),
+                    replay_alignment=dict(
+                        start_tcp_position_error_mm=float(start_pos_err[k] * 1000),
+                        start_tcp_orientation_error_deg=float(np.degrees(start_rot_err[k])),
+                        start_joint_max_error_deg=float(start_joint_err[k]),
+                        joint_max_error_deg=g0_error_summary(joint_error_deg[k]),
+                        tcp_position_error_mm=g0_error_summary(tcp_position_error_m[k], 1000.0),
+                        tcp_orientation_error_deg=g0_error_summary(tcp_orientation_error_rad[k], 180.0 / np.pi),
+                        teacher_first_open_frame=teacher_open_idx[k],
+                        student_first_open_command_frame=student_open_idx[k],
+                        safety_shield_blocked_steps=int(student_joint_blocked[k].sum()),
+                        teacher_grasp_maintained_diagnostic=bool(teacher_grasp_maintained[k]),
+                        student_grasp_maintained_diagnostic=bool(student_grasp_maintained[k]))))
+            per_q = {}
+            for qd in ('Q1', 'Q2', 'Q3', 'Q4'):
+                mask = np.asarray([rows[i].get('model_qd') == qd for i in who])
+                denom = int((teacher_exact & mask).sum())
+                num_ok = int((teacher_exact & student_exact & mask).sum())
+                per_q[qd] = dict(teacher_success=denom, reproduced=num_ok,
+                                 ratio=(num_ok / denom if denom else None))
+            initial_target = torch.rad2deg(g0_start['q'][:, arm_joint_ids]).cpu().numpy()
+            raw_joint_delta = np.diff(np.concatenate([initial_target[:, None, :], teacher_joint_target], axis=1), axis=1)
+            joint_action_clipped = np.any(np.abs(joint_actions[..., :6] - raw_joint_delta) > 1e-6, axis=2)
+            commanded_joint_delta = np.diff(
+                np.concatenate([initial_target[:, None, :], replay_joint_target], axis=1), axis=1)
+            commanded_joint_speed = np.abs(commanded_joint_delta) * 30.0
+            commanded_speed_cap = teacher_joint_speed
+            commanded_speed_cap_ratio = commanded_joint_speed / np.maximum(commanded_speed_cap, 1e-12)
+            report = dict(
+                replay_mode='joint_pd_teacher_reference',
+                gate='not_evaluated',
+                safe_diffik_g0_gate='not_evaluated_by_g0_joint',
+                gate_scope='same physical PD/safety-shield replay of recorded teacher joint targets; diagnostic only, not the Cartesian SafeDiffIK G0 or BC gate',
+                joint_reference_gate_status=joint_ref_status,
+                criterion='teacher seated_exact episodes reproduced by the joint-PD teacher-reference replay',
+                diagnostic_threshold=0.95,
+                seated_exact_definition='0.020 m < low < 0.060 m AND in_quadrant AND landed_gap == target_gap',
+                teacher_seated_exact=teacher_count, reproduced_seated_exact=reproduced,
+                joint_reference_reproduction_ratio=joint_ref_ratio,
+                per_quadrant=per_q, episodes=episodes, actions=str(data_out), plans=args.plans,
+                attach=False, action_hz=30.0, teacher_joint_speed_cap_deg_s='recorded per phase; not increased',
+                joint_action_clipped_env_frames=joint_clip_count,
+                joint_action_total_env_frames=joint_frame_count,
+                joint_action_clipped_fraction=(joint_clip_count / joint_frame_count if joint_frame_count else None),
+                commanded_joint_target_abs_max_deg_s=float(commanded_joint_speed.max()),
+                commanded_joint_speed_cap_max_ratio=float(commanded_speed_cap_ratio.max()),
+                safety_shield_blocked_steps=int(student_joint_blocked.sum()),
+                teacher_first_open_frames=teacher_open_idx, student_first_open_command_frames=student_open_idx,
+                initial_joint_max_error_deg=float(np.max(np.abs(initial_actual -
+                    torch.rad2deg(g0_start['q'][:, arm_joint_ids]).cpu().numpy()))),
+                student_joint_velocity_abs_max_deg_s=float(np.max(np.abs(student_joint_speed))),
+                actions_contract='per-frame six-joint delta in degrees = clip(next teacher PD target - previous commanded target, ±recorded phase speed/30 Hz), plus binary open; executed targets pass the existing PD rate cap and safety shield',
+                limitations=['No SafeDiffIK action is generated in this mode.',
+                             'A high reproduction ratio validates only same-start joint-reference replay, not Cartesian BC feasibility or the planned G0 gate.'])
+            np.savez_compressed(
+                data_out, teacher_joint_target_deg=teacher_joint_target,
+                teacher_joint_actual_deg=teacher_joint_actual,
+                teacher_joint_speed_cap_deg_s=teacher_joint_speed,
+                joint_delta_action_deg=joint_actions[..., :6], joint_open_action=joint_actions[..., 6].astype(bool),
+                replay_joint_target_deg=replay_joint_target,
+                student_joint_actual_deg=student_joint_actual,
+                student_joint_velocity_deg_s=student_joint_speed,
+                joint_action_clipped=joint_action_clipped,
+                teacher_open_command=teacher_open_joint, student_open_command=student_joint_open,
+                teacher_phase=joint_phases, quadrant=np.asarray([rows[i].get('model_qd', '') for i in who]),
+                pin=np.asarray([rows[i].get('pin', -1) for i in who]),
+                target_gap=np.asarray([rows[i].get('gap', -1) for i in who]),
+                teacher_success=teacher_exact, student_success=student_exact,
+                teacher_landed_gap=teacher_landed, student_landed_gap=student_landed,
+                teacher_seated=teacher_detail['seated'], student_seated=student_detail['seated'],
+                teacher_in_quadrant=teacher_detail['in_quadrant'], student_in_quadrant=student_detail['in_quadrant'],
+                teacher_low_m=teacher_detail['low_m'], student_low_m=student_detail['low_m'],
+                tcp_position_error_m=tcp_position_error_m, tcp_orientation_error_rad=tcp_orientation_error_rad,
+                joint_tracking_error_deg=joint_error_deg, safety_shield_blocked=student_joint_blocked)
+            output.write_text(json.dumps(report, indent=2))
+            print('[G0-JOINT diagnostic; SafeDiffIK G0 not evaluated]', json.dumps(report), flush=True)
+            env.close()
+            return
         student_released = np.zeros(n, dtype=bool)
         replay_action_trace, replay_ref_pos_trace, replay_ref_quat_trace, replay_ref_joint_trace = [], [], [], []
         replay_cursor_trace, replay_phase_trace = [], []
