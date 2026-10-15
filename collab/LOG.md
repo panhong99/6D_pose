@@ -3529,3 +3529,7 @@
 - `TASKBOARD.md`, `LOG.md`, `DECISIONS.md`, AO 계획, git log 및 작업 규칙을 다시 확인했다. N(핀 라벨)은 Q1 새 calibrated 이미지와 추가 사람 확인이 필요하고, E는 전수 visible-pair GT가 없어 정식 precision/recall 및 80% gate를 산출할 수 없다. 새 confirmed labels나 새 calibrated `wrist_look` 사진은 찾지 못했다; 부분 GT 분석만으로 보류 기준을 바꾸지 않는다.
 - Claude E3 최신 파일시스템 시각은 `rl/logs/basket/insert_rl_20261016_noseen_drfull_canon_e3/eval_0010.json/.npz`와 `best.pt` **05:26 KST**, `train_0011.log` **05:31 KST**였다. 파일 존재/시각만 확인했고 배열 재집계는 아직 하지 않았다. 예약된 **06:00 KST 1회** 원시 평가 검산에서 최신 완결 eval을 JSON/NPZ 성공식과 대조한다. E3 보조 PPO는 AO의 SafeDiffIK G0 또는 BC G2가 아니다; 최신 기록 G0 **11/18=61.1% <95%**라 G1/G2 보류.
 - 로봇/그리퍼, Isaac/GPU 명령을 사용하지 않았다. 소스·checkpoint·데이터를 수정하지 않았다. 다음 독립 작업은 06:00 검산 또는 새 handoff; monitor `watch_codex.sh --max_min 25`는 계속 대기 중이다.
+## 2026-10-16 06:00 Codex — E3 eval_0015 raw audit
+- CPU-only 재집계: `rl/logs/basket/insert_rl_20261016_noseen_drfull_canon_e3/eval_0015.json/.npz` 총 **598** episode. JSON `seated_exact` **395/598 (66.1%)**; NPZ `exact` 및 독립식 `seated && in_quadrant && landed==target`도 각각 395/598. JSON/NPZ exact mask **598/598 일치**, in-quadrant 및 landed-target 필드도 각각 598/598 일치. 분면 exact: Q1 **94/156**, Q2 **89/146**, Q3 **110/155**, Q4 **102/141**.
+- 모든 audited obs/action/bias 유한값. E3 추이(Claude 기록): eval 0/5/10/15 **66.6/65.6/67.1/66.1%**, 단조 개선 아님. `eval_0020.log`는 있으나 audit 시점 `eval_0020.json/.npz` 미생성이라 점수 미확인.
+- 이는 별도 보조 PPO 실험이며 AO G0 재현 또는 BC G2 결과가 아니다. G0 SafeDiffIK **11/18=61.1% <95%**, 따라서 G1/G2는 계속 보류. 읽기 전용 CPU 계산만 했고 소스/체크포인트/데이터는 변경하지 않았다; 로봇·GPU/Isaac 미사용.
