@@ -161,7 +161,7 @@ def set_basket(env, T_list, ids=None):
     env.scene['basket'].write_root_pose_to_sim(pose, env_ids=idt)
 
 
-def drive(env, paths_deg, closed, speed, hold=15, trace=None):
+def drive(env, paths_deg, closed, speed, hold=15, trace=None, trace_phase='motion'):
     """Every env along its own joint waypoint path (list of (k, 6) deg arrays, None = stay) in the same number of
     steps (the longest path at `speed` deg/s), fingers closed / open per env, then `hold` settle steps."""
     import numpy as np
@@ -183,6 +183,7 @@ def drive(env, paths_deg, closed, speed, hold=15, trace=None):
     def record_step():
         if trace is None:
             return
+        trace['phase'].append(np.full(env.num_envs, trace_phase, dtype=object))
         trace['open'].append(~np.asarray(closed, dtype=bool).copy())
         diag = g0_physical_grasp_diagnostics(env, pe)
         trace['physical_held'].append(diag['predicate'])
@@ -218,6 +219,7 @@ def drive(env, paths_deg, closed, speed, hold=15, trace=None):
             tp, tq = pe.tcp_pose(env)
             trace['next_pos'].append((tp - env.scene.env_origins).cpu().numpy())
             trace['next_quat'].append(tq.cpu().numpy())
+            trace['next_joints'].append(torch.rad2deg(robot.data.joint_pos[:, aj]).cpu().numpy())
     for _ in range(hold):
         record_step()
         sim_steps(env)
@@ -225,6 +227,7 @@ def drive(env, paths_deg, closed, speed, hold=15, trace=None):
             tp, tq = pe.tcp_pose(env)
             trace['next_pos'].append((tp - env.scene.env_origins).cpu().numpy())
             trace['next_quat'].append(tq.cpu().numpy())
+            trace['next_joints'].append(torch.rad2deg(robot.data.joint_pos[:, aj]).cpu().numpy())
 
 
 def capture_g0_state(env, pe):
@@ -359,6 +362,29 @@ def g0_tracking_action(current_pos, current_quat, target_pos, target_quat, slot_
         clipped |= scale[:, 0] < 1.0 - 1e-12
         actions[:, start:start + 3] = part * scale
     return actions.astype(np.float32), clipped
+
+
+def g0_phase_gate_mask(phases):
+    """Mark re-aim and insert phase ends; replay may cross them only after pose tracking catches up."""
+    import numpy as np
+    phases = np.asarray(phases, dtype=str)
+    if phases.ndim != 1 or not phases.size:
+        raise ValueError('G0 phase trace must be a nonempty 1D sequence')
+    gates = np.zeros(phases.shape, dtype=bool)
+    for i, phase in enumerate(phases):
+        next_phase = phases[i + 1] if i + 1 < len(phases) else ''
+        boundary = phase != next_phase
+        gates[i] = boundary and (phase.startswith('reaim_') or phase == 'insert')
+    return gates
+
+
+def g0_gate_alignment_mask(position_error_m, orientation_error_rad):
+    """Strictly enforce the approved <1 mm AND <0.5 degree phase-gate tolerance."""
+    import numpy as np
+    p, r = np.asarray(position_error_m, dtype=float), np.asarray(orientation_error_rad, dtype=float)
+    if p.shape != r.shape or not np.isfinite(p).all() or not np.isfinite(r).all():
+        raise ValueError('G0 phase-gate errors must be aligned finite arrays')
+    return (p < 0.001) & (r < np.deg2rad(0.5))
 
 
 def g0_success_mask(seated, in_quadrant, exact):
@@ -832,12 +858,12 @@ def run_replay(args):
     g0_record = None
     g0_start = None
     if args.g0:
-        g0_record = dict(obs=[], pos=[], quat=[], next_pos=[], next_quat=[], open=[],
+        g0_record = dict(obs=[], pos=[], quat=[], next_pos=[], next_quat=[], next_joints=[], phase=[], open=[],
                          joints=[], physical_held=[], finger_ratio=[], tcp_local=[], rim_distance=[],
                          released_state=[], released=np.zeros(n, dtype=bool))
         g0_start = capture_g0_state(env, pe)
     if all('descend_pre' in rows[i]['slot'] for i in who):    # taught slot paths only (quadrant plans: to_above -> descend)
-        drive(env, L('descend_pre', 'slot'), ~open_, args.speed / 4, trace=g0_record)
+        drive(env, L('descend_pre', 'slot'), ~open_, args.speed / 4, trace=g0_record, trace_phase='preinsert')
     descend, ascend = L('descend', 'slot'), L('ascend', 'slot')
     if args.closed_loop:                                       # (10/14) re-aim from the plate actually in the hand
         fix = first_fix = None
@@ -858,7 +884,8 @@ def run_replay(args):
             if it == 0:
                 first_fix = fix
             print(f"[replay] closed loop {it + 1}/{args.cl_iter}: re-solved {new_ok}/{n} (with kept earlier aims {sum(a is not None for a, _ in fix)})", flush=True)
-            drive(env, [a for a, _ in fix], ~open_, args.speed / 4, hold=30, trace=g0_record)
+            drive(env, [a for a, _ in fix], ~open_, args.speed / 4, hold=30, trace=g0_record,
+                  trace_phase=f'reaim_{it}')
         descend = [b if b is not None else d for (_, b), d in zip(fix, descend)]
         top_ = first_fix if first_fix is not None else fix   # (10/14 night) a lower re-aim: back up through it to the first stop
         ascend = [np.vstack([b[::-1], a] + ([t[0]] if t[0] is not None and t is not f_ else [])) if b is not None else u
@@ -869,11 +896,11 @@ def run_replay(args):
                plate_pos=(env.scene['plate'].data.root_pos_w - env.scene.env_origins).cpu().numpy().tolist(),
                plate_quat=env.scene['plate'].data.root_quat_w.cpu().numpy().tolist(),
                joints=robot.data.joint_pos[:, :6].cpu().numpy().tolist())
-    drive(env, descend, ~open_, args.speed / 20, hold=30, trace=g0_record)
+    drive(env, descend, ~open_, args.speed / 20, hold=30, trace=g0_record, trace_phase='insert')
     trace = dict(descended=dict(pos=(env.scene['plate'].data.root_pos_w - env.scene.env_origins).cpu().numpy().tolist(), quat=env.scene['plate'].data.root_quat_w.cpu().numpy().tolist()))   # (10/14) where the plate moves after the descent
     if args.attach:
         detach(env, torch.ones(n, dtype=torch.bool, device=dev))
-    drive(env, [None] * n, open_, args.speed, hold=45, trace=g0_record)         # release
+    drive(env, [None] * n, open_, args.speed, hold=45, trace=g0_record, trace_phase='release')         # release
     trace['released'] = dict(pos=(env.scene['plate'].data.root_pos_w - env.scene.env_origins).cpu().numpy().tolist(), quat=env.scene['plate'].data.root_quat_w.cpu().numpy().tolist())
     if args.g0:
         teacher_strict_success, st_teacher = inserted(env)
@@ -891,16 +918,81 @@ def run_replay(args):
         start_joint_err = (torch.rad2deg(env.scene['robot'].data.joint_pos - g0_start['q'])[:, :6]
                            .abs().amax(dim=1).cpu().numpy())
         student_released = np.zeros(n, dtype=bool)
-        replay_action_trace = []
+        replay_action_trace, replay_ref_pos_trace, replay_ref_quat_trace, replay_ref_joint_trace = [], [], [], []
+        replay_cursor_trace, replay_phase_trace = [], []
         replay_action_clipped = 0
-        env._basket_tracking_mode = True
+        phases = np.stack(g0_record['phase'], axis=1).astype(str)
+        if phases.shape != g0_act.shape[:2] or not np.all(phases == phases[:1]):
+            raise RuntimeError('G0 phase trace is not aligned across vectorized environments')
+        phase_1d = phases[0]
+        if not np.any(phase_1d == 'insert'):
+            raise RuntimeError('G0 trace has no insert-complete phase; refusing to open the gripper')
+        gate_mask = g0_phase_gate_mask(phase_1d)
+        phase_gate_wait_frames = np.zeros(n, dtype=np.int32)
+        gate_episode_wait_frames = np.zeros(n, dtype=np.int32)
+        phase_gate_timeout = np.zeros(n, dtype=bool)
+        release_gate_passed = np.zeros(n, dtype=bool)
         student_pos_trace, student_quat_trace, student_joint_trace = [], [], []
         student_finger_trace, student_tcp_local_trace, student_rim_trace = [], [], []
         student_held_trace, student_released_trace, student_open_trace = [], [], []
-        for step in range(g0_act.shape[1]):
+        env._basket_tracking_mode = True
+        cursor = 0
+        gate_latched = np.zeros(n, dtype=bool)
+        gate_timeout_frames = 60  # 2 s at 30 Hz; timeout is a replay failure, never a skipped success.
+        while cursor < g0_act.shape[1]:
             tp, tq = pe.tcp_pose(env)
-            student_pos_trace.append((tp - env.scene.env_origins).cpu().numpy())
-            student_quat_trace.append(tq.cpu().numpy())
+            current_pos = (tp - env.scene.env_origins).cpu().numpy()
+            current_quat = tq.cpu().numpy()
+            is_gate = bool(gate_mask[cursor])
+            if is_gate:
+                target_pos = np.asarray(g0_record['next_pos'][cursor])
+                target_quat = np.asarray(g0_record['next_quat'][cursor])
+                pos_err, rot_err = g0_pose_error(target_pos, target_quat, current_pos, current_quat)
+                aligned = g0_gate_alignment_mask(pos_err, rot_err)
+                gate_latched |= aligned & teacher_exact & ~phase_gate_timeout
+                pending = teacher_exact & ~gate_latched & ~phase_gate_timeout
+                if not pending.any():
+                    if phase_1d[cursor] == 'insert':
+                        release_gate_passed |= ~phase_gate_timeout
+                    cursor += 1
+                    gate_latched[:] = False
+                    gate_episode_wait_frames[:] = 0
+                    continue
+                phase_gate_wait_frames[pending] += 1
+                gate_episode_wait_frames[pending] += 1
+                expired = pending & (gate_episode_wait_frames >= gate_timeout_frames)
+                phase_gate_timeout |= expired
+                pending = teacher_exact & ~gate_latched & ~phase_gate_timeout
+                if not pending.any():
+                    continue
+            else:
+                target_pos = np.asarray(g0_record['next_pos'][cursor])
+                target_quat = np.asarray(g0_record['next_quat'][cursor])
+                pending = np.ones(n, dtype=bool)
+            # Recompute from the live student pose to the next absolute teacher pose.
+            # During a phase gate, already aligned or timed-out successful episodes hold
+            # position; lagging successes keep tracking the same boundary pose.
+            track_action, track_clipped = g0_tracking_action(
+                current_pos, current_quat, target_pos, target_quat,
+                slot_yaw, E_CFG()['action']['step_max'])
+            active = pending.copy()
+            if is_gate:
+                active &= ~gate_latched & ~phase_gate_timeout
+            else:
+                active &= ~(teacher_exact & phase_gate_timeout)
+            track_action[~active] = 0.0
+            replay_action_clipped += int((track_clipped & active).sum())
+            requested_open = g0_act[:, cursor, 6] > 0.5
+            allowed_open = requested_open & release_gate_passed & ~phase_gate_timeout
+            replay_action = np.concatenate([track_action, allowed_open[:, None].astype(np.float32)], axis=1)
+            replay_action_trace.append(replay_action.astype(np.float32))
+            replay_ref_pos_trace.append(target_pos.copy())
+            replay_ref_quat_trace.append(target_quat.copy())
+            replay_ref_joint_trace.append(np.asarray(g0_record['next_joints'][cursor]).copy())
+            replay_cursor_trace.append(np.full(n, cursor, dtype=np.int32))
+            replay_phase_trace.append(np.full(n, phase_1d[cursor], dtype=object))
+            student_pos_trace.append(current_pos)
+            student_quat_trace.append(current_quat)
             student_joint_trace.append(torch.rad2deg(env.scene['robot'].data.joint_pos[:, :6]).cpu().numpy())
             diag = g0_physical_grasp_diagnostics(env, pe)
             student_finger_trace.append(diag['finger_ratio'])
@@ -908,22 +1000,17 @@ def run_replay(args):
             student_rim_trace.append(diag['rim_distance'])
             student_held_trace.append(diag['predicate'])
             student_released_trace.append(student_released.copy())
-            student_open_trace.append(g0_act[:, step, 6] > 0.5)
-            # Recompute each command from the student's measured pose to the next teacher
-            # pose.  This is the tracking/DART label semantics; fixed teacher deltas would
-            # replay open-loop and let SafeDiffIK lag accumulate.
-            target_pos = np.asarray(g0_record['next_pos'][step])
-            target_quat = np.asarray(g0_record['next_quat'][step])
-            track_action, track_clipped = g0_tracking_action(
-                (tp - env.scene.env_origins).cpu().numpy(), tq.cpu().numpy(), target_pos, target_quat,
-                slot_yaw, E_CFG()['action']['step_max'])
-            replay_action_clipped += int(track_clipped.sum())
-            replay_action = np.concatenate([track_action, g0_act[:, step, 6:7]], axis=1).astype(np.float32)
-            replay_action_trace.append(replay_action)
+            student_open_trace.append(allowed_open.copy())
             a = torch.as_tensor(track_action, dtype=torch.float32, device=dev)
-            o = torch.as_tensor(g0_act[:, step, 6], dtype=torch.float32, device=dev)
+            o = torch.as_tensor(allowed_open.astype(np.float32), dtype=torch.float32, device=dev)
             env.step(E.to_env_action(env, a, o))
-            student_released |= g0_act[:, step, 6] > 0.5
+            student_released |= allowed_open
+            if not is_gate or not (teacher_exact & ~gate_latched & ~phase_gate_timeout).any():
+                if is_gate and phase_1d[cursor] == 'insert':
+                    release_gate_passed |= ~phase_gate_timeout
+                cursor += 1
+                gate_latched[:] = False
+                gate_episode_wait_frames[:] = 0
         env._basket_tracking_mode = False
         student_strict_success, st_student = inserted(env)
         student_exact, student_landed, student_detail = g0_seated_exact(
@@ -939,12 +1026,12 @@ def run_replay(args):
         teacher_open = np.stack(g0_record['open'], axis=1).astype(bool)
         student_open = np.stack(student_open_trace, axis=1).astype(bool)
         student_grasp_maintained = g0_trace_grasp_maintained(student_held_trace, student_released_trace)
-        teacher_pos = np.stack(g0_record['pos'], axis=1)
-        teacher_quat = np.stack(g0_record['quat'], axis=1)
         student_pos = np.stack(student_pos_trace, axis=1)
         student_quat = np.stack(student_quat_trace, axis=1)
-        tcp_pos_err, tcp_rot_err = g0_pose_error(teacher_pos, teacher_quat, student_pos, student_quat)
-        teacher_joints = np.stack(g0_record['joints'], axis=1)
+        replay_ref_pos = np.stack(replay_ref_pos_trace, axis=1)
+        replay_ref_quat = np.stack(replay_ref_quat_trace, axis=1)
+        tcp_pos_err, tcp_rot_err = g0_pose_error(replay_ref_pos, replay_ref_quat, student_pos, student_quat)
+        teacher_joints = np.stack(replay_ref_joint_trace, axis=1)
         student_joints = np.stack(student_joint_trace, axis=1)
         joint_err_deg = np.max(np.abs(teacher_joints - student_joints), axis=2)
         teacher_finger = np.stack(g0_record['finger_ratio'], axis=1)
@@ -992,7 +1079,9 @@ def run_replay(args):
                     joint_max_error_deg=g0_error_summary(joint_err_deg[k]),
                     teacher_first_open_frame=teacher_open_idx[k],
                     student_first_open_command_frame=student_open_idx[k],
-                    open_command_frames_equal=bool(np.array_equal(teacher_open[k], student_open[k])),
+                    release_gate_passed=bool(release_gate_passed[k]),
+                    phase_gate_timed_out=bool(phase_gate_timeout[k]),
+                    phase_gate_wait_frames=int(phase_gate_wait_frames[k]),
                     teacher_grasp_maintained_diagnostic=bool(teacher_grasp_maintained[k]),
                     student_grasp_maintained_diagnostic=bool(student_grasp_maintained[k]))))
         replay_act = np.stack(replay_action_trace, axis=1)
@@ -1011,6 +1100,13 @@ def run_replay(args):
                             teacher_tcp_position_error_m=tcp_pos_err, teacher_tcp_orientation_error_rad=tcp_rot_err,
                             tcp_max_joint_error_deg=joint_err_deg, teacher_open_command=teacher_open,
                             student_open_command=student_open,
+                            teacher_phase=phases, replay_phase=np.stack(replay_phase_trace, axis=1),
+                            replay_teacher_cursor=np.stack(replay_cursor_trace, axis=1),
+                            replay_reference_tcp_position_m=replay_ref_pos,
+                            replay_reference_tcp_quaternion_wxyz=replay_ref_quat,
+                            replay_release_gate_passed=release_gate_passed,
+                            replay_phase_gate_timeout=phase_gate_timeout,
+                            replay_phase_gate_wait_frames=phase_gate_wait_frames,
                             quadrant=np.asarray([rows[i].get('model_qd', '') for i in who]),
                             pin=np.asarray([rows[i].get('pin', -1) for i in who]),
                             target_gap=np.asarray([rows[i].get('gap', -1) for i in who]))
@@ -1030,6 +1126,12 @@ def run_replay(args):
                       per_quadrant=per_q, episodes=g0_episodes, actions=str(data_out), plans=args.plans,
                       attach=False, action_hz=E_CFG()['action']['hz'], step_max=E_CFG()['action']['step_max'],
                       replay_tracking_clipped_steps=replay_action_clipped,
+                      phase_gates=dict(phases=['reaim_*', 'insert'], position_tolerance_mm=1.0,
+                                       orientation_tolerance_deg=0.5, timeout_frames=gate_timeout_frames,
+                                       timeout_seconds=gate_timeout_frames / E_CFG()['action']['hz'],
+                                       timed_out_teacher_successes=int((teacher_exact & phase_gate_timeout).sum()),
+                                       total_wait_frames=int(phase_gate_wait_frames.sum()),
+                                       release_open_requires_insert_gate=True),
                       replay_tracking_action_semantics='clip(teacher_next_TCP_pose - student_current_TCP_pose); act is clean teacher-state label, replay_act is executed tracking action')
         output.write_text(json.dumps(report, indent=2))
         print('[G0]', json.dumps(report), flush=True)

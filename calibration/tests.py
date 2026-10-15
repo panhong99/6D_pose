@@ -737,6 +737,20 @@ class BasketG0ActionTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             mod.g0_gate_status(1, 2)
 
+    def test_g0_sparse_phase_gates_and_strict_alignment_tolerances(self):
+        mod = self.expert_module()
+        phases = ['preinsert', 'reaim_0', 'reaim_0', 'reaim_1', 'insert', 'insert', 'release']
+        np.testing.assert_array_equal(
+            mod.g0_phase_gate_mask(phases),
+            [False, False, True, True, False, True, False])
+        self.assertTrue(mod.g0_gate_alignment_mask([0.000999], [np.deg2rad(0.499)])[0])
+        self.assertFalse(mod.g0_gate_alignment_mask([0.001], [0.0])[0])
+        self.assertFalse(mod.g0_gate_alignment_mask([0.0], [np.deg2rad(0.5)])[0])
+        with self.assertRaises(ValueError):
+            mod.g0_phase_gate_mask([])
+        with self.assertRaises(ValueError):
+            mod.g0_gate_alignment_mask([np.nan], [0.0])
+
     def test_g0_lift_requires_the_existing_physical_finger_and_rim_checks(self):
         mod = self.expert_module()
         # Match plate_env._state: stalled fingers plus TCP on the plate rim; a 5 cm lift alone is insufficient.
