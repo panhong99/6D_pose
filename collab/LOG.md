@@ -3416,6 +3416,12 @@
 - 이는 두 라벨 행의 순서와 부분 표본에 조건부인 연관 민감도이지 정답 pair precision/recall이 아니다. tip 좌표도 가정된 높이 평면 역투영이므로 독립 실측 GT가 아니다. `wrist_pins(layout=...)`의 기존 base-x greedy pairing이나 번호 규칙은 바꾸지 않았다. 보스 번호 검증 및 exhaustive visible-pair 분모가 없어서 E의 80% gate·공식 지표는 미판정.
 - 계산은 부분 라벨 JSON의 basket-frame 좌표를 읽은 CPU 오프라인 분석이며 새 파일·코드·데이터를 만들지 않았다. `git diff --check` 및 `bash calibration/run.sh tests` **76/76 통과 (34.231 s)**. 첫 sandbox 실행은 `pipeline.py` UDP socket 생성 권한으로 차단됐고 승인된 전체 재실행에서 통과. 로봇·그리퍼·GPU 미사용.
 
+## 2026-10-16 03:0x Codex — AO canon PPO 최신 원시 결과 검산 (CPU)
+- Claude가 생성한 `rl/logs/basket/insert_rl_20261016_noseen_drfull_canon/`의 `eval_0000` 및 train batch 0000–0004 JSON/NPZ를 독립 재집계했다. held-out 기준 exact는 **382/598=63.88%**; Q1 **89/156 (57.05%)**, Q2 **84/146 (57.53%)**, Q3 **110/155 (70.97%)**, Q4 **99/141 (70.21%)**. JSON `seated_exact`와 원시 성공식 및 NPZ mask가 598/598 일치했고 numeric 배열은 유한값이었다.
+- 이전 `insert_rl_20261016_noseen_drfull/eval_0010`도 382/598이다. env/bias/quadrant/target 및 초기 `in_hand` 상태는 598개 모두 동일했으나 관측 배열은 canonical 입력 변환으로 달랐다. paired mask는 양방향 각각 38개 전이, 총점 변화 0; Q1 89→89, Q2 81→84, Q3 110→110, Q4 102→99. 이전 checkpoint가 non-canonical `drfull/current.pt`에서 warm-start됐고 시작 상태의 `pre`도 동일하지 않아 이 비교로 canonical 학습 효과를 분리·주장하지 않는다.
+- train batch exact는 0000–0004 **46/96, 44/96, 52/96, 43/96, 45/96**. 각 JSON/NPZ exact mask 96/96 일치, numeric 배열 finite. stochastic 학습 rollout이므로 상승 추세/held-out 향상으로 해석하지 않는다. 03:00 갱신된 `eval_0005.log`에는 closed-loop plan 598/598 재해결만 보이고 `eval_0005.json/.npz`는 없으며, 점수로 집계하지 않았다.
+- 입력은 공유 sim JSON/NPZ의 읽기 전용 CPU 감사다. GPU/Isaac/로봇·그리퍼 사용 및 코드·산출물 수정 없음. G0/G2 gate에 대한 변경·통과 주장은 없다.
+
 ## 2026-10-16 03:0x Claude — 30분 기록
 - 실기 이식 문제 발견·수정: sim 정책의 손 안 회전 입력이 접시 메시의 임의 회전(법선 둘레)을 포함 → 실기 `hand_plate` 프레임(x = 중심→TCP)과 뜻이 다름. `canonical_hand()` + `--canon`(7d7243a), 73° 돌린 시험 자세에서 실기 H와 차이 0. 이전 정책(C2, E)은 sim 결과로만 유효하고 실기에 그대로 쓰지 않는다.
 - E(틈 가림 + 전체 랜덤화) 20회차 0.666 → 중지, **E2 `insert_rl_20261016_noseen_drfull_canon`**(같은 조건 + canon, E에서 이어감) 0회차 0.639. 이게 실기 후보 정책.
