@@ -194,7 +194,8 @@ def mover_args(argv=None):
     return p.parse_args(argv)
 
 
-CONTROLLER_LIMITS_DEG = {'joint_5': (-135.0, 135.0)}   # (10/13) controller alarm 1207 'JNT(5) POS LIMIT' at 135.7 (URDF says 360)
+CONTROLLER_LIMITS_DEG = {'joint_3': (-135.0, 135.0),    # (10/15 실기) alarm 1207 'JNT(3) POS LIMIT - INPUT(137.414), MAX(135.000)' (URDF 160)
+                         'joint_5': (-135.0, 135.0)}    # (10/13) controller alarm 1207 'JNT(5) POS LIMIT' at 135.7 (URDF says 360)
 
 
 def joint_limits_deg():
