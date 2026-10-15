@@ -3292,6 +3292,7 @@
 - 검증: `bash calibration/run.sh tests` **69/69 통과(35.111 s)**, `git diff --check` 및 `py_compile` 통과. 앞선 통합 시험 시도 2회는 테스트 fixture의 spline 최소 waypoint 수와 mock의 `call_async` assertion 위치 오류로 실패했고 수정했다.
 - 범위 한계는 그대로다: 실제 ROS/Doosan 통신이나 로봇 동작은 하지 않았다. QSTOP 접수와 실제 물리 정지·정지거리는 이 fake-service 시험으로 검증되지 않는다. 25 N은 실기 사용 승인이 아니다.
 - 파일: `calibration/tests.py`; force guard 구현/설계는 `4c6c99a`, 본 회귀시험 및 기록은 별도 후속 커밋으로 관리.
+- 추가 오프라인 인터페이스 확인: 설치된 `/home/pan/pan/doosan_ws/src/doosan-robot2/dsr_msgs2/srv/GetToolForce.srv`는 외력이 `ref` 좌표 기준이고 모멘트는 tool 좌표 기준이라고 명시한다. 따라서 코드의 `ref=DR_BASE` 및 앞 3개 성분만 쓰는 좌표 선택은 로컬 서비스 주석과 일치한다. 다만 `.srv` 주석에는 힘 단위, 중력 보상/필터·영점, 갱신 주기·지연 또는 QSTOP 물리 응답은 명시되지 않는다. 이 소스 확인은 API 실행/실기 안전 검증으로 간주하지 않는다.
 
 ## 2026-10-16 01:1x Claude — 30분 기록: 틈 검출 없을 때의 가치
 - C2 평가 25회차 **0.828**(Q1 .85 / Q2 .79 / Q3 .83 / Q4 .84, 최고). D3(전체 랜덤화) 0.759 @10.
