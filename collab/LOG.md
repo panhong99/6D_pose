@@ -3287,6 +3287,12 @@
 - 실제 ROS/Doosan service, 로봇, Isaac/GPU는 호출하지 않았다. 따라서 Doosan API response의 물리적 의미·20 Hz 감시 실효성·QSTOP 제동 성능은 미검증이며 DECISIONS 항목은 보스 승인 대기 초안이다.
 - 구현·시험·DECISIONS 초안 커밋: `4c6c99a`.
 
+## 2026-10-16 01:20–01:25 Codex — force guard fake-ROS 통합 회귀
+- Force guard를 helper 단위로만 확인하지 않도록 `calibration/tests.py`에 fake `rclpy`/Doosan service를 주입한 `run_mover` 통합 시험을 추가했다. 정상 10 N baseline 뒤 insert spline을 시작하고, 이동 중 26 N 표본이 오면 `MoveStop(stop_mode=1 / DR_QSTOP)` 요청이 한 번 나가며 mover가 `force-guarded spline aborted`로 끝나는 것을 검사한다. `MoveJoint` 후속 동작은 호출되지 않는다(자동 release/retreat 경로로 이어지지 않음).
+- 검증: `bash calibration/run.sh tests` **69/69 통과(35.111 s)**, `git diff --check` 및 `py_compile` 통과. 앞선 통합 시험 시도 2회는 테스트 fixture의 spline 최소 waypoint 수와 mock의 `call_async` assertion 위치 오류로 실패했고 수정했다.
+- 범위 한계는 그대로다: 실제 ROS/Doosan 통신이나 로봇 동작은 하지 않았다. QSTOP 접수와 실제 물리 정지·정지거리는 이 fake-service 시험으로 검증되지 않는다. 25 N은 실기 사용 승인이 아니다.
+- 파일: `calibration/tests.py`; force guard 구현/설계는 `4c6c99a`, 본 회귀시험 및 기록은 별도 후속 커밋으로 관리.
+
 ## 2026-10-16 01:1x Claude — 30분 기록: 틈 검출 없을 때의 가치
 - C2 평가 25회차 **0.828**(Q1 .85 / Q2 .79 / Q3 .83 / Q4 .84, 최고). D3(전체 랜덤화) 0.759 @10.
 - C2 최고 정책을 **틈 오차 관측을 가리고**(`--cl_policy_noseen`, ca4c875) 같은 598개로 평가: **0.684**(Q1 .60 / Q2 .64 / Q3 .77 / Q4 .73). 기준(튜닝 방식) 0.554 → 틈 검출 없이 +13%p, 틈 검출(손목 카메라)까지 +14%p 더. 출력 `rl/logs/basket/insert_eval_noseen_20261016/`.

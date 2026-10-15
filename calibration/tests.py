@@ -264,6 +264,43 @@ class Pipeline(unittest.TestCase):
         self.assertEqual(result['status'], 'monitor_error')
         self.assertEqual(stops, [True])
 
+    def test_mover_force_guard_uses_fake_services_and_qstops_before_auto_continuation(self):
+        node = MagicMock()
+        current, motion, spline, stop, force = [MagicMock() for _ in range(5)]
+        node.create_client.side_effect = [current, motion, spline, stop, force]
+        completed = lambda value: SimpleNamespace(done=lambda: True, result=lambda: value)
+        current.call_async.side_effect = lambda _req: completed(SimpleNamespace(success=True, pos=[0.] * 6))
+        force.call_async.side_effect = [completed(SimpleNamespace(success=True, tool_force=[10., 0, 0, 0, 0, 0])),
+                                        completed(SimpleNamespace(success=True, tool_force=[26., 0, 0, 0, 0, 0]))]
+        spline.call_async.return_value = SimpleNamespace(done=lambda: False, result=lambda: None)
+        stop.call_async.return_value = completed(SimpleNamespace(success=True))
+        fake_ros = SimpleNamespace(init=lambda: None, create_node=lambda _name: node,
+                                   spin_until_future_complete=lambda *_a, **_kw: None,
+                                   spin_once=lambda *_a, **_kw: None, ok=lambda: True, shutdown=lambda: None)
+        srv = SimpleNamespace(GetCurrentPosj=SimpleNamespace(Request=SimpleNamespace),
+                              MoveJoint=SimpleNamespace(Request=SimpleNamespace),
+                              MoveSplineJoint=SimpleNamespace(Request=SimpleNamespace),
+                              MoveStop=SimpleNamespace(Request=SimpleNamespace),
+                              GetToolForce=SimpleNamespace(Request=SimpleNamespace))
+        plan = dict(dry_run=True, accepted=True, created=time.strftime('%Y-%m-%d %H:%M:%S'), margin_m=.1,
+                    legs=dict(insert=dict(waypoints_deg=[[0.] * 6, [.5] * 6, [1.] * 6], min_clearance_straight_m=.12)))
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'plan.json'
+            path.write_text(json.dumps(plan))
+            argv = ['--plan', str(path), '--leg', 'insert', '--execute', '--smooth', '--auto', '--opening_done',
+                    '--tool-force-limit-n', '25']
+            with patch.dict('sys.modules', {'rclpy': fake_ros, 'dsr_msgs2': MagicMock(), 'dsr_msgs2.srv': srv,
+                                            'std_msgs': MagicMock(), 'std_msgs.msg': MagicMock()}), \
+                    patch.object(nodes, 'print_table'), contextlib.redirect_stdout(io.StringIO()), \
+                    self.assertRaisesRegex(SystemExit, 'force-guarded spline aborted'):
+                nodes.run_mover(argv)
+        self.assertEqual(force.call_async.call_count, 2)  # baseline then one in-motion wrench
+        spline.call_async.assert_called_once()
+        stop.call_async.assert_called_once()
+        self.assertEqual(stop.call_async.call_args.args[0].stop_mode, 1)  # Doosan DR_QSTOP
+        motion.call_async.assert_not_called()
+        node.destroy_node.assert_called_once()
+
     def run_with_fake_io(self, execute=False, refused=False):
         """Real planner + synthetic sensor streams; no process, ROS, socket or camera."""
         args = pipeline.parse_args([])
