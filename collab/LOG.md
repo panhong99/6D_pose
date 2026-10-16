@@ -3803,3 +3803,7 @@
 - train0–12 기술 합계 **1276/2496=51.1%**; Q1 **327/682**, Q2 **278/658**, Q3 **368/625**, Q4 **303/531**. 학습 중 policy가 바뀌는 rollout이므로 합산치는 holdout/일반화된 성능이 아니다.
 - audit 당시 `train_0013.log`만 새로 있었고 대응 완료 데이터와 eval15/20은 없었다. 11:45 판단대로 R1은 기존 설정으로 eval20·30까지 계속한다; 각 선택평가가 생성되면 paired/raw audit 후 판단한다. CPU read-only, Isaac/GPU·로봇/그리퍼·소스/data/checkpoint write 없음.
 - 공유 문서 반영 후 승인 경로 `bash calibration/run.sh tests`: **79/79 통과(34.869 s)**.
+## 2026-10-16 11:59 Codex — R1 train_0013–0014 원시 검증 (CPU/read-only)
+- `rl/logs/basket/insert_rl_20261016_r1_unseated025_seed10/train_{0013,0014}.{json,npz}` 각 192행을 `seated && in_quadrant && landed_gap == target_gap`로 독립 재계산했다. exact는 **104/192 (54.2%)**, **101/192 (52.6%)**. JSON `seated_exact`, NPZ `exact`, 독립식 mask는 두 배치 총 **384/384 일치**; JSON↔NPZ `seated/in_quadrant/landed/target`도 각 배열 **384/384 일치**, obs/action/logp/bias/low는 finite.
+- it13 분면 exact: Q1 **23/49**, Q2 **30/59**, Q3 **29/43**, Q4 **22/41**. it14: Q1 **26/61**, Q2 **27/49**, Q3 **27/41**, Q4 **21/41**. 합산은 **205/384=53.4%**이나 서로 다른 학습 시점의 stochastic rollout이므로 holdout 성능으로 해석하지 않는다.
+- `eval_0015.log`는 생성됐지만 현재 JSON/NPZ는 없다. 따라서 held-out 선택평가 최신 수치는 `eval_0010` **388/598=64.9%**이며, eval15 결과·60회 완료·실험 결론은 미정이다. 결과 파일 생성 후 eval0/5/10/15의 입력·mask·분면·paired raw 변화를 독립 검증한다. GPU/Isaac·로봇/그리퍼 명령, source/data/checkpoint 수정 없음.
