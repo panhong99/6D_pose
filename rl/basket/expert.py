@@ -80,6 +80,7 @@ def parse_args():
     p.add_argument('--cl_policy_out', default='', help='--cl_policy: npz with obs, actions, log-probs and the per-env outcome')
     p.add_argument('--cl_policy_det', action='store_true', help='--cl_policy: use the mean action (evaluation)')
     p.add_argument('--cl_policy_canon', action='store_true', help='--cl_policy: (10/16) in-hand pose input in the real pipeline frame (x toward the TCP)')
+    p.add_argument('--cl_dr_gap_x', type=float, default=None, help='--cl_dr: (10/16) along-row gap error range +-this [m] for every quadrant (default config align.dr.gap_x_m)')
     p.add_argument('--cl_policy_seen_noise', type=float, default=0.002, help='--cl_policy: (10/16) std [m] of the believed gap error the policy sees (real: estimated from a few real inserts)')
     p.add_argument('--cl_policy_noseen', action='store_true', help='--cl_policy: (10/16) hide the believed gap error from the policy (= real robot without wrist gap detection); the model error itself stays')
     p.add_argument('--cl_dr_full', action='store_true', help='with --cl_dr: also the unobserved errors of align.dr: basket yaw '
@@ -870,7 +871,8 @@ def insert_policy_params(r, k, H, Tb):
     bias = np.zeros(2)
     if _CL_POL['dr']:
         dr = E_CFG()['align']['dr']
-        bias = np.array([rng.uniform(-1, 1) * dr['gap_x_m'][qd], rng.uniform(-1, 1) * dr['gap_y_m']])
+        gx = _CL_POL.get('gap_x_dr') or dr['gap_x_m'][qd]           # (10/16) opt-in wider along-row error (real: ~4 cm)
+        bias = np.array([rng.uniform(-1, 1) * gx, rng.uniform(-1, 1) * dr['gap_y_m']])
     seen = bias + rng.normal(0, _CL_POL.get('seen_noise', 0.002), 2)
     if _CL_POL['noseen']:
         seen = np.zeros(2)
@@ -1075,7 +1077,7 @@ def run_replay(args):
     n = len(rows) * args.per_run
     _CL_POL.update(policy=load_insert_policy(args.cl_policy) if args.cl_policy else None, det=args.cl_policy_det,
                    dr=args.cl_dr, dr_full=args.cl_dr_full, noseen=args.cl_policy_noseen, canon=args.cl_policy_canon, seed=args.seed, cache={},
-                   seen_noise=args.cl_policy_seen_noise)
+                   seen_noise=args.cl_policy_seen_noise, gap_x_dr=args.cl_dr_gap_x)
     if args.g0_telemetry and not args.g0:
         raise SystemExit('--g0_telemetry requires the SafeDiffIK --g0 mode (not --g0_joint)')
     env = ManagerBasedRLEnv(make_cfg(n, not args.headless,
