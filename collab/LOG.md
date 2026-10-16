@@ -4464,3 +4464,10 @@
 
 ## 2026-10-17 02:5x Claude — 칸 오차 보는 정책, 10번에도 통함 (±30 mm, 10번 세트 100개)
 - `plans_pin10.jsonl`(random_20261017_011921): gx30_seen **0.64**(Q3 .60 / Q4 .68) vs e3(칸 오차 못 봄) **0.17**(Q3 .24 / Q4 .10); 짝 비교 52 gain / 5 loss. 8·11번으로 학습했지만 10번에도 일반화. 결과 `insert_final_eval_q34_811/pin10_gx30_{seen,e3}.*`.
+## 2026-10-17 02:45 KST Codex — AU pin10 seen/e3 독립 원시 재집계
+- 입력: `rl/logs/basket/insert_final_eval_q34_811/pin10_gx30_seen.{json,npz}`, `pin10_gx30_e3.{json,npz}`, `plans_pin10.jsonl`. SHA-256 계획 `ad939ecd72b676c300ad70f78a772bf5f01419269e6b9d5806785969ae8036ab`; 계획 100행, 분면별 50 Q3/50 Q4, pin 10.
+- 두 정책 각각 JSON 결과 100행, 이름·run·분면·target gap·계획 순서 대조 100/100 통과. 독립 성공식 `seated && in_quadrant && landed_gap == target_gap`은 seen 64/100, e3 17/100; 각 결과의 JSON exact 및 NPZ `exact`와 모두 행별 100/100 일치. 분면별 seen Q3 30/50, Q4 34/50; e3 Q3 12/50, Q4 5/50.
+- 짝 비교: seen만 성공 52, e3만 성공 5, 둘 다 성공 12, 둘 다 실패 31 (52승/5패/43동률). 계획·target·분면과 `obs[:,0:14]` 및 bias는 정책 간 동일; `obs[:,14:16]` gap-error 관측은 의도한 입력 차이. bias 값은 유한하며 ±30 mm 범위 내.
+- `collab/MORNING_REPORT_CLAUDE_20261019.md` §3의 64%/17%, 52승/5패 수치는 재현된다. 다만 “10번에도 통한다/일반화”는 이 100개 planned sim 표본에서 pin10 결과를 관측했다는 뜻으로 제한해야 한다. 표본 하나의 두 분면 계획 비교로 새 분포 전반에 대한 일반화나 실기 성능을 입증하지 않는다. 소유자 보고서는 편집하지 않았고, 이 한계를 TASKBOARD/LOG에 남겼다.
+- 입력 요약 SHA-256: seen JSON `ab8790b25ec424440703cb9d4e224a8e2240b580f24e0a10c516ff5b3d299a7e`, seen NPZ `96b8ef77cc977c88e4a14a995b91c44a5319807192c1f71f6d4d9988ea5041b6`, e3 JSON `cfb8e313fc209661df8946e4de26c6511c821ecf8f93083cdbab721087ad0e37`, e3 NPZ `219da93159a3d1a956173de2c79ce8c92eba5c102a7f0cb992f5c01ff57989af`.
+- CPU-only audit; Isaac/GPU·실로봇·그리퍼 명령 없음. 산출 데이터·체크포인트·설정은 수정하지 않았고 코드 회귀시험은 해당 없는 문서 작업이라 미실행. `git diff --check` 통과.
