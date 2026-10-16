@@ -3901,6 +3901,12 @@
 - CPU/read-only 감사만 수행. Isaac/GPU·실기 명령·source/data/checkpoint 변경 없음.
 - 문서 갱신 상태 전체 회귀시험 승인 실행: **79/79 통과(35.165 s, exit 0)**. 일반 sandbox에서는 UDP bind 권한 제한으로 실패; 종료 뒤 socket `ResourceWarning` 1건.
 
+## 2026-10-16 14:06 Codex — R1 eval_0045 독립 원시 재검증 (CPU/read-only)
+- `rl/logs/basket/insert_rl_20261016_r1_unseated025_seed10/eval_0045.{json,npz}`의 598 episode에서 `seated && in_quadrant && landed_gap == target_gap`를 독립 계산: **402/598=67.2%**. Q1 **97/156**, Q2 **89/146**, Q3 **110/155**, Q4 **106/141**. episode/top-level JSON·NPZ success/seated/in-quadrant/landed/target/quadrant 교차검증 모두 **598/598**; obs/action/logp/bias/low finite.
+- eval0/30/40/45의 names·target gap 및 NPZ obs/bias/quadrant/target 입력은 동일. eval30 best **411/598**→45 **402/598**, paired fail→pass/pass→fail **15/24**, exact two-sided p=**0.200**. eval0 **401/598**→45, paired **41/40**, p=**1.000**. 75% gate는 449개 필요하므로 47개 부족. `best.pt` CPU state tensor는 policy30 **14/14 동일**, policy45와는 **1/14 동일**이라 선택 best는 it30으로 유지.
+- 동일 선택세트 반복 결과는 holdout 일반화나 학습 변경의 인과 효과를 입증하지 않는다. R1 완료 및 seed15014 최종 paired 비교는 아직 미확인. CPU/read-only 감사만 수행; Isaac/GPU, 로봇/그리퍼, source/data/checkpoint 쓰기 없음.
+- 감사 기록 포함 후 전체 회귀시험 `bash calibration/run.sh tests`: **79/79 통과(36.531 s, exit 0)**. 종료 뒤 unclosed-socket `ResourceWarning` 1건.
+
 ## 2026-10-16 14:1x Claude — 고정카메라 재캘리브 + 바구니 새 마커 배치
 - 고정카메라: 보스 측정 `real_handeye/20261016_134701_fromwrist`(12곳, S 중 segfault — positions는 저장됨) → `--resolve`로 재계산. 4번째(index 3) 재투영 17.7 px(G·F 사이 마커 이동 추정) 제외한 11곳을 `20261016_134701_fromwrist_drop3/`에 저장(원본 보존): 카메라 (1.198, 0.579, 1.090), 재투영 평균 2.1 px, LOO 0.2–15 mm / ≤0.8°. 10/13 결과 대비 약 2 cm 차이. `latest_t_base_cam()`이 이 폴더 선택.
 - 바구니: 보스가 옮김(+x ≈ 9 cm) + 마커를 판에 다시 붙임. 손목 사진(wrist_look 135828, 140149)에 모델 빗살·레일을 chamfer로 맞춰 바구니 프레임 결정: 사진별 (1.004,−0.174,1.87°)/(1.008,−0.169,2.06°), 공동 (1.0102, −0.1726, 2.18°), z는 10/15 값 0.1449 유지(같은 테이블). 비스듬한 사진 140056은 빗살 겹침으로 2 cm 피치 모호 → 제외. 손목 장착 각도는 J6 −90°/−22° 두 사진이 4–5 mm로 일치해 큰 오차 없다고 판단(손목 재캘리브는 생략).
