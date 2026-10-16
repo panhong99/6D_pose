@@ -3931,6 +3931,17 @@
 - `train_0048.log`에 USD TCP visual prim unresolved warning이 다시 보임; 수치 결과에 미치는 영향은 확인하지 않음. CPU/read-only 감사, Isaac/GPU·로봇/그리퍼 명령·source/data/checkpoint 쓰기 없음.
 - 이 기록 반영 뒤 전체 회귀시험 `bash calibration/run.sh tests`: **79/79 통과(35.111 s, exit 0)**. 종료 후 unclosed-socket `ResourceWarning` 1건.
 
+## 2026-10-16 14:18 Codex — R1 train_0049 독립 원시 재검증 (CPU/read-only)
+- `rl/logs/basket/insert_rl_20261016_r1_unseated025_seed10/train_0049.{json,npz}`에서 독립 성공식 `seated && in_quadrant && landed_gap == target_gap` **104/192=54.2%**. Q1 **22/51**, Q2 **29/55**, Q3 **31/51**, Q4 **22/35**.
+- JSON results/이름/top-level·NPZ·독립식 대조 **192/192 일치**; obs/act/logp/bias/low 모두 유한. train36–49 기술 누계 **1,437/2,688=53.5%**(Q1 **373/737**, Q2 **353/761**, Q3 **384/632**, Q4 **327/558**)로 서로 다른 정책 시점의 rollout 합계이며 held-out 평가가 아니다.
+- train49 로그에 USD TCP visual prim unresolved 경고 216회가 기록됨; 수치 영향은 확인하지 않았다. CPU/read-only audit, Isaac/GPU·실기 명령·code/data/checkpoint writes 없음.
+
+## 2026-10-16 14:23 Codex — R1 eval_0050 독립 원시 재검증 (CPU/read-only)
+- `rl/logs/basket/insert_rl_20261016_r1_unseated025_seed10/eval_0050.{json,npz}` 598개에서 독립식 **407/598=68.1%**. Q1 **96/156**, Q2 **90/146**, Q3 **112/155**, Q4 **109/141**. JSON/NPZ/독립 성공식·결과 필드 **598/598 일치**, 핵심 배열 finite; eval45와 names/target/obs/bias/quadrant 입력 동일.
+- 기존 최고 eval30 **411/598** 대비 eval50 paired fail→pass/pass→fail **15/19**(net −4; exact two-sided p=**.608**). 75% gate는 449/598이므로 42건 부족. 이는 동일 선택평가 세트의 checkpoint 비교이며 개선 인과·일반화 증거가 아니다.
+- eval50 로그에도 USD TCP visual prim unresolved 경고(622회)가 있음; 성능 수치 영향은 확인되지 않았다. CPU/read-only 감사만 수행, Isaac/GPU·실기·소스/데이터/checkpoint 변경 없음.
+- 이 기록을 포함한 전체 회귀시험 `bash calibration/run.sh tests`: **79/79 통과(36.942 s, exit 0)**. 시작 시 conda-pypi entry-point JSON parse 경고가 한 번 나왔지만 시험은 완료됨; 종료 뒤 unclosed-socket `ResourceWarning` 1건.
+
 ## 2026-10-16 14:1x Claude — 고정카메라 재캘리브 + 바구니 새 마커 배치
 - 고정카메라: 보스 측정 `real_handeye/20261016_134701_fromwrist`(12곳, S 중 segfault — positions는 저장됨) → `--resolve`로 재계산. 4번째(index 3) 재투영 17.7 px(G·F 사이 마커 이동 추정) 제외한 11곳을 `20261016_134701_fromwrist_drop3/`에 저장(원본 보존): 카메라 (1.198, 0.579, 1.090), 재투영 평균 2.1 px, LOO 0.2–15 mm / ≤0.8°. 10/13 결과 대비 약 2 cm 차이. `latest_t_base_cam()`이 이 폴더 선택.
 - 바구니: 보스가 옮김(+x ≈ 9 cm) + 마커를 판에 다시 붙임. 손목 사진(wrist_look 135828, 140149)에 모델 빗살·레일을 chamfer로 맞춰 바구니 프레임 결정: 사진별 (1.004,−0.174,1.87°)/(1.008,−0.169,2.06°), 공동 (1.0102, −0.1726, 2.18°), z는 10/15 값 0.1449 유지(같은 테이블). 비스듬한 사진 140056은 빗살 겹침으로 2 cm 피치 모호 → 제외. 손목 장착 각도는 J6 −90°/−22° 두 사진이 4–5 mm로 일치해 큰 오차 없다고 판단(손목 재캘리브는 생략).
