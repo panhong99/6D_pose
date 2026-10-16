@@ -4103,3 +4103,130 @@
 ## 2026-10-16 17:0x Claude — 8·11번 학습 경과 + 칸 오차 보는 변형 추가
 - noseen 학습(q34_811_seed12): eval it0/5/10 = 0.642/0.642/0.642 (Q3 .73→.70, Q4 .54→.58). eval10 실패 분해: 미착좌 11, 분면 밖 9, **틀린 칸 23 — 대부분 ±1–2칸**(DR의 빗살 위치 오차·바구니 yaw를 정책이 못 봄). noseen으로는 상한이 낮다.
 - 월요일 전략: 실기 몇 번의 착지 칸으로 계통 칸 오차(bias)를 추정해 정책 입력(seen gap)으로 넣는다. 이를 위해 `--seen_noise`(opt-in, 기본 2 mm 유지; aa50199) 추가하고 **seen 변형** `insert_rl_20261016_q34_811_seen6mm_seed13`(e3_best에서, 보는 칸 오차 잡음 6 mm ≈ 실기 몇 회 추정 정확도 가정) 동시 학습. GPU 2개 run ≈ 6 GB/12 GB.
+
+## 2026-10-16 16:54 Codex — Q3/Q4 specialist `train_0010` 독립 원시감사 (CPU/read-only)
+- `rl/logs/basket/insert_rl_20261016_q34_811_seed12/train_0010.{json,npz}` 독립 exact **93/192=48.4%**. Q3 **49/96**(pin8 29/58,pin11 20/38), Q4 **44/96**(pin8 19/45,pin11 25/51).
+- JSON·NPZ·독립식 **192/192 일치**, 핵심 배열 finite, `real=planned`; visual unresolved 경고 **216회**(영향 미검증).
+- 완료 train0–10 pooled **1,075/2,112=50.9%**(Q3 **605/1,096**, Q4 **470/1,016**; Q3 pin8/11 **358/639,247/457**, Q4 pin8/11 **214/466,256/550**). 정책 시점이 다른 rollout 합계이며 평가 점수가 아니다. PPO 계속 실행 중, Isaac/GPU/프로세스 및 source/config/data/checkpoint 무개입.
+
+## 2026-10-16 16:54 Codex — seen-gap 실험 입력 계약/실행 상태 사전점검 (CPU/read-only)
+- Claude의 새 커밋 `aa50199`를 읽기 전용 검토했다. `train.py --seen_noise`가 replay 인자로 전달되고 `expert.py`에서 policy 관측용 `seen = bias + N(0, σ² I)`를 만든다. `--noseen`이면 뒤이어 0으로 가려진다. seed13 설정 `0.006 m`는 x/y 각 축 독립 Gaussian 표준편차 6 mm 가정이지 실측 추정기의 검증된 오차분포는 아니다. 물리 성공식/보상 변경 여부는 이 diff에서 확인되지 않았다.
+- 확인 시각에 seed12 noseen PPO와 seed13 seen6mm PPO 두 프로세스가 활성, 결과 JSON/NPZ는 아직 없음. Claude LOG는 약 6 GB씩/12 GB 병렬 실행 계획이라고 기록한다. GPU 사용이나 프로세스에는 개입하지 않는다. 다음: 두 run의 완료 eval/train 산출물을 독립 재집계하고, 동일 validation 입력/seed 차이 및 한계를 구분해 기록한다.
+
+## 2026-10-16 16:56 Codex — Q3/Q4 seen6mm `eval_0000` 초기 원시비교 (CPU/read-only)
+- seed13 `insert_rl_20261016_q34_811_seen6mm_seed13/eval_0000.{json,npz}`는 **65/120=54.2%**(Q3 **41/63**, Q4 **24/57**; pin Q3-8 **19/30**, Q3-11 **22/33**, Q4-8 **14/28**, Q4-11 **10/29**). JSON/NPZ/독립식 **120/120 일치**, 핵심 배열 finite, 전부 `real=planned`; P1 real gate 0/0. USD TCP visual unresolved warning 144회(영향 미확인).
+- noseen seed12 eval0 대비 동일 names/order/target/quadrant/env/bias **120/120**, `policy_0000.pt` SHA 동일. paired gain/loss **6/18**(net −12, exact p=**0.0227**). Obs의 16차원 중 **14·15번만 120/120에서 변경**(기타 14개 차이 0), 따라서 관측 변화가 의도한 seen x/y 채널임을 확인했다.
+- 이는 아직 학습 전 초기 checkpoint 평가에서 본 관측조건 비교이며, 6mm noise를 반영해 학습한 정책의 결과가 아니다. 분포 가정을 실측으로 입증하지 않으며 seed13 최종 성능/seed16403 test도 아니다. Isaac 실행·소스/data/config/checkpoint에는 무개입.
+
+## 2026-10-16 16:58 Codex — Q3/Q4 noseen `train_0011` 독립 원시감사 (CPU/read-only)
+- seed12 `rl/logs/basket/insert_rl_20261016_q34_811_seed12/train_0011.{json,npz}` 독립 exact **106/192=55.2%**. Q3 **57/104**(pin8 35/66,pin11 22/38), Q4 **49/88**(pin8 22/36,pin11 27/52).
+- JSON flags/top-level·NPZ·독립식 **192/192 일치**, obs/act/logp/bias/low finite; 모든 행 `real=planned`. visual unresolved 경고 **216회**(영향 미확인).
+- train0–11 pooled **1,181/2,304=51.3%**(Q3 **662/1,200**, Q4 **519/1,104**; pin Q3-8/11 **393/705,269/495**, Q4-8/11 **236/502,283/602**). 서로 다른 PPO 시점의 rollout 누계이며 정책 평가는 아니다. Seen6mm seed13은 현재 실행 중; GPU/Isaac·프로세스·소스·데이터에는 무개입.
+
+## 2026-10-16 17:00 Codex — Q3/Q4 seen6mm `train_0000` 독립 원시감사 (CPU/read-only)
+- seed13 `rl/logs/basket/insert_rl_20261016_q34_811_seen6mm_seed13/train_0000.{json,npz}` exact 재집계: **110/192=57.3%**. Q3 **67/105**(pin8 39/64, pin11 28/41), Q4 **43/87**(pin8 23/43, pin11 20/44).
+- JSON 상위/행 flags, NPZ, 독립식 `seated && in_quadrant && landed_gap == target_gap` **192/192 일치**; obs/act/logp/bias/low finite, 모두 `real=planned`. visual unresolved 경고 216회(지표 영향 미검증).
+- 이것은 seen6mm 학습 첫 PPO rollout의 기술통계이며 고정 정책 평가가 아니다. 앞서 본 eval0은 학습 전 초기 체크포인트이고, 현재 train0 결과와 합쳐 정책 개선으로 해석하지 않았다. 최종 validation/test 및 P1 실기 재생 결과는 아직 없다.
+- CPU/read-only 감사만 수행. Isaac/GPU·학습 프로세스, source/config/data/checkpoint에는 무개입.
+
+## 2026-10-16 17:01 Codex — seen 관측 잡음 구현 샘플 확인 (CPU/read-only)
+- 같은 seed13 `train_0000.npz`에서 `obs[:,14:16] - bias`를 재계산했다. 192 rollout 표본에서 x 잡음 평균 −1.04 mm, 표본 SD 5.70 mm, |오차| p50 4.12 mm/p90 9.30 mm/max 15.31 mm; y 평균 +0.33 mm, SD 5.58 mm, |오차| p50 4.09 mm/p90 9.04 mm/max 15.93 mm.
+- 저장된 두 seen 채널과 `bias + noise` 독립 재계산의 최대 차이는 4.6e−10 m( float32 반올림 수준). 샘플이 설정된 축별 6 mm Gaussian과 대체로 부합함을 확인했지만, n=192 단일 학습 batch이며 6 mm 자체는 Claude가 명시한 가정치다. 실측 FP 추정오차 분포를 입증하지 않는다.
+- source/data/checkpoint/학습은 무개입.
+
+## 2026-10-16 17:01 Codex — Q3/Q4 noseen `train_0012` 독립 원시감사 (CPU/read-only)
+- seed12 `rl/logs/basket/insert_rl_20261016_q34_811_seed12/train_0012.{json,npz}` 독립 exact **106/192=55.2%**. Q3 **64/103**(pin8 39/59, pin11 25/44), Q4 **42/89**(pin8 22/45, pin11 20/44).
+- JSON 상위 배열 및 행 `seated_exact`, NPZ, 독립식 `seated && in_quadrant && landed_gap == target_gap` **192/192 일치**; obs/act/logp/bias/low finite, 모든 행 `real=planned`. USD TCP visual unresolved warning **216회**(영향 미검증).
+- train0–12 pooled **1,287/2,496=51.6%**(Q3 **726/1,303**, Q4 **561/1,193**; pin Q3-8/11 **432/764,294/539**, Q4-8/11 **258/547,303/646**). 서로 다른 PPO 시점 rollout 누계라 고정 정책 평가가 아니다.
+- CPU/read-only. 두 Claude 학습 작업은 감사 중 계속 활성; 프로세스·Isaac/GPU·source/config/data/checkpoint 무개입.
+
+## 2026-10-16 17:02 Codex — specialist replay 좌표 범위 대조 (CPU/read-only)
+- `random_20261016_160353/161234/161523/replay.jsonl`의 `Tb` basket pose와 `plate`를 직접 집계했다. train/val/test basket x 범위는 각각 **0.9604–1.0598 / 0.9627–1.0578 / 0.9602–1.0600 m**, yaw는 약 **±6°**이며 plate x는 모두 **0.8500–0.9597 m**다. 따라서 x=1.0 m 중심 데이터는 `SYSTEM_SPEC.md`의 과거 0.807 m 고정 배치와 혼동할 일이 아니라, 10/16 14시대 LOG에 기록된 현 배치/새 계획 범위 x=0.96–1.06 m와 일치한다.
+- y는 train/val/test 각각 **−0.2229…−0.1658 / −0.2228…−0.1700 / −0.2230…−0.1657 m**로, 요청 상한 −0.123 m까지 포괄하지 않는다. 이는 앞서 기록한 rejection에 따른 coverage 한계를 실제 replay 입력값에서 재확인한 것; 전 범위 일반화 근거가 아니다.
+- CPU/read-only; 계획 파일이나 학습 작업은 변경하지 않았다.
+
+## 2026-10-16 17:03 Codex — specialist basket-y 표본 공백 정량화 (CPU/read-only)
+- 세 replay set에서 basket y를 10 mm bin으로 재집계했다. 구간 순서 `[-0.23,-0.22), …, [-0.13,-0.12)` m의 train 400건 분포는 **55,160,102,62,16,4,1,0,0,0,0**, val 120건은 **13,49,29,15,12,2,0,0,0,0,0**, test 200건은 **33,73,54,27,9,2,2,0,0,0,0**. 세 split 모두 y > −0.160 m 표본은 **0건**이다.
+- 요청 상한 −0.123 m보다 약 37 mm 전부터 데이터가 끊기며, y 상단 약 63 mm 전체가 비어 있다(가장 높은 표본은 약 −0.166 m). 생성 후 학습·평가 set 모두에서 같은 coverage 공백이라 이 조건의 학습 및 일반화는 확인되지 않는다. 생성 rejection 원인 해석은 기존 기록대로 추정이며 새 생성은 실행하지 않았다.
+- CPU/read-only; 원본 replay/학습에는 무개입.
+
+## 2026-10-16 17:03 Codex — Q3/Q4 seen6mm `train_0001` 독립 원시감사 (CPU/read-only)
+- seed13 `rl/logs/basket/insert_rl_20261016_q34_811_seen6mm_seed13/train_0001.{json,npz}` 독립 exact **104/192=54.2%**. Q3 **61/99**(pin8 32/56, pin11 29/43), Q4 **43/93**(pin8 23/44, pin11 20/49).
+- JSON 상위/행 `seated_exact`, NPZ 및 독립식 **192/192 일치**; obs/act/logp/bias/low finite, 전부 `real=planned`; visual unresolved 경고 216회(영향 미검증).
+- train0–1 pooled **214/384=55.7%**(Q3 128/204,Q4 86/180; pin Q3-8/11 71/120,57/84; Q4-8/11 46/87,40/93). 서로 다른 PPO 시점 rollout의 기술통계라 정책 평가가 아니다.
+- Isaac/GPU·프로세스·source/config/data/checkpoint 무개입.
+
+## 2026-10-16 17:04 Codex — seen-gap 초기 eval paired 결과 분면·핀 분해 (CPU/read-only)
+- 앞선 동일 120 validation 입력에서 `seed12/eval_0000`(noseen)와 `seed13/eval_0000`(seen6mm)의 exact success를 분면·핀별 matched pair로 나눴다. 각 행은 둘 다 성공 / noseen만 성공 / seen만 성공 / 둘 다 실패 순서: Q3-pin8 **16/2/3/9**, Q3-pin11 **22/6/0/5**, Q4-pin8 **12/5/2/9**, Q4-pin11 **9/5/1/14**. 합계는 기존 18 noseen-only 대 6 seen-only와 일치한다.
+- 초기 동일 가중치 checkpoint, 학습 전 평가이므로 seen 입력효과의 원인이나 학습된 정책 비교로 해석하지 않는다. 특히 Q3-pin11이 이 작은 validation에서 가장 낮은 matched 차이를 보였다는 기술 관찰일 뿐, 핀별 추론을 일반화할 표본은 아니다.
+
+## 2026-10-16 17:04 Codex — initial eval0 비율 신뢰구간 (CPU/read-only)
+- Wilson 95% 구간을 산출했다: noseen 77/120 **64.2% [55.3,72.2]**, seen6mm 65/120 **54.2% [45.3,62.8]**. 분면별 noseen/seen은 Q3 46/63 **73.0% [61.0,82.4]** 대 41/63 **65.1% [52.8,75.7]**, Q4 31/57 **54.4% [41.6,66.6]** 대 24/57 **42.1% [30.2,55.0]**.
+- 이 구간은 각각의 비율에 대한 근사이지 paired 차이의 구간이 아니며, 작은 동일 validation 표본의 초기 동일 체크포인트 비교다. 학습 후 차이나 실제 배치 일반화를 입증하지 않는다.
+
+## 2026-10-16 17:04 Codex — Q3/Q4 noseen `train_0013` 독립 원시감사 (CPU/read-only)
+- seed12 `rl/logs/basket/insert_rl_20261016_q34_811_seed12/train_0013.{json,npz}` independently recomputed exact **107/192=55.7%**. Q3 **59/93**(pin8 33/52, pin11 26/41), Q4 **48/99**(pin8 25/43, pin11 23/56).
+- JSON top-level/row `seated_exact`, NPZ, independent criterion **192/192 일치**; obs/act/logp/bias/low finite, all 192 `real=planned`; USD TCP visual unresolved warning **216회**(영향 미검증).
+- train0–13 pooled **1,394/2,688=51.9%**(Q3 **785/1,396**, Q4 **609/1,292**; pin Q3-8/11 **465/816,320/580**, Q4-8/11 **283/590,326/702**). 서로 다른 PPO 시점의 rollout 누계라 정책 평가가 아니다. 학습 작업은 계속 활성; 산출물 외 개입 없음.
+
+## 2026-10-16 17:05 Codex — PPO validation 공통 난수 조건 소스 감사 (read-only)
+- `rl/basket/train.py`에서 모든 checkpoint `evaluate(it)`은 동일 `eval_plans.jsonl`와 replay seed **777**을 사용한다. `expert.py`는 gap bias/seen noise를 장면명·env index·seed의 CRC32로, FP noise를 장면명·env index·re-aim call index의 CRC32로 초기화한다. 고정 장면 순서와 재생 경로가 같다면 checkpoint 간 evaluation perturbation도 재현된다.
+- 이는 validation 체크포인트 간 matched 비교를 해석할 수 있게 하는 코드 구조 확인이다. validation 선택 편향·실제 y 상단 미커버·visual unresolved 경고 문제를 해소하지 않으며, 고정 holdout/test 또는 실기 일반화 근거가 아니다. 코드 변경 없음.
+
+## 2026-10-16 17:06 Codex — y 상단 공백의 생성 rejection 원인 소스 확인 (read-only)
+- 앞서 추정으로 적은 원인을 `calibration/plate_plans.py:random_plans()`에서 확인했다. 생성기는 중심 간 거리 `< 0.37 + PLATE_R(0.134) + 0.05 = 0.554 m`를 거절한다. 최신 범위의 최대 |Δx|는 basket x 1.06 − plate x 0.85 = **0.21 m**, plate y 최대 **0.36 m**다. 가장 멀어질 수 있는 극단을 대입해도 y가 **−0.1527 m보다 큰 basket 배치**는 이 필터를 통과할 수 없다. 요청 y 상한 −0.123 m 중 적어도 약 **29.7 mm**는 구조적으로 생성 불가이며, −0.160~−0.153 m도 x/y 경계 극단에 몰리는 희박 영역이다.
+- 실제 train/val/test 표본 최대는 −0.1657~−0.1700 m이고 y>−0.160은 0건. 원인은 단순 표본 우연만이 아니라 의도된 plate-basket 분리 필터가 지원 영역을 잘라낸 것이다. 필터나 데이터는 수정/재생성하지 않았다; 이는 Claude 소유 계획기와 보스의 분리 조건을 바꾸지 않고 보고하는 검토 결과다.
+
+## 2026-10-16 17:06 Codex — Q3/Q4 seen6mm `train_0002` 독립 원시감사 (CPU/read-only)
+- seed13 `rl/logs/basket/insert_rl_20261016_q34_811_seen6mm_seed13/train_0002.{json,npz}` 독립 exact **113/192=58.9%**. Q3 **62/99**(pin8 33/53, pin11 29/46), Q4 **51/93**(pin8 20/40, pin11 31/53).
+- JSON top-level/row `seated_exact`, NPZ, 독립식 **192/192 일치**; 핵심 배열 finite, 모든 sample `real=planned`; visual unresolved warning **216회**(영향 미검증).
+- seen train0–2 pooled **327/576=56.8%**(Q3 **190/303=62.7%**, Q4 **137/273=50.2%**; pin Q3-8/11 **104/173,86/130**, Q4-8/11 **66/127,71/146**). PPO iteration별 다른 rollout을 합친 기술통계이며 고정 정책 평가 아님. 두 학습 프로세스 활성, 무개입.
+
+## 2026-10-16 17:0x Codex — Q3/Q4 specialist PPO snapshot 안전·범위 감사 (CPU/read-only)
+- 두 run의 `config.json`에서 `snapshot=true`를 확인했고, 보관된 코드 스냅샷 commit은 noseen seed12=`0afcadfb3ead6271d647eb365b9dc033d690cd4f`, seen6mm seed13=`aa5019913a23f6ef509d4b45a3fa6c154eb443e0`다. 스냅샷 `rl/basket/train.py`의 `StartBank.reset()`은 저장된 시작 관절·plate pose를 복원한 뒤 `_attach.on=True`로 시작하고, `RLRunner.__init__()`은 `arm.shield.safe`를 모든 관절 상태에 대해 `True`로 덮는다(두 스냅샷 동일; 현재 작업 트리 기준 train.py 234–281행).
+- 따라서 이 PPO의 범위는 **이미 grasp/attach된 상태에서 Q3/Q4 핀 8·11에 넣는 sim 전용 후속 단계**다. 실제 파지부터 이어지는 attach-free BC/G1/G2, 충돌 shield 안전성, 실기 적용을 검증하지 않는다. 초기 AO의 “실제 물리만, attach 금지” 및 G0 미통과 상태에서 요구된 BC gate와 같은 결과로 취급하면 안 된다. 이미 실행 중인 학습 프로세스와 스냅샷·체크포인트는 건드리지 않았다.
+- 현재 완결된 최신 specialist 평가(seed12 eval10)는 77/120=64.2%이며 eval0/eval5와 차이 없음(p=1.0; 위 16:51 원시감사). noseen train14는 별도 독립감사를 완료했고, seen6mm train3은 JSON/NPZ 쌍이 아직 없어 원시감사 보류. 이 평가는 실행 범위 설명을 위한 추가 소스 감사이며, 성능 gate 판정은 바꾸지 않는다.
+
+## 2026-10-16 17:07 Codex — Q3/Q4 noseen `train_0014` 독립 원시감사 (CPU/read-only)
+- seed12 `rl/logs/basket/insert_rl_20261016_q34_811_seed12/train_0014.{json,npz}` exact 독립 재집계 **116/192=60.4%**. Q3 **67/107**(pin8 34/56, pin11 33/51), Q4 **49/85**(pin8 26/42, pin11 23/43).
+- JSON 행/top-level `seated_exact`, NPZ exact, 독립식 `seated && in_quadrant && landed_gap == target_gap` **192/192 일치**; 핵심 obs/act/logp/bias/low 및 gap/yaw/lean finite; 전부 `real=planned`. USD TCP visual unresolved warning **216회**(영향 미검증).
+- noseen train0–14 pooled **1,510/2,880=52.4%**(Q3 **852/1,503**, Q4 **658/1,377**; pin Q3-8/11 **499/872,353/631**, Q4-8/11 **309/632,349/745**). 이는 여러 PPO 시점 rollout의 혼합 합계이지 고정 정책 평가가 아니다. `eval_0015.log`가 생겼으나 JSON/NPZ 평가 결과는 미생성이라 보류; seen6mm `train_0003`도 현재 log만 있고 JSON/NPZ 미생성. Isaac 학습/프로세스·스냅샷·data/checkpoint는 무개입.
+
+## 2026-10-16 17:10 Codex — Q3/Q4 seen6mm `train_0003` 독립 원시감사 (CPU/read-only)
+- seed13 `rl/logs/basket/insert_rl_20261016_q34_811_seen6mm_seed13/train_0003.{json,npz}` exact 독립 재집계 **104/192=54.2%**. Q3 **60/108**(pin8 36/61, pin11 24/47), Q4 **44/84**(pin8 25/44, pin11 19/40).
+- JSON row/top-level `seated_exact`, NPZ exact, 독립식 `seated && in_quadrant && landed_gap == target_gap` **192/192 일치**; obs/act/logp/bias/low finite; 전부 `real=planned`. USD TCP visual unresolved warning **216회**(영향 미검증).
+- seen6mm train0–3 pooled **431/768=56.1%**(Q3 **250/411**, Q4 **181/357**; pin Q3-8/11 **140/234,110/177**, Q4-8/11 **91/171,90/186**). 다른 PPO iteration의 rollout 합계라 고정 정책 평가가 아니다. seed12 eval15 JSON/NPZ는 아직 없어 선택평가는 보류. 두 Isaac 작업의 프로세스·체크포인트·데이터에는 무개입.
+
+## 2026-10-16 17:10 Codex — Q3/Q4 noseen `eval_0015` 독립 원시감사 (CPU/read-only)
+- seed12 고정 validation `eval_0015`: 독립 exact **73/120=60.8%**. Q3 **45/63**(pin8 21/30, pin11 24/33), Q4 **28/57**(pin8 15/28, pin11 13/29).
+- JSON 행·NPZ exact·독립식 **120/120 일치**, 입력 배열/이름은 eval0/5/10과 **120/120 동일**, 핵심 배열 finite; 120개 모두 `real=planned`. visual unresolved 경고 **144회**(metric 영향 미검증). 실패 분해: unseated **16**, seated outside quadrant **8**, in-quadrant wrong-gap **23**.
+- eval0 77/120, eval5 77/120, eval10 77/120과 비교해 eval15는 **73/120**. eval0→15 paired fail→pass/pass→fail **4/8**(net −4, exact McNemar p=**0.388**); 관측된 validation 상승 근거 없음. checkpoint selection에 쓰이는 동일 validation의 중간 결과이며 독립 test/실기 성능은 아니다. noseen 학습은 train15 로그 단계; seen6mm train3은 별도 raw audit 완료. 학습/프로세스·checkpoint·data 무개입.
+
+## 2026-10-16 17:11 Codex — Q3/Q4 noseen `train_0004` 독립 원시감사 (CPU/read-only)
+- seed12 `rl/logs/basket/insert_rl_20261016_q34_811_seed12/train_0004.{json,npz}` exact 독립 재집계 **109/192=56.8%**. Q3 **59/96**(pin8 42/59, pin11 17/37), Q4 **50/96**(pin8 25/46, pin11 25/50).
+- JSON 행/top-level `seated_exact`, NPZ exact 및 독립식 `seated && in_quadrant && landed_gap == target_gap` **192/192 일치**; obs/act/logp/bias/low finite; 전부 `real=planned`; visual unresolved warning **216회**(영향 미검증). train0–14 pooled에는 이미 포함된 batch라 누적치는 바뀌지 않는다. `eval_0015`는 별도 완료·감사했고 train15 JSON/NPZ는 아직 없음. Isaac/GPU·프로세스/데이터/checkpoint 무개입.
+
+## 2026-10-16 08:24 Codex — Q3/Q4 PPO 새 산출물 독립 원시감사 (CPU/read-only)
+- noseen seed12 `rl/logs/basket/insert_rl_20261016_q34_811_seed12/train_0015–0018.{json,npz}` exact는 각각 **106/192, 97/192, 114/192, 114/192**(55.2%, 50.5%, 59.4%, 59.4%). 분면별: train16 Q3 **47/96**, Q4 **50/96**; train17 Q3 **69/106**, Q4 **45/86**; train18 Q3 **61/100**, Q4 **53/92**. train15는 Q3 **62/103**, Q4 **44/89**. 독립식 `seated && in_quadrant && landed_gap == target_gap`, JSON 행/top-level 및 NPZ exact **4 batch × 192/192 일치**; obs/act/logp/bias/low 유한, all `real=planned`. 각 train log의 USD TCP unresolved visual 경고 216회(효과 미검증).
+- noseen train0–18 pooled **1,941/3,648=53.2%**(Q3 **1,091/1,908=57.2%**, Q4 **850/1,740=48.9%**; Q3 pin8/11 **636/1,106,455/802**, Q4 pin8/11 **397/803,453/937**). 여러 PPO 시점 rollout의 혼합 집계이며 정책평가 점수로 해석하지 않는다.
+- seen6mm seed13 `rl/logs/basket/insert_rl_20261016_q34_811_seen6mm_seed13/train_0004–0006.{json,npz}` exact **99/192,102/192,102/192**(51.6%, 53.1%, 53.1%). 분면/핀: train4 Q3 **56/106**, Q4 **43/86**; train5 Q3 **60/107**, Q4 **42/85**; train6 Q3 **48/90**, Q4 **54/102**. JSON·NPZ·독립식 각 **192/192 일치**, 핵심 배열 유한, all planned. train0–6 pooled **734/1,344=54.6%**(Q3 **414/714=58.0%**, Q4 **320/630=50.8%**; pin Q3-8/11 **236/401,178/313**, Q4-8/11 **146/300,174/330**). 이 역시 혼합 rollout 통계다. train7 JSON/NPZ 미생성 상태라 제외.
+- noseen seed12 `eval_0005.{json,npz}` **77/120=64.2%**(Q3 **47/63**, Q4 **30/57**; pin Q3-8/11 **21/30,26/33**, Q4-8/11 **16/28,14/29**). JSON·NPZ·독립식 **120/120 일치**, 같은 names/env/bias/target 및 obs 앞 14개 채널이 eval0/10/15와 동일, all planned; unresolved visual warning 144회(영향 미검증). eval0 및 eval10 각각과 matched gain/loss **6/6**, exact McNemar p=**1.0**; eval15 대비 **8/4**, p=**0.388**. 중간 validation에서 상승 근거 없음이며 독립 holdout/test나 실기 점수가 아니다. eval의 모든 표본이 planned sim이라 P1 gate는 0/0으로 판정 불가다.
+- 확인 시점 seed12 `eval_0005` 및 train18, seed13 train6은 완결된 JSON/NPZ 쌍이었다. seed12 noseen, seed13 seen6mm 학습 프로세스는 계속 활성(PID 1318225/1325762 및 1347723/1347741). 감사는 CPU/read-only; Isaac/GPU·실행 프로세스·코드·config·데이터·checkpoint에는 무개입.
+
+## 2026-10-16 08:44 Codex — Q3/Q4 PPO 후속 산출물 독립 원시감사 (CPU/read-only)
+- Noseen seed12 `rl/logs/basket/insert_rl_20261016_q34_811_seed12/train_0019–0023.{json,npz}` exact **106,102,120,110,112/192**(55.2%,53.1%,62.5%,57.3%,58.3%); JSON·NPZ·독립식 각 192/192 일치, 핵심 배열 유한, all planned. 5 batch 합 **550/960=57.3%**. train0–23 pooled **2,491/4,608=54.1%**(Q3 **1,394/2,410=57.8%**, Q4 **1,097/2,198=49.9%**; Q3 pin8/11 **801/1,392,593/1,018**, Q4 **506/1,004,591/1,194**). Mixed PPO rollouts; 고정정책 성능값 아님. 각 신규 train log의 USD TCP unresolved visual 경고 216회(지표 영향 미확인).
+- Seen6mm seed13 `rl/logs/basket/insert_rl_20261016_q34_811_seen6mm_seed13/train_0007–0011.{json,npz}` exact **115,118,103,117,123/192**(59.9%,61.5%,53.6%,60.9%,64.1%); 각 JSON·NPZ·독립식 192/192 일치, 유한, all planned. 합 **576/960=60.0%**. train0–11 pooled **1,310/2,304=56.9%**(Q3 **740/1,236=59.9%**, Q4 **570/1,068=53.4%**; pin Q3-8/11 **425/708,315/528**, Q4 **260/498,310/570**). train12 log만 있고 JSON/NPZ 미완성이어서 제외. Pooled 수치는 rollout이지 평가가 아니다.
+- Noseen `eval_0020` **77/120=64.2%**(Q3 **46/63**, Q4 **31/57**; pin Q3-8/11 **20/30,26/33**, Q4 **17/28,14/29**). JSON·NPZ·독립식 120/120, eval0/5/10/15와 names/env/bias/target 및 obs 앞 14채널 동일, all planned; unresolved visual warning 144회. eval0→20 paired gain/loss **6/6**, p=**1.0**; eval15→20 **6/2**, p=**0.289**. 0→20 validation 변화 없음.
+- Seen6mm `eval_0010` **79/120=65.8%**(Q3 **46/63**, Q4 **33/57**; pin Q3-8/11 **21/30,25/33**, Q4 **18/28,15/29**). JSON·NPZ·독립식 120/120; eval0/5와 같은 validation 입력, all planned, unresolved visual warning 144회. eval0 65/120에서 eval10까지 paired gain/loss **18/4**, exact McNemar p=**0.00434**; eval5 76/120→eval10 79/120은 **7/4**, p=**0.549**. 같은 checkpoint 선택용 validation에 대한 중간 비교라 독립 test나 일반화 향상으로 단정할 수 없다. P1 gate는 계속 0/0이며, 앞서 기록한 attached-start·shield override 범위 한계도 유지된다.
+- 감사 시 두 PPO 프로세스 쌍은 계속 활성(PID 1318225/1325762, 1347723/1347741). CPU/read-only: Isaac/GPU, 학습, source/config/data/checkpoint에는 무개입.
+
+## 2026-10-16 09:04 Codex — PPO 새 train/eval 산출물 원시감사 (CPU/read-only)
+- Noseen seed12 `rl/logs/basket/insert_rl_20261016_q34_811_seed12/train_0024–0027.{json,npz}` exact **100,97,112,104/192**; each JSON row/top-level, NPZ, independently recomputed `seated && in_quadrant && landed_gap == target_gap` agreed **192/192**, arrays finite, all planned. New 4 batch **413/768=53.8%**. Cumulative train0–27 **2,904/5,376=54.0%** (Q3 **1,622/2,811=57.7%**, Q4 **1,282/2,565=50.0%**; Q3 pin8/11 **939/1,625,683/1,186**, Q4 **588/1,170,694/1,395**). Rollout pool spans changing PPO policies, not a fixed-policy estimate. Each new train log contains 216 USD TCP unresolved-visual warnings; impact unverified.
+- Seen6mm seed13 `rl/logs/basket/insert_rl_20261016_q34_811_seen6mm_seed13/train_0012–0015.{json,npz}` exact **108,105,103,104/192**; JSON/NPZ/independent exact and finite checks passed for all **4×192**; all planned. New batches **420/768=54.7%**. Cumulative train0–15 **1,730/3,072=56.3%**(Q3 **965/1,633=59.1%**, Q4 **765/1,439=53.2%**; Q3 pin8/11 **550/926,415/707**, Q4 **343/665,422/774**). Mixed-rollout statistic, not eval.
+- Noseen `eval_0025.{json,npz}` exact **80/120=66.7%**(Q3 **47/63**, Q4 **33/57**; pin Q3-8/11 **21/30,26/33**, Q4 **19/28,14/29**). All rows planned; JSON/NPZ/independent criteria **120/120**; same validation cases, env/bias/target and obs first 14 dims as earlier evals; unresolved visual warning 144. eval0→25 paired **7 gain/4 loss**, p=**0.549**; no compelling matched evidence of increase.
+- Seen6mm `eval_0015.{json,npz}` exact **80/120=66.7%**(Q3 **47/63**, Q4 **33/57**; pin Q3-8/11 **21/30,26/33**, Q4 **18/28,15/29**). JSON/NPZ/independent **120/120**; all planned; same validation inputs, unresolved visual warning 144. eval0 65/120→eval15 80/120 paired **17 gain/2 loss**, exact McNemar p=**0.000729**; eval10 79→80 is only **5/4** paired, p=**1.0**. The first comparison is on the repeated checkpoint-selection validation, so its nominal p-value does not establish an independent generalization gain; evaluate a held-out test before claiming that. P1 real gate remains **0/0**; attach-start and shield override limitations above remain.
+- At inspection, noseen train28 and seen train16 had log files only (no complete JSON/NPZ pair), excluded. Both training process pairs were still active (PIDs 1318225/1325762 and 1347723/1347741). CPU/read-only only; no GPU/Isaac, process, code, configuration, dataset, or checkpoint was touched.
+
+## 2026-10-16 18:3x Claude — 월요일 실기용: 착지 칸 → 정책 입력 (opt-in)
+- `pipeline.py --insert_landed_pins L [L ...]`(d350603, `--insert_policy` 필요): 같은 `--pin`을 노렸던 실기 착지 핀 번호(예 3.5 = 3·4 사이)의 평균 칸 중심 − 목표 칸 중심(바구니 x)을 정책의 '보는 칸 오차' 입력으로 넣는다(expert `_CL_POL.seen_override`). 칸 오차를 보도록 학습한 정책(seen 변형)용. 부호: 목표 6 → 착지 3.5 = +43–45 mm(+x = 로봇에서 먼 쪽). 회귀 80/80(새 테스트 1).
+- 학습 경과: noseen it25 0.667, it30 0.633 / seen6mm it15 0.667. 둘 다 아직 잡음 범위(검증 120개 ±4%p).
