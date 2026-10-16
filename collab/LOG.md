@@ -4254,7 +4254,34 @@
 - 짝 비교: e3 vs 튜닝 31승 10패, 전용 vs 튜닝 33승 11패, 전용 vs e3 11승 10패 → **전용 학습은 e3와 같은 수준**(추가 이득 없음). 학습 정책은 튜닝 대비 +10%p 유지. 로그 `rl/logs/basket/insert_final_eval_q34_811/`.
 - 해석: 칸 오차를 못 보는 한 ±1–2칸 오차(빗살 위치·바구니 yaw DR)가 상한을 정한다. 월요일 핵심은 seen 변형 + 실기 착지 기록(`--insert_landed_pins`).
 
+## 2026-10-16 10:04 Codex — Q3/Q4 최종 비교 원시 산출물 독립 감사 (CPU/read-only)
+- `rl/logs/basket/insert_final_eval_q34_811/{tuned,e3,noseen}.{json,npz}` 각각 200개를 독립 재집계했다: tuned **99/200=49.5%**(Wilson 95% CI **42.7–56.4%**), e3 **120/200=60.0%**(**53.1–66.5%**), specialist noseen **121/200=60.5%**(**53.6–67.0%**). 각 조건에서 JSON row/top-level, NPZ exact, `seated && in_quadrant && landed_gap == target_gap` **200/200 일치**; 핵심 배열 유한, `real=planned` 전부. Q3/Q4: tuned **46/90 (51.1%)**, **53/110 (48.2%)**; e3 **57/90 (63.3%)**, **63/110 (57.3%)**; specialist **58/90 (64.4%)**, **63/110 (57.3%)**. Pin Q3-8/Q3-11/Q4-8/Q4-11: tuned **22/48,24/42,31/65,22/45**; e3 **31/48,26/42,38/65,25/45**; specialist **30/48,28/42,39/65,24/45**.
+- 세 조건의 names/env/quadrant/target가 모두 같은 200개다. Pairwise exact matched wins/losses: tuned→e3 **31/10**(net +21; exact McNemar p=**0.00145**), tuned→specialist **33/11**(net +22; p=**0.00126**), e3→specialist **11/10**(net +1; p=**1.0**). 따라서 이 held-out 표본에서는 specialist와 e3가 비슷하며, specialist의 e3 대비 추가 이득 증거는 없다.
+- `plans.jsonl`의 200개 고유 `(quadrant,plate,Tb,model_qd,gap,pin,target_centre)` 조합은 학습 400개 및 validation 120개와 각각 **0개 중복**이며 held-out source `random_20261016_161523/replay.jsonl`의 200개와 정확히 동일하다. 재사용된 `r0...` name 문자열은 데이터셋 사이에서 겹치지만 물리 시나리오 핵심값은 겹치지 않는다. `run.sh` 주석의 “159 plans”는 실제 200개 파일/결과와 불일치(주석 오류로 보임); 그 스크립트는 수정하지 않았다.
+- 각 조건 로그에서 USD TCP unresolved-visual 경고 **224회**(측정 지표 영향 미확인). 결과는 계획된 sim replay만(`real=planned`), P1 gate **0/0**이라 실기 재현·성공이나 안전성을 검증하지 않는다. run 설정의 DR/FP 비교 표본이지만, 실기 센서/기구 오차분포 대표성은 별도 근거가 필요하다. CPU/read-only audit; 학습·GPU·프로세스·산출물·체크포인트·코드는 손대지 않았다.
+
 ## 2026-10-16 19:1x Claude — seen 변형 정체 원인 + 넓은 칸 오차 학습
 - seen6mm(seed13) it30 0.667, 정체. 원인: sim 칸 오차 DR이 Q3/Q4 ±8 mm(std ≈4.6 mm)인데 보는 값 잡음 6 mm → 입력이 거의 잡음. 실기 계통 오차는 ~44 mm(14:3x Q3 6→3.5)로 DR의 5배.
 - `--gap_x_dr`(opt-in, cd2bd28) 추가, `insert_rl_20261016_q34_811_seen6mm_gx30_seed14` 시작: 칸 오차 ±30 mm, 보는 잡음 6 mm, lr 2e-4, 50회. **한계: 정책 dx 출력 상한 INSERT_SCALE 0.03 m** → 4.4 cm 오차는 완전히 못 지움. 상한을 바꾸면 e3/실기 훅 호환이 깨지므로 그대로 둠(보스 결정 사항).
 - 미해결 질문: 4.4 cm 계통 오차가 바구니 프레임(빗살 chamfer 맞춤, 빗살 피치 1.8–3 cm 주기) x 오차일 가능성 — 월요일 첫 실기에서 손목 사진으로 착지 칸 확인 필요.
+
+## 2026-10-16 19:05 Codex — held-out 실패 분류 + 동시 Isaac 점유 감지 (CPU/read-only)
+- `rl/logs/basket/insert_final_eval_q34_811/{tuned,e3,noseen}.json` 200행을 재분류했다. 상호배타 순서: out-quadrant → quadrant 안 미착좌 → seated exact → seated 인접 칸(±1) → seated 원거리/복수 gap. tuned **99/40/39/8/14**, e3 **120/34/30/10/6**, specialist **121/35/28/11/5** 순이다. 따라서 튜닝 대비 PPO 차이는 주로 off-quadrant 40→34/35 및 ±1 오착좌 39→30/28 감소와 함께 나타나지만, specialist는 e3보다 exact +1뿐(짝 비교 11 gain/10 loss)이라 추가 이득 근거는 없다. Q3/Q4 분해: tuned Q3 **46/22/21/1/0**, Q4 **53/18/18/7/14**; e3 Q3 **57/17/12/4/0**, Q4 **63/17/18/6/6**; specialist Q3 **58/15/13/4/0**, Q4 **63/20/15/7/5**. 분면별 튜플도 같은 순서. 실패 유형은 sim 산출물의 상태 분류이지 물리 원인(걸림/정렬오차) 진단은 아님.
+- 동시 실행 확인: seed13 `seen6mm_seed13` train33 및 seed14 `seen6mm_gx30_seed14` train0의 별도 Isaac replay 프로세스가 같은 GPU에서 실행 중. `nvidia-smi`: 약 **93% utilization**, replay PID **1441496 / 1441246**, 메모리 각 **2,530 MiB**. 이미 돌아가는 프로세스에 손대지 않았으며 새 Isaac 작업도 시작하지 않았다. AO 운용 규칙의 “Isaac 한 번에 하나”와 충돌하므로 후속 학습은 기존 실행 종료 후 직렬화 필요.
+- 로그는 planned sim 조건의 앞서 독립 감사한 200개 holdout 재분류이며, 실기 성공·안전성 근거가 아니다. 데이터·체크포인트·코드 변경 없음.
+
+## 2026-10-16 19:24 Codex — PPO 최신 완결 rollout 원시 감사 (CPU/read-only)
+- `insert_rl_20261016_q34_811_seen6mm_seed13` train0–36 완결 **37×192** 표본: exact **4,118/7,104=58.0%** (Q3 **2,278/3,733=61.0%**, Q4 **1,840/3,371=54.6%**). 최신 train34/35/36은 **124/192, 117/192, 111/192**.
+- `insert_rl_20261016_q34_811_seen6mm_gx30_seed14` train0–3 완결 **4×192**: **355/768=46.2%** (Q3 **211/422=50.0%**, Q4 **144/346=41.6%**). batch0–3은 **79/192, 98/192, 88/192, 90/192**. 이는 ±30 mm gap DR을 넣은 초반 rollout이며 seed13과 seed/조건·학습시점이 달라 직접 비교 성능 결론은 불가.
+- 두 run의 완결 **41개 JSON/NPZ 쌍**을 원시 재검산: 각 행의 `seated_in_quadrant && single landed_gap == target_gap`와 `seated_exact`, JSON row/top-level, NPZ `seated/exact/in_quadrant/landed/target`가 모두 일치(**0 불일치**); `obs/act/logp/bias/low` finite, `real=planned` 전부. 최신 seed13 train37 및 seed14 train4는 log만 있어 제외. 누적은 정책이 섞인 rollout 통계이지 고정 정책 평가가 아니다.
+- 두 학습의 Isaac replay가 계속 동시에 실행 중임을 PID/명령행으로 확인. 프로세스·GPU·코드·데이터·체크포인트를 조작하지 않았고 GPU 부하 수치는 이번 감사에서 재측정하지 않음. 실기 성공·안전성 근거 아님.
+
+## 2026-10-16 19:44 Codex — PPO 완료 평가 원시 재검산 (CPU/read-only)
+- seed13 `seen6mm_seed13` train0–39 완결 **4,450/7,680=57.9%** (혼합 rollout); Q3/Q4별 전체 재집계는 기존 표본 편성 그대로. 마지막 train37–39는 **105/192,107/192,120/192**. `eval_0040`은 **80/120=66.7%** (Q3 **47/63**, Q4 **33/57**). 같은 반복 holdout의 eval35와 exact 결과가 바뀐 행은 14개(7 pass→fail, 7 fail→pass), 순변화 0; 평가 노이즈/정체와 양립하며 독립 일반화 증거 아님.
+- gap_x_dr ±30 mm seed14 `seen6mm_gx30_seed14` train0–9 **954/1,920=49.7%**(혼합 rollout), eval5 **64/120=53.3%**(Q3 **38/63**, Q4 **26/57**). eval10은 log만 갱신 중이며 JSON/NPZ 쌍이 없어 미판정. 학습 progress 수치가 목표 성공률 기준을 충족하는지 판단할 수 없고, seed13과도 직접 비교하지 않는다.
+- seed13 train0–39 40쌍 + eval0–40 9쌍, seed14 train0–9 10쌍 + eval0/5 2쌍: 총 **61쌍**. 각 파일의 JSON 행별 exact를 독립 계산해 NPZ/JSON fields와 대조했다. 일치 61/61, 배열 finite, planned-only. 최신 샘플에서 unresolved-visual 경고 여부를 별도 재산출하지 않음.
+- seed13 학습 부모 PID는 더 이상 보이지 않고 final eval40 산출물이 존재; seed14 학습은 계속 실행 중이며 eval10 replay도 진행 중. 프로세스/GPU/코드/데이터/체크포인트는 조작하지 않았다. sim 결과만이며 P1 실기 gate·실기 안전성 검증 아님.
+
+## 2026-10-16 19:5x Claude — 칸 오차 ±30 mm 기준선 (최종 200개, 칸 오차 못 봄)
+- 튜닝 **0.240**, e3 **0.290** (±8 mm 때 0.495 / 0.600). 칸 오차가 실기 수준으로 크면 못 보는 정책은 무너진다.
+- 같은 ±30 mm에서 칸 오차를 6 mm 잡음으로 보는 학습(gx30_seed14) 검증: it0 0.500 → it10 0.542 (검증 120개; 최종 세트 평가는 학습 후). → 실기 착지 기록으로 칸 오차를 넣어 주는 방향이 맞다는 근거.
