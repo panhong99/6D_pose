@@ -3942,3 +3942,7 @@
 - pipeline.py: `--plate_color {red,white}`(기본 red, 기존 경로 불변). white → YOLOE "white plate" + FP mesh `demo_data/029_plate_white/tsdf/textured.obj`(config `white_plate:`). 모양은 YCB 029 그대로(보스: 지름·두께 거의 같음, 약간 얇음).
 - 주의: 처음엔 obj/mtl을 심볼릭 링크로 만들어 main.py·cpath의 resolve()가 원본(빨간 텍스처)을 열었음 → 13:0x 확인은 빨간 텍스처로도 흰 접시 추적됨(점수 83–86)을 보인 셈. 복사본으로 바꾼 뒤 흰 텍스처: 등록 83.6, 추적 87–88.
 - 회귀 79/79 통과(첫 실행은 CPU 부하로 Pipeline 시간초과 1건, 재실행 통과 34.7 s).
+
+## 2026-10-16 14:3x Claude — 흰 접시 실기 1회 + 잡기 보강
+- 보스 실기(`--plate_color white`, Q3 pin 6): 잡기·넣기 성공, 들어간 칸은 3–4 사이(목표 6). 보스: 흰 접시는 굴곡이 적어 덜 안정 → 더 깊게, 힘 2배.
+- `--plate_color white`일 때만: `offset_m[0] += white_plate.grasp_deeper_m (0.010)`(라이브러리 그립은 가까운 테두리를 +radial 방향 공구로 잡음: 닫힘 시 TCP 반경 = 접시 반경 − 약 0.1 m, 라이브러리 반경 간격 2 mm라 1 cm가 그대로 반영), 닫기 `--force white_plate.grip_force (128, red 64)`. 빨간 접시 기본 경로 불변. 회귀 79/79.

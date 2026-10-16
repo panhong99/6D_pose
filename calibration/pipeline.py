@@ -531,6 +531,11 @@ def run_plate(args):
     """FoundationPose plate -> BC+RL rollout plan -> supervised legs with the gripper in between.
     Legs: to_ready, grasp, [close + object check], lift, [Human: lower?], lower, [open], retreat, to_home."""
     q, udp = plate_cfg(args.plate_policy), C['udp']
+    grip_force = None
+    if args.plate_color == 'white':                         # (10/16 보스) flatter rim slips: deeper grasp, 2x force
+        wp = C['white_plate']
+        q['offset_m'] = [q['offset_m'][0] + wp['grasp_deeper_m'], q['offset_m'][1]]   # +radial = TCP further onto the plate
+        grip_force = int(wp['grip_force'])
     insert_policy_expert = load_basket_insert_policy(args.insert_policy) if args.insert_policy else None
     if args.no_library:                                     # the 10/8 validated mode: sim rollout per plate (export)
         q.pop('library', None)
@@ -755,7 +760,8 @@ def run_plate(args):
                         ans = 's'
                 print(f'[auto] 그리퍼 {where}: {dict(c="닫기", o="열기", s="닫지 않음 (접시가 움직임)")[ans]}', flush=True)
             if ans != 's':
-                gripper(['close' if ans == 'c' else 'open', '--yes'], env)
+                gripper(['close' if ans == 'c' else 'open', '--yes']
+                        + (['--force', str(grip_force)] if ans == 'c' and grip_force else []), env)
             st = gripper(['status'], env, check=True)
             rec.event('gripper', where=where, choice=ans, status=st,
                       grasped='stopped on an object while closing' in st)
