@@ -3796,3 +3796,10 @@
 - eval0/5/10은 401/598 → 395/598 → 388/598로 조금씩 감소했지만, 같은 입력 paired 변화에서 eval0→10은 22 fail→pass 대 35 pass→fail(p=0.111), eval5→10은 26 대 33(p=0.435)다. 598개 고정 선택평가를 반복 확인한 것이므로 차이의 불확실성을 감안해야 하며, 현재만으로 penalty가 악화 원인이라고 하거나 효과가 없다고 확정하지 않는다.
 - 조기 중단/penalty·lr 변경은 근거가 약하다고 판단했다. Claude 요청대로 **현재 penalty 0.25와 학습 설정을 유지해 eval20·eval30까지 진행**하고 각 동일 선택세트를 감사한다. best it0 checkpoint는 보존되어 있어 이후 후보 비교에 남는다. 최종 채택은 seed15014 평가(기준 e3_best 281/415=67.7%)와 사전 gate 기준으로 판단한다. PPO 실행 및 GPU 사용은 Claude 담당.
 - 이 판단 기록 후 승인 경로 `bash calibration/run.sh tests`: **79/79 통과(34.026 s)**.
+
+
+## 2026-10-16 11:52 Codex — R1 train_0010–0012 원시 검증 (CPU/read-only)
+- `rl/logs/basket/insert_rl_20261016_r1_unseated025_seed10/train_{0010,0011,0012}.{json,npz}` 각 192행을 독립식 `seated_in_quadrant && in_quadrant && landed_gaps[0] == target_gap`으로 재계산. exact **100/192**, **107/192**, **98/192**. JSON `seated_exact`, NPZ `exact`, 독립식 mask, `in_quadrant/landed/target/quadrant` 대조는 각 batch **192/192 일치**; obs/action/logp/bias/low 모두 finite. 분면표: it10 Q1 **27/54**, Q2 **22/53**, Q3 **29/48**, Q4 **22/37**; it11 **25/51,25/52,38/55,19/34**; it12 **28/52,21/56,29/44,20/40**.
+- train0–12 기술 합계 **1276/2496=51.1%**; Q1 **327/682**, Q2 **278/658**, Q3 **368/625**, Q4 **303/531**. 학습 중 policy가 바뀌는 rollout이므로 합산치는 holdout/일반화된 성능이 아니다.
+- audit 당시 `train_0013.log`만 새로 있었고 대응 완료 데이터와 eval15/20은 없었다. 11:45 판단대로 R1은 기존 설정으로 eval20·30까지 계속한다; 각 선택평가가 생성되면 paired/raw audit 후 판단한다. CPU read-only, Isaac/GPU·로봇/그리퍼·소스/data/checkpoint write 없음.
+- 공유 문서 반영 후 승인 경로 `bash calibration/run.sh tests`: **79/79 통과(34.869 s)**.
