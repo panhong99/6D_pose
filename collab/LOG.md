@@ -4428,3 +4428,10 @@
 - marker 전용 접촉 신호는 산출되지 않았다: NPZ에는 접촉/marker-contact 배열이 없고 JSON trace는 `descended/released/ascended`뿐이다. 로그의 일반 `collision` 카운터도 marker별 접촉 판정이 아니다. 결론은 “선택된 Q3/Q4 8·11 planned sim 결과에서 큰 성공률 변화가 관측되지 않음”에 한정한다. 마커 블록 접촉 여부와 Q4:4 실기 충돌 원인은 여전히 미확정이다.
 - 검토 경로: `rl/logs/basket/insert_final_eval_q34_811/{e3,mk_e3,gx30_seen,mk_gx30_seen}.{json,npz}` 및 `run_markers.sh`. 파일·체크포인트·모델은 읽기만 했으며 Isaac/GPU와 로봇/그리퍼는 실행하지 않았다.
 - 아침 보고 `collab/MORNING_REPORT_CLAUDE_20261019.md`의 “sim에서는 마커가 8·11번을 막지 않는다”를 정확한 관측 범위(큰 정확 착좌율 변화 미관측, pose mismatch 및 접촉 텔레메트리 부재)로 좁혔다; 이를 접촉 부재의 증거로 읽지 않도록 표현을 수정했다.
+
+## 2026-10-17 15:24 Codex — AT 소유권·계측 경로 확인 (read-only, 막힘 기록)
+- AT 구현은 시작하지 않았다. `collab/TASKBOARD.md`의 “Claude 작업 중 파일 (Codex 수정 금지)”에 `rl/basket/*` 전체가 있고, 요청한 replay hook 대상 `rl/basket/expert.py`가 여기에 포함된다. 현재 파일에 미커밋 diff도 없지만, 이는 명시적 소유권 제한을 해제하지 않으므로 편집하지 않았다.
+- 읽기 전용 코드 확인: `expert.py`의 `--g0_telemetry`는 `ContactSensorCfg(prim_path='{ENV_REGEX_NS}/Plate', filter_prim_paths_expr=['{ENV_REGEX_NS}/Basket'])`를 사용하고 `force_matrix_w`에서 최대 힘을 샘플링한다. 바구니는 단일 kinematic rigid body `/Basket` 아래에 모든 box/cylinder collider를 두며, opt-in marker box도 같은 body의 자식이다(`rl/basket_env.py:190-...`). 따라서 현재 센서는 plate↔basket 일반 접촉만 구별하고 marker 접촉 여부/최소거리를 제공하지 않는다. 기존 일반 `replay --plans` 산출 trace도 `descended/released/ascended` endpoint만 기록한다. 새 Isaac 실행·GPU·로봇/그리퍼 명령은 하지 않았다.
+- 소유자 구현 시 요구사항: `BASKET_MARKER_BLOCKS=1`일 때만 marker별 per-episode insert-frame 신호를 추가하고 기본 출력 schema를 보존한다. 접촉센서 필터를 collider prim 단위로 분리할 수 있는지 Isaac에서 검증하거나, 불가하면 정확한 plate/marker collision geometry 기반의 거리 계산을 명시적 근사와 함께 사용한다. 결과에는 marker ID 축, control-frame 시각, 접촉 판정 기준(또는 거리 정의), 첫 접촉 프레임, 유효 샘플 수를 기록해야 한다. 일반 basket 접촉을 marker 접촉으로 이름만 바꾸면 안 된다.
+- “같은 plan인데 hand pose가 달랐다”는 관측은 이미 200/200 차이 및 최대 55.3 mm/36°로 기록됐지만, 이 자료만으로 물리 비결정성을 원인으로 특정하지 않는다. 원인 분리에는 grasp 직후부터 insertion까지 손-held pose 시계열 및 동일한 초기조건/시뮬레이터 seed 비교가 필요하다.
+- 상태: `rl/basket/expert.py` 소유권이 해제되거나 Claude가 instrumentation을 반영한 뒤 Codex가 검토·회귀시험을 이어간다. 이번 작업은 문서 두 파일만 수정했고, 소스 테스트는 실행하지 않았다.
