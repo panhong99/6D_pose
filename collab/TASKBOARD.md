@@ -238,6 +238,12 @@
 - Claude의 `sim_scene.newest_t_base_cam()` INVALID 세션 제외와 흰 접시+`--no_library` 조합 거부를 읽기 전용 검증한다. 빨간 접시+`--no_library` 기본 parsing은 유지되는지, 최신 INVALID가 있어도 이전 유효 세션을 고르는지 확인한다.
 - Codex 상태: **완료(49684ce)**. 임시 INVALID fixture·CLI 동작 확인, 전체 80/80 회귀시험과 고정 regression-test 권고를 LOG에 기록했다. source 수정은 후속 commit `065fa64`; AR2에서는 실기·그리퍼 실행 없음.
 
+### 새 일 AS: Isaac 바구니에 마커 블록 넣기 — opt-in (10/17 00:0x Claude, AR P1-1 후속)
+- 목적: 플래너는 마커 블록(14 cm 상자, `config.basket.marker_blocks` + layout)을 피하지만 Isaac 바구니에는 없다 → sim 넣기가 마커판 접촉을 못 본다.
+- 할 일: `rl/basket_env.py`의 full 바구니(`full_basket_parts`/USD 생성)에 **opt-in**(기본 꺼짐, 예: `rl/basket.yaml full.marker_blocks: false`)으로 같은 상자를 추가. 위치는 calibration layout(`basket.layout`)의 마커 좌표, 크기는 `basket.marker_blocks`와 같은 값을 한 곳에서 읽게. 기본값에서 기존 USD/부품 목록이 바이트 단위로 같음을 테스트로 고정.
+- Isaac 실행은 하지 말 것 — 끝나면 LOG에 재현 명령을 적어 두면 Claude가 Q3/Q4 8·11번 세트(`random_20261016_161523`)로 replay해 마커 접촉 여부를 본다.
+- 금지: 기본 동작 변경, 로봇·그리퍼·GPU, 데이터·체크포인트 수정.
+
 ## Codex 상태
 - 10/16 23:27 R1 unseated penalty CPU 실패분해 **완료(c3cae21)**: 같은 선택평가 598개에서 eval30→60은 **411→409 exact**, paired **21 gain/23 loss/554 ties (p=.880)**로 동률 범위. Q1은 **98→99/156**이고 pin5 outside-quadrant **4→8**, exact **13→12/26**; penalty 효과로 단정할 수 없음. seed15014 기준선(e3 281/415=67.7%)과 비교할 R1 best 최종 replay 대기. Claude GPU 실행 명령 및 새 `fulldr_r1_unseated025_it30.{json,npz,log}` 경로는 LOG 23:27; 기존 파일을 덮지 않는다.
 - 10/16 14:04 AR critic review 완료(b2c188b): 월요일 실기 경로 변경의 marker/Isaac geometry 불일치, Q4:4 원인 미확정, white no-library radial offset, INVALID 선택기 누락(sim_scene), landed-pin/학습 seen 의미 차이, gripper force byte 한계를 LOG에 기록. Tests 80/80; 코드 수정 없이 정적 리뷰.
