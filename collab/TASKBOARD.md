@@ -245,6 +245,11 @@
 - 금지: 기본 동작 변경, 로봇·그리퍼·GPU, 데이터·체크포인트 수정.
 - Codex 상태: **구현 완료(386a3a4), replay 독립 원시 감사 완료(e165b39)**. 기본 바구니 파트 154개의 고정 digest 보존, marker 4상자 opt-in과 content-addressed 별도 USD 경로, `BASKET_MARKER_BLOCKS=1` 단일 실행 override 구현. marker 전용 시험 1/1, 전체 회귀 83/83 통과. Claude replay의 JSON/NPZ 4개를 독립 재집계해 200/200 일치; 결과 차이는 작지만 손 안 접시 pose가 200/200행 달라 pair가 완전히 동일한 관측은 아님. marker별 접촉 텔레메트리가 없어 실제 접촉 여부는 미확정(LOG 2026-10-17 00:26).
 
+### 새 일 AT: replay에 마커 블록 접촉 신호 (10/17 00:3x Claude, AS 감사 후속)
+- AS 감사 지적: NPZ/JSON에 마커 접촉 배열이 없어 "마커에 닿았는가"를 직접 못 본다. `BASKET_MARKER_BLOCKS=1`일 때만, 넣기 구간 동안 접시(와 그리퍼)–마커 상자 최소 거리 또는 접촉 여부를 에피소드별로 기록(예: NPZ `marker_min_dist_m`, `marker_contact`). 기본 출력은 그대로(키 추가 금지 또는 opt-in일 때만).
+- 이번 증거는 짧은 진단용: Isaac 실행은 Claude가 함. 재현 명령을 LOG에.
+- 참고: AS 감사에서 같은 계획인데 손 안 접시 자세가 run마다 최대 55 mm·36° 달랐다 — 원인(잡기 물리 비결정성?)도 한 줄 메모해 줄 것.
+
 ## Codex 상태
 - 10/16 23:27 R1 unseated penalty CPU 실패분해 **완료(c3cae21)**: 같은 선택평가 598개에서 eval30→60은 **411→409 exact**, paired **21 gain/23 loss/554 ties (p=.880)**로 동률 범위. Q1은 **98→99/156**이고 pin5 outside-quadrant **4→8**, exact **13→12/26**; penalty 효과로 단정할 수 없음. seed15014 기준선(e3 281/415=67.7%)과 비교할 R1 best 최종 replay 대기. Claude GPU 실행 명령 및 새 `fulldr_r1_unseated025_it30.{json,npz,log}` 경로는 LOG 23:27; 기존 파일을 덮지 않는다.
 - 10/16 14:04 AR critic review 완료(b2c188b): 월요일 실기 경로 변경의 marker/Isaac geometry 불일치, Q4:4 원인 미확정, white no-library radial offset, INVALID 선택기 누락(sim_scene), landed-pin/학습 seen 의미 차이, gripper force byte 한계를 LOG에 기록. Tests 80/80; 코드 수정 없이 정적 리뷰.
