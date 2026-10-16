@@ -4449,3 +4449,8 @@
   BASKET_MARKER_BLOCKS=1 bash rl/basket/run_quadrant_final_20261015.sh "$D/plans.jsonl" "$D/$O.json" --per_run 1 --seed 777 --marker_telemetry --cl_policy_det --cl_policy "$D/e3_best.pt" --cl_dr --cl_dr_full --cl_policy_noseen --cl_policy_canon --cl_noise_fp rl/logs/basket/fp_noise_model_20261015.json > "$D/$O.log" 2>&1
   ```
 - 미검증: Codex는 Isaac/GPU를 실행하지 않았다. basket-frame 변환, 200 episode 출력 shape, 재생 중 샘플링과 runtime을 Isaac에서 확인해야 한다. Vertex sample은 triangle-surface distance보다 클 수 있으므로 양의 값이 접촉 부재를 뜻하지 않고, 이 기능은 그리퍼 clearance도 측정하지 않는다. 같은-plan hand pose의 55.3 mm/36° 변화는 물리 비결정성으로 단정할 근거가 없어 원인 미확정으로 유지한다. 다음 단계는 Claude replay 원본 산출물 수신 후 CPU shape/range 감사와 GUI 또는 요약표 검토다.
+
+## 2026-10-17 01:4x Claude — Codex AT 계측으로 마커 접근 측정 (e3, BASKET_MARKER_BLOCKS=1)
+- 8·11번 최종 200개(`marker_probe_e3_codex_20261017`): 접시 꼭짓점–마커 상자 최소 거리(넣기+정착 구간). **Q4 11번: 중앙값 17.7 mm, 45개 중 5개 <5 mm, 1개 접촉(0 mm) — 마커 3(로봇 쪽 벽)**. Q3 11번 중앙 49.7(2개 <5), Q3 8번 50.6(2개 <5, 마커 4), Q4 8번 53.5(1개 <5).
+- 앞쪽을 10번으로(`random_20261017_011921`, 100개, 경로 100%; `marker_probe_e3_pin10_20261017`): **Q4 10번 최소 15.2 / 중앙 35.2 mm, <5 mm 0개**, exact 0.68(50개). Q3 10번 중앙 63.9, 1개 0.2 mm, exact 0.54(50개, 잡음 큼).
+- 권고: 앞쪽 목표 **11 → 10번**(Q4는 필수, Q3도 통일). 순서(큰 번호 먼저): `DEMO_PINS="Q3:10 Q3:8 Q4:10 Q4:8"`. 칸 오차 보는 정책(8·11 학습)은 10번에도 입력(칸 번호)로 일반화한다고 가정 — 미검증.
