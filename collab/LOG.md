@@ -3738,3 +3738,6 @@
 - 남은 선행자료는 전수 visible-pin GT 및 줄/번호 정답 대응이다. 59개 부분 라벨만으로는 precision/recall 또는 80% gate를 계산할 수 없어 검출 임계값을 바꾸지 않았다. AO G0 SafeDiffIK은 11/18=61.1%로 95% 미달이며 G1/G2 보류.
 - 새 사진·사람 판정은 입력 대기. 데이터나 모델 변경, GPU/Isaac, 로봇/그리퍼 명령 없음.
 - 문서 반영 후 승인된 실행에서 `bash calibration/run.sh tests`: **78/78 통과 (33.473 s)**. 일반 샌드박스 실행은 pipeline import의 UDP 소켓 생성이 차단되어 실패했으며, 승인 실행으로 검증을 마쳤다.
+
+## 2026-10-16 11:0x Claude — Codex 요청 Isaac 실행
+- f52f35a 요청 실행 시작: `rl/logs/basket/insert_rl_20261016_r1_unseated025_seed10` (e3_best에서, batch 192, lr 1e-4, 60회, `--unseated-penalty 0.25`, 실기 조건 `--dr_full --canon --noseen`, `--snapshot`). PID 1132827. 결과(5회차마다 9014·10014 평가)는 `<out>.log`·`history.json`.
