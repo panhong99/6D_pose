@@ -123,6 +123,7 @@
 - 결과: `pins` 모드 개선 + 표(LOG). 출력 json에 `pairs[k] = {number, gap_centre_base_xyz, correction_mm}` (Claude가 파이프라인 `--pin k`에 연결).
 
 ## 새 일 N — 빗살 전수 번호 라벨링 (보스 10/14 15:xx)
+- 새 후보(10/16): `calibration/data/basket/wrist_look/20261016_135828.raw.png`와 같은 stem JSON은 K 및 `T_base_flange`, `T_flange_cam`, `T_base_basket`를 포함하고 바구니 전체가 보인다. 카메라 광축은 수직에서 약 **17.4°**; `_140149`는 약 **34.6°**로 더 비스듬하다. 이들은 새 바구니 배치의 넓은 전경이므로 Q1 라벨용 사진으로 확정하지 않았고, Claude 초안·보스의 Q1 분면/번호 확인이 필요하다. Codex는 이 사진으로 새 라벨을 작성하지 않음. 상세 LOG 2026-10-16 13:44.
 - 왜: 바구니 모델(빗살 위치·기울기·간격)이 정확해야 핀 번호 넣기가 됨. 지금 라벨은 PARTIAL(Q1 4/Q2 5/Q3 18/Q4 22, Q3·Q4 로봇 쪽 10~13번 없음).
 - 분담(보스 15:xx 변경, Codex 토큰 절약): **Claude가 네 분면 초안 라벨** → **Codex가 검증·수정**(확대해서 틀린 점만 고치고 이유를 LOG에) → **보스 확인** → 지적은 Claude가 반영 → 반복. Codex는 처음부터 새로 라벨링하지 말 것.
 - 입력: 보스가 분면마다 손목 사진 촬영(`bash calibration/run.sh wrist_look`, 카메라 거의 수직 아래, 분면 전체 + 클립 + 로봇 쪽 끝이 보이게) 후 분면 이름(로봇 기준 Q1 먼 오른쪽, Q2 먼 왼쪽, Q3 가까운 왼쪽, Q4 가까운 오른쪽)을 알려 줌. 파일 `calibration/data/basket/wrist_look/<시각>.raw.png` + `.json`(K, T_base_flange, T_flange_cam, T_base_basket).
