@@ -43,7 +43,8 @@
    - 1회차: 정책 없이 `DEMO_PINS="Q3:10 Q3:8 Q4:10 Q4:8"` → 칸마다 실제로 들어간 번호 기록(손목 사진).
    - 2회차부터: 칸 오차 보는 정책 + 기록한 칸
      `... --insert_policy rl/logs/basket/insert_final_eval_q34_811/gx30_seen_best.pt --insert_landed_pins <들어간 번호>`
-     (demo4에는 아직 이 인자 연결 안 함 — 칸마다 다른 값이라 pipeline 직접 실행)
+     또는 demo4로 한 번에(10/17 추가): `DEMO_INSERT_POLICY=rl/logs/basket/insert_final_eval_q34_811/gx30_seen_best.pt DEMO_PINS="Q3:10:red:<착지> Q3:8:red:<착지> Q4:10:red:<착지> Q4:8:red:<착지>" bash calibration/run.sh demo4 --execute`
+     (`<착지>`는 1회차에 그 칸을 노렸을 때 실제로 들어간 번호, 여러 번이면 `7.5,8`처럼 쉼표)
 2. **정책 출력 한계:** x 겨냥 보정은 최대 ±3 cm. 실기 4.4 cm 어긋남은 다 못 지운다. 늘리려면 정책 출력 크기를 바꿔 다시 학습해야 함(보스 결정).
 3. **바구니 프레임 의심:** 4.4 cm 어긋남이 빗살 맞춤(빗살이 주기적이라 1~2칸 밀려 맞을 수 있음)의 x 오차일 수 있다.
    - Codex 점검(10/16 밤): 금요일 손목 사진 3장은 접시가 빗살을 가려 **판정 불가**. 또 그 3장은 Q3 9번·Q3 4번·Q4 9번 실행이었다(어긋난 Q3 6번·충돌한 Q4 4번 사진은 없음).

@@ -37,14 +37,23 @@ case "$mode" in
   demo4)      # (10/15 보스) meeting demo: Q4 -> Q3 -> Q1 -> Q2, each one --auto run (--sim_q settings); Human puts the plate
               # back on the stand between runs.  Extra args go to every run (e.g. --execute).  Pins: DEMO_PINS="Q4:6 Q3:6 Q1:6 Q2:5"
     cd "$DIR/.."
-    for qp in ${DEMO_PINS:-Q4:6 Q3:6 Q1:6 Q2:5}; do   # (10/16) optional colour: Q3:9:white (default red)
-      IFS=: read -r q pin color <<< "$qp"; color=${color:-red}
-      echo; echo "=== ${q} 핀 ${pin} (${color}): 접시를 받침 위에 올려 두고 Enter (건너뛰기: s, 끝내기: q) ==="
+    # (10/16) optional colour: Q3:9:white (default red).  (10/17) optional landed pins of earlier inserts aimed at this
+    # pin, comma separated (Q4:10:red:7.5,8), used with DEMO_INSERT_POLICY=<seen-gap policy .pt>
+    for qp in ${DEMO_PINS:-Q4:6 Q3:6 Q1:6 Q2:5}; do
+      IFS=: read -r q pin color landed <<< "$qp"; color=${color:-red}
+      pol=()
+      if [ -n "${DEMO_INSERT_POLICY:-}" ]; then
+        pol=(--insert_policy "$DEMO_INSERT_POLICY")
+        [ -n "$landed" ] && pol+=(--insert_landed_pins ${landed//,/ })
+      elif [ -n "$landed" ]; then
+        echo "!!! ${qp}: 착지 기록은 DEMO_INSERT_POLICY 와 함께만 씁니다"; continue
+      fi
+      echo; echo "=== ${q} 핀 ${pin} (${color}${landed:+, 지난 착지 $landed}${DEMO_INSERT_POLICY:+, 정책}): 접시를 받침 위에 올려 두고 Enter (건너뛰기: s, 끝내기: q) ==="
       read -r ans
       [ "$ans" = q ] && break
       [ "$ans" = s ] && continue
       conda run --no-capture-output -n foundationpose python -u "$DIR/pipeline.py" --task plate --plate_policy ik_bc \
-        --place basket --insert quadrant --quadrant "$q" --pin "$pin" --plate_color "$color" --sim_q --auto "$@" \
+        --place basket --insert quadrant --quadrant "$q" --pin "$pin" --plate_color "$color" --sim_q --auto "${pol[@]}" "$@" \
         || echo "!!! ${q} 실패 - 로그 확인 후 다음으로 (Enter)"
     done ;;
   sim)
