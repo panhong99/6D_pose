@@ -3907,6 +3907,12 @@
 - 동일 선택세트 반복 결과는 holdout 일반화나 학습 변경의 인과 효과를 입증하지 않는다. R1 완료 및 seed15014 최종 paired 비교는 아직 미확인. CPU/read-only 감사만 수행; Isaac/GPU, 로봇/그리퍼, source/data/checkpoint 쓰기 없음.
 - 감사 기록 포함 후 전체 회귀시험 `bash calibration/run.sh tests`: **79/79 통과(36.531 s, exit 0)**. 종료 뒤 unclosed-socket `ResourceWarning` 1건.
 
+## 2026-10-16 14:09 Codex — R1 train_0045 독립 원시 재검증 (CPU/read-only)
+- `rl/logs/basket/insert_rl_20261016_r1_unseated025_seed10/train_0045.{json,npz}` 192 rollout에서 독립식 `seated && in_quadrant && landed_gap == target_gap` **102/192=53.1%**. 분면: Q1 **27/55**, Q2 **30/52**, Q3 **20/41**, Q4 **25/44**.
+- JSON results/이름/top-level 판정, NPZ 판정 및 독립식이 **192/192 일치**; obs/act/logp/bias/low 모두 finite. train36–45 기술 합계 **1,045/1,920=54.4%**(Q1 **267/512**, Q2 **260/558**, Q3 **271/443**, Q4 **247/407**)이며 여러 시점의 rollout 누계라 평가/일반화 점수로 해석하지 않는다.
+- `train_0046.log`는 존재하나 검사 시점에 JSON/NPZ가 아직 없어 미집계. CPU/read-only 파일 검사만 했고 Isaac/GPU·로봇/그리퍼 명령·코드/데이터/체크포인트 쓰기는 하지 않음.
+- 이 기록까지 반영한 뒤 전체 회귀시험 `bash calibration/run.sh tests`: **79/79 통과(35.812 s, exit 0)**. 종료 후 unclosed-socket `ResourceWarning` 1건.
+
 ## 2026-10-16 14:1x Claude — 고정카메라 재캘리브 + 바구니 새 마커 배치
 - 고정카메라: 보스 측정 `real_handeye/20261016_134701_fromwrist`(12곳, S 중 segfault — positions는 저장됨) → `--resolve`로 재계산. 4번째(index 3) 재투영 17.7 px(G·F 사이 마커 이동 추정) 제외한 11곳을 `20261016_134701_fromwrist_drop3/`에 저장(원본 보존): 카메라 (1.198, 0.579, 1.090), 재투영 평균 2.1 px, LOO 0.2–15 mm / ≤0.8°. 10/13 결과 대비 약 2 cm 차이. `latest_t_base_cam()`이 이 폴더 선택.
 - 바구니: 보스가 옮김(+x ≈ 9 cm) + 마커를 판에 다시 붙임. 손목 사진(wrist_look 135828, 140149)에 모델 빗살·레일을 chamfer로 맞춰 바구니 프레임 결정: 사진별 (1.004,−0.174,1.87°)/(1.008,−0.169,2.06°), 공동 (1.0102, −0.1726, 2.18°), z는 10/15 값 0.1449 유지(같은 테이블). 비스듬한 사진 140056은 빗살 겹침으로 2 cm 피치 모호 → 제외. 손목 장착 각도는 J6 −90°/−22° 두 사진이 4–5 mm로 일치해 큰 오차 없다고 판단(손목 재캘리브는 생략).
