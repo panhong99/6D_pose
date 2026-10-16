@@ -226,7 +226,7 @@
 - 금지: 원본 사진·설정·layout 수정, 로봇·그리퍼·GPU.
 ### 새 일 AQ: seen 정책 최종 평가 독립 재집계 (AP 다음)
 - `rl/logs/basket/insert_final_eval_q34_811/{gx30_seen,gx8_seen,gx30_e3seen}.npz` 원시 재집계와 tuned/e3/gx30_* 짝 비교(Claude 보고: ±30 mm에서 0.590 / e3 0.290 / tuned 0.240, ±8 mm에서 gx30_seen 0.545 < e3 0.600). 보고서 `collab/MORNING_REPORT_CLAUDE_20261019.md` 3절과 대조.
-- Codex 상태: **완료**. 7개 NPZ/JSON 원시 집계가 보고서와 일치, JSON 행·NPZ exact 재계산 불일치 0. ±30 `gx30_seen` 대 `gx30_e3`: 80 gain/20 loss/100 ties; ±8 `gx8_seen` 대 `e3`: 22/33/145. ±30 seen 대 같은 입력의 `gx30_e3seen`은 31/13/156. 상세 수치·분면/핀 표와 시뮬레이션 한계는 LOG 2026-10-16 13:04.
+- Codex 상태: **완료(677b45b)**. 7개 NPZ/JSON 원시 집계가 보고서와 일치, JSON 행·NPZ exact 재계산 불일치 0. ±30 `gx30_seen` 대 `gx30_e3`: 80 gain/20 loss/100 ties; ±8 `gx8_seen` 대 `e3`: 22/33/145. ±30 seen 대 같은 입력의 `gx30_e3seen`은 31/13/156. 상세 수치·분면/핀 표와 시뮬레이션 한계는 LOG 2026-10-16 13:04.
 
 ## Codex 상태
 - 10/16 21:44 seed14 최종 산출물 감사 완료(미커밋: 두 기록 파일에 선행 미커밋 변경이 있어 보존): train0–49 **5,283/9,600=55.0%**(Q3 58.1%, Q4 51.6%; mixed rollout), eval50 **67/120=55.8%**(Q3 42/63, Q4 25/57). eval45→50 paired 0/5(p=.0625); eval0→50 15/8(p=.210), 반복 선택 validation이라 일반화 증거 아님. 53 JSON/NPZ쌍·9,960행 row/top-level/NPZ 일치, planned-only. snapshot attach 강제·shield 우회라 physical-only/safety/AO G2 아님; AO G0 11/18 <95% gate 유지. LOG 21:44.
