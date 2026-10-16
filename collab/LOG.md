@@ -3851,3 +3851,8 @@
 - `train_0032–0035.{json,npz}` 각 192행도 독립식과 JSON/NPZ mask를 모두 대조해 **768/768 일치**, obs/action/logp/bias/low finite. exact는 **90, 103, 110, 87**, 합계 **390/768=50.8%**; Q1 **95/208**, Q2 **86/209**, Q3 **114/191**, Q4 **95/160**. 학습 도중 policy가 바뀌는 rollout 집계이므로 평가 지표가 아니다.
 - 감사 시점 `train_0036.log`는 생성됐으나 eval40 파일은 아직 없었다. 보류 중인 R1 설정은 그대로 두고 완결된 다음 평가 산출물을 CPU/read-only로 감사한다. CPU 데이터 분석만 수행; Isaac/GPU, 로봇/그리퍼 명령, source/data/checkpoint 쓰기 없음.
 - 문서 갱신 뒤 `bash calibration/run.sh tests`는 일반 sandbox에서 pipeline import의 UDP socket bind 권한 오류로 시작 실패. 동일한 전체 명령을 승인된 escalation으로 재실행해 **79/79 통과(39.428 s)**; 종료 코드 0. Python `ResourceWarning` unclosed socket 1건은 시험 성공 후 표시됨.
+
+## 2026-10-16 13:27 Codex — R1 고정 평가 실패 유형 분해 (CPU/read-only)
+- eval0 warm-start → eval30 best에서 상호배타적 분류(unseated / seated outside quadrant / seated wrong gap / exact)는 **54/53/90/401 → 50/39/98/411**. Q1은 **22/20/20/94 → 22/14/22/98**, Q2 **14/22/20/90 → 11/15/31/89**, Q3 **6/9/29/111 → 7/8/25/115**, Q4 **12/2/21/106 → 10/2/20/109**.
+- R1 eval35는 같은 유형 순서로 **44/45/107/402** (Q1 unseated 19, outside 16, wrong gap 24, exact 97). 정확 성공은 warm-start보다 1건 많을 뿐이고 failure category 총계는 서로 다른 정책 출력의 결과다. 특히 unseated/outside가 줄고 wrong-gap이 늘어난 양상은 보상 변경과 일치하는 가설은 될 수 있지만, 반복 동일세트·정책 stochasticity 때문에 penalty의 인과 효과로 판정하지 않는다. rollout은 계속 중이므로 현재 설정을 중간 변경하지 말고 최종 seed15014 paired audit까지 본다.
+- 이 분석을 포함한 문서 상태에서 승인된 전체 회귀 시험 **79/79 통과(38.971 s, exit 0)**. 일반 sandbox에서는 UDP bind가 `PermissionError`로 막혔고 승인 실행에서 통과; Python unclosed-socket `ResourceWarning` 1건은 테스트 성공 뒤 출력.
