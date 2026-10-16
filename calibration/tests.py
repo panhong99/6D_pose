@@ -244,6 +244,25 @@ class Pipeline(unittest.TestCase):
             expert._CL_POL.update(old_pol)
             pipeline.sys.path[:] = old_path
 
+    def test_invalid_handeye_sessions_are_skipped_by_both_selectors(self):
+        # (10/16) a newer session marked INVALID (gripper rotated during it) must never be picked
+        import calib_core
+        import sim_scene
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for name in ('20261016_100000_fromwrist', '20261016_110000_fromwrist'):
+                (root / 'real_handeye' / name).mkdir(parents=True)
+                (root / 'real_handeye' / name / 'T_base_cam_pnp.json').write_text('{}')
+            (root / 'real_handeye' / '20261016_110000_fromwrist' / 'INVALID').write_text('x')
+            with patch.object(calib_core, 'DATA', root), patch.object(sim_scene, 'DATA', root):
+                for got in (calib_core.latest_t_base_cam(), sim_scene.newest_t_base_cam()):
+                    self.assertEqual(got.parent.name, '20261016_100000_fromwrist')
+
+    def test_white_plate_refuses_no_library(self):
+        self.assertEqual(pipeline.parse_args(['--plate_color', 'red', '--no_library']).plate_color, 'red')
+        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+            pipeline.parse_args(['--plate_color', 'white', '--no_library'])
+
     def test_landed_pins_give_the_seen_gap_error(self):
         # (10/16) aimed at pin 6, landed between 3 and 4 (farther from the robot) -> +x gap error; same pin -> zero
         Tbb = make_T(R.from_euler('z', 2.18, degrees=True).as_matrix(), [1.0102, -0.1726, 0.1449])
