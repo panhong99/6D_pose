@@ -3765,7 +3765,15 @@
 ## 2026-10-16 11:36 Codex — R1 train_0008 원시 검증 (CPU/read-only)
 - `rl/logs/basket/insert_rl_20261016_r1_unseated025_seed10/train_0008.{json,npz}` 192개 rollout을 독립식 `seated_in_quadrant && landed_gaps[0] == target_gap`으로 재계산했다. 결과 **105/192=54.7%**, Q1 **27/53**, Q2 **13/41**, Q3 **36/57**, Q4 **29/41**. JSON `seated_exact`, NPZ `exact`, 독립식 mask 및 `in_quadrant/landed/target/quadrant` JSON↔NPZ 대조는 전부 **192/192 일치**; obs/action/logp/bias/low는 모두 유한값.
 - train_0000–0008을 합산한 기술통계는 **869/1728=50.3%**; Q1 **225/477**, Q2 **178/440**, Q3 **249/432**, Q4 **217/379**. 이는 policy가 갱신되는 학습 rollout batch의 집계이므로 holdout 성능·독립 정책평가로 보지 않는다. train_0000–0007의 이전 LOG 집계 합계는 개별 batch 수 합과 맞는 **764/1536**이며, TASKBOARD의 기존 756은 산술 오기로 정정했다.
-- `train_0009.log`가 새로 생성됐지만 JSON/NPZ와 `eval_0010`은 아직 없어 회차 결과·학습 종료 여부는 판정하지 않는다. 공유 문서 반영 뒤 일반 sandbox `bash calibration/run.sh tests`는 pipeline import UDP 소켓 제한으로 막혔고, 승인된 동일 명령은 **79/79 통과(34.540 s)**. GPU/Isaac은 Claude 담당; Codex는 파일 원시 감사만 수행했고 로봇·그리퍼 명령 및 소스/data/checkpoint 변경 없음.
+- `train_0009.log`가 새로 생성됐지만 JSON/NPZ와 `eval_0010`은 아직 없어 회차 결과·학습 종료 여부는 판정하지 않는다. 공유 문서 반영 뒤 일반 sandbox `bash calibration/run.sh tests`는 pipeline import UDP 소켓 제한으로 막혔고, 승인된 동일 명령은 **79/79 통과(34.302 s)**. GPU/Isaac은 Claude 담당; Codex는 파일 원시 감사만 수행했고 로봇·그리퍼 명령 및 소스/data/checkpoint 변경 없음.
+
+
+
+## 2026-10-16 11:38 Codex — R1 train_0009 원시 검증 (CPU/read-only)
+- `rl/logs/basket/insert_rl_20261016_r1_unseated025_seed10/train_0009.{json,npz}` 192개를 `seated_in_quadrant && landed_gaps[0] == target_gap`로 독립 재집계: **102/192=53.1%**; Q1 **22/48**, Q2 **32/57**, Q3 **23/46**, Q4 **25/41**. JSON `seated_exact`, NPZ `exact`, 독립식 mask 및 JSON↔NPZ `in_quadrant/landed/target/quadrant`가 전부 **192/192 일치**; obs/action/logp/bias/low 유한값.
+- train_0000–0009 기술 집계는 **971/1920=50.6%**; Q1 **247/525**, Q2 **210/497**, Q3 **272/478**, Q4 **242/420**. 각 batch에서 policy update가 달라지는 학습 rollout이므로 holdout·평가 성능으로 해석하지 않는다.
+- `eval_0010.log`가 **11:37:54 KST**에 생겼으나 audit 시점에는 대응 JSON/NPZ가 없어 선택평가 점수 미정. 결과 파일이 완결되면 eval5와 동일 입력 여부, JSON/NPZ mask 및 분면별 exact를 확인한다. 실험 run의 완료 여부·원인은 별도 근거 전까지 단정하지 않는다.
+- 전체 `bash calibration/run.sh tests`는 승인 실행에서 **79/79 통과(34.302 s)** (일반 sandbox는 pipeline import의 UDP 소켓 권한에 막힘). CPU 원시 감사만 수행; GPU/Isaac, 로봇/그리퍼, 소스/data/checkpoint 변경 없음.
 
 ## 2026-10-16 11:40 Claude — R1 실행 상태 확인
 - R1(PID `1132827`) 살아 있음, Codex 11:12 "종료" 추정은 Codex가 11:32에 철회한 대로 프로세스 namespace 문제. 현재 it 8 완료(train exact 0.547), eval it0 0.671 → it5 0.661. 회차당 약 170 s, 60회까지 약 2.5 h 남음. 다음 eval은 it10.
