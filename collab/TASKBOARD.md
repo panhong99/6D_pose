@@ -229,6 +229,11 @@
 - `rl/logs/basket/insert_final_eval_q34_811/{gx30_seen,gx8_seen,gx30_e3seen}.npz` 원시 재집계와 tuned/e3/gx30_* 짝 비교(Claude 보고: ±30 mm에서 0.590 / e3 0.290 / tuned 0.240, ±8 mm에서 gx30_seen 0.545 < e3 0.600). 보고서 `collab/MORNING_REPORT_CLAUDE_20261019.md` 3절과 대조.
 - Codex 상태: **완료(677b45b)**. 7개 NPZ/JSON 원시 집계가 보고서와 일치, JSON 행·NPZ exact 재계산 불일치 0. ±30 `gx30_seen` 대 `gx30_e3`: 80 gain/20 loss/100 ties; ±8 `gx8_seen` 대 `e3`: 22/33/145. ±30 seen 대 같은 입력의 `gx30_e3seen`은 31/13/156. 상세 수치·분면/핀 표와 시뮬레이션 한계는 LOG 2026-10-16 13:04.
 
+### 새 일 AR: 월요일 실기 경로 변경 Critic 리뷰 (10/16 22:5x Claude, AP·AQ 다음, 최우선; N보다 먼저)
+- 월요일 실기에 쓰일 10/16 변경을 실기 안전·기본 경로 불변 관점에서 반박 위주로 리뷰(코드 수정 금지, 읽기·오프라인 테스트만): `38c5538`·`003726b`(--plate_color white: prompt/mesh, offset_m[0]+0.01, 닫기 force 128), `52c33ad`(demo4 색 필드, random_plans --pins), `0afcadf`(basket_boxes 마커 상자 14 cm), `d350603`(--insert_landed_pins → seen_override, 부호 +x=먼 쪽), `983aa88`(INVALID 세션 건너뛰기), config 바구니 layout 20261016_140249.
+- 특히: (1) 빨간 접시 기본 경로가 정말 그대로인지, (2) 흰 접시 1 cm 깊게의 방향(+radial)이 맞는지 라이브러리 기하로 독립 확인, (3) 마커 상자가 실기 pipeline·random_plans·goal1_offline 모두에 적용되는지와 Q4 4번 충돌을 설명하는지, (4) landed pin 부호·분면 대응(Q3/Q4 model_qd) 오류 가능성.
+- 결과: LOG에 위험 목록(심각도 순) + 재현 명령.
+
 ## Codex 상태
 - 10/16 21:44 seed14 최종 산출물 감사 완료(미커밋: 두 기록 파일에 선행 미커밋 변경이 있어 보존): train0–49 **5,283/9,600=55.0%**(Q3 58.1%, Q4 51.6%; mixed rollout), eval50 **67/120=55.8%**(Q3 42/63, Q4 25/57). eval45→50 paired 0/5(p=.0625); eval0→50 15/8(p=.210), 반복 선택 validation이라 일반화 증거 아님. 53 JSON/NPZ쌍·9,960행 row/top-level/NPZ 일치, planned-only. snapshot attach 강제·shield 우회라 physical-only/safety/AO G2 아님; AO G0 11/18 <95% gate 유지. LOG 21:44.
 - 10/16 21:24 PPO 감사: gap_x_dr seed14 train0–42 **4,483/8,256=54.3%**(Q3 2,510/4,378=57.3%, Q4 1,973/3,878=50.9%; 혼합 rollout). 새 train37–42 **647/1,152=56.2%**. eval40 **70/120=58.3%**(Q3 45/63, Q4 25/57); eval35→40 paired 3/4(p=1.0), eval0→40 14/4(p=.0309)이나 반복 checkpoint-selection validation이라 일반화 증거 아님. train0–42+eval0/35/40 원시 대조 불일치 0. seed14 계속 실행. 상세 LOG 21:24.
