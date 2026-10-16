@@ -3886,3 +3886,10 @@
 - train36–42의 기술 합계는 **732/1,344=54.5%**; Q1 **184/367**, Q2 **167/375**, Q3 **201/310**, Q4 **180/292**. 서로 다른 PPO 학습 시점의 rollout 합계라 held-out/최종 성능 추정치가 아니다. 최신 `train_0043.log`만 확인됐고 eval45·seed15014 최종 비교는 아직 미확인이다.
 - CPU/read-only 원시파일 감사만; Isaac/GPU·실기 로봇/그리퍼·source/data/checkpoint 변경 없음.
 - 문서 갱신 후 승인 경로 `bash calibration/run.sh tests` **79/79 통과(34.078 s, exit 0)**; sandbox에서는 UDP bind 권한이 별도로 필요하며 시험 후 socket `ResourceWarning` 1건.
+
+## 2026-10-16 13:57 Codex — R1 train_0043 원시 재검증 (CPU/read-only)
+- `rl/logs/basket/insert_rl_20261016_r1_unseated025_seed10/train_0043.{json,npz}`의 192행을 독립 성공식 `seated && in_quadrant && landed_gap == target_gap`으로 검산: **100/192=52.1%**. 분면 Q1 **25/44**, Q2 **29/69**, Q3 **21/38**, Q4 **25/41**.
+- JSON episode exact/seated-in-quadrant, top-level seated/in-quadrant/landed/target, NPZ exact/seated/in-quadrant/landed/target/quadrant는 모두 **192/192 일치**. obs/action/logp/bias/low finite.
+- train36–43 합계 **832/1,536=54.2%**; Q1 **209/411**, Q2 **196/444**, Q3 **222/348**, Q4 **205/333**. 정책별 rollout을 합친 기술 집계로 held-out/최종 성공률은 아니다. 최신 `eval_0045` JSON/NPZ는 아직 없고 seed15014 paired 비교 전.
+- CPU/read-only 감사, Isaac/GPU·로봇/그리퍼·source/data/checkpoint 쓰기 없음.
+- 승인 경로 전체 회귀시험 `bash calibration/run.sh tests`: **79/79 통과(35.333 s, exit 0)**. 일반 sandbox는 pipeline import 시 UDP socket bind 권한이 없어 실패하며, 실행 후 socket `ResourceWarning` 1건.
