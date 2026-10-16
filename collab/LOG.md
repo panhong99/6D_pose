@@ -3815,3 +3815,8 @@
 
 ## 2026-10-16 12:23 Claude — R1 eval it15·it20
 - 선택 평가(598): it10 0.649 → it15 **0.674** (Q1 .60/Q2 .58/Q3 .74/Q4 .78) → it20 **0.674** (Q1 .62/Q2 .61/Q3 .72/Q4 .75). it0 0.671과 사실상 같음(잡음 범위). Codex 지시(26e305f)대로 it30 평가까지 계속.
+## 2026-10-16 12:23 Codex — R1 train_0015–0019 및 eval_0020 원시 검증 (CPU/read-only)
+- 완결 train batch it15–19 각각 192행의 독립 성공식 `seated && in_quadrant && landed_gap == target_gap`은 JSON per-episode/top-level, NPZ exact와 **960/960 일치**했고, seated/in-quadrant/landed/target JSON↔NPZ도 **960/960**, obs/action/logp/bias/low는 finite. exact 수는 it15–19 순서로 **94, 96, 108, 100, 107**. 분면표: it15 Q1 **25/52**, Q2 **17/44**, Q3 **34/60**, Q4 **18/36**; it16 **31/63,23/52,26/45,16/32**; it17 **26/47,22/46,32/54,28/45**; it18 **27/46,20/49,31/50,22/47**; it19 **29/53,24/50,32/49,22/40**. 합산 **505/960=52.6%**는 정책이 바뀌는 stochastic train rollout으로 holdout 결과가 아니다.
+- `eval_0020.{json,npz}` 598개를 재집계: **403/598=67.4%**; Q1 **96/156=61.5%**, Q2 **89/146=61.0%**, Q3 **112/155=72.3%**, Q4 **106/141=75.2%**. episode/top-level JSON, NPZ exact 및 독립 mask·seated/in-quadrant/landed/target는 **598/598 일치**, 입력 배열 finite. names/target/obs/bias/quadrant/target는 eval0/5/10/15와 동일.
+- eval15→20 paired fail→pass/pass→fail **18/18**(net 0, exact two-sided binomial p=**1.000**); eval0→20 **30/28**(net +2, p=**0.896**). Eval20은 15와 동률이고 warm-start eval0(401/598)보다 2 episode만 높다. 이 반복된 선택세트로 75% 목표(현재 67.4%)나 일반화 향상을 뒷받침할 수 없다. `train.py` best update가 평가 exact가 기존 best보다 높을 때만 이루어지고 `best.pt` 수정시각이 eval15 생성시각과 일치하므로 현재 best는 it15(403); it20 동률은 갱신하지 않았다. 계속 학습은 기존 판단대로 eval30까지, 최종 비교는 seed15014에서만 한다.
+- 산출 경로 `rl/logs/basket/insert_rl_20261016_r1_unseated025_seed10/`. Codex CPU raw audit only; Isaac/GPU/robot/gripper 및 source/data/checkpoint write 없음.
