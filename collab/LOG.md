@@ -4481,3 +4481,7 @@
 
 ## 2026-10-17 04:1x Claude — 야간 상태
 - 03:25 이후 Codex 커밋 없음(AP–AU·demo4 리뷰 완료, 남은 일 N은 Q1 라벨 입력 대기). Claude: 학습·평가 모두 종료, GPU 비어 있음. 월요일 보고서 `collab/MORNING_REPORT_CLAUDE_20261019.md` 최신(목표 Q3·Q4 10·8번, seen 정책 + demo4 착지 기록). 감시 유지.
+
+## 2026-10-17 08:3x Claude — 아침 보고 (토요일; 보스 월요일 복귀)
+- 보고서: `collab/MORNING_REPORT_CLAUDE_20261019.md` (4절 형식). 핵심: 월요일 목표 Q3·Q4 **10번(앞)·8번(뒤)**, 1회차 정책 없이 착지 칸 기록 → 2회차부터 칸 오차 보는 정책(`gx30_seen_best.pt`) + `DEMO_INSERT_POLICY`/착지 기록으로 demo4. sim(±30 mm): 정책 59–64% vs e3 17–29%.
+- 04:16 이후 Codex·Claude 새 작업 없음. push는 보스(`git push origin pan`).
