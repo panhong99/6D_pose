@@ -3716,6 +3716,22 @@
 - GPU/Isaac·로봇·그리퍼, 코드·데이터·checkpoint 쓰기 없음.
 - 공유 기록 커밋 전 `bash calibration/run.sh tests`: **78/78 통과 (32.567 s)**.
 
+## 2026-10-16 10:5x Codex — 삽입 보정 PPO R1 진단 및 단일 변경 준비
+- 작업판 최신 지시(10/16 11:0x 보스)를 따라 AO 단계형 PPO는 건드리지 않고 현재 E3 넣기 보정 정책 개선을 진행한다. `fulldr_e2/e3.{npz,json}`를 CPU 읽기 전용으로 대조: env/obs/bias/target/quadrant 배열이 415/415 동일. E2→E3 exact는 Q1 **61/114→61/114**, Q2 **73/100→75/100**, Q3 **84/110→84/110**, Q4 **59/91→61/91**; 전체 **277→281/415**, paired fail→pass 26 / pass→fail 22(net +4; 기존 audit p=.665). 따라서 E3의 고정 15014 개선은 통계적으로 뒷받침되지 않는다.
+- E3 원시 failure split: Q1 **20 not seated, 9 seated/outside quadrant, 24 seated/wrong gap** (61 exact 포함해 114). 20 not-seated 중 **6**은 `landed==target`; 현 `insert_reward`는 exact가 아니면 0.0(부분점수 조건도 불충족)로 둔다. Q2/Q3/Q4 not-seated는 **5/0/12**. 이 상관은 reward가 실패 원인이라는 증명이 아니다.
+- R1 단일 변수 실험용으로 `rl/basket/train.py`에 `--unseated-penalty` 추가. 기본 0.0은 이전 reward와 완전히 같고, 실험값 0.25는 not-seated terminal outcome에만 −0.25 추가한다. 관측/행동 16/5, reward의 다른 항, randomization/FP, 모델, optimizer, train/eval plan split·metric은 바꾸지 않는다. 출력은 새 경로만 사용하며 기존 checkpoint/data는 읽기 전용.
+- 검증: 일반 sandbox는 `pipeline.py` import의 UDP socket 생성이 차단되어 실패(코드 assertion 도달 전). 같은 `bash calibration/run.sh tests` 승인 실행은 **79/79 통과, 32.429 s**. 추가 regression test는 기본 보상 유지 및 penalty 적용 대상을 확인한다. Isaac/GPU/robot/gripper는 실행하지 않았다.
+- Claude 실행용(작업판에 인계; output 경로가 기존에 없음 확인):
+  ```bash
+  /home/pan/IsaacLab/isaaclab.sh -p rl/basket/train.py insert_rl \\
+    --plans calibration/data/basket/random_20261014_213328/replay.jsonl calibration/data/basket/random_20261014_224608/replay.jsonl calibration/data/basket/random_20261014_230916/replay.jsonl calibration/data/basket/random_20261015_000501/replay.jsonl calibration/data/basket/random_20261015_003713/replay.jsonl calibration/data/basket/random_20261015_173724/replay.jsonl \\
+    --eval_plans calibration/data/basket/random_20261015_004935/replay.jsonl calibration/data/basket/random_20261015_070233/replay.jsonl \\
+    --out rl/logs/basket/insert_rl_20261016_r1_unseated025_seed10 --iters 60 --batch 192 --epochs 8 --minibatch 32 \\
+    --seed 10 --lr 0.0001 --eval_every 5 --init_ckpt rl/logs/basket/insert_final_eval_15014/e3_best.pt \\
+    --snapshot --dr_full --canon --noseen --unseated-penalty 0.25
+  ```
+- checkpoint는 기존 모델 선택과 같이 9014/10014 train-eval에서 고르고, **15014는 한 번의 최종 대조에만** 사용한다. 목표는 동일 실기 조건에서 ≥75% 및 분면표(특히 Q1)이며, Q1 보상 변경이 다른 분면을 해치거나 15014에서 gate를 못 넘으면 채택하지 않는다. 이는 제안된 시뮬레이션 실험이지 실기 성공 주장이 아니다. DECISIONS `2026-10-16 Codex: insert PPO experiment R1` 참조.
+
 ## 2026-10-16 09:52 Codex — E 작업판/LOG 상태 맞춤
 - 작업판 E 요약을 LOG 04:11–04:12의 후속 부분-GT 분석까지 맞췄다: root 이동·투영 잔차의 분면 차이와 같은 사진 행 간 translation 전달 결과가 있지만, 모두 사후 라벨 대응을 쓰므로 독립 검증이나 생산 투영 보정의 근거가 아니다.
 - 남은 선행자료는 전수 visible-pin GT 및 줄/번호 정답 대응이다. 59개 부분 라벨만으로는 precision/recall 또는 80% gate를 계산할 수 없어 검출 임계값을 바꾸지 않았다. AO G0 SafeDiffIK은 11/18=61.1%로 95% 미달이며 G1/G2 보류.

@@ -529,10 +529,11 @@ def run_rl(args):
 
 
 # ---------------------------------------------------------------- (10/15 보스) insert-correction PPO (one decision / insert)
-def insert_reward(exact, seated, in_quadrant, landed, target):
-    """1 = seated in the target gap; partial credit for standing in the quadrant, minus the gap miss (capped)."""
+def insert_reward(exact, seated, in_quadrant, landed, target, unseated_penalty=0.0):
+    """1 = seated in the target gap; optional terminal penalty for not seating the plate."""
     miss = np.where(landed >= 0, np.minimum(np.abs(landed - target), 4), 4)
-    return exact.astype(float) + 0.2 * (seated & in_quadrant & ~exact) - 0.05 * miss
+    return (exact.astype(float) + 0.2 * (seated & in_quadrant & ~exact) - 0.05 * miss
+            - float(unseated_penalty) * (~seated))
 
 
 FINAL_REPLAY_ARGS = ['--closed_loop', '--cl_top', '--cl_top_q', 'Q1:0', '--cl_iter', '2', '--cl_dx_q', 'Q1:0.025,Q2:0.038,Q3:-0.0464,Q4:-0.035',
@@ -563,7 +564,7 @@ def code_snapshot(out):
     return snap
 
 
-def insert_replay(plans, out_dir, tag, policy_path, seed, det, per_run, extra, code=None):
+def insert_replay(plans, out_dir, tag, policy_path, seed, det, per_run, extra, code=None, unseated_penalty=0.0):
     """One Isaac replay (subprocess, final per-quadrant settings) with the policy -> transitions npz."""
     import subprocess
     side = (out_dir / f'{tag}.npz').resolve()
@@ -584,7 +585,7 @@ def insert_replay(plans, out_dir, tag, policy_path, seed, det, per_run, extra, c
     if rc != 0 or not side.exists():
         raise RuntimeError(f'replay {tag} failed (rc {rc}), see {out_dir / f"{tag}.log"}')
     d = np.load(side)
-    r = insert_reward(d['exact'], d['seated'], d['in_quadrant'], d['landed'], d['target'])
+    r = insert_reward(d['exact'], d['seated'], d['in_quadrant'], d['landed'], d['target'], unseated_penalty)
     return d, r
 
 
@@ -592,6 +593,8 @@ def run_insert_rl(a):
     """(10/15) PPO on the insert corrections (aim dx/dy, lean, dz, yaw) of the planner + per-quadrant settings, with the
     model-error randomisation (--cl_dr) and the FP noise model.  Iteration 0 = the hand-tuned method (zero mean head)."""
     import random
+    if not math.isfinite(a.unseated_penalty) or a.unseated_penalty < 0:
+        raise ValueError('--unseated-penalty must be finite and >= 0')
     out = Path(a.out or ROOT / f'rl/logs/basket/insert_rl_{time.strftime("%Y%m%d_%H%M%S")}')
     out.mkdir(parents=True, exist_ok=True)
     rows = [l for f in a.plans for l in open(f) if l.strip()]
@@ -616,7 +619,8 @@ def run_insert_rl(a):
         ev = out / 'eval_plans.jsonl'
         ev.write_text(''.join(hold))
         torch.save(pol.state_dict(), out / f'policy_{it:04d}.pt')
-        d, r = insert_replay(ev, out, f'eval_{it:04d}', out / f'policy_{it:04d}.pt', 777, True, 1, extra, code)
+        d, r = insert_replay(ev, out, f'eval_{it:04d}', out / f'policy_{it:04d}.pt', 777, True, 1, extra, code,
+                             a.unseated_penalty)
         res = dict(it=it, eval_exact=float(d['exact'].mean()), eval_reward=float(r.mean()),
                    **{f'eval_{q}': float(d['exact'][d['quadrant'] == q].mean()) for q in ('Q1', 'Q2', 'Q3', 'Q4') if (d['quadrant'] == q).any()})
         print(f'[insert_rl] eval it {it}: exact {res["eval_exact"]:.3f} ' + ' '.join(f'{q} {res.get("eval_" + q, float("nan")):.2f}' for q in ('Q1', 'Q2', 'Q3', 'Q4')), flush=True)
@@ -637,7 +641,8 @@ def run_insert_rl(a):
         batch.write_text(''.join(rng.sample(rows, min(a.batch, len(rows)))))
         torch.save(pol.state_dict(), out / 'current.pt')
         t0 = time.time()
-        d, r = insert_replay(batch, out, f'train_{it:04d}', out / 'current.pt', 1000 + it, False, 1, extra, code)
+        d, r = insert_replay(batch, out, f'train_{it:04d}', out / 'current.pt', 1000 + it, False, 1, extra, code,
+                             a.unseated_penalty)
         obs, act = torch.as_tensor(d['obs']), torch.as_tensor(d['act'])
         old_logp, ret = torch.as_tensor(d['logp'], dtype=torch.float32), torch.as_tensor(r, dtype=torch.float32)
         with torch.no_grad():
@@ -707,6 +712,8 @@ def parse_args():
     p.add_argument('--dr_full', action='store_true', help='insert_rl: also basket-yaw and in-hand-bias randomisation (unobserved)')
     p.add_argument('--no_fp_noise', action='store_true', help='insert_rl: exact in-hand pose (no FP noise model)')
     p.add_argument('--init_std', type=float, default=0.3, help='insert_rl: initial exploration std (pre-tanh; 0.3 ~ 9 mm aim)')
+    p.add_argument('--unseated-penalty', type=float, default=0.0,
+                   help='insert_rl: extra terminal reward penalty when the released plate is not seated (default preserves legacy reward)')
     p.add_argument('--data', help='bc: demo folder with batch_*.npz (expert.py collect)')
     p.add_argument('--seed', type=int, default=1)
     p.add_argument('--preflight-only', action='store_true', help='data check + tiny-batch overfit test, then exit')

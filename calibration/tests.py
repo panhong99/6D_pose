@@ -940,6 +940,26 @@ class BasketReplayReportTests(unittest.TestCase):
                 goal1_offline.basket_replay_report([replay], out)
 
 
+class BasketInsertRewardTests(unittest.TestCase):
+    def test_optional_unseated_penalty_is_opt_in_and_only_applies_to_unseated(self):
+        import importlib.util
+
+        root = Path(__file__).resolve().parents[1]
+        spec = importlib.util.spec_from_file_location('basket_train_reward_test', root / 'rl/basket/train.py')
+        train = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(train)
+        exact = np.array([True, False, False, False])
+        seated = np.array([True, True, False, False])
+        in_quadrant = np.array([True, True, True, False])
+        landed = np.array([2, 3, 2, -1])
+        target = np.array([2, 2, 2, 2])
+
+        legacy = train.insert_reward(exact, seated, in_quadrant, landed, target)
+        np.testing.assert_allclose(legacy, [1.0, 0.15, 0.0, -0.2])
+        changed = train.insert_reward(exact, seated, in_quadrant, landed, target, unseated_penalty=0.25)
+        np.testing.assert_allclose(changed, [1.0, 0.15, -0.25, -0.45])
+
+
 class BasketGeometryClearanceTests(unittest.TestCase):
     def test_vertical_descent_capsule_contact_matches_analytic_cases(self):
         import goal1_offline
