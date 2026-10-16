@@ -3748,3 +3748,9 @@
 - 같은 eval0에서 실패 형태를 일반 `seated`와 `in_quadrant`로 분리: 전체 not-seated **54**(Q1/Q2/Q3/Q4 **22/14/6/12**), seated 후 분면 밖 **53**(**20/22/9/2**), 목표 분면 내 wrong-gap **90**(**20/20/29/21**). not-seated 중 `landed==target`은 **15**(**9/3/0/3**). R1 penalty는 그 54개 모든 미착좌에 적용되므로, 목표 gap 부근에서만 벌점을 주는 실험은 아니다. 이 분해도 warm-start eval0이며 인과 근거가 아니다.
 - 완결된 train rollout은 `train_0000` **94/192 (49.0%)**, `train_0001` **99/192 (51.6%)**; 각각 JSON 성공식 및 NPZ 배열은 **192/192** 일치. 이들은 학습 batch이지 홀드아웃 성능으로 해석하지 않는다. R1의 9014/10014 후속 평가와 15014 final 비교가 없어 목표 ≥75% 판정은 미완료.
 - GPU/Isaac은 Codex가 재실행하지 않았다. 다음: Claude가 종료 원인을 확인하거나 별도 새 output 경로로 R1을 다시 실행하고, `eval_0005` 이후 JSON/NPZ를 공유하면 Codex가 같은 방식으로 독립 재집계한다. 원본 데이터/checkpoint는 변경하지 않음.
+
+## 2026-10-16 11:32 Codex — R1 산출물 재개 후 원시 재검증 (CPU/read-only)
+- 정정: 11:12 Codex 셸에서 PID `1132827`을 찾지 못했던 것이 process-namespace 경계 때문일 수 있는데, 이를 종료로 단정했다. 이후 동일 output 디렉터리에서 `train_0002–0007.{json,npz}`·`eval_0005.{json,npz}`가 생성됐고, 11:32:16Z에 `train_0008.log`도 열렸다. 따라서 11:12의 종료 주장은 철회한다. 현재 Claude PID를 Codex shell에서 확인할 수 없어 파일 증가만으로 실제 실행 지속 여부까지 확정하지 않는다.
+- `eval_0005` 원시 598 episode를 `seated && in_quadrant && landed==target`로 재집계: **395/598=66.05%**; Q1 **95/156**, Q2 **86/146**, Q3 **110/155**, Q4 **104/141**. JSON 성공식·NPZ exact/seated/in_quadrant/landed/target/quadrant는 모두 **598/598** 일치. `eval_0000`와 이름·obs·bias·quadrant·target 입력 동일; paired fail→pass **22**, pass→fail **28**, net **−6**. 초기 eval0 401/598 대비 이 선택평가 시점에서 향상 없음이며, seed15014 최종 비교는 미생성.
+- 완결 train rollout `train_0000–0007`은 각각 192개이며 independently recomputed exact **94, 99, 98, 99, 89, 90, 94, 101 /192**. JSON 성공식과 NPZ exact는 각 192/192 일치; train_0007 핵심 배열도 finite. Train batch는 홀드아웃 성능이 아니다. `train_0004.log`에는 첫 replay 시도 rc=1 뒤 재시도가 남지만, 최종 0004 JSON/NPZ는 완결(89/192); 근본 원인은 기록 없음.
+- 결론은 R1 **계속 미완료**. 395/598은 중간 선택 평가라 채택/기각 또는 ≥75% 달성 판정이 아니다. 9014/10014를 통한 이후 checkpoint 선택과 15014 final 비교가 필요하다. Codex는 GPU·Isaac 사용하지 않았고 실로봇 명령도 없었다.
