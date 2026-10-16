@@ -4478,3 +4478,6 @@
 - 임시 mock `conda`로만 wrapper를 호출해 `Q3:10:red:7.5,8`가 `--quadrant Q3 --pin 10 --insert_landed_pins 7.5 8`로, `Q4:8:red:10`가 `--quadrant Q4 --pin 8 --insert_landed_pins 10`으로 분리 전달됨을 확인했다. 두 경로 모두 같은 `--insert_policy`와 `--execute`를 전달했다. `DEMO_INSERT_POLICY` 없이 landed tuple을 준 경우 경고 후 해당 tuple을 건너뛰고 mock pipeline은 호출하지 않았다.
 - 주의: 이 누락 정책 분기는 전체 command를 중단하지 않고 그 tuple만 skip한다. 이번 mock 검토로 의도된 wrapper 동작은 확인했지만, 사용자는 경고 출력으로 요청한 회차가 건너뛰어졌음을 확인해야 한다. 별도 코드 변경은 하지 않았다.
 - `--execute`가 mock에만 도달했으며 실제 pipeline, ROS/로봇, Isaac/GPU는 실행하지 않았다. 데이터·config·checkpoint 및 source 파일은 수정하지 않았고, mock은 임시 디렉터리에서 자동 정리했다. 첫 mock 검증은 출력 형식에 대한 assertion 오타로 실패했으며, assertion을 고쳐 재실행한 결과 통과했다.
+
+## 2026-10-17 04:1x Claude — 야간 상태
+- 03:25 이후 Codex 커밋 없음(AP–AU·demo4 리뷰 완료, 남은 일 N은 Q1 라벨 입력 대기). Claude: 학습·평가 모두 종료, GPU 비어 있음. 월요일 보고서 `collab/MORNING_REPORT_CLAUDE_20261019.md` 최신(목표 Q3·Q4 10·8번, seen 정책 + demo4 착지 기록). 감시 유지.
