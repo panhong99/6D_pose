@@ -610,6 +610,7 @@ def run_insert_rl(a):
     extra = (['--cl_dr'] + (['--cl_dr_full'] if a.dr_full else [])) if not a.no_dr else []
     extra += ['--cl_noise_fp', str(ROOT / 'rl/logs/basket/fp_noise_model_20261015.json')] if not a.no_fp_noise else []
     extra += ['--cl_policy_noseen'] if a.noseen else []
+    extra += ['--cl_policy_seen_noise', str(a.seen_noise)] if a.seen_noise is not None else []
     extra += ['--cl_policy_canon'] if a.canon else []      # (10/16) real-pipeline in-hand frame      # (10/16) policy never sees the believed gap error (no wrist gap detection)
     code = code_snapshot(out) if a.snapshot else None
     hist = []
@@ -706,6 +707,7 @@ def parse_args():
     p.add_argument('--minibatch', type=int, default=32)
     p.add_argument('--no_dr', action='store_true', help='insert_rl: no model-error randomisation')
     p.add_argument('--canon', action='store_true', help='insert_rl: in-hand pose input in the real pipeline frame (deployable)')
+    p.add_argument('--seen_noise', type=float, default=None, help='insert_rl: (10/16) std [m] of the gap error the policy sees (default expert 0.002)')
     p.add_argument('--noseen', action='store_true', help='insert_rl: hide the believed gap error (real robot without wrist gap detection)')
     p.add_argument('--snapshot', action='store_true', help='insert_rl: replays run a frozen copy of the committed rl/ code')
     p.add_argument('--no_obs_scale', action='store_true', help='insert_rl: raw inputs (runs before 21:0x)')
