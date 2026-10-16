@@ -3866,3 +3866,10 @@
 - best eval30 **411/598=68.7%**보다 2건 낮다. eval30→40 paired fail→pass/pass→fail **14/16**(net −2, exact p=**0.856**); eval35→40 **19/12**(net +7, p=**0.281**); eval0→40 **35/27**(net +8, p=**0.374**). `best.pt`는 수정시각 13:01이며 CPU state dict 14/14가 `policy_0030.pt`와 동일; 현재까지 it30 유지. 75% gate 미달이며 선택세트 반복 평가로 일반화/인과적 개선을 주장하지 않는다.
 - `train_0036–0039.{json,npz}` 총 **768**행에서 독립식/JSON/NPZ mask **768/768 일치**, 핵심 입력 배열 finite. exact **100,101,109,100**, 합계 **410/768=53.4%**; Q1 **100/199**, Q2 **96/222**, Q3 **115/185**, Q4 **99/162**. 이는 바뀌는 PPO의 학습 rollout이지 held-out 성능이 아니다. `train_0040.log`만 있고 batch JSON/NPZ는 아직 미완결이라 집계하지 않음. Isaac/GPU·로봇 명령·source/data/checkpoint 쓰기 없음.
 - 공유 문서 상태로 승인 경로 전체 테스트 **79/79 통과(38.229 s, exit 0)**. 일반 sandbox에서는 테스트 import가 UDP socket을 열 때 `PermissionError`; 승인된 동일 명령에서 통과. 종료 뒤 unclosed-socket `ResourceWarning` 1건 출력.
+
+## 2026-10-16 13:50 Codex — R1 train_0040 원시 재검증 (CPU/read-only)
+- `rl/logs/basket/insert_rl_20261016_r1_unseated025_seed10/train_0040.{json,npz}`의 192행을 독립 성공식 `seated && in_quadrant && landed_gap == target_gap`으로 재계산: **104/192=54.2%**. 분면은 Q1 **26/56**, Q2 **22/50**, Q3 **26/40**, Q4 **30/46**.
+- JSON episode `seated_exact`/`seated_in_quadrant`, top-level seated/in-quadrant/landed/target 및 NPZ seated/in-quadrant/landed/target/exact/quadrant는 각각 독립식·상대 필드와 **192/192 일치**. obs/action/logp/bias/low는 모두 finite.
+- 기존 문서 train36–39와 합친 train36–40 기술 집계는 **514/960=53.5%**; Q1 **126/255**, Q2 **118/272**, Q3 **141/225**, Q4 **129/208**. 정책이 갱신되는 train rollout 합계라 홀드아웃 점수나 일반화 지표로 해석하지 않는다. 가장 최근 `train_0041.log`만 있어 다음 batch·eval45·seed15014 최종 paired 비교는 아직 결과 미정이다. R1 설정 판단은 바꾸지 않는다.
+- JSON/NPZ 원시파일 경로는 위 R1 디렉터리. CPU/read-only 감사만 했으며 Isaac/GPU·실기 로봇/그리퍼 명령 및 데이터·체크포인트·소스 변경 없음.
+- 공유 문서 상태 전체 시험 `bash calibration/run.sh tests`: sandbox에서는 UDP bind `PermissionError`로 시작 실패; 승인된 동일 명령 재실행은 **79/79 통과(38.742 s, exit 0)**. 시험 종료 후 unclosed-socket `ResourceWarning` 1건.
