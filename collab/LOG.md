@@ -3925,3 +3925,8 @@
 - 새 배치 `data/basket/basket_layout_5cm_20261016_140249.json`(config.yaml layout 교체, 이전 줄 주석 보존). 마커가 바구니 바깥으로 3–4.5 cm, 위로 1–5 cm 이동.
 - 고정카메라 5회 반복: 바구니 (1.0096–1.0102, −0.177~−0.173), yaw 1.6–2.0°, 잔차 1.2–7.9 mm(허용 8 mm 경계). 마커 2(손잡이)·5(먼 쪽)가 프레임당 y/z 8–12 mm로 흔들림 — 고정카메라에서 비스듬히 보여서. 실행 중 잔차 >8 mm로 멈추면 마커 2·5 판 각도를 카메라 쪽으로 세우는 게 해결책.
 - 넣기 학습 범위: 기준 대비 바구니 x +9 cm는 sim 랜덤 범위(±10 cm) 안이지만 경계 근처.
+
+## 2026-10-16 14:1x Claude — 흰 접시 opt-in `--plate_color white`
+- pipeline.py: `--plate_color {red,white}`(기본 red, 기존 경로 불변). white → YOLOE "white plate" + FP mesh `demo_data/029_plate_white/tsdf/textured.obj`(config `white_plate:`). 모양은 YCB 029 그대로(보스: 지름·두께 거의 같음, 약간 얇음).
+- 주의: 처음엔 obj/mtl을 심볼릭 링크로 만들어 main.py·cpath의 resolve()가 원본(빨간 텍스처)을 열었음 → 13:0x 확인은 빨간 텍스처로도 흰 접시 추적됨(점수 83–86)을 보인 셈. 복사본으로 바꾼 뒤 흰 텍스처: 등록 83.6, 추적 87–88.
+- 회귀 79/79 통과(첫 실행은 CPU 부하로 Pipeline 시간초과 1건, 재실행 통과 34.7 s).

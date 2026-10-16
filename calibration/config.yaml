@@ -100,6 +100,10 @@ gripper:                           # Robotiq 2F-85 via USB-RS485 (FTDI) on this 
   baud: 115200
   force: 64                        # 0..255 (1/4 of max, Human 2026-10-07); speed is always the slowest (hard-coded in gripper.py)
 
+white_plate:                       # (10/16 보스) pipeline.py --plate_color white: same YCB 029 shape (보스: size ~same, slightly thinner)
+  prompt: white plate              # YOLOE picks the white plate, not the red one next to it (checked 10/16 13:0x, FP score 83-86)
+  obj: ../demo_data/029_plate_white/tsdf/textured.obj   # copy of 029_plate obj/mtl (not symlinks: paths are resolved), textured.png recoloured white; FP score 84 reg / 87-88 track
+
 plate_rl:                          # pipeline.py --task plate: FoundationPose plate -> plan -> supervised legs (history: collab/DECISIONS.md)
   isaaclab: /home/pan/IsaacLab/isaaclab.sh
   checkpoint: /home/pan/IsaacLab/logs/rsl_rl/m1013_2f85_il_residual/2026-10-07_15-15-44_stage2/model_400.pt   # old BC+RL (--plate_policy rl)

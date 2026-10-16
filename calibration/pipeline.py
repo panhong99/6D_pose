@@ -593,10 +593,14 @@ def run_plate(args):
         fp = FpStream(udp['fp_pose'], st['n'], st['mm'], st['deg'], symmetric_z=True,   # round plate: yaw is noise
                       normalize=lambda T_: inv_T(Tbc) @ plate_upright(Tbc @ T_))       # (10/14) flips 179 deg <-> 1 deg
         vision_env = {k: v for k, v in os.environ.items() if k not in ('PYTHONPATH', 'PYTHONHOME')}
+        prompt, mesh = q['prompt'], cpath(C['paths']['plate_obj'])
+        if args.plate_color == 'white':                # (10/16 보스) white plate: same YCB 029 shape, white texture only
+            prompt, mesh = C['white_plate']['prompt'], cpath(C['white_plate']['obj'])
+            print(f'[plate] 흰 접시: YOLOE "{prompt}", FP mesh {mesh}', flush=True)
         perception = children.start('perception', [sys.executable, '-u', str(ROOT / 'real_time_project/main.py'),
                                                     '--detector', 'yoloe', '--width', '640', '--height', '480',
-                                                    '--serial', args.serial, '--prompt', q['prompt'], '--conf', str(args.conf),
-                                                    '--mesh_file', str(cpath(C['paths']['plate_obj'])),
+                                                    '--serial', args.serial, '--prompt', prompt, '--conf', str(args.conf),
+                                                    '--mesh_file', str(mesh),
                                                     '--wrist_serial', C['cameras']['wrist_serial']], vision_env)
         if q.get('library'):
             rlo, rhi = library_ok_radii(q)
@@ -1172,6 +1176,8 @@ def parse_args(argv=None):
     p.add_argument('--pregrasp_height_m', type=float, default=pl['pregrasp_height_m'])
     p.add_argument('--conf', type=float, default=pl['conf'])
     p.add_argument('--prompt', default=pl['prompt'])
+    p.add_argument('--plate_color', choices=('red', 'white'), default='red',
+                   help='(10/16) plate: white = the white plate (YOLOE prompt + white-textured 029 mesh, same shape); default red')
     p.add_argument('--timeout', type=float, default=pl['timeout_s'], help='seconds allowed to obtain a stable pose/plan')
     p.add_argument('--robot_id', default=rb['robot_id'])
     p.add_argument('--controller_ns', default=rb['controller_ns'])
