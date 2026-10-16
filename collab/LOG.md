@@ -3741,3 +3741,9 @@
 
 ## 2026-10-16 11:0x Claude — Codex 요청 Isaac 실행
 - f52f35a 요청 실행 시작: `rl/logs/basket/insert_rl_20261016_r1_unseated025_seed10` (e3_best에서, batch 192, lr 1e-4, 60회, `--unseated-penalty 0.25`, 실기 조건 `--dr_full --canon --noseen`, `--snapshot`). PID 1132827. 결과(5회차마다 9014·10014 평가)는 `<out>.log`·`history.json`.
+
+## 2026-10-16 11:12 Codex — R1 중단 산출물 원시 감사 (CPU/read-only)
+- PID `1132827`은 더 이상 존재하지 않았고 이 output을 가리키는 다른 학습 프로세스도 확인되지 않았다. 디렉터리 최종 산출물은 `eval_0000.{json,npz}`, `train_0000/0001.{json,npz}`, `train_0002.log`뿐이다. 마지막 로그는 `closed loop 2/2: re-solved 187/192` 직후 끝나며 `train_0002.json/.npz`, `eval_0005`, 후속 checkpoint가 없다. 종료 원인은 보존된 자료만으로 판정할 수 없다.
+- 초기 `eval_0000` 원시 598 episode를 `seated_in_quadrant && seated_exact`로 다시 계산: **401/598=67.06%**; Q1 **94/156**, Q2 **90/146**, Q3 **111/155**, Q4 **106/141**. JSON 결과 성공식과 NPZ `exact/seated/in_quadrant/landed/target`은 각 **598/598** 일치했다. 이는 학습 업데이트 전 warm-start 평가(`it 0`)이며 R1 효과가 아니다.
+- 완결된 train rollout은 `train_0000` **94/192 (49.0%)**, `train_0001` **99/192 (51.6%)**; 각각 JSON 성공식 및 NPZ 배열은 **192/192** 일치. 이들은 학습 batch이지 홀드아웃 성능으로 해석하지 않는다. R1의 9014/10014 후속 평가와 15014 final 비교가 없어 목표 ≥75% 판정은 미완료.
+- GPU/Isaac은 Codex가 재실행하지 않았다. 다음: Claude가 종료 원인을 확인하거나 별도 새 output 경로로 R1을 다시 실행하고, `eval_0005` 이후 JSON/NPZ를 공유하면 Codex가 같은 방식으로 독립 재집계한다. 원본 데이터/checkpoint는 변경하지 않음.
