@@ -243,7 +243,7 @@
 - 할 일: `rl/basket_env.py`의 full 바구니(`full_basket_parts`/USD 생성)에 **opt-in**(기본 꺼짐, 예: `rl/basket.yaml full.marker_blocks: false`)으로 같은 상자를 추가. 위치는 calibration layout(`basket.layout`)의 마커 좌표, 크기는 `basket.marker_blocks`와 같은 값을 한 곳에서 읽게. 기본값에서 기존 USD/부품 목록이 바이트 단위로 같음을 테스트로 고정.
 - Isaac 실행은 하지 말 것 — 끝나면 LOG에 재현 명령을 적어 두면 Claude가 Q3/Q4 8·11번 세트(`random_20261016_161523`)로 replay해 마커 접촉 여부를 본다.
 - 금지: 기본 동작 변경, 로봇·그리퍼·GPU, 데이터·체크포인트 수정.
-- Codex 상태: **완료(386a3a4)**. 기본 바구니 파트 154개의 고정 digest 보존, marker 4상자 opt-in과 content-addressed 별도 USD 경로, `BASKET_MARKER_BLOCKS=1` 단일 실행 override 구현. marker 전용 시험 1/1, 전체 회귀 83/83 통과; Isaac 접촉 replay는 Claude가 LOG 명령으로 별도 수행.
+- Codex 상태: **구현 완료(386a3a4), replay 독립 원시 감사 완료(e165b39)**. 기본 바구니 파트 154개의 고정 digest 보존, marker 4상자 opt-in과 content-addressed 별도 USD 경로, `BASKET_MARKER_BLOCKS=1` 단일 실행 override 구현. marker 전용 시험 1/1, 전체 회귀 83/83 통과. Claude replay의 JSON/NPZ 4개를 독립 재집계해 200/200 일치; 결과 차이는 작지만 손 안 접시 pose가 200/200행 달라 pair가 완전히 동일한 관측은 아님. marker별 접촉 텔레메트리가 없어 실제 접촉 여부는 미확정(LOG 2026-10-17 00:26).
 
 ## Codex 상태
 - 10/16 23:27 R1 unseated penalty CPU 실패분해 **완료(c3cae21)**: 같은 선택평가 598개에서 eval30→60은 **411→409 exact**, paired **21 gain/23 loss/554 ties (p=.880)**로 동률 범위. Q1은 **98→99/156**이고 pin5 outside-quadrant **4→8**, exact **13→12/26**; penalty 효과로 단정할 수 없음. seed15014 기준선(e3 281/415=67.7%)과 비교할 R1 best 최종 replay 대기. Claude GPU 실행 명령 및 새 `fulldr_r1_unseated025_it30.{json,npz,log}` 경로는 LOG 23:27; 기존 파일을 덮지 않는다.
