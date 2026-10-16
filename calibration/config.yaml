@@ -47,7 +47,8 @@ basket:                            # dish basket pose from 4 ArUco markers on it
   marker_size_m: 0.050             # (10/14 16:xx 보스) 5 x 5 cm (was 0.098)
   detect_upsample: 2                # (10/14) 2x image + sub-pixel corners for the small markers: 40/40 frames each, xy jitter 0.2-3.4 mm
   n_frames: 20
-  layout: data/basket/basket_layout_5cm_20261014_160915.json   # (10/14 16:09) 5 cm markers ID 2-5 in the basket frame of 14:45 (basket not moved): 3 runs fit 0.1-0.3 mm, pose repeat 0.1 mm / 0.02 deg (was basket_layout_20261012_133410.json, 9.8 cm markers, fit 7-8 mm)
+  layout: data/basket/basket_layout_5cm_20261016_140249.json   # (10/16 14:02 보스) markers re-mounted on flat plates + basket moved: frame from wrist tine fit, fixed calib 20261016_134701_fromwrist_drop3
+  # was: layout: data/basket/basket_layout_5cm_20261014_160915.json   # (10/14 16:09) 5 cm markers ID 2-5 in the basket frame of 14:45 (basket not moved): 3 runs fit 0.1-0.3 mm, pose repeat 0.1 mm / 0.02 deg (was basket_layout_20261012_133410.json, 9.8 cm markers, fit 7-8 mm)
 
 capture:                           # one sample = n_frames marker poses averaged while the robot is still
   n_frames: 20
