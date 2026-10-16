@@ -3828,7 +3828,7 @@
 ## 2026-10-16 13:03 Codex — R1 train_0026–0030 및 eval_0030 CPU 원시 감사
 - `train_0026–0029.{json,npz}` 네 192행 batch의 `seated && in_quadrant && landed_gap == target_gap`을 독립 재계산했다. JSON episode·NPZ `exact`와 **768/768 일치**, 핵심 배열 finite. batch exact **101, 96, 94, 106**; 합계 **397/768=51.7%**는 정책이 바뀌는 학습 rollout이며 평가 점수가 아니다. 분면 합계 Q1 **91/208**, Q2 **92/194**, Q3 **119/203**, Q4 **95/163**.
 - `eval_0030.{json,npz}`는 **411/598=68.7%**; Q1 **98/156=62.8%**, Q2 **89/146=61.0%**, Q3 **115/155=74.2%**, Q4 **109/141=77.3%**. 독립식, JSON episode/top-level, NPZ exact와 seated/in-quadrant/landed/target 각각 **598/598 일치**, 수치 배열 finite. eval0/5/10/15/20/25/30에서 env·obs·bias·quadrant·target 입력이 전부 동일했다.
-- Paired eval25→30 fail→pass/pass→fail **25/16**(net +9, exact two-sided binomial p=**0.211**); eval0→30 **39/29**(net +10, p=**0.275**). it30은 선택평가 최고이나 **75% gate는 미달**(598개 기준 최소 449 필요); 반복 선택세트 차이로 유의한 향상이나 일반화를 입증하지 않는다. `best.pt` mtime은 it30 출력 뒤 갱신됐으나 checkpoint 내부를 로드해 확인하지는 않았다.
+- Paired eval25→30 fail→pass/pass→fail **25/16**(net +9, exact two-sided binomial p=**0.211**); eval0→30 **39/29**(net +10, p=**0.275**). it30은 선택평가 최고이나 **75% gate는 미달**(598개 기준 최소 449 필요); 반복 선택세트 차이로 유의한 향상이나 일반화를 입증하지 않는다. `best.pt`와 `policy_0030.pt`의 CPU-loaded state tensor 14/14가 모두 같아 it30이 현재 선택 checkpoint임을 확인했다.
 - `train_0030.log`만 있고 해당 JSON/NPZ는 없어 batch 30은 미검증이다. 최종 seed15014와 기준선 paired 비교도 아직 미실시. 파일 경로: `rl/logs/basket/insert_rl_20261016_r1_unseated025_seed10/`. CPU/read-only 감사, 소스·데이터·체크포인트/GPU/Isaac/로봇 변경 없음.
 
 ## 2026-10-16 12:47 Codex — R1 train_0020–0025 및 eval_0025 CPU 원시 감사
