@@ -61,3 +61,4 @@ full:                                       # whole basket (10/8 17:xx), basket 
                                             # to the rail height -> x +0.027..+0.037 (the insert-based guess 0.0 put Q2 tines over Q3, 보스)
   slot_axis_from_basket: true               # (10/8 19:xx) slot axis n = basket x (rows), not the taught-normal yaw
   pin_r: 0.00100                            # 3.5 mm measured; 2 mm in sim = compliance proxy (10/8: real plate went in, rigid 3.5 mm pins leave <3 mm play)
+  marker_blocks: false                      # (10/17 Codex AS) opt-in calibration marker plates/bolts as collision boxes

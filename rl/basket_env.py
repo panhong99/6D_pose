@@ -61,10 +61,73 @@ def basket_nominal_T():
     return T
 
 
-def full_basket_parts():
+def marker_blocks_enabled():
+    """Read the opt-in from basket.yaml; BASKET_MARKER_BLOCKS can override it for one process."""
+    value = os.environ.get("BASKET_MARKER_BLOCKS")
+    if value is None:
+        return bool(B["full"].get("marker_blocks", False))
+    value = value.strip().lower()
+    if value not in {"1", "0", "true", "false", "yes", "no", "on", "off"}:
+        raise ValueError("BASKET_MARKER_BLOCKS must be one of 1/0, true/false, yes/no, on/off")
+    return value in {"1", "true", "yes", "on"}
+
+
+def _parts_digest(parts):
+    """Stable digest of the generated geometry, used to avoid overwriting an existing marker USD."""
+    import hashlib
+    digest = hashlib.sha256()
+    for part in parts:
+        digest.update(part[0].encode() + b"\0")
+        for value in part[1:]:
+            array = np.asarray(value, dtype="<f8")
+            digest.update(np.asarray(array.shape, dtype="<i8").tobytes())
+            digest.update(array.tobytes())
+    return digest.hexdigest()
+
+
+def full_basket_usd_path(include_marker_blocks=None):
+    """Use the historical asset path by default; marker geometry gets a content-addressed new asset."""
+    enabled = marker_blocks_enabled() if include_marker_blocks is None else bool(include_marker_blocks)
+    if not enabled:
+        return RL_DIR / "assets" / "basket_full.usda"
+    digest = _parts_digest(full_basket_parts(include_marker_blocks=True))[:16]
+    return RL_DIR / "assets" / f"basket_full_marker_blocks_{digest}.usda"
+
+
+def _marker_block_parts():
+    """Calibration marker plates/bolts in the basket frame, using calibration config as the sole size source."""
+    cal_dir = RL_DIR.parent / "calibration"
+    cfg = yaml.safe_load((cal_dir / "config.yaml").read_text())
+    basket_cfg = cfg["basket"]
+    block = basket_cfg["marker_blocks"]
+    layout_path = (cal_dir / basket_cfg["layout"]).resolve()
+    layout = yaml.safe_load(layout_path.read_text())
+    size = float(block["size_m"])
+    height = float(block["height_m"])
+    above = float(block["above_m"])
+    if not (np.isfinite(size) and np.isfinite(height) and np.isfinite(above) and size > 0 and height > 0):
+        raise ValueError(f"invalid basket.marker_blocks dimensions in {cal_dir / 'config.yaml'}")
+
+    parts = []
+    marker_ids = list(dict.fromkeys(int(v) for v in basket_cfg["marker_ids"].values()))
+    for marker_id in marker_ids:
+        key = str(marker_id)
+        if key not in layout:
+            raise ValueError(f"marker {marker_id} is missing from basket layout {layout_path}")
+        marker = np.asarray(layout[key], dtype=float)
+        if marker.shape != (3,) or not np.isfinite(marker).all():
+            raise ValueError(f"marker {marker_id} has invalid basket-frame position in {layout_path}")
+        centre = marker.copy()
+        centre[2] += above - height / 2
+        parts.append(("box", centre, np.array([size, size, height], dtype=float)))
+    return parts
+
+
+def full_basket_parts(include_marker_blocks=None):
     """Whole basket in the basket frame as simple shapes: ('cyl', p0, p1, r) and ('box', centre, size).
     Pins of both plate pairs line up along x (pitch 2 cm, phased so slot 1 sits between two of them) and lean like the
-    taught plate; floor = wire grid; walls = vertical rods; gray side rails; blue handle."""
+    taught plate; floor = wire grid; walls = vertical rods; gray side rails; blue handle. Calibration marker blocks are
+    opt-in and use their measured basket-frame locations and dimensions from calibration/config.yaml."""
     f = B["full"]
     hx, hy = f["size_xy"][0] / 2, f["size_xy"][1] / 2
     z0, r = f["floor_z"], f["rod_r"]
@@ -118,6 +181,9 @@ def full_basket_parts():
                     parts.append(("cyl", base, base + ax_ * h, f["pin_r"]))
                 if "rail_z" in p:                                            # (10/12 Human) the comb rail at 4.9 cm
                     parts.append(("cyl", np.array([hx_.min(), yc + dy, z0 + p["rail_z"]]), np.array([hx_.max(), yc + dy, z0 + p["rail_z"]]), r))
+    marker_blocks = marker_blocks_enabled() if include_marker_blocks is None else bool(include_marker_blocks)
+    if marker_blocks:
+        parts.extend(_marker_block_parts())
     return parts
 
 
@@ -214,9 +280,13 @@ def make_basket_cfg(num_envs, viewer=False, full=True):
     from isaaclab.assets import RigidObjectCfg
     from isaaclab.managers import EventTermCfg as EventTerm
     import plate_env as pe
-    usd = RL_DIR / "assets" / ("basket_full.usda" if full else "basket_slot1.usda")
+    marker_blocks = marker_blocks_enabled() if full else False
+    usd = full_basket_usd_path(marker_blocks) if full else RL_DIR / "assets" / "basket_slot1.usda"
     if full:
-        build_full_basket_usd(usd)
+        # The legacy no-marker path is unchanged. Marker geometry uses a new
+        # content-addressed file and reuses it rather than overwriting an asset.
+        if not marker_blocks or not usd.exists():
+            build_full_basket_usd(usd)
         Tn = basket_nominal_T()
         pos, yaw = Tn[:3, 3], math.radians(B["full"]["pose_base"][3])
     else:

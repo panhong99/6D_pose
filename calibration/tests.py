@@ -872,9 +872,11 @@ class SlotTargetGenerationTests(unittest.TestCase):
             # tie difference between the serialized review JSON and refit.
             generated_cmp = json.loads(json.dumps(generated))
             reference_cmp = json.loads(json.dumps(reference))
-            # Implementation hashes are provenance only. Planner/geometry code
-            # can change while the reviewed input data and target table remain
-            # identical; data-source hashes below still detect stale inputs.
+            # Source hashes are provenance only. Planner code can change, and
+            # the opt-in marker-block flag changes basket.yaml without changing
+            # the default geometry. The target table below still checks output.
+            generated_cmp['sources']['basket_yaml'].pop('sha256', None)
+            reference_cmp['sources']['basket_yaml'].pop('sha256', None)
             generated_cmp['sources']['pin_gap_implementation'].pop('sha256', None)
             reference_cmp['sources']['pin_gap_implementation'].pop('sha256', None)
             generated_cmp['sources']['basket_geometry'].pop('sha256', None)
@@ -1343,3 +1345,62 @@ class BasketAlignmentTests(unittest.TestCase):
         self.assertTrue(torch.allclose(x[1], torch.full((2,), 0.005), atol=1e-6))
         self.assertTrue(bool(ok[0].all()) and bool(ok[1].all()))
         self.assertFalse(bool(ok[2, 0]))                    # rim 20 cm across does not reach the far row
+
+
+class FullBasketMarkerBlockTests(unittest.TestCase):
+    """(10/17) opt-in Isaac collision boxes must leave the old basket geometry untouched by default."""
+
+    @staticmethod
+    def module():
+        import importlib.util
+        path = Path(__file__).resolve().parent.parent / 'rl' / 'basket_env.py'
+        spec = importlib.util.spec_from_file_location('basket_env_marker_test', str(path))
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    @staticmethod
+    def geometry_digest(parts):
+        import hashlib
+        digest = hashlib.sha256()
+        for part in parts:
+            digest.update(part[0].encode() + b'\0')
+            for value in part[1:]:
+                array = np.asarray(value, dtype='<f8')
+                digest.update(np.asarray(array.shape, dtype='<i8').tobytes())
+                digest.update(array.tobytes())
+        return digest.hexdigest()
+
+    def test_marker_blocks_are_opt_in_and_default_geometry_is_unchanged(self):
+        module = self.module()
+        with patch.dict(module.os.environ, {'BASKET_MARKER_BLOCKS': '0'}):
+            self.assertFalse(module.marker_blocks_enabled())
+            default = module.full_basket_parts()
+        self.assertEqual(len(default), 154)
+        self.assertEqual(self.geometry_digest(default), '7d50ab1b03f4081e47d7133023c36fb8a20377a2776c3abbaa9627e964b0a868')
+        self.assertEqual(module.full_basket_usd_path(False), module.RL_DIR / 'assets' / 'basket_full.usda')
+
+        enabled = module.full_basket_parts(include_marker_blocks=True)
+        self.assertEqual(len(enabled), len(default) + 4)
+        self.assertEqual(self.geometry_digest(enabled[:len(default)]), self.geometry_digest(default))
+        with patch.dict(module.os.environ, {'BASKET_MARKER_BLOCKS': '1'}):
+            self.assertTrue(module.marker_blocks_enabled())
+            enabled_from_env = module.full_basket_parts()
+            self.assertEqual(self.geometry_digest(enabled_from_env), self.geometry_digest(enabled))
+            marker_usd = module.full_basket_usd_path()
+        self.assertNotEqual(marker_usd, module.RL_DIR / 'assets' / 'basket_full.usda')
+        self.assertIn('basket_full_marker_blocks_', marker_usd.name)
+        added = enabled[len(default):]
+        self.assertTrue(all(part[0] == 'box' for part in added))
+        cfg = module.yaml.safe_load((module.RL_DIR.parent / 'calibration' / 'config.yaml').read_text())
+        layout_path = module.RL_DIR.parent / 'calibration' / cfg['basket']['layout']
+        layout = module.yaml.safe_load(layout_path.read_text())
+        marker_cfg = cfg['basket']['marker_blocks']
+        ids = list(dict.fromkeys(int(v) for v in cfg['basket']['marker_ids'].values()))
+        self.assertEqual(len(added), len(ids))
+        for part, marker_id in zip(added, ids):
+            _, centre, size = part
+            marker = np.asarray(layout[str(marker_id)], dtype=float)
+            expected_centre = marker + [0.0, 0.0, marker_cfg['above_m'] - marker_cfg['height_m'] / 2]
+            np.testing.assert_allclose(centre, expected_centre, atol=0, rtol=0)
+            np.testing.assert_allclose(size, [marker_cfg['size_m'], marker_cfg['size_m'], marker_cfg['height_m']], atol=0, rtol=0)

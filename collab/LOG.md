@@ -4401,3 +4401,17 @@
   ```
 - 판정은 기준 E3 281/415와 같은 415개에서 R1이 **≥312/415 (75%)**인지, 분면별·paired gain/loss가 어떤지로 한다. 결과 JSON/NPZ 도착 전에는 R1 final 비교 미완료. 이번 작업은 원자료 read-only CPU 분석뿐: Isaac/GPU, 로봇/그리퍼, source/config/data/checkpoint 수정 또는 실행 없음.
 - 기록 커밋 전 회귀 gate `bash calibration/run.sh tests`: **82/82 통과, 34.015 s, exit 0**. 종료 시 unclosed UDP socket `ResourceWarning`은 남았으나 테스트 실패는 없음. 첫 중복 실행은 Claude가 `tests.py` 편집·동일 시험 중인 것을 확인하고 내가 시작한 세션에만 Ctrl-C를 보내 중단했으며, 결과로 쓰지 않았다. Claude 시험 종료 후 재실행한 위 82/82만 유효 결과다.
+
+## 2026-10-17 00:xx Codex — AS: Isaac full basket 마커 블록 opt-in
+- `rl/basket.yaml full.marker_blocks: false`를 기본값으로 추가했다. 기본 `full_basket_parts()`의 154개 파트 SHA-256 geometry digest는 변경 전 기준 **`7d50ab1b03f4081e47d7133023c36fb8a20377a2776c3abbaa9627e964b0a868`**와 일치한다. 명시 인자 또는 프로세스 단위 `BASKET_MARKER_BLOCKS=1`로 켜면, marker ID와 위치는 `calibration/config.yaml`의 ID 및 `basket.layout`에서 읽고, 크기 **140×140×100 mm**, 상단은 marker z보다 **10 mm 위**, 아래는 **90 mm 아래**가 되도록 각 마커당 box 하나(총 4개)를 추가한다. 크기 값의 유일한 원천은 `calibration/config.yaml: basket.marker_blocks`다.
+- opt-in USD는 기존 `basket_full.usda`를 덮지 않도록 파트 geometry digest 기반 새 경로(`basket_full_marker_blocks_<digest>.usda`)를 사용하며, 동일 geometry 파일이 있으면 다시 만들지 않고 재사용한다. 기본 off에서는 기존 asset 경로·생성 흐름을 유지한다.
+- 재생 재현 명령(Claude 전용; Codex는 Isaac/GPU를 실행하지 않음). 200개 Q3/Q4 pin 8·11 plan은 기존 `rl/logs/basket/insert_final_eval_q34_811/plans.jsonl`이며, 기존 결과를 덮지 않도록 새 출력명을 쓴다. 명령은 실행 전에 세 출력 경로가 비어 있는지 확인한다.
+  ```bash
+  set -euo pipefail
+  D=rl/logs/basket/insert_final_eval_q34_811
+  O=marker_blocks_e3_20261017
+  test ! -e "$D/$O.json" && test ! -e "$D/$O.npz" && test ! -e "$D/$O.log"
+  BASKET_MARKER_BLOCKS=1 bash rl/basket/run_quadrant_final_20261015.sh "$D/plans.jsonl" "$D/$O.json" --per_run 1 --seed 777 --cl_policy_det --cl_policy_out "$D/$O.npz" --cl_noise_fp rl/logs/basket/fp_noise_model_20261015.json --cl_policy "$D/e3_best.pt" --cl_dr --cl_dr_full --cl_policy_noseen --cl_policy_canon > "$D/$O.log" 2>&1
+  ```
+- 검증: marker 전용 회귀 **1/1 통과**; 최종 전체 `bash calibration/run.sh tests` **83/83 통과, 34.179 s, exit 0**. 종료 때 기존 unclosed UDP socket `ResourceWarning` 한 건 출력. 새 `basket.yaml` flag로 바뀐 source provenance hash 때문에 최초 전체 run에서 기존 reviewed-table 테스트가 1건 실패해, 이 테스트는 basket YAML hash를 provenance로만 취급하고 실제 target table 및 별도 fixed geometry digest를 비교하도록 정리한 뒤 통과했다.
+- 한계/상태: Isaac 접촉 replay는 아직 미실행이며 마커 plate·볼트 assembly를 하나의 직육면체로 근사한 충돌 모델이다. 따라서 실물 충돌을 완전히 모델링했다거나 marker collision을 sim에서 재현했다고 주장하지 않는다. 로봇·그리퍼·GPU 실행 없음; checkpoint·기존 data/asset은 수정하지 않았다. `fulldr_r1_unseated025_it30` 산출물도 아직 도착하지 않아 R1 최종 비교는 별도 대기 중.
