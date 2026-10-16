@@ -3893,3 +3893,10 @@
 - train36–43 합계 **832/1,536=54.2%**; Q1 **209/411**, Q2 **196/444**, Q3 **222/348**, Q4 **205/333**. 정책별 rollout을 합친 기술 집계로 held-out/최종 성공률은 아니다. 최신 `eval_0045` JSON/NPZ는 아직 없고 seed15014 paired 비교 전.
 - CPU/read-only 감사, Isaac/GPU·로봇/그리퍼·source/data/checkpoint 쓰기 없음.
 - 승인 경로 전체 회귀시험 `bash calibration/run.sh tests`: **79/79 통과(35.333 s, exit 0)**. 일반 sandbox는 pipeline import 시 UDP socket bind 권한이 없어 실패하며, 실행 후 socket `ResourceWarning` 1건.
+
+## 2026-10-16 13:59 Codex — R1 train_0044 원시 재검증 (CPU/read-only)
+- `rl/logs/basket/insert_rl_20261016_r1_unseated025_seed10/train_0044.{json,npz}` 192행 독립 성공식 결과 **111/192=57.8%**. Q1 **31/46**, Q2 **34/62**, Q3 **29/54**, Q4 **17/30**.
+- JSON row/top-level 및 NPZ 판정과 seated/in-quadrant/landed/target/quadrant 교차검증은 **192/192 일치**; obs/action/logp/bias/low 유한값.
+- train36–44 기술 합계 **943/1,728=54.6%**; Q1 **240/457**, Q2 **230/506**, Q3 **251/402**, Q4 **222/363**. 여러 정책 시점의 PPO rollout이므로 holdout으로 해석하지 않는다. `eval_0045.log`/`policy_0045.pt` 생성은 확인했지만 eval45 JSON/NPZ는 미생성이라 평가 수치는 기록하지 않는다. seed15014 최종 비교도 아직 미확인.
+- CPU/read-only 감사만 수행. Isaac/GPU·실기 명령·source/data/checkpoint 변경 없음.
+- 문서 갱신 상태 전체 회귀시험 승인 실행: **79/79 통과(35.165 s, exit 0)**. 일반 sandbox에서는 UDP bind 권한 제한으로 실패; 종료 뒤 socket `ResourceWarning` 1건.
