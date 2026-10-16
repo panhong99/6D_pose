@@ -3845,3 +3845,9 @@
 ## 2026-10-16 13:10 Claude — R1 eval it25·it30
 - 선택 평가(598): it25 0.672 → it30 **0.687** (Q1 .63/Q2 .61/Q3 .74/Q4 .77). it0 0.671 대비 +1.6%p, 처음으로 best 갱신 가능 수준이나 잡음 범위 경계. 60회차까지 계속(약 1.5 h). 끝나면 best ckpt를 15014로 e3_best와 짝 비교.
 - 별건(보스 요청): 흰 접시 추가. YCB 029 모양에 흰 텍스처만 입힌 사본 `demo_data/029_plate_white/tsdf/`(obj·mtl은 원본 심볼릭 링크)로 YOLOE "white plate" + FP 추적 확인(점수 83~86, 기준 ~25). 고정카메라가 한때 위로 ~20° 들려 있었고 보스가 되돌림 — 실기 전 바구니 마커로 캘리브 일치 확인 필요.
+## 2026-10-16 13:26 Codex — R1 eval_0035 및 train_0032–0035 원시 재검증 (CPU/read-only)
+- `rl/logs/basket/insert_rl_20261016_r1_unseated025_seed10/eval_0035.{json,npz}`에서 독립 성공식 `seated && in_quadrant && landed_gap == target_gap`은 **402/598=67.2%**. Q1 **97/156**, Q2 **88/146**, Q3 **112/155**, Q4 **105/141**. JSON·NPZ·독립식의 exact/seated/in-quadrant/landed/target mask **598/598 일치**, 수치 입력 finite. eval0–35의 names/target/obs/bias/quadrant 배열은 동일한 598개 세트다.
+- eval30 **411/598=68.7%** 대비 eval35 paired fail→pass/pass→fail **37/36**(net +1, exact two-sided p=**1.000**). eval35는 9개 체크포인트 중 최고가 아니며 R1의 현재 best it30을 바꾸지 않는다. 75% 목표(598개 기준 449개)에 미달; 같은 반복 선택평가만으로 일반화·인과적 개선을 주장하지 않는다.
+- `train_0032–0035.{json,npz}` 각 192행도 독립식과 JSON/NPZ mask를 모두 대조해 **768/768 일치**, obs/action/logp/bias/low finite. exact는 **90, 103, 110, 87**, 합계 **390/768=50.8%**; Q1 **95/208**, Q2 **86/209**, Q3 **114/191**, Q4 **95/160**. 학습 도중 policy가 바뀌는 rollout 집계이므로 평가 지표가 아니다.
+- 감사 시점 `train_0036.log`는 생성됐으나 eval40 파일은 아직 없었다. 보류 중인 R1 설정은 그대로 두고 완결된 다음 평가 산출물을 CPU/read-only로 감사한다. CPU 데이터 분석만 수행; Isaac/GPU, 로봇/그리퍼 명령, source/data/checkpoint 쓰기 없음.
+- 문서 갱신 뒤 `bash calibration/run.sh tests`는 일반 sandbox에서 pipeline import의 UDP socket bind 권한 오류로 시작 실패. 동일한 전체 명령을 승인된 escalation으로 재실행해 **79/79 통과(39.428 s)**; 종료 코드 0. Python `ResourceWarning` unclosed socket 1건은 시험 성공 후 표시됨.
