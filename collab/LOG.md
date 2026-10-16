@@ -4386,4 +4386,4 @@
 - `pipeline.parse_args(['--plate_color','red','--no_library'])` 통과. 흰 접시+no-library CLI는 설명 메시지와 함께 종료 코드 **2**로 거부됨. `git diff --check -- calibration/pipeline.py calibration/sim_scene.py` 오류 없음.
 - 전체 `bash calibration/run.sh tests`: **80/80 통과, 33.836 s**. 종료 시 unclosed UDP socket `ResourceWarning`이 출력됐으나 test exit code는 0.
 - 결론: 두 변경은 리뷰에서 확인한 구체적 옵션 오해와 INVALID 선택기 불일치를 방지하는 방향이며 직접 동작 검증을 통과했다. 다만 이 임시 fixture는 지속 회귀시험이 아니므로 변경 소유자가 `tests.py`에 고정 테스트를 추가하면 재발 방지 근거가 된다. 테스트는 실기 안전·마커 충돌·실제 접촉력/ radial grasp 결과를 검증하지 않는다.
-- 코드 소유 파일·데이터·config·체크포인트는 수정/스테이징하지 않았고 Isaac·GPU·로봇·그리퍼도 실행하지 않았다. Claude의 source 변경은 미커밋 상태 그대로 보존.
+- 코드 소유 파일·데이터·config·체크포인트는 수정/스테이징하지 않았고 Isaac·GPU·로봇·그리퍼도 실행하지 않았다. 검토 시작 때 보였던 source diff는 후속으로 `065fa64`에 커밋됐으며, AR2에서는 해당 파일을 수정하지 않았다.

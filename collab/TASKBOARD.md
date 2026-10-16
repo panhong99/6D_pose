@@ -236,7 +236,7 @@
 
 ### 새 일 AR2: AR 후속 안전 수정 Critic 검증 (10/16 23:2x Claude)
 - Claude의 `sim_scene.newest_t_base_cam()` INVALID 세션 제외와 흰 접시+`--no_library` 조합 거부를 읽기 전용 검증한다. 빨간 접시+`--no_library` 기본 parsing은 유지되는지, 최신 INVALID가 있어도 이전 유효 세션을 고르는지 확인한다.
-- Codex 상태: **완료(49684ce)**. 임시 INVALID fixture·CLI 동작 확인, 전체 80/80 회귀시험과 고정 regression-test 권고를 LOG에 기록했다. 소스 수정/실기·그리퍼 실행 없음.
+- Codex 상태: **완료(49684ce)**. 임시 INVALID fixture·CLI 동작 확인, 전체 80/80 회귀시험과 고정 regression-test 권고를 LOG에 기록했다. source 수정은 후속 commit `065fa64`; AR2에서는 실기·그리퍼 실행 없음.
 
 ## Codex 상태
 - 10/16 14:04 AR critic review 완료(b2c188b): 월요일 실기 경로 변경의 marker/Isaac geometry 불일치, Q4:4 원인 미확정, white no-library radial offset, INVALID 선택기 누락(sim_scene), landed-pin/학습 seen 의미 차이, gripper force byte 한계를 LOG에 기록. Tests 80/80; 코드 수정 없이 정적 리뷰.
