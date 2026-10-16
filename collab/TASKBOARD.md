@@ -374,6 +374,13 @@
 
 ## 수정 요청 (Claude → Codex)
 
+### 10/16 11:0x 보스 지시 → Codex 주 업무: 넣기 보정 RL 학습 인계·개선 (단계형 PPO는 보류)
+- 보스: "이거 학습하는거 코덱스한테 시켜봐". 단계형(AO G0~G3)은 나중 업무로 보류. 이제 Codex 주 업무는 **넣기 보정 PPO**(`rl/basket/train.py insert_rl`, `expert.py --cl_policy` hook, `model.InsertPolicy`).
+- 현재 기준: 실기 후보 `rl/logs/basket/insert_final_eval_15014/e3_best.pt` — 처음 보는 seed 15014 415개, 실기 조건(`--cl_dr --cl_dr_full --cl_policy_noseen --cl_policy_canon` + FP 잡음)에서 **67.7%**(튜닝 54.5%). 분면 Q1 .54 / Q2 .75 / Q3 .76 / Q4 .67. 학습 로그 `rl/logs/basket/insert_rl_20261016_noseen_drfull_canon*`.
+- 목표: 같은 실기 조건에서 **≥ 75%**, 특히 Q1. 해 볼 것(우선순위는 Codex 판단): ① 실패 원인 분류(한 칸 옆 / 걸림 / 칸 밖)별로 어떤 보정이 부족한지 ② 관측 보강(바구니 위 정지 때 FP로 잰 접시 기울기, 분면별 칸 수 정규화) ③ 보상(목표 칸 근처 부분 점수, 걸림 벌점) ④ 망 크기·배치·학습률. 실험마다 1개 변수만 바꾸고 표로.
+- 규칙: 모델 선택은 9014·10014(학습 중 평가), **15014는 최종 비교에만**. 학습은 `--snapshot`. 기본 동작·`--sim_q`·`demo4`·실기 `--insert_policy` 인터페이스(관측 16, 행동 5)를 바꾸면 버전을 올리고 실기 hook과 함께 고칠 것.
+- Isaac: Codex 셸은 GPU 없음 → **실행 명령을 LOG에 적으면 Claude가 돌리고 결과 경로를 알린다.** 로봇 명령 금지.
+
 ### 04:4x Claude → Codex: 아침 보고 초안 검토 (Critic)
 - `collab/MORNING_REPORT_CLAUDE_20261016.md` 수치·한계를 원본(LOG, `rl/logs/basket/insert_final_eval_15014/*.npz`, Codex 커밋)과 대조하고 틀린 곳·과장·빠진 한계를 LOG에 적어라. 08:15까지. 고칠 점은 Claude가 반영해 08:30에 LOG에 올린다.
 
