@@ -1224,7 +1224,11 @@ def _random_one(job):
     grasp = {n: gl[n]['waypoints_deg'] for n in ('to_grasp', 'lift')}
     H, tool = hand_plate(grasp['to_grasp'][-1], [px, py, G['plate_z']], tilt_deg=G.get('hand_tilt'))   # this grasp's plate in the hand
     model_qd = robot_quadrants(Tbb)[qd]
-    gap = int(gap * len(basket_gaps()[model_qd]))                # 6 / 8 / 12 / 12 gaps (10/14 measured basket)
+    if G.get('pins'):                                        # (10/16 보스) fixed target pins per robot quadrant
+        pins_q = G['pins'][qd]
+        gap = pin_gap(Tbb, model_qd, pins_q[min(int(gap * len(pins_q)), len(pins_q) - 1)])
+    else:
+        gap = int(gap * len(basket_gaps()[model_qd]))            # 6 / 8 / 12 / 12 gaps (10/14 measured basket)
     row['gap'] = gap + 1
     try:
         with contextlib.redirect_stdout(io.StringIO()):
@@ -1257,7 +1261,8 @@ def random_plans(a):
     run = sorted(p_.parent for p_ in (DATA / 'real_pipeline').glob('*/realplan_req.json'))[-1]
     if a.sim:                                                # (10/14) plans for the Isaac replay: no real-robot x trim,
         _RANDOM.update(plan_kw=dict(x_shift_m=0.0, centre_h=0.165), hand_tilt=(-12.9, 4.9))   # plate centre 16.5 cm, sim in-hand sag
-    _RANDOM.update(far_flip=a.far_flip, quadrants=a.only_quadrants)
+    _RANDOM.update(far_flip=a.far_flip, quadrants=a.only_quadrants,
+                   pins={qd: [int(v) for v in ps.split(',')] for qd, ps in (t.split(':') for t in a.pins)} if a.pins else None)
     _RANDOM.update(out=out, plate_z=float(json.loads((run / 'realplan_req.json').read_text())['plate_root_fp'][2]), q={**C['plate_rl'], **C['plate_ik_bc']}, basket_z=a.basket_z, phi_step=a.phi_step,
                    Tbc=np.array(__import__('calib_core').load_json(__import__('calib_core').latest_t_base_cam())['T_base_cam']))
     jobs = []
@@ -1349,6 +1354,8 @@ if __name__ == '__main__':
     p.add_argument('--sim_q', action='store_true', help='quadrant_plans: apply config basket_quadrant_sim (Isaac per-quadrant lean/aim/wrist flip) - preview only')
     p.add_argument('--far_flip', action='store_true', help='random_plans: Q1/Q2 try the plate facing -x first (wrist flipped, like 보스 taught Q2)')
     p.add_argument('--only_quadrants', nargs='+', default=None, help='random_plans: sample only these (robot) quadrants')
+    p.add_argument('--pins', nargs='+', default=None, help='random_plans: (10/16) fixed pins per robot quadrant, e.g. Q3:4,9 Q4:4,9 '
+                   '(pin 1 = farthest from the robot); use with --only_quadrants')
     p.add_argument('--sim', action='store_true', help='random_plans: plans for the Isaac replay (no x trim, centre 0.165, sim sag)')
     p.add_argument('--yaw_range', type=float, default=15.0, help='random_plans: basket yaw uniform in +-this [deg]')
     p.add_argument('--seed', type=int, default=0)
