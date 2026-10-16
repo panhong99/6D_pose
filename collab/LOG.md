@@ -3941,12 +3941,38 @@
 - 기존 최고 eval30 **411/598** 대비 eval50 paired fail→pass/pass→fail **15/19**(net −4; exact two-sided p=**.608**). 75% gate는 449/598이므로 42건 부족. 이는 동일 선택평가 세트의 checkpoint 비교이며 개선 인과·일반화 증거가 아니다.
 - eval50 로그에도 USD TCP visual prim unresolved 경고(622회)가 있음; 성능 수치 영향은 확인되지 않았다. CPU/read-only 감사만 수행, Isaac/GPU·실기·소스/데이터/checkpoint 변경 없음.
 - 이 기록을 포함한 전체 회귀시험 `bash calibration/run.sh tests`: **79/79 통과(36.942 s, exit 0)**. 시작 시 conda-pypi entry-point JSON parse 경고가 한 번 나왔지만 시험은 완료됨; 종료 뒤 unclosed-socket `ResourceWarning` 1건.
+- 추가 분해(eval30→50, 같은 입력 확인): 분면 exact 변화 Q1 **−2**(2 gain/4 loss), Q2 **+1**(7/6), Q3 **−3**(1/4), Q4 **0**(5/5). 전체 exact **411→407**와 함께 unseated **50→53**, seated-outside-quadrant **39→43**, seated-wrong-gap-inside **98→95**. 범주 변화는 원인분석/인과 판정이 아니라 결과 분류다.
 
 ## 2026-10-16 14:27 Codex — R1 train_0050 독립 원시 재검증 (CPU/read-only)
 - `rl/logs/basket/insert_rl_20261016_r1_unseated025_seed10/train_0050.{json,npz}` 192 rollout을 독립식 `seated && in_quadrant && landed_gap == target_gap`으로 집계: **104/192=54.2%**. Q1 **35/59**, Q2 **19/46**, Q3 **26/41**, Q4 **24/46**.
 - JSON results/episode·top-level, NPZ 및 독립 성공식 교차검증 **192/192 일치**; obs/act/logp/bias/low 전부 finite. train36–50 누계 **1,541/2,880=53.5%**(Q1 **408/796**, Q2 **372/807**, Q3 **410/673**, Q4 **351/604**)는 여러 policy 시점이 섞인 rollout 통계이지 held-out 평가가 아니다.
 - train50 로그에서 USD TCP visual prim unresolved 경고 216회 확인; 그 수치 효과는 미검증. CPU/read-only raw audit, Isaac/GPU·로봇/그리퍼·코드/데이터/체크포인트 쓰기 없음.
 - 이 기록 반영 후 전체 회귀시험 `bash calibration/run.sh tests`: **79/79 통과(38.187 s, exit 0)**. 종료 후 unclosed-socket `ResourceWarning` 1건.
+
+## 2026-10-16 14:38 Codex — 회귀시험 gate 실패 기록 (문서만)
+- 이번 `bash calibration/run.sh tests` 실행은 **79개 중 ERROR 1 + FAIL 1**, **396.591 s, exit 1**로 끝났다. `Pipeline.test_execute_routes_both_legs_through_existing_supervised_mover`는 `calibration/pipeline.py:396`에서 `stable pose/live joints timeout`; `Pipeline.test_refused_plan_never_reaches_mover`도 같은 timeout으로 인해 기대한 `경로 거부` assertion 대신 실패했다.
+- 두 테스트는 `calibration/tests.py`의 합성 pose/joint 스트림으로 planner 흐름을 시험한다. 실행 중 Isaac PPO 학습 프로세스가 함께 있었으나 이것이 timeout 원인인지는 미확정. 어떤 코드도 수정하지 않았고, Claude 소유 `pipeline.py`는 읽기만 했다. 실패 gate 때문에 현재 작업문서 변경은 커밋하지 않았으며, 조건이 나아진 뒤 전체 회귀시험을 다시 해야 한다.
+
+## 2026-10-16 14:3x Codex — R1 train_0051–0053 독립 원시 재검증 (CPU/read-only)
+- `rl/logs/basket/insert_rl_20261016_r1_unseated025_seed10/train_0051–0053.{json,npz}` 각 192행을 `seated && in_quadrant && landed_gap == target_gap`로 재집계: **100/192=52.1%**, **112/192=58.3%**, **106/192=55.2%**.
+- 각 batch JSON results/episode/top-level·NPZ·독립 성공식·run 이름 교차검증은 **192/192 일치**, obs/act/logp/bias/low 모두 finite. train36–53 합계 **1,859/3,456=53.8%**; Q1 **501/968**, Q2 **440/949**, Q3 **490/813**, Q4 **428/726**. 합계는 여러 PPO 시점의 rollout이지 held-out 평가가 아니다.
+- CPU/read-only audit만; Isaac/GPU·실기 로봇/그리퍼·소스/데이터/체크포인트 쓰기 없음. 전체 tests의 최근 gate는 위 14:38 기록대로 실패하여 문서 변경 커밋 보류 중.
+
+## 2026-10-16 14:41 Codex — R1 train_0054 독립 원시 재검증 (CPU/read-only)
+- `rl/logs/basket/insert_rl_20261016_r1_unseated025_seed10/train_0054.{json,npz}` 192 rollout의 독립 성공식 `seated && in_quadrant && landed_gap == target_gap` 결과 **107/192=55.7%**; Q1 **22/42**, Q2 **25/54**, Q3 **35/56**, Q4 **25/40**.
+- JSON episode/top-level·NPZ·독립 성공식·run 이름 교차검증 **192/192 일치**; obs/act/logp/bias/low 유한. train36–54 합계 **1,966/3,648=53.9%**(Q1 **523/1,010**, Q2 **465/1,003**, Q3 **525/869**, Q4 **453/766**). 다수 정책 시점이 섞인 training rollout 집계로 평가/일반화 성능이 아니다.
+- Isaac/GPU·로봇/그리퍼·source/data/checkpoint 쓰기 없이 CPU/read-only로 검증. 현 전체-test gate는 14:38 기록대로 실패하여 커밋 보류 중.
+
+## 2026-10-16 14:4x Codex — timeout 테스트 단독 재현 및 시각 원인 계측 (문서만)
+- `bash calibration/run.sh tests -k test_execute_routes_both_legs_through_existing_supervised_mover` 단독 실행도 **1개 ERROR, 182.122 s**로 재현; 전체 시험 실패가 다른 테스트의 간섭만으로 생긴 현상은 아님.
+- 별도 비침습 계측(테스트·코드 수정 없음, 임시 timeout 1 s): 합성 pose의 첫 `StablePose.add()` 나이 **2.101 s**, 전체 관측 최소/최대 **2.033/3.134 s**, 총 168회 호출; 모두 2 s freshness cutoff 밖이라 거부됨. 따라서 이 재현에서는 `tests.run_with_fake_io()`가 고정 timestamp를 준비한 후 `pipeline.run()`의 초기 준비가 끝났을 때 합성 프레임이 stale 된 것이 timeout의 직접 원인으로 확인됨. full-suite 두 번째 실패도 동일 예외지만 별도 계측은 안 함.
+- Claude 소유 `calibration/pipeline.py`, 테스트 소스 및 기타 작업 파일은 수정하지 않았다. full suite 재시험/회귀 gate는 여전히 실패 상태; gate 때문에 문서 변경 커밋 보류.
+
+## 2026-10-16 14:51 Codex — R1 `eval_0055` 원시 재집계 (CPU/read-only)
+- `eval_0055.{json,npz}` 598건을 `seated && in_quadrant && landed_gap == target_gap`로 재집계: **411/598=68.7%**. 분면별 Q1 **98/156**, Q2 **95/146**, Q3 **113/155**, Q4 **105/141**. 목표 75%는 449건이라 **38건 부족**.
+- JSON row 결과·JSON top-level 배열·NPZ exact·독립식은 **598/598 일치**; obs/act/logp/bias/low 모두 finite. 이름과 obs/bias/quadrant/target 입력은 eval45·50 및 best eval30과 동일.
+- eval30 최고 411과 paired fail→pass/pass→fail **30/30**(net 0, exact p=1.000); eval50 407 대비 **32/28**(net +4, p=.699). eval30 대비 분면 변화 Q1 **0**, Q2 **+6**, Q3 **−2**, Q4 **−4**. 실패 분해 eval50→55: unseated **53→50**, seated-outside-quadrant **43→37**, seated-wrong-gap-inside **95→100**. 결과 분류일 뿐 인과 설명 아님.
+- `eval_0055.log` USD TCP visual unresolved 경고 **622회**(지표 영향 미검증). 고정 선택평가에서 이전 최고와 동률이며 75% 미달; 최종 held-out seed15014 비교 전이라 R1 완료/채택 판정은 아니다. CPU 원시검증만 했고 Isaac/GPU·실기·source/data/checkpoint 쓰기는 없음. 앞서 확인한 전체 회귀시험 gate 실패 때문에 문서 커밋 보류 중.
 
 ## 2026-10-16 14:1x Claude — 고정카메라 재캘리브 + 바구니 새 마커 배치
 - 고정카메라: 보스 측정 `real_handeye/20261016_134701_fromwrist`(12곳, S 중 segfault — positions는 저장됨) → `--resolve`로 재계산. 4번째(index 3) 재투영 17.7 px(G·F 사이 마커 이동 추정) 제외한 11곳을 `20261016_134701_fromwrist_drop3/`에 저장(원본 보존): 카메라 (1.198, 0.579, 1.090), 재투영 평균 2.1 px, LOO 0.2–15 mm / ≤0.8°. 10/13 결과 대비 약 2 cm 차이. `latest_t_base_cam()`이 이 폴더 선택.
@@ -3963,3 +3989,9 @@
 ## 2026-10-16 14:3x Claude — 흰 접시 실기 1회 + 잡기 보강
 - 보스 실기(`--plate_color white`, Q3 pin 6): 잡기·넣기 성공, 들어간 칸은 3–4 사이(목표 6). 보스: 흰 접시는 굴곡이 적어 덜 안정 → 더 깊게, 힘 2배.
 - `--plate_color white`일 때만: `offset_m[0] += white_plate.grasp_deeper_m (0.010)`(라이브러리 그립은 가까운 테두리를 +radial 방향 공구로 잡음: 닫힘 시 TCP 반경 = 접시 반경 − 약 0.1 m, 라이브러리 반경 간격 2 mm라 1 cm가 그대로 반영), 닫기 `--force white_plate.grip_force (128, red 64)`. 빨간 접시 기본 경로 불변. 회귀 79/79.
+
+## 2026-10-16 15:0x Claude — Q3/Q4 전용 넣기 학습 준비 (보스: 월요일까지 Q3·Q4 앞·뒤 1칸씩)
+- 오늘 실기 계획 점검(흰 접시, 계획만): Q1 3·6, Q2 2·7, Q3 4·5·9, Q4 3·9 OK. **Q3 3번은 ik/limit**(바구니 x 1.01로 멀어짐) → 목표 Q3·Q4 **4번(뒤)·9번(앞)**.
+- 기존 학습 계획 세트는 바구니 x 0.757–0.857(어제 실기 0.917, 오늘 1.010은 범위 밖). 새 세트(`random_plans --pins`, 오늘 바구니 주변 x 0.96–1.06, y −0.223~−0.123, yaw ±6°, 접시 x 0.85–0.96 y 0.28–0.36 — y>0.36은 넣기 경로 실패 다수): 학습 `random_20261016_145741`(400, 100%), 검증 `..._144606`(120), 최종 `..._144916`(199). `..._144207`은 159개에서 중단(동시 테스트 중 종료) — 사용 안 함.
+- 학습: R1(PID 1132827) 종료 후 자동 시작 `rl/logs/basket/insert_rl_20261016_q34_spec_seed11`(e3_best에서, 40회, batch 192, lr 1e-4, dr_full·canon·noseen·snapshot).
+- `demo4`: `DEMO_PINS="Q3:4 Q3:9:white Q4:4 Q4:9:white"`처럼 칸마다 색 지정(52c33ad).
