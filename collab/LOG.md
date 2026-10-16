@@ -3820,6 +3820,11 @@
 - `eval_0020.{json,npz}` 598개를 재집계: **403/598=67.4%**; Q1 **96/156=61.5%**, Q2 **89/146=61.0%**, Q3 **112/155=72.3%**, Q4 **106/141=75.2%**. episode/top-level JSON, NPZ exact 및 독립 mask·seated/in-quadrant/landed/target는 **598/598 일치**, 입력 배열 finite. names/target/obs/bias/quadrant/target는 eval0/5/10/15와 동일.
 - eval15→20 paired fail→pass/pass→fail **18/18**(net 0, exact two-sided binomial p=**1.000**); eval0→20 **30/28**(net +2, p=**0.896**). Eval20은 15와 동률이고 warm-start eval0(401/598)보다 2 episode만 높다. 이 반복된 선택세트로 75% 목표(현재 67.4%)나 일반화 향상을 뒷받침할 수 없다. `train.py` best update가 평가 exact가 기존 best보다 높을 때만 이루어지고 `best.pt` 수정시각이 eval15 생성시각과 일치하므로 현재 best는 it15(403); it20 동률은 갱신하지 않았다. 계속 학습은 기존 판단대로 eval30까지, 최종 비교는 seed15014에서만 한다.
 - 산출 경로 `rl/logs/basket/insert_rl_20261016_r1_unseated025_seed10/`. Codex CPU raw audit only; Isaac/GPU/robot/gripper 및 source/data/checkpoint write 없음.
+## 2026-10-16 13:10 Codex — R1 train_0031 원시 검증
+- `train_0031.{json,npz}` 192행 exact **101/192**. 독립식 `seated && in_quadrant && landed_gap == target_gap`, JSON episode/top-level, NPZ exact 및 seated/in-quadrant/landed/target가 **192/192 일치**, obs/action/logp/bias/low finite. 분면: Q1 **28/57**, Q2 **30/57**, Q3 **25/46**, Q4 **18/32**.
+- train26–31 누계 **606/1,152=52.6%**; Q1 **157/323**, Q2 **145/308**, Q3 **171/289**, Q4 **133/232**. 비정상동 rollout이라 eval/일반화 추정에 쓰지 않는다. 당시 `train_0032.log`만 있어 it32와 eval35는 미검증. 산출물 경로는 R1 output 디렉터리.
+- CPU/read-only. `best.pt`는 policy30과 state tensor 14/14 일치(현재 선택 checkpoint); eval30 **411/598=68.7%**로 ≥75% gate 미달, seed15014 최종 대조는 대기. GPU/Isaac·실기 로봇·소스/data/checkpoint 변경 없음.
+
 ## 2026-10-16 13:05 Codex — R1 train_0030 원시 검증
 - `train_0030.{json,npz}` 192행에서 `seated && in_quadrant && landed_gap == target_gap`을 독립 재계산했다. exact **108/192**; JSON episode/top-level·NPZ exact·독립 mask 및 seated/in-quadrant/landed/target **192/192 일치**, obs/action/logp/bias/low finite. 분면별 Q1 **38/58**, Q2 **23/57**, Q3 **27/40**, Q4 **20/37**.
 - train26–30 집계는 **505/960=52.6%**, Q1 **129/266**, Q2 **115/251**, Q3 **146/243**, Q4 **115/200**. 학습 도중 바뀌는 정책의 rollout이지 held-out/eval 지표가 아니다. 경로 `rl/logs/basket/insert_rl_20261016_r1_unseated025_seed10/`.
