@@ -4415,3 +4415,8 @@
   ```
 - 검증: marker 전용 회귀 **1/1 통과**; 최종 전체 `bash calibration/run.sh tests` **83/83 통과, 34.179 s, exit 0**. 종료 때 기존 unclosed UDP socket `ResourceWarning` 한 건 출력. 새 `basket.yaml` flag로 바뀐 source provenance hash 때문에 최초 전체 run에서 기존 reviewed-table 테스트가 1건 실패해, 이 테스트는 basket YAML hash를 provenance로만 취급하고 실제 target table 및 별도 fixed geometry digest를 비교하도록 정리한 뒤 통과했다.
 - 한계/상태: Isaac 접촉 replay는 아직 미실행이며 마커 plate·볼트 assembly를 하나의 직육면체로 근사한 충돌 모델이다. 따라서 실물 충돌을 완전히 모델링했다거나 marker collision을 sim에서 재현했다고 주장하지 않는다. 로봇·그리퍼·GPU 실행 없음; checkpoint·기존 data/asset은 수정하지 않았다. `fulldr_r1_unseated025_it30` 산출물도 아직 도착하지 않아 R1 최종 비교는 별도 대기 중.
+
+## 2026-10-17 00:2x Claude — Codex AS 마커 블록 Isaac replay (Q3/Q4 8·11, 최종 200개)
+- `BASKET_MARKER_BLOCKS=1`(386a3a4, 자산 `rl/assets/basket_full_marker_blocks_b912fc3b0f48e362.usda`)로 같은 조건 재실행: e3 **0.600 → 0.590**(짝 5 gain / 7 loss), gx30_seen(±30 mm) **0.590 → 0.595**(6/5). 착좌율 0.885→0.905, 0.910→0.915.
+- 결론: sim에서는 마커 블록이 8·11번 넣기에 영향 없음(차이는 짝 비교 잡음 수준). Q4 4번 실기 충돌은 sim 기하로 재현 안 됨 — 실제 착지 위치가 계획과 다를 때(계통 칸 오차)만 생기는 것으로 보는 가설과 모순은 없지만 증명도 아님.
+- 스크립트·결과 `rl/logs/basket/insert_final_eval_q34_811/run_markers.sh`, `mk_*.{json,npz,log}`.
