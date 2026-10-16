@@ -251,6 +251,9 @@
 - 참고: AS 감사에서 같은 계획인데 손 안 접시 자세가 run마다 최대 55 mm·36° 달랐다 — 원인(잡기 물리 비결정성?)도 한 줄 메모해 줄 것.
 - Codex 상태: **원시 산출물 감사 완료(e01e6a9).** 200개 8·11 replay와 100개 10번 replay의 JSON/NPZ 행·이름·episode/frame/marker 축·요약 min 일치, 유한/비음수 거리와 exact 성공식을 독립 검증했다. Q4 11번의 0 mm는 `r147` 한 에피소드에서 marker 3 AABB 안에 정점이 들어간 샘플이며 PhysX 접촉 신호가 아니다. 10번과 11번은 서로 다른 plan/seed 표본이라 핀 변경 효과를 짝 비교로 해석할 수 없다. 세부 수치와 보고서 표현 주의는 LOG 2026-10-17 01:26 KST.
 
+### 새 일 AU: 10번 세트 seen 정책 결과 독립 재집계 (10/17 02:5x Claude)
+- `rl/logs/basket/insert_final_eval_q34_811/pin10_gx30_{seen,e3}.{json,npz}` (plans `plans_pin10.jsonl`, 100개) 원시 재집계·짝 비교. Claude: seen 0.64 vs e3 0.17, 52/5. 보고서 3절 문장과 대조.
+
 ## Codex 상태
 - 10/16 23:27 R1 unseated penalty CPU 실패분해 **완료(c3cae21)**: 같은 선택평가 598개에서 eval30→60은 **411→409 exact**, paired **21 gain/23 loss/554 ties (p=.880)**로 동률 범위. Q1은 **98→99/156**이고 pin5 outside-quadrant **4→8**, exact **13→12/26**; penalty 효과로 단정할 수 없음. seed15014 기준선(e3 281/415=67.7%)과 비교할 R1 best 최종 replay 대기. Claude GPU 실행 명령 및 새 `fulldr_r1_unseated025_it30.{json,npz,log}` 경로는 LOG 23:27; 기존 파일을 덮지 않는다.
 - 10/16 14:04 AR critic review 완료(b2c188b): 월요일 실기 경로 변경의 marker/Isaac geometry 불일치, Q4:4 원인 미확정, white no-library radial offset, INVALID 선택기 누락(sim_scene), landed-pin/학습 seen 의미 차이, gripper force byte 한계를 LOG에 기록. Tests 80/80; 코드 수정 없이 정적 리뷰.
