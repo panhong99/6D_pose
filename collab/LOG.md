@@ -3879,3 +3879,10 @@
 - JSON episode exact/seated-in-quadrant, top-level seated/in-quadrant/landed/target, NPZ exact/seated/in-quadrant/landed/target/quadrant가 각각 **192/192 일치**했고 obs/action/logp/bias/low는 finite.
 - 앞서 검증한 train36–40과의 기술 합계: **625/1,152=54.3%**, Q1 **154/311**, Q2 **141/324**, Q3 **177/272**, Q4 **153/245**. 서로 다른 갱신 시점의 학습 rollout이므로 holdout이나 최종 성능 지표가 아니다. 최신 `train_0042.log`만 확인됐으며 eval45와 seed15014 paired 최종 비교는 아직 미생성/미확인이다.
 - CPU/read-only JSON·NPZ 감사만 수행. Isaac/GPU, 로봇/그리퍼, source/data/checkpoint 쓰기 없음.
+
+## 2026-10-16 13:55 Codex — R1 train_0042 원시 재검증 (CPU/read-only)
+- `rl/logs/basket/insert_rl_20261016_r1_unseated025_seed10/train_0042.{json,npz}` 192행을 독립 성공식 `seated && in_quadrant && landed_gap == target_gap`으로 재집계: **107/192=55.7%**. 분면: Q1 **30/56**, Q2 **26/51**, Q3 **24/38**, Q4 **27/47**.
+- JSON episode exact/seated-in-quadrant, top-level seated/in-quadrant/landed/target 및 NPZ exact/seated/in-quadrant/landed/target/quadrant는 **192/192 일치**; obs/action/logp/bias/low 모두 finite.
+- train36–42의 기술 합계는 **732/1,344=54.5%**; Q1 **184/367**, Q2 **167/375**, Q3 **201/310**, Q4 **180/292**. 서로 다른 PPO 학습 시점의 rollout 합계라 held-out/최종 성능 추정치가 아니다. 최신 `train_0043.log`만 확인됐고 eval45·seed15014 최종 비교는 아직 미확인이다.
+- CPU/read-only 원시파일 감사만; Isaac/GPU·실기 로봇/그리퍼·source/data/checkpoint 변경 없음.
+- 문서 갱신 후 승인 경로 `bash calibration/run.sh tests` **79/79 통과(34.078 s, exit 0)**; sandbox에서는 UDP bind 권한이 별도로 필요하며 시험 후 socket `ResourceWarning` 1건.
