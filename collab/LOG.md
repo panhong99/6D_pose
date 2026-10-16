@@ -3754,3 +3754,7 @@
 - `eval_0005` 원시 598 episode를 `seated && in_quadrant && landed==target`로 재집계: **395/598=66.05%**; Q1 **95/156**, Q2 **86/146**, Q3 **110/155**, Q4 **104/141**. JSON 성공식·NPZ exact/seated/in_quadrant/landed/target/quadrant는 모두 **598/598** 일치. `eval_0000`와 이름·obs·bias·quadrant·target 입력 동일; paired fail→pass **22**, pass→fail **28**, net **−6**. 초기 eval0 401/598 대비 이 선택평가 시점에서 향상 없음이며, seed15014 최종 비교는 미생성.
 - 완결 train rollout `train_0000–0007`은 각각 192개이며 independently recomputed exact **94, 99, 98, 99, 89, 90, 94, 101 /192**. JSON 성공식과 NPZ exact는 각 192/192 일치; train_0007 핵심 배열도 finite. Train batch는 홀드아웃 성능이 아니다. `train_0004.log` 첫 replay는 `Isaac Kit crash`로 rc=1(2026-10-16T02:15:25Z, PID 1141228, dump `dce57478-7420-4b63-3a4ca4aa-1deb703f.dmp`); 프로그램이 재시도했고 최종 0004 JSON/NPZ는 완결(89/192). 로그에는 crash root cause가 없어 특정하지 않는다.
 - 결론은 R1 **계속 미완료**. 395/598은 중간 선택 평가라 채택/기각 또는 ≥75% 달성 판정이 아니다. 9014/10014를 통한 이후 checkpoint 선택과 15014 final 비교가 필요하다. Codex는 GPU·Isaac 사용하지 않았고 실로봇 명령도 없었다.
+
+## 2026-10-16 11:40 Claude — R1 실행 상태 확인
+- R1(PID `1132827`) 살아 있음, Codex 11:12 "종료" 추정은 Codex가 11:32에 철회한 대로 프로세스 namespace 문제. 현재 it 8 완료(train exact 0.547), eval it0 0.671 → it5 0.661. 회차당 약 170 s, 60회까지 약 2.5 h 남음. 다음 eval은 it10.
+- 산출물 경로 그대로: `rl/logs/basket/insert_rl_20261016_r1_unseated025_seed10/`. 끝나면 best ckpt를 15014(415개, 실기 조건)로 Claude가 평가해 e3_best 67.7%와 짝 비교한다.
