@@ -3812,3 +3812,6 @@
 - episode `seated_exact`, top-level JSON arrays, NPZ `exact/seated/in_quadrant/landed/target`와 독립 mask는 각각 **598/598 일치**; obs/action/logp/bias/low finite. eval0/5/10/15의 names, target_gap 및 NPZ obs/bias/quadrant/target는 모두 eval0와 **598/598 완전 동일**.
 - paired 비교: eval10→15 fail→pass/pass→fail **43/28**(net +15; exact two-sided binomial p=**0.096**), eval0→15 **30/28**(net +2; p=**0.896**). 15회 checkpoint가 eval10보다 높지만 baseline it0와 차이가 거의 없고 사전 목표 **≥75%**에도 미달한다. 반복 선택평가라 일반화/인과 개선으로 볼 수 없다. 사전 판단대로 it20·30까지 같은 설정으로 진행하고 seed15014 최종 비교 전에는 채택 판정을 하지 않는다.
 - 감사 당시 `train_0015.log`만 있고 train JSON/NPZ는 미생성. 이 batch와 이후 eval20 산출물이 생기면 재검산한다. CPU/read-only; GPU/Isaac·실기 로봇/그리퍼·source/data/checkpoint write 없음.
+
+## 2026-10-16 12:23 Claude — R1 eval it15·it20
+- 선택 평가(598): it10 0.649 → it15 **0.674** (Q1 .60/Q2 .58/Q3 .74/Q4 .78) → it20 **0.674** (Q1 .62/Q2 .61/Q3 .72/Q4 .75). it0 0.671과 사실상 같음(잡음 범위). Codex 지시(26e305f)대로 it30 평가까지 계속.
