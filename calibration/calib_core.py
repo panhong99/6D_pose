@@ -303,7 +303,8 @@ def latest_t_base_cam():
     """Newest real_handeye session; inside it prefer T_base_cam_pnp.json (2026-10-06 fixed-camera PnP, camera moved),
     then the 2026-10-02 cube-GT corrected variants (old camera placement only), then plain T_base_cam.json."""
     root = DATA / 'real_handeye'
-    sessions = sorted({f.parent for pattern in ('*/T_base_cam_pnp.json', '*/T_base_cam.json') for f in root.glob(pattern)})
+    sessions = sorted({f.parent for pattern in ('*/T_base_cam_pnp.json', '*/T_base_cam.json') for f in root.glob(pattern)
+                       if not (f.parent / 'INVALID').exists()})    # (10/16) a session marked INVALID is never picked
     if not sessions:
         raise SystemExit('no real hand-eye result in data/real_handeye/; pass --t_base_cam')
     for name in ('T_base_cam_pnp.json', 'T_base_cam_markerscale_xyoffset.json', 'T_base_cam_zfix.json', 'T_base_cam.json'):
