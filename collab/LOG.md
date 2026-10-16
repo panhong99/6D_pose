@@ -3925,6 +3925,12 @@
 - `train_0047.log`에 USD TCP visual prim unresolved 경고가 반복 기록됨. 경고가 rollout 수치에 미친 영향은 별도로 입증하지 않았으며, 실기·정책 품질 주장의 근거로 삼지 않는다. CPU/read-only audit; Isaac/GPU·로봇/그리퍼 command·code/data/checkpoint writes 없음.
 - 이 기록 반영 뒤 전체 회귀시험 `bash calibration/run.sh tests`: **79/79 통과(36.806 s, exit 0)**. 종료 후 unclosed-socket `ResourceWarning` 1건.
 
+## 2026-10-16 14:15 Codex — R1 train_0048 독립 원시 재검증 (CPU/read-only)
+- `rl/logs/basket/insert_rl_20261016_r1_unseated025_seed10/train_0048.{json,npz}` 192 rollout에서 독립식 `seated && in_quadrant && landed_gap == target_gap` **95/192=49.5%**. Q1 **29/63**, Q2 **22/50**, Q3 **26/42**, Q4 **18/37**.
+- JSON results/top-level·NPZ·독립식·run 이름 교차검증 **192/192 일치**; obs/act/logp/bias/low finite. train36–48 누계 **1,333/2,496=53.4%**(Q1 **351/686**, Q2 **324/706**, Q3 **353/581**, Q4 **305/523**), 서로 다른 학습 정책 시점의 rollout 집계로 held-out 점수 아님.
+- `train_0048.log`에 USD TCP visual prim unresolved warning이 다시 보임; 수치 결과에 미치는 영향은 확인하지 않음. CPU/read-only 감사, Isaac/GPU·로봇/그리퍼 명령·source/data/checkpoint 쓰기 없음.
+- 이 기록 반영 뒤 전체 회귀시험 `bash calibration/run.sh tests`: **79/79 통과(35.111 s, exit 0)**. 종료 후 unclosed-socket `ResourceWarning` 1건.
+
 ## 2026-10-16 14:1x Claude — 고정카메라 재캘리브 + 바구니 새 마커 배치
 - 고정카메라: 보스 측정 `real_handeye/20261016_134701_fromwrist`(12곳, S 중 segfault — positions는 저장됨) → `--resolve`로 재계산. 4번째(index 3) 재투영 17.7 px(G·F 사이 마커 이동 추정) 제외한 11곳을 `20261016_134701_fromwrist_drop3/`에 저장(원본 보존): 카메라 (1.198, 0.579, 1.090), 재투영 평균 2.1 px, LOO 0.2–15 mm / ≤0.8°. 10/13 결과 대비 약 2 cm 차이. `latest_t_base_cam()`이 이 폴더 선택.
 - 바구니: 보스가 옮김(+x ≈ 9 cm) + 마커를 판에 다시 붙임. 손목 사진(wrist_look 135828, 140149)에 모델 빗살·레일을 chamfer로 맞춰 바구니 프레임 결정: 사진별 (1.004,−0.174,1.87°)/(1.008,−0.169,2.06°), 공동 (1.0102, −0.1726, 2.18°), z는 10/15 값 0.1449 유지(같은 테이블). 비스듬한 사진 140056은 빗살 겹침으로 2 cm 피치 모호 → 제외. 손목 장착 각도는 J6 −90°/−22° 두 사진이 4–5 mm로 일치해 큰 오차 없다고 판단(손목 재캘리브는 생략).
