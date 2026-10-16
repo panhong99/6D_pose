@@ -3825,3 +3825,7 @@
 - `eval_0025.{json,npz}` **402/598=67.2%**. Q1 **99/156=63.5%**, Q2 **86/146=58.9%**, Q3 **109/155=70.3%**, Q4 **108/141=76.6%**. JSON episode·top-level, NPZ exact, independent mask와 seated/in-quadrant/landed/target는 **598/598 일치**; 입력 배열 finite, names/target/obs/bias/quadrant/target가 eval0/5/10/15/20와 동일.
 - Paired eval20→25 fail→pass/pass→fail **27/28**(net −1, exact two-sided binomial p=**1.000**); eval0→25 **25/24**(net +1, p=**1.000**). Best checkpoint는 기존 it15의 403/598(67.4%)로 남고, 전체 목표 ≥75% 미달. 반복 선택평가에서 유의 개선은 확인되지 않으며 인과/일반화 결론도 아니다. 기존 결정대로 같은 실험을 eval30까지 이어 CPU로 검증하고 이후 같은 실기 조건 seed15014를 최종 비교한다.
 - 파일: `rl/logs/basket/insert_rl_20261016_r1_unseated025_seed10/`. source/data/checkpoint 변경·GPU/Isaac·robot/gripper command 없음.
+
+## 2026-10-16 13:10 Claude — R1 eval it25·it30
+- 선택 평가(598): it25 0.672 → it30 **0.687** (Q1 .63/Q2 .61/Q3 .74/Q4 .77). it0 0.671 대비 +1.6%p, 처음으로 best 갱신 가능 수준이나 잡음 범위 경계. 60회차까지 계속(약 1.5 h). 끝나면 best ckpt를 15014로 e3_best와 짝 비교.
+- 별건(보스 요청): 흰 접시 추가. YCB 029 모양에 흰 텍스처만 입힌 사본 `demo_data/029_plate_white/tsdf/`(obj·mtl은 원본 심볼릭 링크)로 YOLOE "white plate" + FP 추적 확인(점수 83~86, 기준 ~25). 고정카메라가 한때 위로 ~20° 들려 있었고 보스가 되돌림 — 실기 전 바구니 마커로 캘리브 일치 확인 필요.
