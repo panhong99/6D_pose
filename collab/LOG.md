@@ -3755,6 +3755,18 @@
 - 완결 train rollout `train_0000–0007`은 각각 192개이며 independently recomputed exact **94, 99, 98, 99, 89, 90, 94, 101 /192**. JSON 성공식과 NPZ exact는 각 192/192 일치; train_0007 핵심 배열도 finite. Train batch는 홀드아웃 성능이 아니다. `train_0004.log` 첫 replay는 `Isaac Kit crash`로 rc=1(2026-10-16T02:15:25Z, PID 1141228, dump `dce57478-7420-4b63-3a4ca4aa-1deb703f.dmp`); 프로그램이 재시도했고 최종 0004 JSON/NPZ는 완결(89/192). 로그에는 crash root cause가 없어 특정하지 않는다.
 - 결론은 R1 **계속 미완료**. 395/598은 중간 선택 평가라 채택/기각 또는 ≥75% 달성 판정이 아니다. 9014/10014를 통한 이후 checkpoint 선택과 15014 final 비교가 필요하다. Codex는 GPU·Isaac 사용하지 않았고 실로봇 명령도 없었다.
 
+## 2026-10-16 11:35 Codex — R1 train rollout 분면별 원시 집계 (CPU/read-only)
+- `rl/logs/basket/insert_rl_20261016_r1_unseated025_seed10/train_0000–0007.json`의 각 192행을 성공식 `seated_in_quadrant && landed_gaps[0] == target_gap`로 재계산해 `seated_exact`와 대조했다. 1,536/1,536 행 일치(불일치 0). 분면 합계: Q1 **198/424=46.7%**, Q2 **165/399=41.4%**, Q3 **213/375=56.8%**, Q4 **188/338=55.6%**; 전체 **764/1536=49.7%**.
+- 앞선 총계 0000–0007 exact `[94,99,98,99,89,90,94,101]`의 합은 **764**다(작업판 기존 기재의 756은 산술 오기였음; 분면별 분자 합과도 764 일치). 각 batch 자체의 JSON 성공식 수는 기존 보고와 동일.
+- 이 값들은 학습 도중 바뀌는 policy로 수집된 rollout들이므로 pooled 비율은 기술적 집계일 뿐, holdout/최종 정책 성능이나 독립 비교로 해석하지 않는다.
+- 최신 상태 스냅샷: `train_0008.log` **156,201 bytes, 2026-10-16 11:34:55 KST**; 대응 JSON/NPZ 및 `eval_0010`은 없었다. 이로부터 run 종료/실패를 단정하지 않는다. Codex shell은 Claude Isaac PID를 확인할 수 없으며, output 변화가 있으면 후속 원시 audit을 한다. GPU/Isaac·로봇·그리퍼·코드/data/checkpoint 쓰기 없음.
+
+
+## 2026-10-16 11:36 Codex — R1 train_0008 원시 검증 (CPU/read-only)
+- `rl/logs/basket/insert_rl_20261016_r1_unseated025_seed10/train_0008.{json,npz}` 192개 rollout을 독립식 `seated_in_quadrant && landed_gaps[0] == target_gap`으로 재계산했다. 결과 **105/192=54.7%**, Q1 **27/53**, Q2 **13/41**, Q3 **36/57**, Q4 **29/41**. JSON `seated_exact`, NPZ `exact`, 독립식 mask 및 `in_quadrant/landed/target/quadrant` JSON↔NPZ 대조는 전부 **192/192 일치**; obs/action/logp/bias/low는 모두 유한값.
+- train_0000–0008을 합산한 기술통계는 **869/1728=50.3%**; Q1 **225/477**, Q2 **178/440**, Q3 **249/432**, Q4 **217/379**. 이는 policy가 갱신되는 학습 rollout batch의 집계이므로 holdout 성능·독립 정책평가로 보지 않는다. train_0000–0007의 이전 LOG 집계 합계는 개별 batch 수 합과 맞는 **764/1536**이며, TASKBOARD의 기존 756은 산술 오기로 정정했다.
+- `train_0009.log`가 새로 생성됐지만 JSON/NPZ와 `eval_0010`은 아직 없어 회차 결과·학습 종료 여부는 판정하지 않는다. 공유 문서 반영 뒤 일반 sandbox `bash calibration/run.sh tests`는 pipeline import UDP 소켓 제한으로 막혔고, 승인된 동일 명령은 **79/79 통과(34.540 s)**. GPU/Isaac은 Claude 담당; Codex는 파일 원시 감사만 수행했고 로봇·그리퍼 명령 및 소스/data/checkpoint 변경 없음.
+
 ## 2026-10-16 11:40 Claude — R1 실행 상태 확인
 - R1(PID `1132827`) 살아 있음, Codex 11:12 "종료" 추정은 Codex가 11:32에 철회한 대로 프로세스 namespace 문제. 현재 it 8 완료(train exact 0.547), eval it0 0.671 → it5 0.661. 회차당 약 170 s, 60회까지 약 2.5 h 남음. 다음 eval은 it10.
 - 산출물 경로 그대로: `rl/logs/basket/insert_rl_20261016_r1_unseated025_seed10/`. 끝나면 best ckpt를 15014(415개, 실기 조건)로 Claude가 평가해 e3_best 67.7%와 짝 비교한다.
