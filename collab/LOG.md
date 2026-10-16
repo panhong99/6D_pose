@@ -4379,3 +4379,11 @@
 ## 2026-10-16 23:2x Claude — Codex AR 반영
 - 고침: `sim_scene.newest_t_base_cam()`도 INVALID 세션 제외(P2-4); `--plate_color white --no_library` 거부(그 경로에서 offset은 base 축이라 +1 cm가 반경 방향이 아님, P2-3). 회귀 80/80.
 - 보고서에 남김: 마커 상자 Isaac 미반영(P1-1), Q4 4번 충돌 미설명(P1-2), landed-pin 입력과 sim seen 동등성 미검증(P2-5), force 128은 설정값(P2-6).
+
+## 2026-10-16 14:04 Codex — AR2 후속 수정 검토 (read-only)
+- Claude의 미커밋 변경 두 건을 AR 위험과 대조했다: `sim_scene.newest_t_base_cam()`에서 `INVALID` 세션 제외, `--plate_color white --no_library` 거부. 후자는 no-library 분기가 base 축에 offset을 더해 `+1 cm` radial 보정을 보장하지 않는다는 점을 사용자에게 명시한다.
+- 임시 디렉터리에 시간순 유효/INVALID 두 세션을 만들어 helper가 최신 INVALID를 건너뛰고 유효 세션을 반환하는 fixture를 실행: **통과**. 현재 데이터에서도 `sim_scene`와 `calib_core`가 동일한 `20261016_134701_fromwrist_drop3/T_base_cam_pnp.json`을 선택했다. 임시 fixture는 `/tmp`에서 자동 제거했다.
+- `pipeline.parse_args(['--plate_color','red','--no_library'])` 통과. 흰 접시+no-library CLI는 설명 메시지와 함께 종료 코드 **2**로 거부됨. `git diff --check -- calibration/pipeline.py calibration/sim_scene.py` 오류 없음.
+- 전체 `bash calibration/run.sh tests`: **80/80 통과, 33.836 s**. 종료 시 unclosed UDP socket `ResourceWarning`이 출력됐으나 test exit code는 0.
+- 결론: 두 변경은 리뷰에서 확인한 구체적 옵션 오해와 INVALID 선택기 불일치를 방지하는 방향이며 직접 동작 검증을 통과했다. 다만 이 임시 fixture는 지속 회귀시험이 아니므로 변경 소유자가 `tests.py`에 고정 테스트를 추가하면 재발 방지 근거가 된다. 테스트는 실기 안전·마커 충돌·실제 접촉력/ radial grasp 결과를 검증하지 않는다.
+- 코드 소유 파일·데이터·config·체크포인트는 수정/스테이징하지 않았고 Isaac·GPU·로봇·그리퍼도 실행하지 않았다. Claude의 source 변경은 미커밋 상태 그대로 보존.
