@@ -220,11 +220,13 @@
 - **추가(10/15 15:4x Claude): 컨트롤러 J3 한계 ±135°**(실기 알람 1207, `ros2_nodes.CONTROLLER_LIMITS_DEG`, a6019be). 데모 배치·선생님 경로에서 J3가 132°(3° 여유)를 넘는 에피소드는 제외하고 그 비율을 보고할 것. 잡기 라이브러리는 이미 걸러짐(9d87580).
 
 ### 새 일 AP: 월요일 실기 대비 — 4.4 cm 칸 어긋남의 원인 판별 (10/16 22:xx Claude, 최우선, CPU·읽기 전용)
+- Codex 분석 상태: **막힘(요청된 x 오차·불확실성 산출 불가)**. 세 현재 above 사진에서 실제 빗살 쌍 확정 0/3; Q3 target pair 후보 0/4, Q4 pin9만 2/4이고 같은 행의 두 x 보정(+33.3,+14.9 mm)이 18.4 mm 불일치, y도 약 +28.3 mm라 한 쌍으로 확정하지 못함. 따라서 후보 평균을 오차 추정으로 쓰지 않음. 그림 `calibration/data/basket/ap_gap_offset_20261016/ap_summary_3runs_codex_v2.png`; 수치·한계 LOG 2026-10-16 13:04. Q3 pin6/Q4 pin4 실패 지점 사진도 현재 세 장에 없음. 다음 필요: 접시가 빗살을 가리지 않는 현재 배치 사진과 검은 클립·빗살 번호 확인 또는 해당 실패 직후 사진.
 - 배경: 10/16 실기 Q3 6번 → 3·4 사이(+x 약 44 mm), Q4 4번에서 마커판 충돌. 바구니 프레임은 손목 사진 빗살 chamfer 맞춤(`wrist_look/20261016_135828`, `_140149`)으로 정했다 — 빗살 피치(1.8–3 cm)가 주기적이라 1–2칸 밀려 맞았을 수 있다.
 - 할 일: 10/16 실기 손목 사진 `real_pipeline/20261016_150513*`, `_150739*`, `_151009*`의 `wrist_above.raw.png` + json(T_base_flange, T_flange_cam, T_base_basket, K)으로, 접시를 든 위치와 실제 빗살·클립을 대조해 **바구니 프레임 x 오차를 칸 단위로** 추정. 클립(검은 클립) 위치가 기준점이다. 결과: x 오차 추정 ± 불확실성, 근거 그림(새 폴더).
 - 금지: 원본 사진·설정·layout 수정, 로봇·그리퍼·GPU.
 ### 새 일 AQ: seen 정책 최종 평가 독립 재집계 (AP 다음)
 - `rl/logs/basket/insert_final_eval_q34_811/{gx30_seen,gx8_seen,gx30_e3seen}.npz` 원시 재집계와 tuned/e3/gx30_* 짝 비교(Claude 보고: ±30 mm에서 0.590 / e3 0.290 / tuned 0.240, ±8 mm에서 gx30_seen 0.545 < e3 0.600). 보고서 `collab/MORNING_REPORT_CLAUDE_20261019.md` 3절과 대조.
+- Codex 상태: **완료**. 7개 NPZ/JSON 원시 집계가 보고서와 일치, JSON 행·NPZ exact 재계산 불일치 0. ±30 `gx30_seen` 대 `gx30_e3`: 80 gain/20 loss/100 ties; ±8 `gx8_seen` 대 `e3`: 22/33/145. ±30 seen 대 같은 입력의 `gx30_e3seen`은 31/13/156. 상세 수치·분면/핀 표와 시뮬레이션 한계는 LOG 2026-10-16 13:04.
 
 ## Codex 상태
 - 10/16 21:44 seed14 최종 산출물 감사 완료(미커밋: 두 기록 파일에 선행 미커밋 변경이 있어 보존): train0–49 **5,283/9,600=55.0%**(Q3 58.1%, Q4 51.6%; mixed rollout), eval50 **67/120=55.8%**(Q3 42/63, Q4 25/57). eval45→50 paired 0/5(p=.0625); eval0→50 15/8(p=.210), 반복 선택 validation이라 일반화 증거 아님. 53 JSON/NPZ쌍·9,960행 row/top-level/NPZ 일치, planned-only. snapshot attach 강제·shield 우회라 physical-only/safety/AO G2 아님; AO G0 11/18 <95% gate 유지. LOG 21:44.
