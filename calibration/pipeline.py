@@ -1221,6 +1221,8 @@ def parse_args(argv=None):
             p.error('--insert-force-limit-n must be finite and > 0')
         if not (a.execute and a.task == 'plate' and a.place == 'basket' and a.insert == 'quadrant' and not a.offline_test):
             p.error('--insert-force-limit-n requires --task plate --execute --place basket --insert quadrant; default remains off')
+    if a.plate_color == 'white' and a.no_library:
+        p.error('--plate_color white uses the library grasp (its +1 cm is radial there); not with --no_library')
     if a.insert_landed_pins and a.insert_policy is None:
         p.error('--insert_landed_pins needs --insert_policy (a policy trained seeing the gap error)')
     if a.insert_policy is not None:

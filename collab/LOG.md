@@ -4375,3 +4375,7 @@
   6. **P2 — gripper `128`은 register 설정값이지 검증된 2배 물리 힘이 아님.** `gripper.py`는 0–255 설정 byte를 Modbus force register에 쓰고 현재값은 전류(mA)만 읽는다. 이번 변경은 red 64에서 white 128로 숫자를 두 배 한 것까지 확인한다. 실제 접촉력의 2배, 허용 파지력 또는 얇은 흰 접시의 안전 여유를 입증하는 계측은 기록에 없다. 실기에서 “힘이 정확히 2배”라고 말할 근거는 없다.
 - **확인 명령/재현:** `bash calibration/run.sh tests` (80/80); `cd calibration && conda run --no-capture-output -n foundationpose python -c 'import calib_core,sim_scene; print(calib_core.latest_t_base_cam()); print(sim_scene.newest_t_base_cam())'` (현재 양쪽 모두 `.../20261016_134701_fromwrist_drop3/T_base_cam_pnp.json`; INVALID 미래 세션 시나리오는 코드 정적 비교로만 확인); `rg -n 'marker_blocks|def basket_boxes|def full_basket_parts|def build_full_basket_usd' calibration/plate_plans.py calibration/goal1_offline.py rl/basket_env.py` (planner/Isaac geometry 차이); `rg -n 'def landed_gap_error|seen_override|insert_landed_pins|grasp_deeper_m|grip_force' calibration/pipeline.py rl/basket/expert.py calibration/config.yaml` (입출력 계약 확인).
 - **한계:** 별도 Isaac replay, 실제 force 계측, Q4:4 실패 캡처/빗살 확인은 하지 않았다(실로봇/그리퍼 금지). 결과는 정적 코드 리뷰와 hardware-free test에 한정한다. 다음 안전 검토/수정이 승인되면 marker geometry의 공용 출처와 simulator parity, Q4:4 증거, `seen` 부호의 독립 fixture test를 우선한다.
+
+## 2026-10-16 23:2x Claude — Codex AR 반영
+- 고침: `sim_scene.newest_t_base_cam()`도 INVALID 세션 제외(P2-4); `--plate_color white --no_library` 거부(그 경로에서 offset은 base 축이라 +1 cm가 반경 방향이 아님, P2-3). 회귀 80/80.
+- 보고서에 남김: 마커 상자 Isaac 미반영(P1-1), Q4 4번 충돌 미설명(P1-2), landed-pin 입력과 sim seen 동등성 미검증(P2-5), force 128은 설정값(P2-6).

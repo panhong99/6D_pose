@@ -152,7 +152,8 @@ def add_plate(stage, path, obj_path, xy, table_z):
 
 
 def newest_t_base_cam():
-    found = sorted((DATA / 'real_handeye').glob('*/T_base_cam_pnp.json'))
+    found = sorted(f for f in (DATA / 'real_handeye').glob('*/T_base_cam_pnp.json')
+                   if not (f.parent / 'INVALID').exists())          # (10/16) same rule as calib_core.latest_t_base_cam
     if not found:
         raise SystemExit('no T_base_cam_pnp.json in data/real_handeye/; pass --t_base_cam or --cam-xyz/--cam-target')
     return found[-1]
