@@ -4472,3 +4472,9 @@
 - 입력 요약 SHA-256: seen JSON `ab8790b25ec424440703cb9d4e224a8e2240b580f24e0a10c516ff5b3d299a7e`, seen NPZ `96b8ef77cc977c88e4a14a995b91c44a5319807192c1f71f6d4d9988ea5041b6`, e3 JSON `cfb8e313fc209661df8946e4de26c6511c821ecf8f93083cdbab721087ad0e37`, e3 NPZ `219da93159a3d1a956173de2c79ce8c92eba5c102a7f0cb992f5c01ff57989af`.
 - CPU-only audit; Isaac/GPU·실로봇·그리퍼 명령 없음. 산출 데이터·체크포인트·설정은 수정하지 않았고 코드 회귀시험은 해당 없는 문서 작업이라 미실행. `git diff --check` 통과.
 - 후속 확인(02:46 KST): Claude가 아침 보고 §3 문장을 “이 100개 sim 표본에서는 10번에서도 차이가 유지됐다(실기 성능 입증은 아님, Codex 재집계 일치)”로 수정하고 `68df988`에 커밋했다.
+
+## 2026-10-17 03:24 KST Codex — demo4 per-run landed-pin policy wrapper review
+- 최신 `a964d1d`의 `calibration/run.sh demo4` 변경을 정적·mock 경로로 검토했다. `bash -n calibration/run.sh` 통과; 기존 pipeline CLI의 `test_landed_pins_give_the_seen_gap_error` 및 `test_insert_policy_cli_is_opt_in_and_requires_real_sim_q_quadrant_mode`도 **2/2 통과**.
+- 임시 mock `conda`로만 wrapper를 호출해 `Q3:10:red:7.5,8`가 `--quadrant Q3 --pin 10 --insert_landed_pins 7.5 8`로, `Q4:8:red:10`가 `--quadrant Q4 --pin 8 --insert_landed_pins 10`으로 분리 전달됨을 확인했다. 두 경로 모두 같은 `--insert_policy`와 `--execute`를 전달했다. `DEMO_INSERT_POLICY` 없이 landed tuple을 준 경우 경고 후 해당 tuple을 건너뛰고 mock pipeline은 호출하지 않았다.
+- 주의: 이 누락 정책 분기는 전체 command를 중단하지 않고 그 tuple만 skip한다. 이번 mock 검토로 의도된 wrapper 동작은 확인했지만, 사용자는 경고 출력으로 요청한 회차가 건너뛰어졌음을 확인해야 한다. 별도 코드 변경은 하지 않았다.
+- `--execute`가 mock에만 도달했으며 실제 pipeline, ROS/로봇, Isaac/GPU는 실행하지 않았다. 데이터·config·checkpoint 및 source 파일은 수정하지 않았고, mock은 임시 디렉터리에서 자동 정리했다. 첫 mock 검증은 출력 형식에 대한 assertion 오타로 실패했으며, assertion을 고쳐 재실행한 결과 통과했다.

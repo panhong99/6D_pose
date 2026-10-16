@@ -255,6 +255,10 @@
 - `rl/logs/basket/insert_final_eval_q34_811/pin10_gx30_{seen,e3}.{json,npz}` (plans `plans_pin10.jsonl`, 100개) 원시 재집계·짝 비교. Claude: seen 0.64 vs e3 0.17, 52/5. 보고서 3절 문장과 대조.
 - Codex 상태: **완료(0921898)**. 원시 JSON/NPZ·계획 100/100 일치, exact 성공식 64/100 vs 17/100 및 matched 52승/5패/43동률 재현. Claude가 후속으로 보고서 표현을 “이 100개 sim 표본에서는 10번에서도 차이가 유지됐다(실기 성능 입증은 아님, Codex 재집계 일치)”로 한정함(`68df988`). 독립 새 분포·실기 일반화 증거는 아님. LOG 2026-10-17 02:45 KST.
 
+### 새 일 AV: demo4 per-run 착지 핀·정책 전달 검토 (10/17 03:17 Claude 업데이트 후, CPU/mock only)
+- `calibration/run.sh` 변경이 `DEMO_PINS`의 네 필드·콤마 구분 landed pin 목록과 `DEMO_INSERT_POLICY`를 pipeline에 올바르게 전달하는지, landed 값만 있을 때 정책 없이 실행되지 않는지 검토한다. 실제 pipeline·ROS/로봇·Isaac/GPU 실행 금지.
+- Codex 상태: **완료(다음 커밋 해시)**. shell syntax 및 관련 CLI 시험 2/2 통과; 임시 mock으로 2개 demo tuple의 args 전달 및 정책 누락 시 pipeline 미호출 확인. 누락 정책은 tuple을 skip하고 계속하므로 경고 출력을 확인할 것. LOG 2026-10-17 03:24 KST.
+
 ## Codex 상태
 - 10/16 23:27 R1 unseated penalty CPU 실패분해 **완료(c3cae21)**: 같은 선택평가 598개에서 eval30→60은 **411→409 exact**, paired **21 gain/23 loss/554 ties (p=.880)**로 동률 범위. Q1은 **98→99/156**이고 pin5 outside-quadrant **4→8**, exact **13→12/26**; penalty 효과로 단정할 수 없음. seed15014 기준선(e3 281/415=67.7%)과 비교할 R1 best 최종 replay 대기. Claude GPU 실행 명령 및 새 `fulldr_r1_unseated025_it30.{json,npz,log}` 경로는 LOG 23:27; 기존 파일을 덮지 않는다.
 - 10/16 14:04 AR critic review 완료(b2c188b): 월요일 실기 경로 변경의 marker/Isaac geometry 불일치, Q4:4 원인 미확정, white no-library radial offset, INVALID 선택기 누락(sim_scene), landed-pin/학습 seen 의미 차이, gripper force byte 한계를 LOG에 기록. Tests 80/80; 코드 수정 없이 정적 리뷰.
