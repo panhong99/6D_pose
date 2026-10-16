@@ -4420,3 +4420,10 @@
 - `BASKET_MARKER_BLOCKS=1`(386a3a4, 자산 `rl/assets/basket_full_marker_blocks_b912fc3b0f48e362.usda`)로 같은 조건 재실행: e3 **0.600 → 0.590**(짝 5 gain / 7 loss), gx30_seen(±30 mm) **0.590 → 0.595**(6/5). 착좌율 0.885→0.905, 0.910→0.915.
 - 결론: sim에서는 마커 블록이 8·11번 넣기에 영향 없음(차이는 짝 비교 잡음 수준). Q4 4번 실기 충돌은 sim 기하로 재현 안 됨 — 실제 착지 위치가 계획과 다를 때(계통 칸 오차)만 생기는 것으로 보는 가설과 모순은 없지만 증명도 아님.
 - 스크립트·결과 `rl/logs/basket/insert_final_eval_q34_811/run_markers.sh`, `mk_*.{json,npz,log}`.
+
+## 2026-10-17 00:26 Codex — AS marker replay 원시 산출물 독립 감사 (CPU/read-only)
+- `e3` 대 `mk_e3`, `gx30_seen` 대 `mk_gx30_seen`의 JSON/NPZ를 독립식 `seated && in_quadrant && landed == target`으로 재계산했다. 네 파일 모두 각각 200행, `real=planned` 200/200, JSON 행·독립 성공식·NPZ exact가 **200/200 일치**했다. 두 비교 모두 이름·env·분면·목표 gap·bias가 모두 같고 입력 `obs[:,0:8]` 및 `obs[:,14:16]`도 일치했다.
+- 결과 재현: e3 **120/200 (60.0%) → 118/200 (59.0%)**, paired gain/loss **5/7**(113 ties, 75 both-fail; 양측 exact sign p=.774); Q3 57/90→55/90, Q4 63/110→63/110. gx30_seen **118/200 (59.0%) → 119/200 (59.5%)**, gain/loss **6/5**(113 ties, 76 both-fail; p=1.000); Q3 56/90→57/90, Q4 62/110→62/110. Wilson 95% CI는 e3 비교 53.1–66.5% / 52.1–65.6%, gx30_seen 비교 52.1–65.6% / 52.6–66.1%. 착좌는 각각 177→181/200, 182→183/200. 작은 paired 변화로 마커 영향의 유무를 확정할 수 없다.
+- **짝 비교의 중요 한계:** 같은 계획/무작위 bias를 재사용했지만 전체 정책 관측은 같지 않다. `obs[:,8:14]`인 손 안 접시 pose가 200/200행에서 달랐고 최대 차이는 위치 **55.3 mm**, 회전벡터 차 **36.0°**였다. 이 항목은 `expert.insert_policy_params()`의 손 안 pose 입력에 해당한다. 따라서 이 수치만으로 동일 완전관측에서의 마커 효과나 차이의 원인을 분리하지 않는다.
+- marker 전용 접촉 신호는 산출되지 않았다: NPZ에는 접촉/marker-contact 배열이 없고 JSON trace는 `descended/released/ascended`뿐이다. 로그의 일반 `collision` 카운터도 marker별 접촉 판정이 아니다. 결론은 “선택된 Q3/Q4 8·11 planned sim 결과에서 큰 성공률 변화가 관측되지 않음”에 한정한다. 마커 블록 접촉 여부와 Q4:4 실기 충돌 원인은 여전히 미확정이다.
+- 검토 경로: `rl/logs/basket/insert_final_eval_q34_811/{e3,mk_e3,gx30_seen,mk_gx30_seen}.{json,npz}` 및 `run_markers.sh`. 파일·체크포인트·모델은 읽기만 했으며 Isaac/GPU와 로봇/그리퍼는 실행하지 않았다.
