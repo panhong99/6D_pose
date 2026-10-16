@@ -4282,6 +4282,63 @@
 - seed13 train0–39 40쌍 + eval0–40 9쌍, seed14 train0–9 10쌍 + eval0/5 2쌍: 총 **61쌍**. 각 파일의 JSON 행별 exact를 독립 계산해 NPZ/JSON fields와 대조했다. 일치 61/61, 배열 finite, planned-only. 최신 샘플에서 unresolved-visual 경고 여부를 별도 재산출하지 않음.
 - seed13 학습 부모 PID는 더 이상 보이지 않고 final eval40 산출물이 존재; seed14 학습은 계속 실행 중이며 eval10 replay도 진행 중. 프로세스/GPU/코드/데이터/체크포인트는 조작하지 않았다. sim 결과만이며 P1 실기 gate·실기 안전성 검증 아님.
 
+## 2026-10-16 20:04 Codex — ±30 mm 기준선 및 seed14 최신 평가 독립 감사 (CPU/read-only)
+- Claude가 기록한 `rl/logs/basket/insert_final_eval_q34_811/{gx30_tuned,gx30_e3}.{json,npz}`를 행 단위로 재집계: tuned **48/200=24.0%**, e3 **58/200=29.0%**. Q3 **24/90→28/90**, Q4 **24/110→30/110**. 같은 200 이름/순서이며 JSON row exact식·NPZ·top-level field 대조 **400/400 일치**, 모두 `real=planned`. 짝 비교 e3 17건 회복/7건 악화, exact binomial p=**0.0639**; 이 표본에서는 +5%p 관측이나 통상 0.05 기준으로 뚜렷한 paired 차이는 아님. ±8 mm 기준 49.5/60.0%와 직접 차이의 원인 해석은 별도 domain 비교 설계가 필요.
+- `seen6mm_gx30_seed14` train0–15 완결 16 batch rollout **1,565/3,072=50.9%**(학습 중 혼합 정책 통계). eval10 **65/120=54.2%**, eval15 **63/120=52.5%**(Q3 **39/63**, Q4 **24/57**); 같은 validation 비교 4 gain/6 loss. eval5→15 누적 향상으로 일반화 결론을 내릴 수 없고, 별도 final 200개는 아직 산출되지 않음. train16은 log-only라 제외.
+- 완결 seed14 train JSON/NPZ 16쌍 및 eval0/5/10/15 4쌍을 재검산: 행별 `seated_in_quadrant && single landed_gap == target_gap`, JSON/NPZ exact·quadrant·landed·target 일치 **20/20**, finite·planned-only. 현재 process check에서 해당 seed14 `train.py`만 활성; 이전 seed13은 완료. 실행 중인 프로세스는 건드리지 않음. 결과는 sim 한정이며 실기 성공/안전성 증명 아님.
+
+## 2026-10-16 20:24 Codex — gap_x_dr seed14 후속 원시 감사 (CPU/read-only)
+- train0–22 완결 **23×192**: independent exact **2,309/4,416=52.3%** (Q3 **1,310/2,349=55.8%**, Q4 **999/2,067=48.3%**). 마지막 train19–22 **114,101,107,118/192**. 이는 혼합 PPO rollout 통계이지 고정 정책 평가가 아니다. train23은 로그만 있어 제외.
+- eval20 **62/120=51.7%**(Q3 **38/63**, Q4 **24/57**), eval15 63/120보다 1건 낮음. 같은 입력이며 15→20 paired **5 gain/6 loss**. eval10/15/20은 동일 반복 validation이라 최종 독립 평가로 간주할 수 없다.
+- 완결 train0–22 및 eval10/15/20의 JSON/NPZ **26쌍**을 재계산: exact 정의 및 JSON/NPZ row·top-level 일치 **26/26**, finite, planned-only. 현재 seed14 학습만 활성인 것을 확인; 실행·체크포인트·GPU는 건드리지 않았다. 계획된 sim 결과이며 실기 성능/안전성 주장 아님.
+
 ## 2026-10-16 19:5x Claude — 칸 오차 ±30 mm 기준선 (최종 200개, 칸 오차 못 봄)
 - 튜닝 **0.240**, e3 **0.290** (±8 mm 때 0.495 / 0.600). 칸 오차가 실기 수준으로 크면 못 보는 정책은 무너진다.
 - 같은 ±30 mm에서 칸 오차를 6 mm 잡음으로 보는 학습(gx30_seed14) 검증: it0 0.500 → it10 0.542 (검증 120개; 최종 세트 평가는 학습 후). → 실기 착지 기록으로 칸 오차를 넣어 주는 방향이 맞다는 근거.
+
+## 2026-10-16 20:45 Codex — gap_x_dr seed14 train/eval 원시 감사 (CPU/read-only)
+- rl/logs/basket/insert_rl_20261016_q34_811_seen6mm_gx30_seed14/ train0–29를 원자료에서 재집계: **3,083/5,760=53.5%** (Q3 **1,735/3,061=56.7%**, Q4 **1,348/2,699=49.9%**). 새 train23–29는 **774/1,344=57.6%**(Q3 425/712, Q4 349/632); 개별 성공 수 **101,104,112,110,109,118,120/192**. 혼합 PPO rollout이라 고정 정책 성능으로 해석할 수 없음.
+- 누적 pin별: Q3-8 **1,012/1,748=57.9%**, Q3-11 **723/1,313=55.1%**; Q4-8 **607/1,248=48.6%**, Q4-11 **741/1,451=51.1%**. Q1/Q2 조건은 이 데이터셋에 없음.
+- eval_0030 **67/120=55.8%**(Q3 **42/63**, Q4 **25/57**; Q3-8/11 **19/30,23/33**, Q4-8/11 **15/28,10/29**). eval25도 67/120이고 동일한 이름/순서의 검증 사례; paired 변화 **6 pass→fail / 6 fail→pass**, exact p=**1.0**. eval0→30은 13 gain/6 loss(p=0.167). 반복 checkpoint-selection validation이므로 어느 비교도 독립 일반화 증거가 아니다.
+- train0–29 및 eval30의 **31 JSON/NPZ 쌍**을 확인: row별 exact=seated_in_quadrant && 단일 landed_gap == target_gap, JSON top-level·NPZ 배열·독립 계산 일치, 배열 finite, real=planned; 불일치 **0**. 현재 seed14 학습 PID **1439299** 실행 중 확인, 건드리지 않았다. CPU/read-only; Isaac/GPU·프로세스·코드·데이터·체크포인트 변경 없음. 계획된 sim 결과만이며 실기 성공/안전성 근거가 아니다.
+
+## 2026-10-16 21:05 Codex — seed14 eval0/30 실패유형 변화 (CPU/read-only)
+- 동일 120개 계획 사례를 분류(분면 밖 → 분면 내 미착좌 → 정확 착좌 → 인접 gap → 원거리/복수 gap): eval0 **21/3/60/29/7**, eval30 **18/5/67/20/10**. Q3 exact **40/63→42/63**, Q4 **20/57→25/57**. 관측상 인접 gap과 분면 밖은 줄었지만 원거리/복수 gap 및 미착좌는 늘었다; sim 지표의 상태 분류일 뿐 물리적 실패 원인으로 단정하지 않는다.
+- eval0↔30의 JSON·NPZ·독립 exact/상태 필드 대조는 각 **120/120**, finite, 같은 case 순서·target·bias. 앞서 계산한 exact paired 변화는 gain/loss **13/6**, p=**0.167**로 뚜렷한 개선 근거는 부족하다. 같은 반복 validation이며 독립 test가 아니다.
+- CPU 분석만 수행, 학습 프로세스/Isaac/GPU·코드·config·데이터·체크포인트는 건드리지 않았다.
+
+## 2026-10-16 21:08 Codex — seed14 train33–35 / eval35 감사 (CPU/read-only)
+- 원자료 재집계 train0–35 **3,731/6,912=54.0%**(혼합 정책 rollout). 새 train33–35 **336/576=58.3%**(배치별 110, 114, 112/192; Q3 187/305, Q4 149/271). 누적 Q3 **2,088/3,667=56.9%**, Q4 **1,643/3,245=50.6%**; pin Q3-8/11 **1,208/2,094, 880/1,573**, Q4-8/11 **736/1,491, 907/1,754**.
+- eval35 **71/120=59.2%**(Q3 **44/63**, Q4 **27/57**; pin Q3-8/11 **20/30,24/33**, Q4-8/11 **15/28,12/29**). 동일 입력·bias의 eval30→35 paired **7 gain/3 loss**, p=**0.344**; eval0→35 **17/6**, 명목 p=**0.0347**. 매 checkpoint 선택에 반복 사용된 같은 120개 validation이므로 후자의 명목 유의성은 독립 일반화 증거가 아니다.
+- train0–35 완결 **36 JSON/NPZ 쌍**, eval35 쌍의 행별 exact 정의·NPZ/top-level 대조, finite 및 planned 여부를 재검산해 불일치 **0**. train PID 1439299 계속 실행 중. CPU/read-only; 학습·GPU·코드·config·데이터·checkpoint 무개입. 계획 sim에 한정.
+
+## 2026-10-16 21:10 Codex — seed14 train36 원시 확인 (CPU/read-only)
+- train36 exact **105/192**; row exact 정의·NPZ exact/in-quadrant/landed/target 일치, 핵심 배열 finite, planned-only; 오류 0.
+- 누적 train0–36 **3,836/7,104=54.0%** (Q3 **2,151/3,771=57.0%**, Q4 **1,685/3,333=50.6%**; pin Q3-8/11 **1,243/2,149, 908/1,622**, Q4-8/11 **756/1,530, 929/1,803**). 혼합 rollout이라 eval 점수가 아니다.
+- 직전 eval35(71/120) 검증과 실험 한계는 위 21:08 기록 참조. train PID 1439299 계속 실행 중. 읽기 전용, 학습/GPU·산출물 변경 없음.
+
+## 2026-10-16 21:24 Codex — seed14 train37–42 / eval40 원시 감사 (CPU/read-only)
+- train0–42 **4,483/8,256=54.3%**(혼합 PPO rollout). 신규 train37–42 **647/1,152=56.2%**(배치별 **111,119,109,97,115,96/192**). 누적 Q3 **2,510/4,378=57.3%**, Q4 **1,973/3,878=50.9%**; pin Q3-8/11 **1,460/2,499,1,050/1,879**, Q4-8/11 **879/1,777,1,094/2,101**.
+- eval40 **70/120=58.3%**(Q3 **45/63**, Q4 **25/57**; pin Q3-8/11 **21/30,24/33**, Q4-8/11 **14/28,11/29**). eval35→40 paired **3 gain/4 loss**, p=**1.0**; eval0→40 **14/4**, 명목 p=**0.0309**. 같은 반복 checkpoint-selection validation이므로 일반화 증거가 아니다.
+- eval0→40 실패유형(분면 밖 / 미착좌 / exact / 인접 / 원거리·복수)은 **21/3/60/29/7→17/3/70/21/9**. 상태 분류 변화이지 물리 원인 확증은 아니다.
+- train0–42 43쌍과 eval0/35/40 3쌍을 원자료로 재검산: exact식 및 JSON row/NPZ 핵심 outcome 필드 일치 **46/46**, finite, planned-only; 불일치 0. train PID **1439299** 계속 실행 중 확인. CPU/read-only; Isaac/GPU·프로세스·코드·config·데이터·checkpoint 무개입. eval은 재사용 validation이고 실기·안전성 증거가 아니다.
+
+## 2026-10-16 21:26 Codex — 반복 eval 시나리오 안정성 요약 (CPU/read-only)
+- 동일한 120 validation 사례의 eval0/5/10/15/20/25/30/35/40 결과를 쌓아 보니 9개 모두 exact인 사례 **44**, 전부 실패 **39**, checkpoint 간 결과가 변한 사례 **37**였다. checkpoint별 exact는 **60,64,65,63,62,67,67,71,70/120**.
+- 따라서 eval0→40의 명목 paired 이득 14/4(p=.0309)는 checkpoint 선택에 반복 사용한 이 holdout의 사후 비교다. 사례의 31%가 checkpoint에 따라 성공/실패가 변했고, 독립 test로 재평가하기 전 일반화 향상으로 주장하지 않는다.
+- CPU/read-only 분석. train PID 1439299와 산출물은 건드리지 않았다.
+
+## 2026-10-16 21:29 Codex — seed14 스냅샷 물리성·shield 설정 비판 감사 (read-only)
+- run config에서 snapshot=true, plans 400 / eval 120, DR on을 확인. 해당 실행이 보존한 코드 사본을 읽음: train snapshot code/rl/basket/train.py의 InsertVecEnv.__init__은 shield.safe를 모두 True로 덮고(260행), reset()에서 모든 초기 env에 attach state를 켜고 즉시 attach_update(268–286행), step()마다 붙은 plate의 pose를 강제 갱신(307–309행).
+- 동일 snapshot code/rl/basket/expert.py의 eval 경로도 shield.safe를 모두 True로 설정(1994행), 시작 상태를 env._attach['on']=True로 설정(2030행), action 후 attach_update를 매 step 호출(2103–2105행). 즉 이 정책 평가는 attach-free 물리 grasp/운반을 시험하지 않으며, collision shield의 안전성도 평가하지 않는다. opening 시 detach는 하지만 그 전까지 pose 강제 부착이므로 “실제 물리만” gate 충족으로 볼 수 없다.
+- 따라서 앞서 보고한 eval40 70/120 및 train rollout 54.3%는 이 제한된 sim insertion setup 내부 결과로만 해석한다. AO physical-only G1/G2나 실기 grasp 성공·충돌 안전 근거로 사용하면 안 된다. 스냅샷 외 원본 코드는 수정하지 않음.
+
+## 2026-10-16 21:44–21:4x Codex — seed14 완료 산출물 원시 감사 (CPU/read-only)
+- `rl/logs/basket/insert_rl_20261016_q34_811_seen6mm_gx30_seed14/`의 train0–49 50개(9,600 episode) pooled exact는 **5,283/9,600=55.0%**: Q3 **2,945/5,073=58.1%**, Q4 **2,338/4,527=51.6%**. 핀별 Q3-8 **1,713/2,897=59.1%**, Q3-11 **1,232/2,176=56.6%**, Q4-8 **1,036/2,072=50.0%**, Q4-11 **1,302/2,455=53.0%**. 이는 정책이 갱신되는 PPO 학습 rollout pooled 비율이지 단일 정책 평가가 아니다.
+- 최종 `eval_0050` **67/120=55.8%** (Q3 **42/63=66.7%**, Q4 **25/57=43.9%**; 핀 Q3-8/11 **19/30,23/33**, Q4-8/11 **14/28,11/29**). `eval_0045` 72/120에서 같은 입력 120건의 paired 변화는 **0 gain/5 loss**, exact binomial p=.0625; eval0→50은 15/8(p=.210). eval0→45는 17/5(p=.0169)였지만, 여러 checkpoint에 재사용한 validation의 사후 선택 비교라 독립 일반화 근거가 아니다. eval50 상태분류(분면 밖 / 분면 안 미착좌 / exact / 인접 gap / 원거리·복수 gap)는 **17/2/67/25/9**.
+- train0–49와 eval0/45/50의 JSON/NPZ **53쌍, 9,960행**에서 `seated_in_quadrant && landed_gaps 단일 && landed==target`로 exact를 독립 재계산했다. JSON row/top-level/NPZ 주요 상태·목표·분면 필드 및 exact 일치 **9,960/9,960**, 비유한 핵심 배열 0, `real=planned` 전부. 평가본 세 개는 names/env/quadrant/target/bias/obs까지 동일 입력이었다.
+- `curves.png`와 `history.json`도 존재한다. 다만 21:29 설정감사에 기록했듯 이 snapshot은 reset부터 attach를 켜고 매 스텝 plate pose를 강제로 따라가게 하며, collision shield를 항상 safe로 덮어쓴다. 따라서 이 결과는 attach-free 물리 파지·운반, 충돌 안전성, AO G0/G1/G2 통과 수치가 아니다. AO 명시 gate의 G0는 여전히 11/18=61.1%로 95% 미달; G1/G2와 추가 학습은 이 run으로 승인되지 않는다. CPU 원자료 판독만 했고 GPU/Isaac·프로세스·코드·config·데이터·checkpoint는 변경 안 함.
+
+## 2026-10-16 22:0x Claude — 칸 오차 보는 정책 최종 평가 + 월요일 보고서
+- 최종 200개: ±30 mm 오차에서 튜닝 0.240 / e3 0.290 / e3(칸 오차 입력) 0.500 / **gx30_seen 0.590 [0.521, 0.656]**(e3 대비 80승 20패). ±8 mm에서 gx30_seen 0.545 < e3 0.600(22승 33패). 파일 `rl/logs/basket/insert_final_eval_q34_811/gx30_seen_best.pt`.
+- 보고서 `collab/MORNING_REPORT_CLAUDE_20261019.md`.
