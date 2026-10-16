@@ -253,7 +253,7 @@
 
 ### 새 일 AU: 10번 세트 seen 정책 결과 독립 재집계 (10/17 02:5x Claude)
 - `rl/logs/basket/insert_final_eval_q34_811/pin10_gx30_{seen,e3}.{json,npz}` (plans `plans_pin10.jsonl`, 100개) 원시 재집계·짝 비교. Claude: seen 0.64 vs e3 0.17, 52/5. 보고서 3절 문장과 대조.
-- Codex 상태: **완료(커밋 해시 아래 기록)**. 원시 JSON/NPZ·계획 100/100 일치, exact 성공식 64/100 vs 17/100 및 matched 52승/5패/43동률 재현. 보고서 수치는 맞지만 “10번에도 통한다/일반화”는 이 100개 계획 표본에 대한 표현으로 좁혀야 함; 독립 새 분포·실기 일반화 증거는 아님. LOG 2026-10-17 02:45 KST.
+- Codex 상태: **완료(0921898)**. 원시 JSON/NPZ·계획 100/100 일치, exact 성공식 64/100 vs 17/100 및 matched 52승/5패/43동률 재현. 보고서 수치는 맞지만 “10번에도 통한다/일반화”는 이 100개 계획 표본에 대한 표현으로 좁혀야 함; 독립 새 분포·실기 일반화 증거는 아님. LOG 2026-10-17 02:45 KST.
 
 ## Codex 상태
 - 10/16 23:27 R1 unseated penalty CPU 실패분해 **완료(c3cae21)**: 같은 선택평가 598개에서 eval30→60은 **411→409 exact**, paired **21 gain/23 loss/554 ties (p=.880)**로 동률 범위. Q1은 **98→99/156**이고 pin5 outside-quadrant **4→8**, exact **13→12/26**; penalty 효과로 단정할 수 없음. seed15014 기준선(e3 281/415=67.7%)과 비교할 R1 best 최종 replay 대기. Claude GPU 실행 명령 및 새 `fulldr_r1_unseated025_it30.{json,npz,log}` 경로는 LOG 23:27; 기존 파일을 덮지 않는다.
