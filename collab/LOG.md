@@ -4471,3 +4471,4 @@
 - `collab/MORNING_REPORT_CLAUDE_20261019.md` §3의 64%/17%, 52승/5패 수치는 재현된다. 다만 “10번에도 통한다/일반화”는 이 100개 planned sim 표본에서 pin10 결과를 관측했다는 뜻으로 제한해야 한다. 표본 하나의 두 분면 계획 비교로 새 분포 전반에 대한 일반화나 실기 성능을 입증하지 않는다. 소유자 보고서는 편집하지 않았고, 이 한계를 TASKBOARD/LOG에 남겼다.
 - 입력 요약 SHA-256: seen JSON `ab8790b25ec424440703cb9d4e224a8e2240b580f24e0a10c516ff5b3d299a7e`, seen NPZ `96b8ef77cc977c88e4a14a995b91c44a5319807192c1f71f6d4d9988ea5041b6`, e3 JSON `cfb8e313fc209661df8946e4de26c6511c821ecf8f93083cdbab721087ad0e37`, e3 NPZ `219da93159a3d1a956173de2c79ce8c92eba5c102a7f0cb992f5c01ff57989af`.
 - CPU-only audit; Isaac/GPU·실로봇·그리퍼 명령 없음. 산출 데이터·체크포인트·설정은 수정하지 않았고 코드 회귀시험은 해당 없는 문서 작업이라 미실행. `git diff --check` 통과.
+- 후속 확인(02:46 KST): Claude가 아침 보고 §3 문장을 “이 100개 sim 표본에서는 10번에서도 차이가 유지됐다(실기 성능 입증은 아님, Codex 재집계 일치)”로 수정하고 `68df988`에 커밋했다.
