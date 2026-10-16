@@ -234,8 +234,13 @@
 - 특히: (1) 빨간 접시 기본 경로가 정말 그대로인지, (2) 흰 접시 1 cm 깊게의 방향(+radial)이 맞는지 라이브러리 기하로 독립 확인, (3) 마커 상자가 실기 pipeline·random_plans·goal1_offline 모두에 적용되는지와 Q4 4번 충돌을 설명하는지, (4) landed pin 부호·분면 대응(Q3/Q4 model_qd) 오류 가능성.
 - Codex 상태: **완료(b2c188b)**. LOG 2026-10-16 14:04에 P1/P2 위험 6건과 재현 명령 기록; 관련 hardware-free 회귀 **80/80 통과**. marker collider는 planner와 Isaac USD 간 불일치, Q4:4 원인 미확정. 코드 수정/Isaac/실기 실행 없음.
 
+### 새 일 AR2: AR 후속 안전 수정 Critic 검증 (10/16 23:2x Claude)
+- Claude의 `sim_scene.newest_t_base_cam()` INVALID 세션 제외와 흰 접시+`--no_library` 조합 거부를 읽기 전용 검증한다. 빨간 접시+`--no_library` 기본 parsing은 유지되는지, 최신 INVALID가 있어도 이전 유효 세션을 고르는지 확인한다.
+- Codex 상태: **완료(49684ce)**. 임시 INVALID fixture·CLI 동작 확인, 전체 80/80 회귀시험과 고정 regression-test 권고를 LOG에 기록했다. 소스 수정/실기·그리퍼 실행 없음.
+
 ## Codex 상태
 - 10/16 14:04 AR critic review 완료(b2c188b): 월요일 실기 경로 변경의 marker/Isaac geometry 불일치, Q4:4 원인 미확정, white no-library radial offset, INVALID 선택기 누락(sim_scene), landed-pin/학습 seen 의미 차이, gripper force byte 한계를 LOG에 기록. Tests 80/80; 코드 수정 없이 정적 리뷰.
+- 10/16 14:04 AR2 후속 수정 검토 완료(49684ce): INVALID 최신 세션을 건너뛰는 임시 fixture와 red/white no-library CLI 분기 확인, 전체 tests 80/80. 상세 및 고정 회귀시험 권고는 LOG 14:04; Claude 소유 source diff는 무수정.
 - 10/16 21:44 seed14 최종 산출물 감사 완료(미커밋: 두 기록 파일에 선행 미커밋 변경이 있어 보존): train0–49 **5,283/9,600=55.0%**(Q3 58.1%, Q4 51.6%; mixed rollout), eval50 **67/120=55.8%**(Q3 42/63, Q4 25/57). eval45→50 paired 0/5(p=.0625); eval0→50 15/8(p=.210), 반복 선택 validation이라 일반화 증거 아님. 53 JSON/NPZ쌍·9,960행 row/top-level/NPZ 일치, planned-only. snapshot attach 강제·shield 우회라 physical-only/safety/AO G2 아님; AO G0 11/18 <95% gate 유지. LOG 21:44.
 - 10/16 21:24 PPO 감사: gap_x_dr seed14 train0–42 **4,483/8,256=54.3%**(Q3 2,510/4,378=57.3%, Q4 1,973/3,878=50.9%; 혼합 rollout). 새 train37–42 **647/1,152=56.2%**. eval40 **70/120=58.3%**(Q3 45/63, Q4 25/57); eval35→40 paired 3/4(p=1.0), eval0→40 14/4(p=.0309)이나 반복 checkpoint-selection validation이라 일반화 증거 아님. train0–42+eval0/35/40 원시 대조 불일치 0. seed14 계속 실행. 상세 LOG 21:24.
 - 10/16 21:26 반복 eval 안정성: eval0–40의 동일 120건 중 전 checkpoint exact 44, 전부 실패 39, 나머지 37건은 checkpoint마다 결과가 바뀜. 재사용 holdout에서 선택·비교한 점수라는 한계를 재확인. 상세 LOG 21:26.
