@@ -3709,3 +3709,9 @@
 - exact 수치: tuned **226/415=54.5%** (Q1–Q4 **55/114,64/100,61/110,46/91**); E2 **277/415=66.7%** (**61/114,73/100,84/110,59/91**); E3@10 **281/415=67.7%** (**61/114,75/100,84/110,61/91**); E3@50 **277/415=66.7%** (**59/114,74/100,80/110,64/91**). Claude의 @50 요약과 일치.
 - E3@50 대 E3@10 paired fail→pass/pass→fail **28/32**, net −4, exact two-sided p=**0.699**. E3@50 대 tuned paired **97/46** (Claude LOG 보고와 일치); E3@10 대 tuned **102/47**. 이는 선택된 checkpoint들의 동일 고정 simulation set 비교라 일반화된 향상이나 실기 성공 근거가 아니다. @50은 @10 후보 점수를 넘지 못했으므로 `e3_best.pt` @10 선택 변경 근거 없음.
 - AO gate는 별도: SafeDiffIK G0 **11/18=61.1% <95%**, 따라서 이 보조 PPO 감사만으로 G1/G2(BC)를 시작/통과 처리하지 않는다. CPU 읽기 전용; GPU/Isaac·로봇·그리퍼 및 코드/데이터/checkpoint 쓰기 없음. 문서 변경 후 `bash calibration/run.sh tests` **78/78 통과 (33.412 s)**.
+
+## 2026-10-16 09:31 Codex — 새 입력·gate 상태 점검
+- `calibration/data/basket/wrist_look/` 최상위 원본·라벨 timestamp를 점검. 새 calibrated raw 사진은 없으며 최신 원본은 `20261013_190126_Q2.raw.png` (10/13 19:10 KST); 이후 10/14 라벨 및 10/16 diagnostic 산출물만 있다. 기존 59개 확인 라벨은 추가 사람 확인 없이 exhaustive GT가 되지 않으므로 N/E 정확도 gate를 열 수 없다.
+- AO 최신 유효 SafeDiffIK G0는 Q1 단일분면 **11/18=61.1%**, 계획 gate ≥95% 미달. 실패 trajectory의 기존 원시 원인 분석은 LOG 10/15 20:4x와 아침 보고에 있음; G1/G2 시작 근거가 없다. 이는 대기 사유 상태기록이며 새 실험/수정은 하지 않았다.
+- GPU/Isaac·로봇·그리퍼, 코드·데이터·checkpoint 쓰기 없음.
+- 공유 기록 커밋 전 `bash calibration/run.sh tests`: **78/78 통과 (32.567 s)**.

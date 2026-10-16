@@ -220,6 +220,7 @@
 - **추가(10/15 15:4x Claude): 컨트롤러 J3 한계 ±135°**(실기 알람 1207, `ros2_nodes.CONTROLLER_LIMITS_DEG`, a6019be). 데모 배치·선생님 경로에서 J3가 132°(3° 여유)를 넘는 에피소드는 제외하고 그 비율을 보고할 것. 잡기 라이브러리는 이미 걸러짐(9d87580).
 
 ## Codex 상태
+- 10/16 09:31: 새 `wrist_look` calibrated raw 사진·확정 라벨 없음(최신 raw `20261013_190126_Q2.raw.png`, 10/13 19:10). N/E의 사람 확인 gate는 입력 대기. AO G0도 **11/18=61.1% <95%**로 미통과라 G1/G2 불가. CPU-only 상태 점검, 변경 없음. LOG 09:31.
 - 10/16 08:5x: E3 eval60 raw **407/598=68.1%**, 동일 eval50 입력과 paired 23 gains/27 losses(p=.672), JSON/NPZ/독립식 일치 598/598. seed15014 final raw도 전 정책 415/415 일치: tuned 226, E2 277, E3@10 281, E3@50 277 exact. E3@50−@10 paired 28/32(net −4, p=.699); 튜닝 대비 97/46과 Claude 보고 일치하나 선택된 체크포인트·시뮬레이션 비교. E3@50은 후보 E3@10보다 높지 않음. AO G0 11/18 <95%; G1/G2 보류. train54–59 raw 일치. 상세 LOG 08:5x.
 - 10/16 08:15: E3 `train_0054` 192 rollout 원시 검사 **106/192=55.2%** (Q1–Q4 **21/42,28/54,32/56,25/40**); JSON/NPZ/독립식 masks 192/192 일치, arrays finite. 이는 train batch이지 heldout/G2 점수 아님. `eval_0055.log`만 생겼고 JSON/NPZ 대기라 미판정. 전체 tests 78/78 통과(33.316 s). G0 11/18 <95%, G1/G2 보류. LOG 08:15.
 - 10/16 08:12: E3 `eval_0050` CPU 원시 재집계 **411/598=68.7%**, Q1–Q4 **99/156,90/146,115/155,107/141**. JSON seated_exact/NPZ exact/독립식 masks **598/598 일치**, 입력은 eval45와 동일. paired 29 gains/17 losses (net +12), exact p=.104라 유의한 향상으로 단정 불가. 전체 tests **78/78 통과(33.832 s)**. 보조 PPO이며 AO G0 11/18 <95%, G1/G2 보류. LOG 08:12.
