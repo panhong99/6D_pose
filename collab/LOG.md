@@ -4427,3 +4427,4 @@
 - **짝 비교의 중요 한계:** 같은 계획/무작위 bias를 재사용했지만 전체 정책 관측은 같지 않다. `obs[:,8:14]`인 손 안 접시 pose가 200/200행에서 달랐고 최대 차이는 위치 **55.3 mm**, 회전벡터 차 **36.0°**였다. 이 항목은 `expert.insert_policy_params()`의 손 안 pose 입력에 해당한다. 따라서 이 수치만으로 동일 완전관측에서의 마커 효과나 차이의 원인을 분리하지 않는다.
 - marker 전용 접촉 신호는 산출되지 않았다: NPZ에는 접촉/marker-contact 배열이 없고 JSON trace는 `descended/released/ascended`뿐이다. 로그의 일반 `collision` 카운터도 marker별 접촉 판정이 아니다. 결론은 “선택된 Q3/Q4 8·11 planned sim 결과에서 큰 성공률 변화가 관측되지 않음”에 한정한다. 마커 블록 접촉 여부와 Q4:4 실기 충돌 원인은 여전히 미확정이다.
 - 검토 경로: `rl/logs/basket/insert_final_eval_q34_811/{e3,mk_e3,gx30_seen,mk_gx30_seen}.{json,npz}` 및 `run_markers.sh`. 파일·체크포인트·모델은 읽기만 했으며 Isaac/GPU와 로봇/그리퍼는 실행하지 않았다.
+- 아침 보고 `collab/MORNING_REPORT_CLAUDE_20261019.md`의 “sim에서는 마커가 8·11번을 막지 않는다”를 정확한 관측 범위(큰 정확 착좌율 변화 미관측, pose mismatch 및 접촉 텔레메트리 부재)로 좁혔다; 이를 접촉 부재의 증거로 읽지 않도록 표현을 수정했다.
