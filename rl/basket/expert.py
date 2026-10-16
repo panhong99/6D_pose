@@ -874,6 +874,8 @@ def insert_policy_params(r, k, H, Tb):
     seen = bias + rng.normal(0, _CL_POL.get('seen_noise', 0.002), 2)
     if _CL_POL['noseen']:
         seen = np.zeros(2)
+    if _CL_POL.get('seen_override') is not None:             # (10/16) real robot: gap error estimated from real inserts
+        seen = np.asarray(_CL_POL['seen_override'], float)
     yaw_bias, hand = 0.0, np.eye(4)
     if _CL_POL['dr'] and _CL_POL['dr_full']:                # unobserved: marker yaw error, in-hand plate pose bias
         dr = E_CFG()['align']['dr']

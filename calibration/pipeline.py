@@ -471,11 +471,23 @@ def load_basket_insert_policy(path):
     return expert
 
 
-def basket_insert_policy_params(expert, quadrant, gap, H, Tbb):
-    """Use the same deterministic 16D/5D policy implementation as sim, with real-canonical H and unseen gap error."""
+def landed_gap_error(Tbb, quadrant, pin, landed_pins):
+    """(10/16) Gap error [x, y] in the basket frame (the sim's 'seen' gap error) from where earlier real inserts aimed
+    at `pin` landed: mean landed gap centre - target gap centre (pin N = between tines N and N+1, fractions interpolate)."""
+    from plate_plans import basket_gaps, pin_gap
+    gaps = basket_gaps()[quadrant]
+    n = len(gaps)
+    x_of = lambda p_: float(np.interp(p_, np.arange(1, n + 1), [gaps[pin_gap(Tbb, quadrant, k)][0] for k in range(1, n + 1)]))
+    return np.array([np.mean([x_of(l_) for l_ in landed_pins]) - x_of(pin), 0.0])
+
+
+def basket_insert_policy_params(expert, quadrant, gap, H, Tbb, seen=None):
+    """Use the same deterministic 16D/5D policy implementation as sim, with real-canonical H and unseen gap error
+    (or `seen`: the gap error estimated from real inserts, for a policy trained seeing it)."""
     row = dict(name='real_pipeline', model_qd=quadrant, gap=int(gap))
     # `insert_policy_params` owns obs scaling, canonical_hand, tanh and INSERT_SCALE; DR is off and noseen is on.
-    expert._CL_POL.update(det=True, dr=False, dr_full=False, noseen=True, canon=True, cache={})
+    expert._CL_POL.update(det=True, dr=False, dr_full=False, noseen=seen is None, canon=True, cache={},
+                          seen_override=None if seen is None else np.asarray(seen, float))
     result = expert.insert_policy_params(row, 0, np.asarray(H, dtype=float), np.asarray(Tbb, dtype=float))
     if (not np.isfinite(result['obs']).all() or not np.isfinite(result['act']).all()
             or not all(np.isfinite(result[k]) for k in ('dx', 'dy', 'lean', 'dz', 'yaw'))):
@@ -810,8 +822,12 @@ def run_plate(args):
                 H2, tool2 = hand_plate(rec.last['posj'], root, n_now)
                 if insert_policy_expert is not None:
                     sim_kw_before_policy, yaw_before_policy = dict(sim_kw), qs['yaw']
+                    seen = (landed_gap_error(basket_T, mq, args.pin, args.insert_landed_pins)
+                            if args.insert_landed_pins else None)
+                    if seen is not None:
+                        print(f'   실기 착지 기록 {args.insert_landed_pins} -> 칸 오차 x {seen[0]*1000:+.1f} mm (정책 입력)', flush=True)
                     correction = basket_insert_policy_params(insert_policy_expert, mq,
-                                                               pin_gap(basket_T, mq, args.pin), H2, basket_T)
+                                                               pin_gap(basket_T, mq, args.pin), H2, basket_T, seen=seen)
                     sim_kw, qs['yaw'] = apply_basket_insert_policy(
                         sim_kw, qs['yaw'], correction, be.B['full']['tine_lean_deg'][mq])
                     rec.event('insert_policy_correction', checkpoint=str(args.insert_policy.resolve()),
@@ -1161,6 +1177,9 @@ def parse_args(argv=None):
                    'from the robot) [m]; default config basket_quadrant_x_trim_m')
     p.add_argument('--sim_q', action='store_true', help='--insert quadrant: use config basket_quadrant_sim (Isaac per-quadrant '
                    'lean, aim, wrist flip; 10/15) instead of the real trims; --x_shift still overrides the aim')
+    p.add_argument('--insert_landed_pins', type=float, nargs='+', default=None,
+                   help='(10/16) with --insert_policy (a policy trained seeing the gap error): pins where earlier real inserts '
+                        'aimed at this --pin landed (e.g. 3.5 = between 3 and 4); their mean error is the policy\'s gap input')
     p.add_argument('--insert_policy', '--insert-policy', type=Path, default=None,
                    help='OPT-IN: apply the deterministic mean of a basket insert PPO checkpoint after lift, using canonical hand pose and unseen gap error; requires --task plate --place basket --insert quadrant --sim_q --execute')
     p.add_argument('--pin', type=int, default=5, help='--insert quadrant: pin-pair number in the quadrant, 1 = farthest from '
@@ -1202,6 +1221,8 @@ def parse_args(argv=None):
             p.error('--insert-force-limit-n must be finite and > 0')
         if not (a.execute and a.task == 'plate' and a.place == 'basket' and a.insert == 'quadrant' and not a.offline_test):
             p.error('--insert-force-limit-n requires --task plate --execute --place basket --insert quadrant; default remains off')
+    if a.insert_landed_pins and a.insert_policy is None:
+        p.error('--insert_landed_pins needs --insert_policy (a policy trained seeing the gap error)')
     if a.insert_policy is not None:
         if not (a.task == 'plate' and a.place == 'basket' and a.insert == 'quadrant' and a.quadrant
                 and a.sim_q and a.execute and not a.offline_test):

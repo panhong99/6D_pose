@@ -244,6 +244,18 @@ class Pipeline(unittest.TestCase):
             expert._CL_POL.update(old_pol)
             pipeline.sys.path[:] = old_path
 
+    def test_landed_pins_give_the_seen_gap_error(self):
+        # (10/16) aimed at pin 6, landed between 3 and 4 (farther from the robot) -> +x gap error; same pin -> zero
+        Tbb = make_T(R.from_euler('z', 2.18, degrees=True).as_matrix(), [1.0102, -0.1726, 0.1449])
+        for qd in ('Q3', 'Q4'):
+            e = pipeline.landed_gap_error(Tbb, qd, 6, [3.5])
+            self.assertGreater(e[0], 0.03)
+            self.assertEqual(e[1], 0.0)
+            np.testing.assert_allclose(pipeline.landed_gap_error(Tbb, qd, 6, [6, 6]), [0, 0], atol=1e-12)
+        self.assertIsNone(pipeline.parse_args([]).insert_landed_pins)
+        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+            pipeline.parse_args(['--insert_landed_pins', '3.5'])
+
     def test_insert_policy_cli_is_opt_in_and_requires_real_sim_q_quadrant_mode(self):
         self.assertIsNone(pipeline.parse_args([]).insert_policy)
         with tempfile.TemporaryDirectory() as tmp:
