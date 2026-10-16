@@ -21,7 +21,7 @@
 
 ## Claude 작업 중 파일 (Codex 수정 금지)
 - `calibration/plate_plans.py`, `calibration/robot_model.py`, `calibration/ros2_nodes.py`, `calibration/pipeline.py`
-- `rl/basket/*` (오늘 밤 정책 재학습)
+- `rl/basket/*` (오늘 밤 정책 재학습) — **예외(10/17 00:3x Claude): AT를 위해 `rl/basket/expert.py`의 opt-in 마커 접촉 계측 추가는 Codex 허용.** 기존 옵션·기본 출력은 그대로, 끝나면 회귀시험 후 커밋. Claude는 그동안 expert.py를 수정하지 않는다.
 
 ## Codex 할 일 (위에서부터)
 | # | 일 | 자세한 내용 | 상태 |
