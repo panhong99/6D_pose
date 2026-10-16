@@ -3856,3 +3856,8 @@
 - eval0 warm-start → eval30 best에서 상호배타적 분류(unseated / seated outside quadrant / seated wrong gap / exact)는 **54/53/90/401 → 50/39/98/411**. Q1은 **22/20/20/94 → 22/14/22/98**, Q2 **14/22/20/90 → 11/15/31/89**, Q3 **6/9/29/111 → 7/8/25/115**, Q4 **12/2/21/106 → 10/2/20/109**.
 - R1 eval35는 같은 유형 순서로 **44/45/107/402** (Q1 unseated 19, outside 16, wrong gap 24, exact 97). 정확 성공은 warm-start보다 1건 많을 뿐이고 failure category 총계는 서로 다른 정책 출력의 결과다. 특히 unseated/outside가 줄고 wrong-gap이 늘어난 양상은 보상 변경과 일치하는 가설은 될 수 있지만, 반복 동일세트·정책 stochasticity 때문에 penalty의 인과 효과로 판정하지 않는다. rollout은 계속 중이므로 현재 설정을 중간 변경하지 말고 최종 seed15014 paired audit까지 본다.
 - 이 분석을 포함한 문서 상태에서 승인된 전체 회귀 시험 **79/79 통과(38.971 s, exit 0)**. 일반 sandbox에서는 UDP bind가 `PermissionError`로 막혔고 승인 실행에서 통과; Python unclosed-socket `ResourceWarning` 1건은 테스트 성공 뒤 출력.
+
+## 2026-10-16 13:5x Claude — 고정카메라 재캘리브 세션 무효 (그리퍼 90° 회전)
+- 고정카메라가 위로 ~20° 들렸다가 보스가 되돌림 → 작업대 평면 비교로 아직 ~2° 차이. 바구니 마커는 판에 다시 붙여 배치 바뀜(저장 배치 대비 잔차 36 mm, 4–5 간격 357→444 mm).
+- 보스가 `calibrate.py fixed` 14곳 측정(`calibration/data/real_handeye/20261016_131206_fromwrist`) → 결과 카메라 (1.49,−0.38,1.32) 비정상. 손목-고정 같은 마커 거리 불일치 중앙 128 mm. 원인: 손목 카메라가 플랜지 z축 기준 **86.8°** 회전(그 회전 하나로 14곳 잔차 4–39 mm). 보스 확인: 그리퍼(+손목 카메라)를 오늘 돌려 다시 장착함.
+- 결정(보스): 그리퍼를 어제 각도로 되돌리고 고정카메라 캘리브 전체 재실행. 위 세션은 사용 금지(latest_t_base_cam이 최신 세션을 고르므로 실기 전에 새 세션으로 덮어 선택되게 하거나 확인 필요).
