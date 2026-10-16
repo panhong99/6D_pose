@@ -3974,6 +3974,15 @@
 - eval30 최고 411과 paired fail→pass/pass→fail **30/30**(net 0, exact p=1.000); eval50 407 대비 **32/28**(net +4, p=.699). eval30 대비 분면 변화 Q1 **0**, Q2 **+6**, Q3 **−2**, Q4 **−4**. 실패 분해 eval50→55: unseated **53→50**, seated-outside-quadrant **43→37**, seated-wrong-gap-inside **95→100**. 결과 분류일 뿐 인과 설명 아님.
 - `eval_0055.log` USD TCP visual unresolved 경고 **622회**(지표 영향 미검증). 고정 선택평가에서 이전 최고와 동률이며 75% 미달; 최종 held-out seed15014 비교 전이라 R1 완료/채택 판정은 아니다. CPU 원시검증만 했고 Isaac/GPU·실기·source/data/checkpoint 쓰기는 없음. 앞서 확인한 전체 회귀시험 gate 실패 때문에 문서 커밋 보류 중.
 
+## 2026-10-16 15:09 Codex — R1 `train_0055–0058` 원시 재검증 (CPU/read-only)
+- 각 192 rollout 독립식 `seated && in_quadrant && landed_gap == target_gap`: **121/192=63.0%**, **114/192=59.4%**, **105/192=54.7%**, **104/192=54.2%**. 각 batch의 JSON row·top-level·NPZ exact가 독립식과 **192/192 일치**, obs/act/logp/bias/low finite.
+- train36–58 전체 **2,410/4,416=54.6%**(Q1 **620/1,221**, Q2 **570/1,191**, Q3 **665/1,071**, Q4 **555/933**). 서로 다른 PPO 시점의 rollout 합계이므로 held-out 성능으로 해석하지 않는다.
+- `train_0059.log`는 생성됐지만 JSON/NPZ는 아직 없어 미집계. R1 eval55는 eval30 best와 동률(411/598), 75% 미달이며 seed15014 최종 비교 전. CPU/read-only 감사로 Isaac/GPU·실기·source/data/checkpoint 쓰기 없음; 회귀시험 gate 실패로 미커밋.
+
+## 2026-10-16 15:09 Codex — R1 `train_0059` 원시 재검증 (CPU/read-only)
+- 독립식 `seated && in_quadrant && landed_gap == target_gap`: **97/192=50.5%**; Q1 **26/56**, Q2 **17/53**, Q3 **37/57**, Q4 **17/26**. JSON row·top-level·NPZ·독립식 **192/192 일치**, obs/act/logp/bias/low 유한.
+- train36–59 전체 **2,507/4,608=54.4%**(Q1 **646/1,277**, Q2 **587/1,244**, Q3 **702/1,128**, Q4 **572/959**), 서로 다른 학습 시점 rollout 통계로 held-out 성능이 아니다. `eval_0060.log`가 생겼으나 JSON/NPZ는 아직 미완결. Isaac/GPU·실기·source/data/checkpoint 변경 없이 CPU 감사; full-test gate 실패로 미커밋.
+
 ## 2026-10-16 14:1x Claude — 고정카메라 재캘리브 + 바구니 새 마커 배치
 - 고정카메라: 보스 측정 `real_handeye/20261016_134701_fromwrist`(12곳, S 중 segfault — positions는 저장됨) → `--resolve`로 재계산. 4번째(index 3) 재투영 17.7 px(G·F 사이 마커 이동 추정) 제외한 11곳을 `20261016_134701_fromwrist_drop3/`에 저장(원본 보존): 카메라 (1.198, 0.579, 1.090), 재투영 평균 2.1 px, LOO 0.2–15 mm / ≤0.8°. 10/13 결과 대비 약 2 cm 차이. `latest_t_base_cam()`이 이 폴더 선택.
 - 바구니: 보스가 옮김(+x ≈ 9 cm) + 마커를 판에 다시 붙임. 손목 사진(wrist_look 135828, 140149)에 모델 빗살·레일을 chamfer로 맞춰 바구니 프레임 결정: 사진별 (1.004,−0.174,1.87°)/(1.008,−0.169,2.06°), 공동 (1.0102, −0.1726, 2.18°), z는 10/15 값 0.1449 유지(같은 테이블). 비스듬한 사진 140056은 빗살 겹침으로 2 cm 피치 모호 → 제외. 손목 장착 각도는 J6 −90°/−22° 두 사진이 4–5 mm로 일치해 큰 오차 없다고 판단(손목 재캘리브는 생략).
@@ -3995,3 +4004,34 @@
 - 기존 학습 계획 세트는 바구니 x 0.757–0.857(어제 실기 0.917, 오늘 1.010은 범위 밖). 새 세트(`random_plans --pins`, 오늘 바구니 주변 x 0.96–1.06, y −0.223~−0.123, yaw ±6°, 접시 x 0.85–0.96 y 0.28–0.36 — y>0.36은 넣기 경로 실패 다수): 학습 `random_20261016_145741`(400, 100%), 검증 `..._144606`(120), 최종 `..._144916`(199). `..._144207`은 159개에서 중단(동시 테스트 중 종료) — 사용 안 함.
 - 학습: R1(PID 1132827) 종료 후 자동 시작 `rl/logs/basket/insert_rl_20261016_q34_spec_seed11`(e3_best에서, 40회, batch 192, lr 1e-4, dr_full·canon·noseen·snapshot).
 - `demo4`: `DEMO_PINS="Q3:4 Q3:9:white Q4:4 Q4:9:white"`처럼 칸마다 색 지정(52c33ad).
+
+## 2026-10-16 15:29 Codex — R1 `eval_0060` 독립 원시 재검증 (CPU/read-only)
+- `rl/logs/basket/insert_rl_20261016_r1_unseated025_seed10/eval_0060.{json,npz}`의 598건을 독립식 `seated && in_quadrant && landed_gap == target_gap`으로 재집계: **409/598=68.4%**. 분면별 Q1 **99/156**, Q2 **91/146**, Q3 **112/155**, Q4 **107/141**. 목표 75%는 449건이라 **40건 부족**.
+- JSON result 행의 `seated_exact`, NPZ `exact`, 독립식은 **598/598 일치**; obs/act/logp/bias/low는 모두 finite. 이름·obs·bias·quadrant·target 입력은 eval30/55와 동일한 고정 평가 세트다.
+- eval30 최고 411/598 대비 paired fail→pass/pass→fail **21/23**(net −2, exact two-sided p=**.880**); eval55 411/598 대비 **28/30**(net −2, p=**.896**). eval55→60 실패 범주 변화는 unseated **50→41**, seated outside quadrant **37→43**, seated wrong-gap-in-quadrant **100→105**. 범주 이동은 기술통계이며 원인/인과 판정이 아니다.
+- 로그에서 USD TCP visual prim unresolved 경고 **622회** 확인; 결과 수치에 준 영향은 검증하지 않았다. P1 real-success replay gate는 **0/0**(평가 set에 replay 가능한 real 성공이 없어 판정 불가)이며, 위 598건 sim 평가와 혼동하지 않는다. 이 고정 선택평가 세트의 결과는 held-out seed15014 최종 비교가 아니며, R1 75% 기준 미달이다.
+- CPU/read-only 감사만 수행. Isaac/GPU, 로봇·그리퍼 명령, 코드·데이터·체크포인트 수정 없음. 전체 테스트 gate는 이전 LOG에 기록한 stale synthetic timestamp 문제로 실패 상태이므로 문서 변경은 커밋하지 않았다.
+
+## 2026-10-16 15:3x Codex — Q3/Q4 전용 R1 배치 초기 산출물 감사 (CPU/read-only)
+- Claude가 실행 중인 `rl/logs/basket/insert_rl_20261016_q34_spec_seed11/`에서 완료된 `eval_0000`과 `train_0000–0002`만 읽었다. `eval_0000`(e3 warm-start, 고정 validation 120개)은 독립식 `seated && in_quadrant && landed_gap == target_gap` **84/120=70.0%**; Q3 **49/65=75.4%**, Q4 **35/55=63.6%**. JSON 행·NPZ·독립식 **120/120 일치**, obs/act/logp/bias/low finite.
+- training rollout은 `train_0000–0002` 각각 **92/192=47.9%**, **103/192=53.6%**, **89/192=46.4%**. Q3: **49/100, 56/97, 51/100**; Q4: **43/92, 47/95, 38/92**. 각 JSON 행·NPZ·독립식 **192/192 일치**, 핵심 배열 finite. 세 시점 합산 284/576=49.3%(Q3 156/297, Q4 128/279)는 서로 다른 학습 정책의 rollout 기술통계이며 성능평가가 아니다.
+- eval0000의 P1 real replay gate는 0, need 9로 표시되지만 해당 결과 120개는 모두 `real=planned`; 실기 성공 재생 표본이 없어 그 gate는 판정 불가다. 이것은 위 sim exact와 별개다.
+- audit 중 Claude의 specialist 학습은 PID 1283790/1291122와 Isaac replay PID 1298246/1298253/1298258로 계속 실행 중이었음. 이 프로세스·GPU에는 개입하지 않았고, train0003 미완료 로그는 열지 않았다. CPU/read-only만 사용; source/config/data/checkpoint 변경 없음.
+
+## 2026-10-16 15:4x Codex — Q3/Q4 specialist `eval_0005`, `train_0003–0006` 원시 감사 (CPU/read-only)
+- 고정 validation `eval_0005`: 독립 exact **83/120=69.2%**(Q3 **48/65=73.8%**, Q4 **35/55=63.6%**). JSON row·NPZ·독립식 일치, 핵심 배열 finite. `eval_0000`과 names/obs/bias/quadrant/target가 동일; paired gain/loss **10/11**(net −1, exact p=**1.000**). 이 선택 validation에서 checkpoint 변화의 유의한 개선을 보이지 않으며 seed16203 최종 세트와는 별개다.
+- `train_0003–0006` 성공은 각각 **96/192 (50.0%)**, **93/192 (48.4%)**, **104/192 (54.2%)**, **104/192 (54.2%)**. 분면별 Q3 **45/96, 47/97, 62/112, 53/101**, Q4 **51/96, 46/95, 42/80, 51/91**. JSON 행·NPZ·독립식 mask는 각 **192/192 일치**, obs/act/logp/bias/low finite. train0000–6 합산 **681/1,344=50.7%**(Q3 **363/703**, Q4 **318/641**)는 학습 중 서로 다른 정책 시점의 rollout 기술통계지 평가 점수가 아니다.
+- `eval_0005.log`에 USD TCP visual unresolved 경고 **144회**; 성능 영향 미검증. Claude의 원 학습은 6회차 뒤 종료됐고, 확인 시점에는 정확 PID 1307799/1307864가 Q3:7,11 및 Q4:7,11 목표 핀용 새 random plan set(400/120/200개, seed 16201/16202/16203)을 만들고 있었다. 그 작업을 중단/수정하지 않았으며 새 파일은 아직 감사하지 않았다.
+- 읽기 전용 CPU 감사. Isaac/GPU·로봇/그리퍼 명령·코드·데이터·체크포인트 쓰기 없음. 회귀시험 미실행(결과 감사만); 이전 full-test gate 실패가 해소됐다고 보지 않는다.
+- Schema clarification from read-only source inspection: `rows.jsonl` stores top-level `gap` as 1-based (`gap + 1`), while nested replay stores `gap` as 0-based; nested `pin` is the requested numbered tine. Thus a row showing `gap: 2, pin: 11` beside replay `gap: 1, pin: 11` is the expected indexing convention, not a target mismatch. No source change.
+
+## 2026-10-16 15:52 Codex — Q3/Q4 고정 핀 plan 구조 사전검증 (CPU/read-only)
+- 완료된 기존 입력 `calibration/data/basket/random_20261016_145741/rows.jsonl` 400행을 읽어 고정 핀 요청 Q3/Q4 × {4,9}와 nested replay 메타데이터를 대조했다. plan 400/400 완료; 성공 항목의 row pin·replay pin·quadrant·이름·gap 인덱스(+1 convention) mismatch **0건**. 분포 Q3 pin4/9 **109/97**, Q4 pin4/9 **96/98**.
+- 이는 새 Q3/Q4 {7,11} 세트와 같은 생성 경로의 기존 입력에 대한 구조 검사일 뿐, 새 세트 완료/성공률 또는 실행 정책 성능 증거가 아니다. 새 세트 생성 PID는 계속 실행 중이라 그 출력은 읽지 않았다. CPU JSON 감사만 수행; 소스/데이터/체크포인트 수정 없음.
+
+## 2026-10-16 15:5x Claude — 마커판 충돌 + 목표 칸 변경 (보스 퇴근 전 지시)
+- 보스 연속 시연(DEMO_PINS Q3:4 Q3:9:white Q4:4 Q4:9:white): 150513 Q3:4 red, 150739 Q3:9 white, 151009 Q4:4 red 모두 넣기 leg 완료(들어간 칸 미보고). 보스: **Q4 4번 넣을 때 마커판에 부딪힘**, 전체적으로 마커판과 부딪힐 듯. 마지막 151205 Q4 white는 to_grasp 스플라인(관절 148°)을 컨트롤러가 거부해 정지(FP 접시 x 1.215 — 받침 위치 확인 필요).
+- 원인: 플래너 바구니 충돌 모델(`basket_boxes`)은 벽 4개뿐, 오늘 새로 붙인 마커 블록(위에 마커, 아래로 볼트가 바구니 안쪽으로 내려옴; wrist_above 150513 사진에서 접시와 1–2 cm)을 모름.
+- 수정: `basket.marker_blocks` 설정 시 layout의 마커마다 충돌 상자 추가(14 cm 정사각, 마커 1 cm 위 ~ 10 cm 아래). 오늘 바구니·접시로 계획 점검: Q3 4·5 **넣기 계획 없음**(마커 4), Q3 6(여유 1.12)·7·8·9·10·11 OK, Q4 4–11 OK. Q4 4번이 모델상 통과하는데 실기에서 부딪힌 것은 실제 착지가 계획보다 +x(먼 쪽, 마커 2 방향)로 2–3칸 밀리는 계통 오차(14:3x Q3 6→3–4)와 같은 원인으로 추정 — 미확인.
+- 보스 규칙: 한 분면에 2개면 **큰 번호부터 → 작은 번호**(메모리 저장). 목표를 **Q3·Q4 8번(뒤)·11번(앞)**으로 변경(4번은 마커 인접; Q3 7번은 sim 처짐 포함 계획에서 83% 마커 4에 막힘, 8번은 40/40). 순서: `DEMO_PINS="Q3:11 Q3:8 Q4:11 Q4:8"`.
+- 4·9번 전용 학습(q34_spec_seed11, eval0 0.700: Q3 .75 / Q4 .64)은 중단, 8·11번 계획 세트(마커 상자 포함) 생성 후 재시작. (7·11번 세트 random_20261016_154415/155326/155620은 사용 안 함)

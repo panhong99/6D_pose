@@ -1163,3 +1163,9 @@ Human 지시: Claude와 Human이 실증하는 동안 Codex가 이 문제의 원�
 - Implement an opt-in reward-only experiment: `--unseated-penalty 0.25` subtracts 0.25 from terminal return whenever `seated` is false. Default remains 0, so old behavior and the 16-observation/5-action deployment hook are unchanged. No success metric, plan set, randomization, action scale, architecture, or hyperparameter is changed.
 - Rationale: give explicit negative signal to the Q1 subset that currently earns zero despite failing the primary seated criterion. Risks: stronger penalty could encourage reaching any seated state over target-gap exactness or disturb other quadrants; compare quadrant tables and keep the baseline checkpoint if the same 15014 final set does not reach ≥75% or any safety-relevant regression appears.
 - This is a proposed experiment, not a result or a claim that reward caused the failures. Run only from a new output directory, warm-start `e3_best.pt`, and use 9014/10014 eval plans for checkpoint selection; 15014 remains final comparison only. Isaac/GPU execution is delegated to Claude because the Codex shell has no usable GPU.
+
+## 2026-10-16 Claude — 바구니 충돌 모델에 마커 블록 추가
+- 결정: `plate_plans.basket_boxes`가 `config.basket.marker_blocks`(size 0.14, height 0.10, above 0.01)를 읽어, layout에 있는 마커마다 바구니 프레임 상자를 벽 4개에 더한다. 모든 넣기 계획(실기 pipeline·random_plans·goal1_offline)이 이를 피한다.
+- 이유: 10/16 마커를 판/블록에 다시 붙인 뒤 Q4 4번 실기에서 접시가 마커판에 부딪힘(보스). 블록 볼트가 바구니 안쪽으로 내려와 있다.
+- 결과: 오늘 배치에서 Q3 4·5번 넣기 계획 불가 → 월요일 목표 Q3·Q4 8·11번. 마커 위치는 layout(고정카메라 측정)을 쓰므로 마커를 옮기면 layout 재저장 필요.
+- 미검증: 상자 크기는 사진 추정. 실제 부딪힌 지점(접시 vs 그리퍼 vs 볼트)은 확인 안 됨. 보스 검토 요청.

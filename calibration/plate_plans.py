@@ -915,6 +915,14 @@ def basket_boxes(Tbb, wall=0.012, top=0.03):
     R = np.asarray(Tbb)[:3, :3]
     loc = [('wall_robot', [-sx / 2 + wall / 2, 0, zc], [wall, sy, h]), ('wall_far', [sx / 2 - wall / 2, 0, zc], [wall, sy, h]),
            ('wall_right', [0, -sy / 2 + wall / 2, zc], [sx, wall, h]), ('wall_left', [0, sy / 2 - wall / 2, zc], [sx, wall, h])]
+    mk = C['basket'].get('marker_blocks')                    # (10/16 보스) marker plates/blocks on the rim: the plate hit one
+    if mk:
+        layout = json.loads(cpath(C['basket']['layout']).read_text())
+        for i in C['basket']['marker_ids'].values():
+            if str(i) in layout:
+                m = np.asarray(layout[str(i)], float)
+                loc.append((f'marker_{i}', [m[0], m[1], m[2] + mk['above_m'] - mk['height_m'] / 2],
+                            [mk['size_m'], mk['size_m'], mk['height_m']]))
     return [(n, (np.asarray(Tbb) @ np.r_[c, 1.0])[:3].tolist(), sz, R) for n, c, sz in loc]
 
 
