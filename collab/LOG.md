@@ -3775,6 +3775,14 @@
 - `eval_0010.log`가 **11:37:54 KST**에 생겼으나 audit 시점에는 대응 JSON/NPZ가 없어 선택평가 점수 미정. 결과 파일이 완결되면 eval5와 동일 입력 여부, JSON/NPZ mask 및 분면별 exact를 확인한다. 실험 run의 완료 여부·원인은 별도 근거 전까지 단정하지 않는다.
 - 전체 `bash calibration/run.sh tests`는 승인 실행에서 **79/79 통과(34.302 s)** (일반 sandbox는 pipeline import의 UDP 소켓 권한에 막힘). CPU 원시 감사만 수행; GPU/Isaac, 로봇/그리퍼, 소스/data/checkpoint 변경 없음.
 
+
+
+## 2026-10-16 11:43 Codex — R1 eval_0010 원시 재검증 (CPU/read-only)
+- `rl/logs/basket/insert_rl_20261016_r1_unseated025_seed10/eval_0010.{json,npz}`를 독립 성공식 `seated_in_quadrant && landed_gaps[0] == target_gap`으로 재집계: **388/598=64.9%**; Q1 **90/156=57.7%**, Q2 **84/146=57.5%**, Q3 **111/155=71.6%**, Q4 **103/141=73.0%**. JSON `seated_exact`, NPZ `exact`, 독립식 mask 및 `in_quadrant/landed/target/quadrant` JSON↔NPZ 대조 **598/598 일치**; NPZ obs/action/logp/bias/low finite.
+- eval0·5·10의 names, target_gap 및 NPZ obs/bias/quadrant/target 입력은 598/598 동일. eval0 **401/598**, eval5 **395/598**, eval10 **388/598**. eval5→10 paired fail→pass **26**, pass→fail **33**(net **−7**, exact two-sided binomial p=**0.435**); eval0→10은 **22/35**(net **−13**, p=**0.111**). 현재 9014/10014 선택평가에서는 R1 개선 증거가 없으나, 이 중간 체크포인트만으로 실험 최종 기각 또는 일반화된 악화를 결론내리지 않는다. seed15014 최종 비교가 아직 필요하다.
+- 학습은 it10 지점이며 최종 60회/최종 비교 미완료(Claude LOG 11:40 진행 기록 및 현재 output 참조). eval JSON의 `pre/final_pose/gap_err` 배열은 정책별로 다르므로 이를 고정 입력으로 취급하지 않았고, 입력 동일성은 names/target 및 저장 obs/bias/quadrant/target로 확인했다. Codex CPU read-only 감사만 수행; GPU/Isaac·실기 로봇/그리퍼 명령 및 source/data/checkpoint 쓰기 없음.
+- 공유 문서 반영 후 승인 경로 `bash calibration/run.sh tests`: **79/79 통과(34.109 s)**; 일반 sandbox는 pipeline import의 UDP socket 권한으로 실패.
+
 ## 2026-10-16 11:40 Claude — R1 실행 상태 확인
 - R1(PID `1132827`) 살아 있음, Codex 11:12 "종료" 추정은 Codex가 11:32에 철회한 대로 프로세스 namespace 문제. 현재 it 8 완료(train exact 0.547), eval it0 0.671 → it5 0.661. 회차당 약 170 s, 60회까지 약 2.5 h 남음. 다음 eval은 it10.
 - 산출물 경로 그대로: `rl/logs/basket/insert_rl_20261016_r1_unseated025_seed10/`. 끝나면 best ckpt를 15014(415개, 실기 조건)로 Claude가 평가해 e3_best 67.7%와 짝 비교한다.
