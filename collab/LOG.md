@@ -4435,3 +4435,17 @@
 - 소유자 구현 시 요구사항: `BASKET_MARKER_BLOCKS=1`일 때만 marker별 per-episode insert-frame 신호를 추가하고 기본 출력 schema를 보존한다. 접촉센서 필터를 collider prim 단위로 분리할 수 있는지 Isaac에서 검증하거나, 불가하면 정확한 plate/marker collision geometry 기반의 거리 계산을 명시적 근사와 함께 사용한다. 결과에는 marker ID 축, control-frame 시각, 접촉 판정 기준(또는 거리 정의), 첫 접촉 프레임, 유효 샘플 수를 기록해야 한다. 일반 basket 접촉을 marker 접촉으로 이름만 바꾸면 안 된다.
 - “같은 plan인데 hand pose가 달랐다”는 관측은 이미 200/200 차이 및 최대 55.3 mm/36°로 기록됐지만, 이 자료만으로 물리 비결정성을 원인으로 특정하지 않는다. 원인 분리에는 grasp 직후부터 insertion까지 손-held pose 시계열 및 동일한 초기조건/시뮬레이터 seed 비교가 필요하다.
 - 상태: `rl/basket/expert.py` 소유권이 해제되거나 Claude가 instrumentation을 반영한 뒤 Codex가 검토·회귀시험을 이어간다. 이번 작업은 문서 두 파일만 수정했고, 소스 테스트는 실행하지 않았다.
+
+## 2026-10-17 00:50 KST Codex — AT opt-in marker vertex-clearance 계측 구현
+- 최신 TASKBOARD 커밋 `b90e4fa`가 `rl/basket/expert.py`를 이 AT 수정에 한해 명시적으로 해제했다. `--marker_telemetry`를 추가해 `BASKET_MARKER_BLOCKS=1`, `--plans`, `--closed_loop`, 신규 명시 JSON `--out`을 강제하고, 기존 출력 경로 덮어쓰기 및 `--cl_policy_out` 혼용을 거부한다. flag 없이 실행할 때는 새 telemetry를 계산/저장하지 않는다.
+- 삽입 하강 및 이후 30개 settle control frame 각각의 physics update 뒤, plate collision mesh (`plate029_simplified.obj`, 현재 1,786 vertices)를 world→실제 basket root frame으로 변환해 calibration layout에서 생성한 marker box 각각과 최소 point-to-AABB vertex 거리(m)를 계산한다. 별도 NPZ는 `episode_index`, `marker_ids`, `frame_index`, `plate_marker_vertex_min_dist_m`를 갖고, JSON에는 episode별 marker 최솟값·정의·표본 한계를 기록한다. 값은 marker별 정확 접촉 판정이 아니며 gripper 거리는 기록하지 않는다.
+- 회귀: `python -m py_compile rl/basket/expert.py calibration/tests.py`, `git diff --check -- rl/basket/expert.py calibration/tests.py`, `bash calibration/run.sh tests` **85/85 통과, 34.681 s, exit 0**. 종료 시 기존 unclosed UDP socket `ResourceWarning` 한 건. 새 CPU 시험은 알려진 점/상자 거리, marker·episode 축, 비정상 shape·비유한값·음수 입력을 확인한다.
+- Claude Isaac 재현(새 output만; 실행 전 파일 비어 있는지 검사):
+  ```bash
+  set -euo pipefail
+  D=rl/logs/basket/insert_final_eval_q34_811
+  O=marker_probe_e3_codex_20261017
+  test ! -e "$D/$O.json" && test ! -e "$D/$O.npz" && test ! -e "$D/$O.log"
+  BASKET_MARKER_BLOCKS=1 bash rl/basket/run_quadrant_final_20261015.sh "$D/plans.jsonl" "$D/$O.json" --per_run 1 --seed 777 --marker_telemetry --cl_policy_det --cl_policy "$D/e3_best.pt" --cl_dr --cl_dr_full --cl_policy_noseen --cl_policy_canon --cl_noise_fp rl/logs/basket/fp_noise_model_20261015.json > "$D/$O.log" 2>&1
+  ```
+- 미검증: Codex는 Isaac/GPU를 실행하지 않았다. basket-frame 변환, 200 episode 출력 shape, 재생 중 샘플링과 runtime을 Isaac에서 확인해야 한다. Vertex sample은 triangle-surface distance보다 클 수 있으므로 양의 값이 접촉 부재를 뜻하지 않고, 이 기능은 그리퍼 clearance도 측정하지 않는다. 같은-plan hand pose의 55.3 mm/36° 변화는 물리 비결정성으로 단정할 근거가 없어 원인 미확정으로 유지한다. 다음 단계는 Claude replay 원본 산출물 수신 후 CPU shape/range 감사와 GUI 또는 요약표 검토다.

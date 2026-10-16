@@ -54,6 +54,8 @@ def parse_args():
     p.add_argument('--g0', action='store_true', help='replay: record teacher slot-frame actions and replay them from the same hover state through SafeDiffIK')
     p.add_argument('--g0_telemetry', action='store_true',
                    help='--g0 only: opt-in filtered plate-to-basket contact sensor and per-frame insertion low/d_bottom/normal/contact traces')
+    p.add_argument('--marker_telemetry', action='store_true',
+                   help='--plans --closed_loop only: opt-in per-frame distance from plate collision-mesh vertices to marker-block boxes; requires BASKET_MARKER_BLOCKS=1')
     p.add_argument('--g0_joint', action='store_true', help='replay: opt-in joint-PD teacher-reference replay; separate diagnostic, not the SafeDiffIK G0 gate')
     p.add_argument('--closed_loop', action='store_true', help='replay --plans: at the stop above the basket read the plate in the hand and '
                    're-solve the descent so it stands over its target gap (stand-in for measuring the plate there)')
@@ -219,7 +221,7 @@ def teacher_rate_cap_targets(paths_deg, initial_joint_deg, speed_deg_s, hz=30.0)
     return targets
 
 
-def drive(env, paths_deg, closed, speed, hold=15, trace=None, trace_phase='motion', rate_cap=False):
+def drive(env, paths_deg, closed, speed, hold=15, trace=None, trace_phase='motion', rate_cap=False, marker_trace=None):
     """Every env along its own joint waypoint path (list of (k, 6) deg arrays, None = stay) in the same number of
     steps (the longest path at `speed` deg/s), fingers closed / open per env, then `hold` settle steps."""
     import numpy as np
@@ -291,6 +293,8 @@ def drive(env, paths_deg, closed, speed, hold=15, trace=None, trace_phase='motio
             env._teacher_rate_cap_target_deg = torch.rad2deg(q[:, aj]).cpu().numpy().copy()
         record_step()
         sim_steps(env)
+        if marker_trace is not None and trace_phase == 'insert':
+            marker_trace.append(marker_block_vertex_distance_sample(env))
         if trace is not None:
             trace['released'] |= ~np.asarray(closed, dtype=bool)
             tp, tq = pe.tcp_pose(env)
@@ -302,6 +306,8 @@ def drive(env, paths_deg, closed, speed, hold=15, trace=None, trace_phase='motio
     for _ in range(hold):
         record_step()
         sim_steps(env)
+        if marker_trace is not None and trace_phase == 'insert':
+            marker_trace.append(marker_block_vertex_distance_sample(env))
         if trace is not None:
             tp, tq = pe.tcp_pose(env)
             trace['next_pos'].append((tp - env.scene.env_origins).cpu().numpy())
@@ -833,6 +839,101 @@ def g0_insert_telemetry_sample(env):
                 contact_force_n=force_n)
 
 
+def marker_box_vertex_min_distances(points_basket_m, centres_m, sizes_m):
+    """Minimum distance from sampled collision-mesh vertices to each basket-frame marker AABB.
+
+    This is explicitly a vertex-sample clearance diagnostic, not a triangle-surface distance or contact sensor.
+    points_basket_m has shape (episodes, vertices, 3); centres_m/sizes_m have shape (markers, 3).
+    """
+    import numpy as np
+    points = np.asarray(points_basket_m, dtype=float)
+    centres = np.asarray(centres_m, dtype=float)
+    sizes = np.asarray(sizes_m, dtype=float)
+    if points.ndim != 3 or points.shape[2] != 3 or points.shape[1] == 0 or points.shape[0] == 0:
+        raise ValueError('marker distance points must have non-empty shape (episodes, vertices, 3)')
+    if centres.ndim != 2 or centres.shape[1] != 3 or centres.shape[0] == 0 or sizes.shape != centres.shape:
+        raise ValueError('marker centres and sizes must have matching non-empty shape (markers, 3)')
+    if not np.isfinite(points).all() or not np.isfinite(centres).all() or not np.isfinite(sizes).all():
+        raise ValueError('marker distance inputs must be finite')
+    if np.any(sizes <= 0):
+        raise ValueError('marker box sizes must be positive')
+    outside = np.maximum(np.abs(points[:, :, None, :] - centres[None, None, :, :]) - sizes[None, None, :, :] / 2.0, 0.0)
+    distances = np.linalg.norm(outside, axis=-1).min(axis=1)
+    if not np.isfinite(distances).all():
+        raise ValueError('marker distances must be finite')
+    return distances.astype(np.float32)
+
+
+def marker_block_metadata(be):
+    """Return marker IDs and the exact basket-frame boxes used by basket_env's opt-in collision geometry."""
+    import yaml
+    import numpy as np
+    cfg_path = be.RL_DIR.parent / 'calibration' / 'config.yaml'
+    cfg = yaml.safe_load(cfg_path.read_text())['basket']
+    ids = list(dict.fromkeys(int(value) for value in cfg['marker_ids'].values()))
+    parts = be._marker_block_parts()
+    if len(parts) != len(ids) or any(part[0] != 'box' for part in parts):
+        raise RuntimeError('marker block geometry and configured IDs do not align')
+    centres = np.stack([part[1] for part in parts]).astype(float)
+    sizes = np.stack([part[2] for part in parts]).astype(float)
+    return ids, centres, sizes
+
+
+def marker_block_vertex_distance_sample(env):
+    """Sample plate collision-mesh vertices against opt-in marker AABBs in the live basket frame."""
+    import numpy as np
+    import torch
+    from isaaclab.utils.math import quat_apply, quat_conjugate
+    import basket_env as be
+    if not hasattr(env, '_marker_block_meta'):
+        ids, centres, sizes = marker_block_metadata(be)
+        env._marker_block_meta = (ids,
+            torch.as_tensor(centres, dtype=torch.float32, device=env.device),
+            torch.as_tensor(sizes / 2.0, dtype=torch.float32, device=env.device))
+    if not hasattr(env, '_marker_plate_collision_vertices'):
+        vertices = [list(map(float, line.split()[1:4]))
+                    for line in (be.RL_DIR / 'assets' / 'plate029_simplified.obj').open()
+                    if line.startswith('v ')]
+        if not vertices:
+            raise RuntimeError('plate collision mesh has no vertices for marker clearance telemetry')
+        env._marker_plate_collision_vertices = torch.as_tensor(vertices, dtype=torch.float32, device=env.device)
+    _, centres, half_sizes = env._marker_block_meta
+    plate = env.scene['plate']
+    basket = env.scene['basket']
+    n = env.num_envs
+    local = env._marker_plate_collision_vertices
+    local = local.unsqueeze(0).expand(n, -1, -1)
+    plate_q = plate.data.root_quat_w[:, None, :].expand(-1, local.shape[1], -1)
+    plate_world = quat_apply(plate_q.reshape(-1, 4), local.reshape(-1, 3)).reshape(n, -1, 3)
+    plate_world = plate_world + plate.data.root_pos_w[:, None, :]
+    basket_q_inv = quat_conjugate(basket.data.root_quat_w)
+    basket_q_inv = basket_q_inv[:, None, :].expand(-1, local.shape[1], -1)
+    relative = plate_world - basket.data.root_pos_w[:, None, :]
+    points_basket = quat_apply(basket_q_inv.reshape(-1, 4), relative.reshape(-1, 3)).reshape(n, -1, 3)
+    delta = torch.abs(points_basket[:, :, None, :] - centres[None, None, :, :]) - half_sizes[None, None, :, :]
+    outside = torch.clamp(delta, min=0.0)
+    dist = torch.linalg.vector_norm(outside, dim=-1).amin(dim=1)
+    result = dist.detach().cpu().numpy().astype(np.float32)
+    if result.shape != (n, len(env._marker_block_meta[0])) or not np.isfinite(result).all():
+        raise RuntimeError('marker distance telemetry shape or finiteness check failed')
+    return result
+
+
+def stack_marker_telemetry(samples, num_envs, marker_count):
+    """Pack post-physics marker-clearance samples as (episodes, insert frames, markers)."""
+    import numpy as np
+    if not samples:
+        raise ValueError('marker telemetry has no insertion-frame samples')
+    arrays = [np.asarray(sample, dtype=float) for sample in samples]
+    expected = (int(num_envs), int(marker_count))
+    if any(value.shape != expected for value in arrays):
+        raise ValueError(f'marker telemetry samples must have shape {expected}')
+    packed = np.stack(arrays, axis=1).astype(np.float32)
+    if not np.isfinite(packed).all() or np.any(packed < 0):
+        raise ValueError('marker telemetry distances must be finite and non-negative')
+    return packed
+
+
 _CL_CALLS = [0]
 _CL_POL = dict(policy=None, det=False, dr=False, dr_full=False, noseen=False, canon=False, seed=0, cache={})   # (10/15) insert RL: loaded policy + per-env (obs, act, logp, params)
 
@@ -1053,6 +1154,19 @@ def run_replay(args):
         raise SystemExit('choose exactly one G0 replay mode: --g0 (SafeDiffIK) or --g0_joint (joint reference diagnostic)')
     if g0_requested and (args.attach or not args.closed_loop or not args.plans or not args.out):
         raise SystemExit('--g0/--g0_joint requires --plans, --closed_loop, an explicit new --out path, and no --attach')
+    if args.marker_telemetry:
+        if not args.plans or not args.closed_loop or not args.out:
+            raise SystemExit('--marker_telemetry requires --plans, --closed_loop, and an explicit new JSON --out path')
+        if Path(args.out).suffix.lower() == '.npz':
+            raise SystemExit('--marker_telemetry --out must be a JSON path; the paired NPZ uses the same stem')
+        if not be.marker_blocks_enabled():
+            raise SystemExit('--marker_telemetry requires BASKET_MARKER_BLOCKS=1 (marker boxes must exist in the sim)')
+        if args.cl_policy_out:
+            raise SystemExit('--marker_telemetry does not combine with --cl_policy_out; use separate output artifacts')
+        marker_paths = (Path(args.out), Path(args.out).with_suffix('.npz'))
+        existing = next((path for path in marker_paths if path.exists()), None)
+        if existing is not None:
+            raise SystemExit(f'--marker_telemetry refuses to overwrite {existing}')
     plans_sha256 = hashlib.sha256(Path(args.plans).read_bytes()).hexdigest() if args.g0_telemetry else None
     if g0_requested:
         if Path(args.out).suffix.lower() == '.npz':
@@ -1080,6 +1194,8 @@ def run_replay(args):
                    seen_noise=args.cl_policy_seen_noise, gap_x_dr=args.cl_dr_gap_x)
     if args.g0_telemetry and not args.g0:
         raise SystemExit('--g0_telemetry requires the SafeDiffIK --g0 mode (not --g0_joint)')
+    marker_trace = [] if args.marker_telemetry else None
+    marker_ids = marker_block_metadata(be)[0] if args.marker_telemetry else None
     env = ManagerBasedRLEnv(make_cfg(n, not args.headless,
                                      E_CFG()['expert'].get('pad_torsion_radius_m', 0.01),
                                      contact_telemetry=args.g0_telemetry))
@@ -1169,7 +1285,7 @@ def run_replay(args):
                plate_quat=env.scene['plate'].data.root_quat_w.cpu().numpy().tolist(),
                joints=robot.data.joint_pos[:, :6].cpu().numpy().tolist())
     drive(env, descend, ~open_, args.speed / 20, hold=30, trace=g0_record, trace_phase='insert',
-          rate_cap=args.teacher_rate_cap)
+          rate_cap=args.teacher_rate_cap, marker_trace=marker_trace)
     trace = dict(descended=dict(pos=(env.scene['plate'].data.root_pos_w - env.scene.env_origins).cpu().numpy().tolist(), quat=env.scene['plate'].data.root_quat_w.cpu().numpy().tolist()))   # (10/14) where the plate moves after the descent
     if args.attach:
         detach(env, torch.ones(n, dtype=torch.bool, device=dev))
@@ -1751,11 +1867,33 @@ def run_replay(args):
                             low=st['low'].cpu().numpy()[ks], quadrant=np.array([rows[who[k]]['model_qd'] for k in ks]))
     out = Path(args.out or RL / 'logs/basket/replay_20261012.json')
     out.parent.mkdir(parents=True, exist_ok=True)
+    marker_report = {}
+    if args.marker_telemetry:
+        marker_dist = stack_marker_telemetry(marker_trace, n, len(marker_ids))
+        marker_npz = out.with_suffix('.npz')
+        np.savez_compressed(marker_npz,
+                            episode_index=np.arange(n, dtype=np.int32),
+                            marker_ids=np.asarray(marker_ids, dtype=np.int32),
+                            frame_index=np.arange(marker_dist.shape[1], dtype=np.int32),
+                            plate_marker_vertex_min_dist_m=marker_dist)
+        marker_report = dict(marker_telemetry=dict(
+            enabled=True,
+            npz_path=str(marker_npz),
+            npz_keys=['episode_index', 'marker_ids', 'frame_index', 'plate_marker_vertex_min_dist_m'],
+            metric='minimum Euclidean distance from all vertices of plate029_simplified.obj collision mesh to each axis-aligned marker box in the live basket frame',
+            metric_limit='vertex-sample distance, not exact triangle-surface distance and not a PhysX contact flag; values can overestimate true surface clearance',
+            frame_scope='post-physics 30 Hz control samples for descend plus its 30-step settle hold',
+            marker_ids=marker_ids,
+            min_vertex_distance_m=marker_dist.min(axis=1).tolist(),
+            frames=int(marker_dist.shape[1]),
+            vertices_per_episode_frame=int(env._marker_plate_collision_vertices.shape[0]),
+            gripper_distance_recorded=False))
     out.write_text(json.dumps(dict(results=res, gate=gate, need=9, names=[rows[i]['name'] for i in who], in_hand=in_hand, pre=pre,
                                    final_pose=dict(plate_pos=pc.tolist(), plate_quat=pq.tolist()), trace=trace,
                                    final={k: st[k].cpu().numpy().tolist() for k in ('d_bottom', 'low', 'normal_err', 'd_u')},
                                    gap_err=gap_err.cpu().numpy().tolist(), held=held.tolist(), yaw_err=yaw_err.cpu().numpy().tolist(),
-                                   lean=lean.cpu().numpy().tolist(), quadrant_ok=face_ok.tolist(), in_quadrant=in_quadrant.tolist(), seated=seated.tolist(), landed_gap=landed.tolist(), target_gap=target.tolist()), indent=1))
+                                   lean=lean.cpu().numpy().tolist(), quadrant_ok=face_ok.tolist(), in_quadrant=in_quadrant.tolist(), seated=seated.tolist(), landed_gap=landed.tolist(), target_gap=target.tolist(),
+                                   **marker_report), indent=1))
     if args.hold_view:                                         # (10/14 보스) look at the result in the GUI
         print('[replay] done - close the window to quit', flush=True)
         import omni.kit.app

@@ -1169,3 +1169,8 @@ Human 지시: Claude와 Human이 실증하는 동안 Codex가 이 문제의 원�
 - 이유: 10/16 마커를 판/블록에 다시 붙인 뒤 Q4 4번 실기에서 접시가 마커판에 부딪힘(보스). 블록 볼트가 바구니 안쪽으로 내려와 있다.
 - 결과: 오늘 배치에서 Q3 4·5번 넣기 계획 불가 → 월요일 목표 Q3·Q4 8·11번. 마커 위치는 layout(고정카메라 측정)을 쓰므로 마커를 옮기면 layout 재저장 필요.
 - 미검증: 상자 크기는 사진 추정. 실제 부딪힌 지점(접시 vs 그리퍼 vs 볼트)은 확인 안 됨. 보스 검토 요청.
+
+## 2026-10-17 00:50 KST Codex AT — 마커 clearance 진단 metric 계약
+- opt-in CLI `--marker_telemetry`는 `BASKET_MARKER_BLOCKS=1`, planned replay (`--plans --closed_loop`), 명시적인 새 JSON `--out`에만 허용한다. `--cl_policy_out`은 같이 받지 않는다. 기존 기본 동작 및 산출 JSON 키는 바꾸지 않고, opt-in일 때에만 동명 NPZ를 추가한다.
+- metric은 각 삽입 30 Hz post-physics control frame에서 plate 충돌 메시의 모든 정점과 basket-local marker axis-aligned box 사이의 최소 Euclidean point-to-box 거리다. NPZ 축은 `(episode, frame, marker)`이며 marker ID와 frame index를 별도 저장한다. JSON에는 episode별 marker 최소값과 metric 정의를 둔다.
+- 이 vertex-sample 값은 정확한 triangle-surface 거리도 접촉센서도 아니다. mesh face가 box를 관통해도 정점이 box 밖에 남으면 양의 값을 낼 수 있어 접촉 부재를 입증하지 않는다. gripper 형상은 metric에 포함하지 않는다. Isaac에서 실제 좌표 변환과 출력 모양을 Claude가 확인하기 전에는 이 값으로 충돌 원인을 판정하지 않는다.

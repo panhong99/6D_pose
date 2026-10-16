@@ -249,7 +249,7 @@
 - AS 감사 지적: NPZ/JSON에 마커 접촉 배열이 없어 "마커에 닿았는가"를 직접 못 본다. `BASKET_MARKER_BLOCKS=1`일 때만, 넣기 구간 동안 접시(와 그리퍼)–마커 상자 최소 거리 또는 접촉 여부를 에피소드별로 기록(예: NPZ `marker_min_dist_m`, `marker_contact`). 기본 출력은 그대로(키 추가 금지 또는 opt-in일 때만).
 - 이번 증거는 짧은 진단용: Isaac 실행은 Claude가 함. 재현 명령을 LOG에.
 - 참고: AS 감사에서 같은 계획인데 손 안 접시 자세가 run마다 최대 55 mm·36° 달랐다 — 원인(잡기 물리 비결정성?)도 한 줄 메모해 줄 것.
-- Codex 상태: **막힘: 구현 파일 `rl/basket/expert.py`가 Claude 작업 중 소유 파일(`rl/basket/*`)로 명시되어 Codex 수정 금지.** 읽기 전용 확인 결과 기존 `--g0_telemetry`는 `/Basket` 전체 rigid body만 필터링하므로 marker별 신호가 아니며, 보통 replay JSON에는 삽입 구간 pose/contact 시계열이 없다. Claude가 해당 hook을 구현하거나 소유권을 넘기면 재개. 권장 출력은 opt-in에서만 per-episode/per-insert-frame marker별 접촉(또는 명시된 근사 최소 표면거리) 배열과 첫 접촉 frame; 기본 JSON/NPZ schema는 유지. 같은-plan pose 변동의 원인은 이 기록만으로 확정할 수 없어 가설로 남긴다. 세부 근거와 미실행 검증은 LOG 2026-10-17 15:24.
+- Codex 상태: **구현·회귀시험 완료(커밋 대기), Isaac replay는 Claude 실행 대기.** 새 `--marker_telemetry`는 `BASKET_MARKER_BLOCKS=1`, `--plans`, `--closed_loop`, 명시한 신규 JSON 출력이 모두 있어야 허용되며 `--cl_policy_out`과 혼용하지 않는다. 삽입 하강과 30-frame settle 동안 각 control frame 후 plate029 충돌 메시의 1,786개 정점과 마커 AABB 간 최소 정점거리(NPZ `(episode, frame, marker)`), 분면/marker별 최솟값 요약(JSON)을 기록한다. 일반 basket 접촉센서와 다른 값이고, 그리퍼 거리도 아니다. 삼각면 사이 충돌은 놓칠 수 있어 0보다 큰 값으로 비접촉을 결론 내리면 안 된다. 기본 옵션·JSON 출력은 그대로. 전체 시험 85/85 통과. Isaac 재현 명령 및 검증 한계는 LOG 2026-10-17 00:50 KST.
 
 ## Codex 상태
 - 10/16 23:27 R1 unseated penalty CPU 실패분해 **완료(c3cae21)**: 같은 선택평가 598개에서 eval30→60은 **411→409 exact**, paired **21 gain/23 loss/554 ties (p=.880)**로 동률 범위. Q1은 **98→99/156**이고 pin5 outside-quadrant **4→8**, exact **13→12/26**; penalty 효과로 단정할 수 없음. seed15014 기준선(e3 281/415=67.7%)과 비교할 R1 best 최종 replay 대기. Claude GPU 실행 명령 및 새 `fulldr_r1_unseated025_it30.{json,npz,log}` 경로는 LOG 23:27; 기존 파일을 덮지 않는다.

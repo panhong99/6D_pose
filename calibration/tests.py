@@ -1183,6 +1183,39 @@ class BasketG0ActionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'non-finite'):
             mod.g0_stack_insert_telemetry(bad, 2)
 
+    def test_marker_box_vertex_distances_are_episode_and_marker_specific(self):
+        mod = self.expert_module()
+        points = np.array([
+            [[0.0, 0.0, 0.0], [1.5, 0.0, 0.0]],
+            [[2.0, 0.0, 0.0], [8.0, 0.0, 0.0]],
+            [[5.0, 3.0, 0.0], [4.0, 0.0, 0.0]],
+        ])
+        centres = np.array([[0.0, 0.0, 0.0], [4.0, 0.0, 0.0]])
+        sizes = np.array([[2.0, 2.0, 2.0], [2.0, 2.0, 2.0]])
+        actual = mod.marker_box_vertex_min_distances(points, centres, sizes)
+        self.assertEqual(actual.shape, (3, 2))
+        np.testing.assert_allclose(actual, [[0.0, 1.5], [1.0, 1.0], [3.0, 0.0]], atol=1e-7)
+        with self.assertRaisesRegex(ValueError, 'shape'):
+            mod.marker_box_vertex_min_distances(np.zeros((2, 3)), centres, sizes)
+        with self.assertRaisesRegex(ValueError, 'positive'):
+            mod.marker_box_vertex_min_distances(points, centres, np.array([[0.0, 1.0, 1.0], [1.0, 1.0, 1.0]]))
+        with self.assertRaisesRegex(ValueError, 'finite'):
+            mod.marker_box_vertex_min_distances(np.full_like(points, np.nan), centres, sizes)
+
+    def test_marker_telemetry_stacks_episode_frame_marker_axes_and_validates(self):
+        mod = self.expert_module()
+        samples = [np.array([[0.01, 0.02], [0.03, 0.04]]),
+                   np.array([[0.005, 0.006], [0.007, 0.008]])]
+        packed = mod.stack_marker_telemetry(samples, 2, 2)
+        self.assertEqual(packed.shape, (2, 2, 2))
+        np.testing.assert_allclose(packed[0], [[0.01, 0.02], [0.005, 0.006]])
+        with self.assertRaisesRegex(ValueError, 'no insertion-frame'):
+            mod.stack_marker_telemetry([], 2, 2)
+        with self.assertRaisesRegex(ValueError, 'shape'):
+            mod.stack_marker_telemetry([np.zeros((2, 3))], 2, 2)
+        with self.assertRaisesRegex(ValueError, 'non-negative'):
+            mod.stack_marker_telemetry([np.array([[0.01, -0.02], [0.03, 0.04]])], 2, 2)
+
     def test_rotation_hold_composes_spatial_delta_and_is_opt_in(self):
         import torch
         from rl_utils import ROTATION_HOLD_DEFAULT, integrate_spatial_quat
