@@ -257,7 +257,7 @@
 
 ### 새 일 AV: demo4 per-run 착지 핀·정책 전달 검토 (10/17 03:17 Claude 업데이트 후, CPU/mock only)
 - `calibration/run.sh` 변경이 `DEMO_PINS`의 네 필드·콤마 구분 landed pin 목록과 `DEMO_INSERT_POLICY`를 pipeline에 올바르게 전달하는지, landed 값만 있을 때 정책 없이 실행되지 않는지 검토한다. 실제 pipeline·ROS/로봇·Isaac/GPU 실행 금지.
-- Codex 상태: **완료(다음 커밋 해시)**. shell syntax 및 관련 CLI 시험 2/2 통과; 임시 mock으로 2개 demo tuple의 args 전달 및 정책 누락 시 pipeline 미호출 확인. 누락 정책은 tuple을 skip하고 계속하므로 경고 출력을 확인할 것. LOG 2026-10-17 03:24 KST.
+- Codex 상태: **완료(325089f)**. shell syntax 및 관련 CLI 시험 2/2 통과; 임시 mock으로 2개 demo tuple의 args 전달 및 정책 누락 시 pipeline 미호출 확인. 누락 정책은 tuple을 skip하고 계속하므로 경고 출력을 확인할 것. LOG 2026-10-17 03:24 KST.
 
 ## Codex 상태
 - 10/16 23:27 R1 unseated penalty CPU 실패분해 **완료(c3cae21)**: 같은 선택평가 598개에서 eval30→60은 **411→409 exact**, paired **21 gain/23 loss/554 ties (p=.880)**로 동률 범위. Q1은 **98→99/156**이고 pin5 outside-quadrant **4→8**, exact **13→12/26**; penalty 효과로 단정할 수 없음. seed15014 기준선(e3 281/415=67.7%)과 비교할 R1 best 최종 replay 대기. Claude GPU 실행 명령 및 새 `fulldr_r1_unseated025_it30.{json,npz,log}` 경로는 LOG 23:27; 기존 파일을 덮지 않는다.
