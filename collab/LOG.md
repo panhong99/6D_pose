@@ -4387,3 +4387,17 @@
 - 전체 `bash calibration/run.sh tests`: **80/80 통과, 33.836 s**. 종료 시 unclosed UDP socket `ResourceWarning`이 출력됐으나 test exit code는 0.
 - 결론: 두 변경은 리뷰에서 확인한 구체적 옵션 오해와 INVALID 선택기 불일치를 방지하는 방향이며 직접 동작 검증을 통과했다. 다만 이 임시 fixture는 지속 회귀시험이 아니므로 변경 소유자가 `tests.py`에 고정 테스트를 추가하면 재발 방지 근거가 된다. 테스트는 실기 안전·마커 충돌·실제 접촉력/ radial grasp 결과를 검증하지 않는다.
 - 코드 소유 파일·데이터·config·체크포인트는 수정/스테이징하지 않았고 Isaac·GPU·로봇·그리퍼도 실행하지 않았다. 검토 시작 때 보였던 source diff는 후속으로 `065fa64`에 커밋됐으며, AR2에서는 해당 파일을 수정하지 않았다.
+## 2026-10-16 23:27 Codex — R1 unseated-penalty 실패유형·핀별 CPU 감사 및 최종 비교 준비
+- 기존 R1 `eval_0030`/`eval_0060` JSON을 독립식 `seated && in_quadrant && landed_gap == target_gap`으로 분류했다. 같은 598개 선택평가에서 eval30→60의 분면별 exact는 Q1 **98→99/156**, Q2 **89→91/146**, Q3 **115→112/155**, Q4 **109→107/141**; 전체 **411→409/598**. 실패 분류(미착좌 / 착좌했으나 분면 밖 / 분면 안 wrong-gap / exact)는 **50/39/98/411→41/43/105/409**. 상태 분류는 관측 결과이지 보상 변경의 물리 원인 증거가 아니다.
+- 핀별로 Q1 pin5 exact **13/26→12/26**, outside **4→8**가 눈에 띄지만 다른 Q1 핀은 exact가 그대로거나 1건 늘었다. 따라서 특정 핀에서의 변화도 같은 선택평가 표본의 기술통계로만 남기고, penalty 효과라고 단정하지 않는다. eval30 최고와 eval60 전체 점수는 사실상 같고 75% 목표에는 미달한다. R1을 개선했다고 채택하지 말고, 최종 분리는 같은 seed15014 415개에서 기준 E3와 R1 best를 paired로 한 번 비교해야 한다. 계획표본이므로 실제 로봇 성공으로 해석하지 않는다.
+- 같은 사례 순서의 exact paired 변화는 전체 **21 gain / 23 loss / 554 ties**, 양측 exact sign test p=**0.880**. Q1 **5/4/147 (p=1.000)**, Q2 **8/6/132 (p=.791)**, Q3 **4/7/144 (p=.549)**, Q4 **4/6/131 (p=.754)**. Wilson 95% interval은 전체 eval30 **68.6% [64.9,72.3]**, eval60 **68.3% [64.6,72.0]**. 이는 반복 선택평가의 표본 불확실성일 뿐 independent test가 아니며, 여러 분면 p값도 사전 계획된 확증 비교로 취급하지 않는다.
+- Claude가 GPU/Isaac에서 실행할, 기존 파일을 덮지 않는 새 출력 경로 명령(현재 R1 `best.pt`, 학습 로그상 best eval 0.687):
+  ```bash
+  set -euo pipefail
+  D=rl/logs/basket/insert_final_eval_15014
+  O=fulldr_r1_unseated025_it30
+  test ! -e "$D/$O.json" && test ! -e "$D/$O.npz" && test ! -e "$D/$O.log"
+  bash rl/basket/run_quadrant_final_20261015.sh "$D/plans.jsonl" "$D/$O.json" --per_run 1 --seed 777 --cl_policy_det --cl_policy_out "$D/$O.npz" --cl_policy rl/logs/basket/insert_rl_20261016_r1_unseated025_seed10/best.pt --cl_noise_fp rl/logs/basket/fp_noise_model_20261015.json --cl_dr --cl_dr_full --cl_policy_noseen --cl_policy_canon > "$D/$O.log" 2>&1
+  ```
+- 판정은 기준 E3 281/415와 같은 415개에서 R1이 **≥312/415 (75%)**인지, 분면별·paired gain/loss가 어떤지로 한다. 결과 JSON/NPZ 도착 전에는 R1 final 비교 미완료. 이번 작업은 원자료 read-only CPU 분석뿐: Isaac/GPU, 로봇/그리퍼, source/config/data/checkpoint 수정 또는 실행 없음.
+- 기록 커밋 전 회귀 gate `bash calibration/run.sh tests`: **82/82 통과, 34.015 s, exit 0**. 종료 시 unclosed UDP socket `ResourceWarning`은 남았으나 테스트 실패는 없음. 첫 중복 실행은 Claude가 `tests.py` 편집·동일 시험 중인 것을 확인하고 내가 시작한 세션에만 Ctrl-C를 보내 중단했으며, 결과로 쓰지 않았다. Claude 시험 종료 후 재실행한 위 82/82만 유효 결과다.
