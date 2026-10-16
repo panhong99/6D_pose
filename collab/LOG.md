@@ -4045,3 +4045,61 @@
 ## 2026-10-16 16:2x Claude — Q3·Q4 8·11번 전용 넣기 학습 시작
 - 계획 세트(마커 상자 포함, sim 모드): 학습 `random_20261016_160353`(400, 100%), 검증 `..._161234`(120, 100%), 최종 `..._161523`(200, 100%). 바구니 x 0.96–1.06, y −0.223~−0.123, yaw ±6°.
 - 학습 `rl/logs/basket/insert_rl_20261016_q34_811_seed12`(e3_best에서, 40회, batch 192, lr 1e-4, dr_full·canon·noseen·snapshot). **eval it0 0.642 (Q3 .73 / Q4 .54)** — 이 배치에서 기존 정책의 출발점. 종료 기준: 40회 후 검증 best를 최종 세트(161523)로 tuned(정책 없음)와 짝 비교.
+
+## 2026-10-16 16:30 Codex — Q3/Q4 8·11 plan split 및 초기 specialist 평가 원시검증 (CPU/read-only)
+- 생성 데이터 `random_20261016_160353` / `161234` / `161523`의 summary args seed **16401/16402/16403**, 행·replay 수 **400/400**, **120/120**, **200/200**을 확인. 각 summary plan 성공률 **100%**(경로 계획 성공이지 삽입 성공률 아님). 모든 set에서 Q3/Q4 pin 8·11 네 조합만 존재; 각 row의 embedded replay와 독립 replay JSON을 name key로 결합해 pin/quadrant/gap(+1 index)/plan path **720/720 일치**, set 간 실제 basket·plate·quadrant·pin signature 중복 **0**.
+- 요청 range x [0.96,1.06], y [−0.223,−0.123], yaw ±6°, plate x [0.85,0.96], y [0.28,0.36]로 기록됨. 관측된 basket y 최대는 train **−0.1658**, val **−0.1700**, test **−0.1657 m**로 상한 −0.123 m 영역이 비어 있음. source의 plate↔basket 최소거리 rejection이 수용 표본을 자르는 것으로 보이며, 이 세트가 요청 사각형 전체를 균등 포괄한다고 보면 안 된다. 분포는 Q/pin별로 따로 보고해야 한다. pin 표본 수 train Q3:8/11 **120/90**, Q4 **87/103**; val **30/33,28/29**; test **48/42,65/45**.
+- run `insert_rl_20261016_q34_811_seed12` warm-start `eval_0000`: 독립 `seated && in_quadrant && landed_gap==target_gap` **77/120=64.2%**, Q3 **46/63=73.0%**, Q4 **31/57=54.4%**. JSON row / NPZ independent mask **120/120 일치**, 핵심 배열 finite; eval names·순서는 validation `161234/replay.jsonl`과 **120/120 동일**. 전부 `real=planned`라 실기 재생 gate 표본은 없음.
+- 완료 rollout `train_0000–0002`: **100/192=52.1%**, **101/192=52.6%**, **95/192=49.5%**; JSON/NPZ/독립식 각 **192/192 일치**, 핵심 배열 finite. 이는 서로 다른 PPO 학습 rollout이지 홀드아웃 성능이 아니다. 현재 PID 1318225/1325762의 학습은 계속 중이고 `train_0003` 재생 중이라 미완료 산출물은 읽지 않았다. PPO 게이트/실기 성능 결론은 아직 없음.
+- `eval_0000.log`에는 USD TCP visual prim unresolved 경고 144회가 있다. 수치 영향은 따로 검증하지 않았으므로 성능 수치의 caveat로 남긴다. CPU JSON/NPZ 점검만. GPU/Isaac 학습·로봇·그리퍼 명령 및 source/config/data/checkpoint 수정 없음. 상세 산출 경로 위 `calibration/data/basket/` 및 `rl/logs/basket/insert_rl_20261016_q34_811_seed12/`.
+
+## 2026-10-16 16:33 Codex — 고정 핀 경로 안전 여유 재점검 (CPU/read-only)
+- 생성된 720개 plan JSON의 `quadrant_plan.clearance_ratio.carry`를 전수 집계했다. **30/720(4.17%)가 1.0 미만**, 최저 **0.50**: train 13/400, val 6/120, test 11/200. 해당 계획은 모두 `rrt+tidy`; insert 최소 1.5, after 최소 3.0이었다.
+- 소스상 `MultiChecker.clearance()`는 각 검사기의 실제 최소 거리 / 설정 margin 비율이고, `CollisionChecker._edge_free()`는 양 끝 ≥1.0, 내부 표본 ≥1.3을 요구한다. 그런데 결과에서 같은 carry 경로를 0.5° polyline으로 재평가한 값이 1.0 아래인 사례가 있어, 보수 여유 미달이거나 경로 checker의 표본/평가 불일치일 수 있다. 1.0 미만은 margin 미달이지 접촉 증명은 아니며, 원인을 확정하지 않았다.
+- 그러므로 summary의 100%는 “plan 객체 생성 성공”으로만 읽는다. 30건은 저여유 별도 검토 없이 안전 경로로 간주하면 안 된다. 경로 checker를 재검증/수정할 주체는 Claude(소유 파일); Codex는 코드에 손대지 않았다. 테스트 실행·GPU/Isaac·로봇·그리퍼 명령 없음.
+
+## 2026-10-16 16:35 Codex — specialist PPO train_0003–0004 완료 batch 독립검산 (CPU/read-only)
+- `train_0003` exact **88/192=45.8%** (Q3:8 27/54, Q3:11 20/40, Q4:8 17/42, Q4:11 24/56); `train_0004` **109/192=56.8%** (42/59,17/37,25/46,25/50). JSON `seated_in_quadrant && seated_exact`, 상위 raw `seated && in_quadrant && landed_gap==target_gap`, NPZ 독립식은 각 **192/192 동일**; obs/act/logp/bias/low finite. 둘 다 `real=planned`.
+- 학습 rollout 수치는 checkpoint 간 성능 비교가 아니다. it5 validation JSON/NPZ는 아직 생성 중이라 읽지 않았고, 로그상 평가 프로세스 진행 중. 안전-margin 30건 이슈는 별도로 남아 있어 plan 100%를 안전성 통과로 간주하지 않는다.
+
+## 2026-10-16 16:37 Codex — Q3/Q4 specialist `eval_0005` 독립 원시 재집계 (CPU/read-only)
+- `rl/logs/basket/insert_rl_20261016_q34_811_seed12/eval_0005.{json,npz}` 120건을 `seated && in_quadrant && landed_gap == target_gap`로 다시 계산: **77/120=64.2%**. Q3 **47/63=74.6%**, Q4 **30/57=52.6%**; pin별 Q3-8 **21/30**, Q3-11 **26/33**, Q4-8 **16/28**, Q4-11 **14/29**.
+- JSON 상위 배열·행별 flags·NPZ exact/seated/in-quadrant/landed/target가 독립식과 **120/120 일치**, obs/act/logp/bias/low finite. eval0와 names/obs/bias/quadrant/target **120/120 동일**이며 `eval_plans.jsonl`의 name/gap/quadrant/pin도 120/120 일치. eval0 대비 paired gain/loss **6/6**(net 0, exact p=**1.000**). 선택 validation에서 개선 근거 없음.
+- 전부 `real=planned`; P1 실기 성공 재생은 **0/0**이라 판정 불가. 로그 USD TCP visual unresolved 경고 **144회**(영향 미검증). 해당 로그 경로의 validation 선택평가이지 seed16403 test 또는 실기 성공률이 아니다. 학습 PID 1318225/1325762는 감사 시점에 계속 실행 중, 미완료 train 산출물은 열지 않았다.
+- CPU/read-only만 수행; 소스·config·데이터·체크포인트 및 학습 프로세스 무개입.
+
+## 2026-10-16 16:39 Codex — Q3/Q4 specialist `train_0005` 독립 원시감사 (CPU/read-only)
+- `rl/logs/basket/insert_rl_20261016_q34_811_seed12/train_0005.{json,npz}` 192 rollout을 독립식 `seated && in_quadrant && landed_gap == target_gap`로 재집계: **102/192=53.1%**. Q3 **55/103**(pin8 33/52, pin11 22/51), Q4 **47/89**(pin8 25/44, pin11 22/45).
+- JSON 상위/행별 success와 NPZ exact 및 독립식 **192/192 일치**; obs/act/logp/bias/low finite. 모든 행 `real=planned`. 이는 학습 rollout 기술통계이지 held-out policy 점수가 아니다. log의 USD TCP visual unresolved 경고 **216회**(metric 영향 미검증).
+- 완료 train_0000–0005를 합치면 **595/1,152=51.6%** rollout(분면별 Q3 **335/595=56.3%**, Q4 **260/557=46.7%**; 핀별 Q3-8 **203/347**, Q3-11 **132/248**, Q4-8 **125/263**, Q4-11 **135/294**). 서로 다른 PPO 시점의 pooled rollout 기술통계라 policy 성능 점수로 해석하지 않는다.
+- Claude PPO 학습 PID 1318225/1325762가 계속 실행 중이었다. 미완료 출력은 열지 않았고 GPU/Isaac·학습·소스·설정·데이터·체크포인트에는 개입하지 않았다.
+
+## 2026-10-16 16:42 Codex — Q3/Q4 specialist `train_0006` 독립 원시감사 (CPU/read-only)
+- `rl/logs/basket/insert_rl_20261016_q34_811_seed12/train_0006.{json,npz}`에서 독립 exact **93/192=48.4%**. Q3 **48/99**(pin8 29/60, pin11 19/39), Q4 **45/93**(pin8 22/42, pin11 23/51).
+- JSON flags/top-level·NPZ·독립식 **192/192 일치**, obs/act/logp/bias/low finite, 전부 `real=planned`; visual unresolved warning **216회**(metric 영향 미검증).
+- 완료 train0–6 pooled **688/1,344=51.2%**(Q3 **383/694**, Q4 **305/650**; Q3 pin8/11 **232/407,151/287**, Q4 pin8/11 **147/305,158/345**). 이는 정책이 달라지는 PPO rollout의 합계이지 고정 정책 평가가 아니다.
+- 감사 시점에도 Claude 학습 PID 1318225/1325762 활성. Isaac/GPU·프로세스·source/config/data/checkpoint는 건드리지 않았다.
+
+## 2026-10-16 16:44 Codex — Q3/Q4 specialist `train_0007` 독립 원시감사 (CPU/read-only)
+- `rl/logs/basket/insert_rl_20261016_q34_811_seed12/train_0007.{json,npz}` 독립 exact **99/192=51.6%**. Q3 **53/101**(pin8 30/58, pin11 23/43), Q4 **46/91**(pin8 19/39, pin11 27/52).
+- JSON flags/top-level, NPZ, 독립식 **192/192 일치**; obs/act/logp/bias/low finite, 모두 `real=planned`. visual unresolved warning **216회**(영향 미검증).
+- 완료 train0–7 pooled **787/1,536=51.2%**(Q3 **436/795**, Q4 **351/741**; Q3 pin8/11 **262/465,174/330**, Q4 pin8/11 **166/344,185/397**). PPO 시점 혼합 rollout이며 고정 정책 평가가 아니다. Isaac 학습은 계속 실행 중; 산출물·프로세스 미개입.
+
+## 2026-10-16 16:47 Codex — Q3/Q4 specialist `train_0008` 독립 원시감사 (CPU/read-only)
+- `rl/logs/basket/insert_rl_20261016_q34_811_seed12/train_0008.{json,npz}`에서 독립 exact **106/192=55.2%**. Q3 **64/104**(pin8 38/61, pin11 26/43), Q4 **42/88**(pin8 17/39, pin11 25/49).
+- JSON flags/top-level·NPZ·독립식 **192/192 일치**; obs/act/logp/bias/low finite, 모두 `real=planned`; USD TCP visual unresolved 경고 **216회**(영향 미검증).
+- 완료 train0–8 pooled **893/1,728=51.7%**(Q3 **500/899**, Q4 **393/829**; Q3 pin8/11 **300/526,200/373**, Q4 pin8/11 **183/383,210/446**). 이 합산은 서로 다른 PPO 시점의 rollout 통계이지 정책 평가가 아니다. Isaac 학습은 계속 중이며 미완료 출력/프로세스에는 개입 안 함.
+
+## 2026-10-16 16:49 Codex — Q3/Q4 specialist `train_0009` 독립 원시감사 (CPU/read-only)
+- `rl/logs/basket/insert_rl_20261016_q34_811_seed12/train_0009.{json,npz}` 독립 exact **89/192=46.4%**. Q3 **56/101**(pin8 29/55, pin11 27/46), Q4 **33/91**(pin8 12/38, pin11 21/53).
+- JSON flags/top-level·NPZ·독립식 **192/192 일치**, obs/act/logp/bias/low finite; 전부 `real=planned`. visual unresolved 경고 **216회**(metric 영향 미확인).
+- 완료 train0–9 pooled **982/1,920=51.1%**(Q3 **556/1,000**, Q4 **426/920**; Q3 pin8/11 **329/581,227/419**, Q4 pin8/11 **195/421,231/499**). pooled rollout은 여러 정책 시점 합계라 평가성능이 아니다. Claude 학습 PID 1318225/1325762 계속 활성; test/eval 산출물은 아직 없다.
+
+## 2026-10-16 16:51 Codex — Q3/Q4 specialist `eval_0010` 독립 원시 재집계 (CPU/read-only)
+- 고정 validation `eval_0010`: 독립 exact **77/120=64.2%**; Q3 **44/63=69.8%**(pin8 20/30, pin11 24/33), Q4 **33/57=57.9%**(pin8 19/28, pin11 14/29). JSON top-level/행 flags·NPZ·독립식 **120/120 일치**, 핵심 arrays finite.
+- eval0·eval5·eval10의 names/obs/bias/quadrant/target 입력 **120/120 동일**. eval0 대비 paired gain/loss **7/7**(net 0, exact p=**1.000**); eval5 대비 **6/6**(net 0,p=**1.000**). 체크한 이 validation에서 상승 근거 없음. 실패 유형 eval0→10: unseated **15→11**, seated outside quadrant **8→9**, in-quadrant wrong-gap **20→23**. 이는 기술 분해이지 원인 추론이 아니다.
+- 전부 `real=planned`라 P1 실기 gate는 **0/0, 판정 불가**. USD TCP visual unresolved 경고 **144회**(영향 미확인). 이것은 seed16403 최종 test가 아니며 실기 점수가 아니다. Isaac 학습은 계속 실행 중이고 산출물 외에 아무것도 변경하지 않았다.
+
+## 2026-10-16 17:0x Claude — 8·11번 학습 경과 + 칸 오차 보는 변형 추가
+- noseen 학습(q34_811_seed12): eval it0/5/10 = 0.642/0.642/0.642 (Q3 .73→.70, Q4 .54→.58). eval10 실패 분해: 미착좌 11, 분면 밖 9, **틀린 칸 23 — 대부분 ±1–2칸**(DR의 빗살 위치 오차·바구니 yaw를 정책이 못 봄). noseen으로는 상한이 낮다.
+- 월요일 전략: 실기 몇 번의 착지 칸으로 계통 칸 오차(bias)를 추정해 정책 입력(seen gap)으로 넣는다. 이를 위해 `--seen_noise`(opt-in, 기본 2 mm 유지; aa50199) 추가하고 **seen 변형** `insert_rl_20261016_q34_811_seen6mm_seed13`(e3_best에서, 보는 칸 오차 잡음 6 mm ≈ 실기 몇 회 추정 정확도 가정) 동시 학습. GPU 2개 run ≈ 6 GB/12 GB.
