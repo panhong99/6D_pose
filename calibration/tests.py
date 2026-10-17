@@ -287,6 +287,9 @@ class Pipeline(unittest.TestCase):
         self.assertIsNone(pipeline.parse_args([]).insert_landed_pins)
         with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
             pipeline.parse_args(['--insert_landed_pins', '3.5'])
+        for bad in ('nan', '0', '-2', 'inf'):                   # (10/18) finite, >= 1 at the CLI too
+            with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+                pipeline.parse_args(['--insert_landed_pins', bad])
 
     def test_insert_policy_cli_is_opt_in_and_requires_real_sim_q_quadrant_mode(self):
         self.assertIsNone(pipeline.parse_args([]).insert_policy)
