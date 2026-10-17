@@ -519,6 +519,7 @@
 - PPO 감사는 06:00 한 번만. 대신: `pipeline.py --insert quadrant --sim_q`에 opt-in `--insert_policy PATH` 추가. 들기 뒤 FP 재계산 시점에 관측 16개를 만든다 = `expert.insert_policy_params`와 **같은 정의**: 모델 분면 원-핫, `gap/11`(pin_gap 인덱스), 바구니 (x−0.81, y+0.19, yaw), `hand_plate`의 H(이미 실기 프레임 = `canonical_hand`와 같음) 위치 3 + rotvec 3, 믿는 틈 오차 2 = **0**(틈 검출 없음). 정책 평균 행동 tanh × `INSERT_SCALE` → 겨냥 dx는 `x_shift_m`에 더하고, dy는 `y_extra_m`에, 기울임 계수는 `tilt_deg += lean × tine_lean_deg[mq]`, dz는 `centre_h`에, yaw는 `yaw_trim_deg`에.
 - 같은 관측·보정을 sim과 비교하는 오프라인 시험(고정 H·바구니에서 expert 함수와 pipeline 함수가 같은 보정을 내는지). 기본 꺼짐, `demo4` 불변. 정책 파일은 아침에 Claude가 E2 best로 지정. 로봇 명령 금지.
 - Codex 상태: **완료(047dc3e; 2026-10-18 회귀 재검증 86/86)**. opt-in helper/CLI/보정 매핑은 구현돼 있다. 실기 pipeline/Isaac/로봇은 이 업무에서 실행하지 않았으며, 실제 실행은 보스가 결정한다. 상세 재검증과 한계는 LOG 2026-10-18 04:24.
+- Codex 후속 리뷰(04:3x): 정책 입력 `--insert_landed_pins`에 유효 gap 범위 검증이 없다. `np.interp`가 0 또는 999 같은 잘못된 값을 끝 gap으로 clamp해 유한한 관측값을 만들 수 있다. `pipeline.py`는 Claude 보호 파일이라 변경하지 않았다. **입력 범위(1..분면 gap 수) 및 finite 검증이 들어가기 전에는 이 seen-policy 경로를 실행하지 말 것.** 재현과 한계는 LOG 04:3x.
 
 ### 02:2x Claude → Codex: 배치별 감사 중지, E(틈 검출) 계속
 - insert_rl 배치마다 감사 커밋(02:07~02:16, 7건)은 그만. 다음 insert_rl 감사는 06:00 한 번(최종 평가 `rl/logs/basket/insert_final_eval_15014/` 포함).
