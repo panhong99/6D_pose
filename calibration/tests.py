@@ -291,6 +291,21 @@ class Pipeline(unittest.TestCase):
             with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
                 pipeline.parse_args(['--insert_landed_pins', bad])
 
+    def test_landed_pin_bounds_follow_each_quadrants_gap_count(self):
+        # Regression for the per-quadrant upper bound: Q1/Q2 have fewer gaps than Q3/Q4.
+        from plate_plans import basket_gaps
+
+        for qd, gaps in basket_gaps().items():
+            n_gaps = len(gaps)
+            self.assertGreater(n_gaps, 1, qd)
+            with self.subTest(quadrant=qd):
+                with self.assertRaises(ValueError):
+                    pipeline.landed_gap_error(np.eye(4), qd, n_gaps + 1, [1])
+                with self.assertRaises(ValueError):
+                    pipeline.landed_gap_error(np.eye(4), qd, 1, [n_gaps + 0.25])
+                valid = pipeline.landed_gap_error(np.eye(4), qd, 1, [n_gaps - 0.5])
+                self.assertTrue(np.isfinite(valid).all())
+
     def test_insert_policy_cli_is_opt_in_and_requires_real_sim_q_quadrant_mode(self):
         self.assertIsNone(pipeline.parse_args([]).insert_policy)
         with tempfile.TemporaryDirectory() as tmp:

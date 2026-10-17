@@ -4624,3 +4624,9 @@
 - 후속 `c95316b`는 `--insert_landed_pins` parser에 `nan`, `0`, `-2`, `inf` 거부 회귀를 추가했다. 최신 전체 `bash calibration/run.sh tests`: **86/86 통과(36.196 s)**. 종료 때 기존 unclosed UDP socket `ResourceWarning` 한 건이 있었지만 exit 0. 입력 parser는 최소/finite를, 실제 basket quadrant lookup 뒤 helper는 분면별 최대 gap 범위를 검증한다.
 - `calibration/data/real_pipeline`의 최신 `wrist_above.raw.png/json/req.json`은 여전히 2026-10-16 15:11 세션이다. 해당 이후 수정시각으로 찾은 `calibration/data/basket` pin/tine/label/GT 후보는 없고, HUMAN_NOTES에도 신규 지시가 없다. 이 파일 인벤토리만으로 사진 가시성을 판정한 것은 아니다. 새 Q1 전체 가시 calibrated 사진·전수 주석은 아직 입력 대기다.
 - 독립 검증은 CPU test와 목록 확인만 수행했다. `pipeline.py`, 보호 source, 데이터/모델/config/checkpoint는 수정하지 않았으며 ROS·카메라·Isaac/GPU·실기/그리퍼 명령은 실행하지 않았다.
+
+## 2026-10-18 05:46 KST Codex — AR3 Q1–Q4별 landed-pin 상한 회귀 보강
+- `calibration/tests.py::Pipeline.test_landed_pin_bounds_follow_each_quadrants_gap_count`를 추가했다. 테스트는 `basket_gaps()`의 각 분면 실제 칸 수를 사용해 목표 핀 `n+1`과 착지값 `n+0.25`를 거부하고, 허용되는 분수 경계 `n−0.5`를 통과시킨다. 현재 기하의 칸 수는 Q1/Q2/Q3/Q4 = **6/8/12/12**다. 기존 Q3/Q4에만 있던 상한 회귀로 Q1/Q2 상한이 과대 허용되는 결함을 놓치지 않게 한다.
+- 단독 테스트 **1/1 통과**, 전체 `bash calibration/run.sh tests` **87/87 통과(35.793 s)**, `python -m py_compile calibration/tests.py`, `git diff --check` 통과. 종료 시 기존 unclosed UDP socket `ResourceWarning` 한 건이 출력됐으나 exit 0.
+- 첫 테스트 호출은 wrapper에 잘못된 unittest 이름 인자를 전달해 테스트 모듈 import 오류로 끝났다(87개 시험은 실행된 뒤 인자 오류 보고). 올바른 단독 명령 `conda run --no-capture-output -n foundationpose python -m unittest tests.Pipeline.test_landed_pin_bounds_follow_each_quadrants_gap_count -v`와 wrapper의 인자 없는 전체 suite를 재실행해 모두 통과했다.
+- 범위는 합성 CPU 회귀뿐이다. `pipeline.py`, 원본 데이터/모델/config/checkpoint는 수정하지 않았고 ROS, Isaac/GPU, 카메라, 로봇/그리퍼를 실행하지 않았다.
