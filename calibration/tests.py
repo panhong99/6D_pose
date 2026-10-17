@@ -232,6 +232,16 @@ class Pipeline(unittest.TestCase):
             for key, value in zip(('dx', 'dy', 'lean', 'dz', 'yaw'), scaled):
                 self.assertAlmostEqual(got[key], float(value), places=6)
 
+            # The opt-in real path may provide a measured prior landing error.  It must occupy the
+            # same final two observation slots used by the sim's seen-gap policy, without changing
+            # the policy mean/action scaling contract.
+            seen = np.array([0.012, -0.004], dtype=float)
+            seen_got = pipeline.basket_insert_policy_params(expert, 'Q3', 7, H, Tbb, seen=seen)
+            np.testing.assert_allclose(seen_got['obs'][-2:], seen, atol=1e-7, rtol=0)
+            np.testing.assert_allclose(seen_got['act'], raw, atol=1e-7, rtol=0)
+            self.assertFalse(expert._CL_POL['noseen'])
+            np.testing.assert_allclose(expert._CL_POL['seen_override'], seen, atol=0, rtol=0)
+
             adjusted, yaw = pipeline.apply_basket_insert_policy(
                 dict(x_shift_m=0.03, y_extra_m=0.005, tilt_deg=6.25, centre_h=0.165), -1.0, got, 12.5)
             self.assertAlmostEqual(adjusted['x_shift_m'], 0.03 + scaled[0], places=6)
