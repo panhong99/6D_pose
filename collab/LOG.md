@@ -4485,3 +4485,9 @@
 ## 2026-10-17 08:3x Claude — 아침 보고 (토요일; 보스 월요일 복귀)
 - 보고서: `collab/MORNING_REPORT_CLAUDE_20261019.md` (4절 형식). 핵심: 월요일 목표 Q3·Q4 **10번(앞)·8번(뒤)**, 1회차 정책 없이 착지 칸 기록 → 2회차부터 칸 오차 보는 정책(`gx30_seen_best.pt`) + `DEMO_INSERT_POLICY`/착지 기록으로 demo4. sim(±30 mm): 정책 59–64% vs e3 17–29%.
 - 04:16 이후 Codex·Claude 새 작업 없음. push는 보스(`git push origin pan`).
+
+## 2026-10-17 14:4x KST Codex — N 후보 사진 모델 투영 가능성 / E detector 진단
+- N 입력 대기 중에 기존 10/16 보정 후보 `calibration/data/basket/wrist_look/20261016_135828.{raw.png,json}` 한 장을 E의 오프라인 detector로 점검했다. 기존 JSON의 K·`T_base_flange`·`T_flange_cam`·`T_base_basket`를 사용했고, 임시 req와 산출물은 `/tmp/pins_candidate_20261016_135828*`에만 썼다. 저장 사진만 읽었으며 카메라/로봇/Isaac/GPU 호출이나 tracked source/data 변경은 없었다.
+- 현재 parametric layout + `--model_search_2d`에서 이미지 안에 있는 번호 부여 model gap 후보 14개 중 detector가 확정한 pair는 **0/14**였다(요약 `visible_model_pairs=14`, `confirmed_pairs=0`; 이미지 overlay `/tmp/pins_candidate_20261016_135828_model2d/tmp_pins_candidate_20261016_135828.req/pairs.png`). 따라서 이 run으로는 새 사진에서 핀 중심을 자동 확인할 수 없었다.
+- 해석 한계: 이 사진은 taskboard가 이미 지적했듯 새 바구니 배치의 넓은 전경이다. 실패 원인을 사진 가시성, marker/가림, 현 parametric geometry와 새 배치 차이 중 하나로 분리하지 않았고, visible model gaps는 실제 visible-pin 정답 분모가 아니다. **정확도/recall 판정이나 N 번호 라벨 검증으로 세지 않는다.** N의 Claude 초안→Codex 확대 검증 순서와 Q1 보스 확인 gate는 유지한다; 기존 후보는 Q1 label-ready로 승격하지 않았다.
+- 작업 환경 메모: system `python`에서 `cv2` import 실패. read-only CLI는 `conda run -n foundationpose` 환경에서 동작했다. 완료물/산출물은 재현 가능한 새 데이터 경로로 저장하지 않았으며 이 임시 `/tmp` overlay는 보존되지 않을 수 있다.
