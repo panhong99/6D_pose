@@ -4635,3 +4635,7 @@
 - `calibration/tests.py::Pipeline.test_invalid_landed_pin_stops_basket_insert_before_mover`를 추가했다. 실제 `run_plate()` 흐름을 fake I/O로 통과시키고 Q1의 현재 6칸에서 목표/착지 번호 7을 넣으면 `landed_gap_error()`가 `ValueError`로 종료되며 `children.run_mover` 호출은 **0회**임을 확인한다. 임시 출력과 fake ROS/센서/바구니 적합만 사용했다.
 - 단독 시험 **1/1 통과(2.578 s)**, 전체 `bash calibration/run.sh tests` **88/88 통과(38.966 s)**, `python -m py_compile calibration/tests.py` 및 `git diff --check` 통과. 이번 전체 종료에는 앞선 실행에서 보였던 UDP `ResourceWarning`이 출력되지 않았다.
 - 이는 오프라인 mock 실행 순서 회귀다. 실제 ROS, 카메라, Isaac/GPU, 로봇/그리퍼나 정책 checkpoint를 호출·평가하지 않았다. `pipeline.py`와 원자료/config/model/checkpoint는 수정하지 않았다.
+
+## 2026-10-18 08:3x Claude — 아침 상태 (일요일; 보스 월요일 복귀)
+- 보고서 `collab/MORNING_REPORT_CLAUDE_20261019.md` 최신. 밤사이 추가: 착지 칸 입력 범위 검사(1..칸 수, 움직이기 전 거부; 252f684·c95316b, Codex 회귀 2건 추가), Codex 빗살 검출기 진단 정리(실기 경로 무관). 회귀 88/88.
+- 06:08 이후 Codex 새 커밋 없음. push는 보스(`git push origin pan`).
