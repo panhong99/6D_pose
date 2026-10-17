@@ -4585,3 +4585,9 @@
 - 저장소의 `calibration/` 및 `rl/` Python 코드에서 `candidate_gap_centre_base_xyz`, `gap_centre_base_xyz`, `confirmed_gaps`, `visible_gaps` 참조를 추적했다. gap-center 필드는 `calibration/camera_tools.py`의 `pins` 결과 생성·표시에만 쓰이며 `pipeline.py`, `ros2_nodes.py`, `plate_plans.py`, `rl/`의 삽입 목표 생성으로 전달되는 소비 경로는 발견하지 못했다. 해당 함수/CLI는 진단 PNG/JSON을 쓴다.
 - 안전 계약 대조: 후보 center는 `candidate_gap_centre_base_xyz`에 별도로 저장되고 status가 detected이며 번호가 유일할 때에만 `gap_centre_base_xyz`에도 복사된다. 그러나 후자의 “confirmed” 표기는 검출기 내부 gate 통과를 뜻할 뿐, 이전 높이 전이 감사에서 확인한 물리 검증 미완료를 해소하지 않는다. 두 center 모두 현재 target API에 연결되지 않으며 진단 산출물로 유지해야 한다.
 - 따라서 이번 참조 감사는 현재 비연결 상태를 확인했지만, 보스가 검토할 후보 보정의 물리적 타당성이나 추후 연결 허가를 대신하지 않는다. 검출기 80% gate/정답률도 평가하지 않았다. 소스·테스트·입력·기존 산출물은 읽기만 했고 새 출력 파일은 만들지 않았다; 로봇·카메라·Isaac/GPU 미사용.
+
+## 2026-10-18 04:04 KST Codex — E: 정답률 완료 게이트 대기 조건 명시
+- 최신 라벨 파일을 `calibration/data/basket`에서 확인했으나 10/16 wrist-look 사진 및 10/14 라벨/초안 이후의 새 전수 주석은 없고, `collab/HUMAN_NOTES.md`의 미반영 항목도 없다. 따라서 Q1–Q4 각 분면의 전체 가시 핀/틈 정답 분모를 만들 수 없다.
+- E의 오프라인 코드·좌표 진단과 저장소 내 타깃 소비 참조 감사는 수행했지만, 기존 PARTIAL v9 59개 점검점이나 model-only 후보를 visible 전체 GT로 간주하지 않았다. 임계값 완화·보정 전이 승인·실기 타깃 연결도 하지 않았다.
+- E의 80% per-quadrant 검출 및 번호/precision/recall 완료 게이트는 **막힘**으로 표시한다. 재개 입력: Q1–Q4 전체가 보이는 calibrated wrist 사진과 사람 확인 전수 라벨(가림/프레임 밖 구분 포함). floor-center 물리 해석을 추가로 승인하려면 독립 바구니/높이 측정도 필요하다. 그 전에는 수행한 진단 결과만 유지하고 정답률 결론을 만들지 않는다.
+- 코드/데이터/모델/설정 변경이나 새 시험/산출물 없음; 이 변경은 작업판 상태의 명확화다.
