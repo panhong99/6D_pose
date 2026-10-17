@@ -4561,3 +4561,4 @@
 - 간격 guard: 이웃 x station 사이가 model tine pitch의 0.5–1.5배일 때만 gap group을 만든다. 누락 station을 건너뛰어 오주소를 만들지 않는 합성 회귀를 추가했다. 해당 범위는 diagnostic pairing 방어 조건이며 실제 배치의 보편 허용오차라는 주장은 아니다.
 - 결과물 경로: 지속 보존용 데이터/그림/JSON은 만들지 않았다. 새 smoke-test 산출물은 `/tmp`에만 생성했고, 기존 입력 데이터는 수정하지 않았다.
 - 한계/검토: 해당 correction 평균을 tine tip에서 floor-level gap center로 옮기는 것은 명시적 diagnostic convention이지 검증된 물리 보정이 아니다. 전수 visible-pin GT, 독립 바구니 측정, precision/recall, 80% gate 또는 실기 targeting 성능을 주장하지 않는다. 보스에게 이 보정 전이 규칙과 출력 의미 검토를 요청한다. 카메라·로봇·그리퍼·Isaac/GPU 미사용.
+- 후속 점검(01:5x): 기존 `visible_model_pairs`/`visible_layout_pairs`의 유일 `number` 기준 의미가 바뀌지 않도록 고쳤다. 화면 안 번호 후보 수는 새 `visible_gaps`에만 담는다. 전체 시험 재실행 **86/86 OK**, commit `195f105`.
