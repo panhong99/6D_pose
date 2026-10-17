@@ -4606,3 +4606,8 @@
 - 읽기 전용으로 `landed_gap_error()`를 호출해 Q3 pin 6, identity test transform에서 착지 값 `[0]`이 유효 경계 `[1]`과 똑같이 **[+0.087, 0] m**로 계산되고, `[999]`가 마지막 유효 gap `[13]`과 똑같이 **[−0.1044, 0] m**로 계산됨을 재현했다. 원인은 helper가 입력 범위를 검증하지 않고 `np.interp`를 써서 endpoint clamp가 일어나기 때문이다. `--insert_landed_pins` parser도 `float`만 변환하며 범위/유한성 검사를 하지 않는다. 유한하지만 잘못된 관측은 downstream finite check에서 걸리지 않고 정책이 사용한다.
 - 수정 방향은 pipeline owner가 분면 gap count에 대해 모든 값이 finite이고 `[1, n_gaps]` 안인지 fail-closed 검증하고, CLI/API 양쪽에서 검증하는 것이다. 분수 값(예: `7.5`)은 허용해야 한다. `calibration/pipeline.py`는 Claude 작업 중 보호 파일이므로 Codex는 수정하지 않았다. 실제 policy/robot 실행은 없었다.
 - **운영상 제한:** 이 invalid-range guard가 들어가기 전에는 `--insert_policy`와 `--insert_landed_pins`를 함께 사용하지 말아야 한다. seen 값을 안 넣는 policy 경로(`noseen`)는 이 특정 clamp 결함을 거치지 않지만, 실기 정책 전체가 검증됐다는 뜻은 아니다. 해당 bug fix 및 회귀시험은 Claude pipeline owner 후속 필요.
+
+## 2026-10-18 KST Codex — AR3: 10/19 보고서 landed-pin 예시와 알려진 guard 결함 대조
+- `collab/MORNING_REPORT_CLAUDE_20261019.md` §4의 두 예시는 `--insert_policy ... --insert_landed_pins <들어간 번호>`와 `demo4`의 `Q3:10:red:<착지>` 형식을 권한다. 바로 위 04:3x 재현에서 `landed_gap_error()`가 Q3 pin6에 `[0]`을 `[1]`처럼, `[999]`를 `[13]`처럼 해석해 각각 유한한 끝점 오차를 내는 것이 확인됐다. parser도 현재 `float`만 받으며 범위/finite guard가 없다. 따라서 해당 예시는 입력 검증이 추가되기 전에는 안전한 실행 안내가 아니다.
+- 이 보고서 Critic 재검토는 `pipeline.py`의 결함이 10/19 본문에 반영되지 않은 누락을 찾았다. 보고서와 pipeline은 각각 작성자/Claude 작업 중 보호 파일이므로 Codex가 수정하지 않았다. Claude owner 조치: guard 및 회귀시험 반영 후, 보고서에서 입력 범위(분수 허용)와 중단 조건을 독자가 볼 수 있도록 안내를 고친다. guard 전에는 두 옵션 조합의 실행을 피한다.
+- 이는 오프라인 정적 대조이며 새 실행·정책 호출·실기 확인이 아니다. 본문은 수정하지 않았고 원자료/config/checkpoint, 보호 소스, 데이터는 그대로 두었다.

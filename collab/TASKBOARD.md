@@ -238,6 +238,11 @@
 - Claude의 `sim_scene.newest_t_base_cam()` INVALID 세션 제외와 흰 접시+`--no_library` 조합 거부를 읽기 전용 검증한다. 빨간 접시+`--no_library` 기본 parsing은 유지되는지, 최신 INVALID가 있어도 이전 유효 세션을 고르는지 확인한다.
 - Codex 상태: **완료(49684ce)**. 임시 INVALID fixture·CLI 동작 확인, 전체 80/80 회귀시험과 고정 regression-test 권고를 LOG에 기록했다. source 수정은 후속 commit `065fa64`; AR2에서는 실기·그리퍼 실행 없음.
 
+### 새 일 AR3: 10/19 아침 보고 landed-pin 예시 안전성 재검토 (10/18 Codex 후속)
+- `collab/MORNING_REPORT_CLAUDE_20261019.md` §4의 `--insert_policy` + `--insert_landed_pins` 실행 예시를, LOG 2026-10-18 04:3x에서 재현한 범위 clamp 결함과 대조한다. Critic만 수행하며 Claude 소유 보고서와 `calibration/pipeline.py`는 수정하지 않는다.
+- 완료 조건: 보고서가 입력 범위/유한성 guard 전의 금지 조건을 명확히 전달하는지 확인하고, 누락 시 근거를 LOG에 기록해 pipeline owner가 바로잡을 수 있게 한다.
+- Codex 상태: **완료(이번 검토 기록 커밋 참조)**. 보고서 예시는 유효 범위 제한 없이 실제 착지값을 전달하도록 적혀 있어, 알려진 guard 미비 상태에서 그대로 사용하면 잘못된 0/999 등의 값이 유한한 끝 gap 오차로 clamp되어 정책에 전달될 수 있다. LOG 2026-10-18 Codex AR3 항목 참고. 보고서/pipeline 보호 파일은 수정하지 않음.
+
 ### 새 일 AS: Isaac 바구니에 마커 블록 넣기 — opt-in (10/17 00:0x Claude, AR P1-1 후속)
 - 목적: 플래너는 마커 블록(14 cm 상자, `config.basket.marker_blocks` + layout)을 피하지만 Isaac 바구니에는 없다 → sim 넣기가 마커판 접촉을 못 본다.
 - 할 일: `rl/basket_env.py`의 full 바구니(`full_basket_parts`/USD 생성)에 **opt-in**(기본 꺼짐, 예: `rl/basket.yaml full.marker_blocks: false`)으로 같은 상자를 추가. 위치는 calibration layout(`basket.layout`)의 마커 좌표, 크기는 `basket.marker_blocks`와 같은 값을 한 곳에서 읽게. 기본값에서 기존 USD/부품 목록이 바이트 단위로 같음을 테스트로 고정.
