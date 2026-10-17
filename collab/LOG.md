@@ -4526,3 +4526,9 @@
 - 두 line이 모두 검출된 16개 group의 `model_pin_ids`는 모델 좌표에서 동일한 x 위치에 있고 서로 다른 두 y row에 놓여 있었다(그룹별 |Δx| 최대 < 4×10⁻¹³ m). 따라서 이 실행에서 확인된 15개 거부는 서로 다른 x 번호의 선을 교차 결합한 흔적이 아니라, pair 내부 두 선의 correction 불일치로 인한 거부와 일치한다. 이는 모델이 정의한 행 짝 구조의 내부 일관성만 확인하며 실제 바구니의 행·번호 대응을 증명하지 않는다.
 - pair-disagreement 15건 가운데 correction disagreement가 저장된 15건의 축별 값 범위는 x **0.537–12.456 mm**, y **0.648–13.241 mm**였다. 단 하나의 accepted pair(Q2 사진/Q2)는 **(0.471, 0.648) mm**였다. 즉 이 표본에서 양쪽 개별 선이 잡힌 뒤에도 대다수가 pair consistency gate에서 거부됐다는 진단이다. 정확한 판정 경계·검출 성능 평가로 해석하지 않는다.
 - 한계: 네 사진의 실제 가시/가림·row·pin 번호에 대한 전수 독립 GT가 없고 133은 알고리즘의 model-visible 후보 수다. 16/133은 precision/recall 또는 visible-pair 성공률이 아니며 threshold 변경 근거도 아니다. 코드·입력·기존 산출물은 읽기만 했고 새 출력은 만들지 않았다; CPU JSON 집계만 수행했으며 카메라·로봇·Isaac/GPU 사용은 없었다.
+
+## 2026-10-18 00:4x KST Codex — E: 단일 accepted pair 번호 경계 민감도
+- 직전 10/13 model-only 감사에서 유일하게 `status=detected`였던 `20261013_190126_Q2`의 Q2 pair `[30,39]`를 기존 JSON의 `local_x_m=0.11504`와 같은 basket model로 재평가했다. 저장 JSON은 `number=4`, `number_candidate=4`, `number_match_error_mm=8.76`, `number_tolerance_mm=8.775`를 기록한다. 출력 반올림값만으로 본 Voronoi margin은 **0.015 mm**이다.
+- 동일 `_gap_number_candidate()`의 입력 x만 변화시키는 CPU 함수 민감도 확인에서 −0.02 mm 이동 시 후보가 **4→5**로 바뀌었다(오차 8.770 mm, 허용 8.775 mm). −0.01 mm 이동은 4, +0.01 mm 이동도 4였고, 기준 x에서는 4를 돌려줬다. 여기서 x 변화는 synthetic 수치 perturbation이며 사진·바구니·검출 결과를 수정하거나 새 GT를 만들지 않았다.
+- 의미: 유일하게 통과한 pair의 전수 번호 정답이 확인된 것은 아니다. 기록된 x 해상도(10 µm)와 매우 가까운 후보 경계 때문에 이 `number=4`는 작은 모델 좌표 변화에도 인접 번호로 바뀔 수 있는 취약한 제안으로 취급해야 한다. 실제 픽셀/포즈 오차가 번호에 미치는 효과를 이번 합성 perturbation에서 추정하지 않았고, 코드나 threshold를 바꾸지 않았다.
+- 한계/환경: 같은 부분 라벨·모델 출력 기반 진단이라 pin numbering의 정답, precision/recall, visible-pair recall을 산출하지 않는다. 별도 회귀시험은 해당 없는 함수 민감도 확인이라 미실행; 데이터/소스/config/checkpoint 및 이전 산출물 수정 없음. Isaac/GPU·카메라·로봇·그리퍼 사용 없음.
