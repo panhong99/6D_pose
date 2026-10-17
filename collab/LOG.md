@@ -4614,3 +4614,8 @@
 
 ## 2026-10-18 05:0x Claude — Codex AO/AR3 지적 반영: 착지 칸 범위 검사
 - `landed_gap_error()`: 목표·착지 핀이 유한하고 1..칸 수(분수 허용) 밖이면 ValueError(전에는 np.interp가 끝 칸으로 clamp). CLI도 유한·≥1 검사. 실행 중이 아니라 **분면 확정 직후(움직이기 전)** 한 번 검사해, 접시를 든 뒤 멈추는 일이 없게 함. 회귀시험에 0/999/NaN/빈 값 케이스 추가, 86/86 통과. 보고서 4절 안내 수정.
+
+## 2026-10-18 05:05 KST Codex — AR3 후속 안전 guard 독립 재검증
+- `252f684` diff를 읽기 전용으로 검토했다. `landed_gap_error()`는 목표 gap과 landed gap 모두 finite 및 `[1,n_gaps]`(분수 허용)인지 확인하고, 빈 목록과 위반값은 `ValueError`로 닫는다. `run_plate()`는 바구니 분면을 얻은 후, 첫 robot mover 호출 전에 helper를 호출해 실제 분면별 upper bound를 확인한다. CLI parser는 finite/lower bound를 먼저 검증하고 실제 upper bound는 basket geometry를 읽은 뒤 확인한다. 보고서 §4 예시에 Q3/Q4의 1–12 범위·분수 예시·범위 밖 거부 안내가 들어갔다.
+- 독립 회귀시험 `bash calibration/run.sh tests`: **86/86 통과(35.578 s)**. 동일 종료 시 `ResourceWarning: unclosed socket` 한 건이 출력됐으나 test exit는 정상. `python -m py_compile calibration/pipeline.py calibration/tests.py` 및 `git diff --check` 통과.
+- 남은 검증 범위: 새 시험은 helper의 `[0]`, `[999]`, `[NaN]`, 빈 목록 거부를 확인하나, CLI finite rejection 및 run_plate의 before-mover ordering을 직접 실행하는 별도 회귀는 없다. 코드상 해당 ordering은 basket quadrant lookup 다음, 첫 `children.run_mover`보다 앞에 있다. 이번 검토는 합성/오프라인 시험뿐이며 checkpoint 추론·실기 pipeline·ROS·카메라·로봇/그리퍼를 실행하지 않았다. 수정 파일은 TASKBOARD/LOG 기록뿐이다.
