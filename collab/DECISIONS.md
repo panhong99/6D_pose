@@ -1197,3 +1197,8 @@ Human 지시: Claude와 Human이 실증하는 동안 Codex가 이 문제의 원�
 ## 2026-10-18 02:15 KST Codex — E: plane-height sensitivity limits the transfer conclusion
 - Reconstructed all 66 source coordinates from saved metadata to numerical precision (max discrepancy 2.8e−14 mm), then perturbed the assumed tip-plane height by +1 mm. Basket-local y sensitivity was about 0.4–0.6 mm/mm, with sign by camera/quadrant. Local linear shifts of roughly 5–12 mm median per label could remove the prior tip-vs-root y residual; these shifts are not height measurements and do not imply the actual tine height is wrong. See LOG 02:15.
 - Thus the Q2/Q3/Q4 residual differences identify an unresolved height/transform/geometry issue but cannot alone reject a rigid translation model. Keep candidate floor centers non-actionable; neither adopt them as corrected targets nor suppress the diagnostic evidence before the boss decides. A physical transfer claim needs independently measured tine heights or a validated camera/height transform plus root/floor pose evidence.
+
+
+## 2026-10-18 02:24 KST Codex — E audit erratum: require both rows for a gap-center comparison
+- The 02:06 aggregation had asymmetric boundary handling. Correct two-row support is Q2/Q3/Q4 **7/8, 11/12, 10/12** (28/32 total); Q2 gap 1 and Q3 gap 12/Q4 gaps 11–12 are one-row-only and excluded. See LOG 02:24.
+- Recomputing each two-row center from four checked tine endpoints gives median tip−root Δy **−6.27/−2.66/+3.21 mm**, with mean absolute Δy **6.29/2.70/3.19 mm** in Q2/Q3/Q4. The sample-handling correction does not change the caution: this remains conditional on plane and saved-transform assumptions, not a measured target error. The 02:15 per-label height sensitivity is unaffected.
