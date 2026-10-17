@@ -33,7 +33,7 @@
 | AM | Claude 아침 보고 독립 검토 | raw replay·LOG 대조, 오류/빠진 한계만 LOG에 적고 본문은 Claude가 수정 | 완료(9d4f69a) |
 | AN | `--sim_q` RViz 미리보기 명령 확인 | run.sh·ros2_nodes 코드만 확인, 실행/로봇 이동 없이 plan 경로·연결 요건 기록 | 완료(9d4f69a) |
 | O | BC 티칭 데모 오프라인 안전·일관성 점검 | full_11~14 JSON/상태기록·분면 manifest 대조, 배치 일관성 및 recorded joint/TCP 속도와 wrench 이벤트 확인 | 완료(c8ee663) |
-| N | **빗살 전수 번호 라벨링 — Codex는 검증·수정 담당 (보스 10/14 15:xx, 지금 Codex 최우선)** | 아래 '새 일 N' | 2D 번호 전수 기준 완료. Q2/Q3/Q4 **조건부 3D 역투영 66쌍**과 현 모델 비교 완료(`realQ_verified_3d_model_audit_20261014_v5`; LOG 참고). 사진 Q1 14개 확인점은 실제 Q2 줄. 실제 Q1은 가림/프레임 절단; calibrated 사진 입력 대기 |
+| N | **빗살 전수 번호 라벨링 — Codex는 검증·수정 담당 (보스 10/14 15:xx, 지금 Codex 최우선)** | 아래 '새 일 N' | 2D 번호 전수 기준 완료. Q2/Q3/Q4 **조건부 3D 역투영 66쌍**과 현 모델 비교 완료(`realQ_verified_3d_model_audit_20261014_v5`; LOG 참고). 인접 번호 root-gap 재집계는 two-row support 28/32; across-row x MAE Q2/Q3/Q4 1.09/0.91/1.67 mm, y median −12.44/−10.35/+9.24 mm (조건부 root-plane, LOG 01:45). 사진 Q1 14개 확인점은 실제 Q2 줄. 실제 Q1은 가림/프레임 절단; calibrated 사진 입력 대기 |
 | O | **티칭 시연 충돌·안전 자동 판정기** (10/14 17:1x, N 다음 최우선) | 아래 '새 일 O' | 완료(6f2d618): full_14만 unsafe, 시험 31/31. 보고서 분면은 파일값(full_11 Q3) — manifest 정정(Q4) 우선으로 S에서 같이 고칠 것 |
 | R | **바구니 배치 도달 지도 (IK만, 접시 면 양방향) — 10/14 19시 새 배치 기준으로 범위 변경** | 아래 '새 일 R' | 완료(47f3684: 6,480/6,480, 지도·JSON 생성 및 원시행 재집계) |
 | T | **빗살 정답 → 칸 목표표 (3단계 입력)** | 아래 '새 일 T' | 완료(4ed87bc + 2e222f1/e802ce1: 코드 해시 비교 제외) |
