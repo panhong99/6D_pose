@@ -1317,9 +1317,9 @@ def wrist_pins(req, cfg, out, image=None, rotate='auto', search_mm=8.0, layout=N
                   confirmed_tine_pairs=sum(g['status'] == 'detected' and g['visible_in_image'] for g in groups),
                   confirmed_gaps=sum(g['status'] == 'detected' and g['number'] is not None
                                      and g['visible_in_image'] for g in gap_groups),
-                  visible_model_pairs=sum(g['visible_in_image'] and g['number_candidate'] is not None
+                  visible_model_pairs=sum(g['visible_in_image'] and g['number'] is not None
                                           for g in gap_groups) if layout is None else None,
-                  visible_layout_pairs=sum(g['visible_in_image'] and g['number_candidate'] is not None
+                  visible_layout_pairs=sum(g['visible_in_image'] and g['number'] is not None
                                            for g in gap_groups),
                   visible_pairs=sum(g['visible_in_image'] for g in groups),
                   visible_tine_pairs=sum(g['visible_in_image'] for g in groups),
