@@ -306,6 +306,69 @@ class Pipeline(unittest.TestCase):
                 valid = pipeline.landed_gap_error(np.eye(4), qd, 1, [n_gaps - 0.5])
                 self.assertTrue(np.isfinite(valid).all())
 
+    def test_invalid_landed_pin_stops_basket_insert_before_mover(self):
+        # Exercise run_plate wiring with fake I/O: Q1 has six gaps, so pin 7 must stop before motion.
+        from plate_plans import quadrant_plan
+        import camera_tools
+        import sensors
+
+        target, q = pipeline.rl_target(), pipeline.plate_cfg('ik_bc')
+        plate_root = target - np.array([*q['offset_m'], 0.0])
+        real_sleep = time.sleep
+        children, receiver = MagicMock(), MagicMock()
+        receiver.packets.side_effect = lambda: iter([dict(posj=list(pipeline.HOME_JOINTS_DEG), t=time.time())])
+
+        class StablePose:
+            def poll(self):
+                pass
+
+            def stable(self):
+                return np.eye(4)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / 'real_pipeline').mkdir()
+            (root / 'basket').mkdir()
+            (root / 'basket' / 'slot_01_in_basket.json').write_text(
+                json.dumps({'T_base_basket_at_teach': np.eye(4).tolist()}))
+            checkpoint = root / 'policy.pt'
+            checkpoint.write_bytes(b'test placeholder')
+            plan_path = root / 'plan.json'
+            plan_path.write_text(json.dumps({'legs': {'to_grasp': {'waypoints_deg': [[0] * 6]},
+                                                      'lift': {'waypoints_deg': [[0] * 6]}}}))
+            with patch.object(pipeline.sys, 'stdin', SimpleNamespace(isatty=lambda: True)):
+                args = pipeline.parse_args(['--task', 'plate', '--plate_policy', 'ik_bc', '--place', 'basket',
+                                            '--insert', 'quadrant', '--quadrant', 'Q1', '--pin', '7',
+                                            '--insert_landed_pins', '7', '--insert_policy', str(checkpoint),
+                                            '--execute', '--sim_q', '--no_library'])
+            args.t_base_cam, args.timeout = latest_t_base_cam(), 5.0
+            patchers = [
+                patch.object(pipeline, 'DATA', root), patch.object(pipeline, 'Children', return_value=children),
+                patch.object(pipeline, 'Receiver', return_value=receiver),
+                patch.object(pipeline, 'ros_environment', return_value={}), patch.object(pipeline, 'viz'),
+                patch('faulthandler.enable'),
+                patch.object(pipeline, 'plate_root_in_base', return_value=(plate_root, 0.0, 0.0)),
+                patch.object(pipeline, 'load_basket_insert_policy', return_value=MagicMock()),
+                patch.object(pipeline, 'export_plan', return_value=plan_path),
+                patch.object(pipeline, 'wait_choice', return_value=True),
+                patch.object(camera_tools, 'basket_measure', return_value=[]),
+                patch.object(camera_tools, 'basket_fit_robust', return_value=(np.eye(4), 0.0, [1, 2, 3])),
+                patch.object(sensors, 'FpStream', return_value=StablePose()),
+                patch.object(pipeline.time, 'sleep', side_effect=lambda _seconds: real_sleep(0.51)),
+                patch('plate_plans.robot_quadrants', return_value={'Q1': 'Q1'}),
+                patch('plate_plans.hand_plate', return_value=(np.eye(4), None)),
+                patch('plate_plans.quadrant_plan', wraps=quadrant_plan),
+                contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()),
+            ]
+            with contextlib.ExitStack() as stack:
+                for patcher in patchers:
+                    stack.enter_context(patcher)
+                with self.assertRaisesRegex(ValueError, r'Q1.*1\.\.6'):
+                    pipeline.run_plate(args)
+            children.run_mover.assert_not_called()
+            children.close.assert_called_once()
+            receiver.sock.close.assert_called_once()
+
     def test_insert_policy_cli_is_opt_in_and_requires_real_sim_q_quadrant_mode(self):
         self.assertIsNone(pipeline.parse_args([]).insert_policy)
         with tempfile.TemporaryDirectory() as tmp:

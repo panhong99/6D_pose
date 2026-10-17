@@ -4630,3 +4630,8 @@
 - 단독 테스트 **1/1 통과**, 전체 `bash calibration/run.sh tests` **87/87 통과(35.793 s)**, `python -m py_compile calibration/tests.py`, `git diff --check` 통과. 종료 시 기존 unclosed UDP socket `ResourceWarning` 한 건이 출력됐으나 exit 0.
 - 첫 테스트 호출은 wrapper에 잘못된 unittest 이름 인자를 전달해 테스트 모듈 import 오류로 끝났다(87개 시험은 실행된 뒤 인자 오류 보고). 올바른 단독 명령 `conda run --no-capture-output -n foundationpose python -m unittest tests.Pipeline.test_landed_pin_bounds_follow_each_quadrants_gap_count -v`와 wrapper의 인자 없는 전체 suite를 재실행해 모두 통과했다.
 - 범위는 합성 CPU 회귀뿐이다. `pipeline.py`, 원본 데이터/모델/config/checkpoint는 수정하지 않았고 ROS, Isaac/GPU, 카메라, 로봇/그리퍼를 실행하지 않았다.
+
+## 2026-10-18 06:07 KST Codex — AR3 실행 경로 guard-before-mover 회귀
+- `calibration/tests.py::Pipeline.test_invalid_landed_pin_stops_basket_insert_before_mover`를 추가했다. 실제 `run_plate()` 흐름을 fake I/O로 통과시키고 Q1의 현재 6칸에서 목표/착지 번호 7을 넣으면 `landed_gap_error()`가 `ValueError`로 종료되며 `children.run_mover` 호출은 **0회**임을 확인한다. 임시 출력과 fake ROS/센서/바구니 적합만 사용했다.
+- 단독 시험 **1/1 통과(2.578 s)**, 전체 `bash calibration/run.sh tests` **88/88 통과(38.966 s)**, `python -m py_compile calibration/tests.py` 및 `git diff --check` 통과. 이번 전체 종료에는 앞선 실행에서 보였던 UDP `ResourceWarning`이 출력되지 않았다.
+- 이는 오프라인 mock 실행 순서 회귀다. 실제 ROS, 카메라, Isaac/GPU, 로봇/그리퍼나 정책 checkpoint를 호출·평가하지 않았다. `pipeline.py`와 원자료/config/model/checkpoint는 수정하지 않았다.
