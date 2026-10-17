@@ -4591,3 +4591,8 @@
 - E의 오프라인 코드·좌표 진단과 저장소 내 타깃 소비 참조 감사는 수행했지만, 기존 PARTIAL v9 59개 점검점이나 model-only 후보를 visible 전체 GT로 간주하지 않았다. 임계값 완화·보정 전이 승인·실기 타깃 연결도 하지 않았다.
 - E의 80% per-quadrant 검출 및 번호/precision/recall 완료 게이트는 **막힘**으로 표시한다. 재개 입력: Q1–Q4 전체가 보이는 calibrated wrist 사진과 사람 확인 전수 라벨(가림/프레임 밖 구분 포함). floor-center 물리 해석을 추가로 승인하려면 독립 바구니/높이 측정도 필요하다. 그 전에는 수행한 진단 결과만 유지하고 정답률 결론을 만들지 않는다.
 - 코드/데이터/모델/설정 변경이나 새 시험/산출물 없음; 이 변경은 작업판 상태의 명확화다.
+
+## 2026-10-18 04:24 KST Codex — AO: insertion-policy opt-in hook 회귀 재검증
+- 현재 `calibration/pipeline.py`의 hook은 구현 커밋 `047dc3e`에 있고, 보호 대상 pipeline/expert 코드는 수정하지 않았다. 읽기 전용 대조에서 16D 입력 구성과 `canonical_hand`, deterministic mean, `tanh × INSERT_SCALE`가 `expert.insert_policy_params()`에 위임되고, 다섯 residual이 기존 sim-q 보정에 합산되는 경로를 확인했다. policy 사용 시 post-lift FP pose 부재 또는 보정 후 replan 거부는 fail-closed이며, CLI는 `--execute --task plate --place basket --insert quadrant --quadrant Q1..Q4 --sim_q`와 파일 존재를 요구하고 기본은 off다.
+- 오프라인 재검증: `bash calibration/run.sh tests` **86/86 통과(35.369 s)**, `python -m py_compile calibration/pipeline.py calibration/tests.py`, `git diff --check` 통과. 테스트 runner 종료 때 UDP socket `ResourceWarning` 한 건이 있었으나 시험 결과는 정상 통과했다. 해당 socket은 테스트 import 경로의 자원정리 문제로 보이며 이번 변경으로 수정하지 않았다.
+- 이 검증은 synthetic helper/CLI contract만 다룬다. checkpoint 파일을 로드하거나 정책 수치·계보를 확인하지 않았고, 실제 pipeline, Isaac/GPU, ROS, 카메라, 로봇/그리퍼를 호출하지 않았다. 따라서 정책 후보의 성능·하드웨어 안전·실기 성공은 확인되지 않았다. 보스가 지정한 checkpoint와 별도 실행 판단이 있어야 실제 hook을 시도할 수 있다. 기존 데이터/config/model 및 checkpoint는 읽기/쓰기 하지 않았다.
