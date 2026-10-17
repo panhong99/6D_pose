@@ -4515,3 +4515,8 @@
 - 현재 실행 결과는 label-seeded fit **48/59**로 기존 기록과 재현됨: Q1 **9/14**, Q2 **4/5**, Q3 **17/18**, Q4 **18/22**. 기존 v2 summary의 46/59와 달리 Q1 두 점(인덱스 2, 5)이 현재 출력에서 검출됐으며, 새 결과는 2-pixel internal-gap bridge가 이미 적용된 현재 코드의 결과다. 이는 같은 사진·라벨에서 검색 위치를 준 in-sample local sensitivity이며 자동 위치 추정이나 독립 성능이 아니다.
 - 이번 재실행은 기존 miss 원인 추정을 수치화했다. miss 11개 중 `continuity_ratio <0.45`인 6개는 Q1 index 1 **0.400**, 6 **0.375**, 11 **0.400**, 12 **0.400** 및 Q4 index 21 **0.375**, 22 **0.425**였다. 나머지는 Q1 index 7 support **0.528**, Q2 index 1 usable visibility **0.50**, Q3 index 7 support **0.525**(continuity 0.525), Q4 index 11 search boundary (**−7.5 mm**) 및 index 13 ambiguous였다. 따라서 예전 miss 진단의 ‘continuity 추정’ 중 여섯 건은 이 버전 재실행에서 직접 관측됐고, 두 Q1 후보는 bridge 이후 통과했다.
 - threshold는 그대로였고 코드/데이터·원본·모델은 변경하지 않았다. 이 partial in-sample 결과만으로 precision/recall, exhaustive visibility, 번호 정확도, 실제 gap 위치를 주장하지 않는다. CPU 오프라인 실행; 로봇·카메라·Isaac/GPU 미사용.
+
+## 2026-10-17 19:0x KST Codex — E: model-only 2D 후보 hit 재현 확인
+- 같은 10/13 wrist-look 네 원본 프레임에 현재 `camera_tools.py pins --model_search_2d`를 실행했고 request/JSON/overlay 출력은 `/tmp/e_model_only_audit_20261017_1004/{Q1,Q2,Q3,Q4}/`에만 저장했다. model-only 검출 pin tip 후보는 Q1/Q2/Q3/Q4 각각 **19/23/19/17**개였고, checked partial label tip 중 5 px 이내에 들어온 후보 수는 **2/14, 0/5, 5/18, 1/22**, 총 **8/59**로 LOG 02:40의 수치가 재현됐다. 후보 pair 확정은 **0/1/0/0**이었다.
+- 8 hit은 각각 Q1 label index 8(0.99 px), 3(4.74 px); Q3 index 5(2.14), 18(1.15), 12(1.73), 13(0.75), 14(1.32); Q4 index 8(1.71)에서 가장 가까운 detected pin tip이었다. 각 hit은 서로 다른 label에 대응했다. 단, 이 최근접 대응은 pin ID/번호 정답을 확인하지 않으며 59개는 부분 라벨이다.
+- 이 결과는 기존 저장 사진·부분 GT로 수행한 재실행 재현 확인이다. 라벨이 없는 후보를 false positive로 셀 수 없고, precision/recall·전수 visible pair 성공률·새 카메라 자세 일반화를 산출하지 않았다. 기준·코드·입력·설정·기존 산출물은 바꾸지 않았고 CPU 오프라인 실행만 했다.
