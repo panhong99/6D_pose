@@ -477,6 +477,9 @@ def landed_gap_error(Tbb, quadrant, pin, landed_pins):
     from plate_plans import basket_gaps, pin_gap
     gaps = basket_gaps()[quadrant]
     n = len(gaps)
+    bad = [v for v in [pin, *landed_pins] if not (np.isfinite(v) and 1 <= v <= n)]
+    if bad or not len(landed_pins):                     # (10/18 Codex) np.interp would clamp out-of-range pins silently
+        raise ValueError(f'{quadrant}: landed pins must be finite in 1..{n} (fractions allowed), got {bad or "none"}')
     x_of = lambda p_: float(np.interp(p_, np.arange(1, n + 1), [gaps[pin_gap(Tbb, quadrant, k)][0] for k in range(1, n + 1)]))
     return np.array([np.mean([x_of(l_) for l_ in landed_pins]) - x_of(pin), 0.0])
 
@@ -684,6 +687,8 @@ def run_plate(args):
             from plate_plans import hand_plate, pin_gap, quadrant_plan, robot_quadrants
             H, tool = hand_plate(legs0['to_grasp']['waypoints_deg'][-1], p)
             mq = robot_quadrants(basket_T)[args.quadrant]
+            if args.insert_landed_pins:                     # (10/18) check before any motion: a bad value must not stop a held plate
+                landed_gap_error(basket_T, mq, args.pin, args.insert_landed_pins)
             qs = dict(H=H, tool=tool, yaw=args.yaw_trim if args.yaw_trim is not None else q.get('basket_quadrant_yaw_trim_deg', 0.0),
                       tilt=args.tilt_trim if args.tilt_trim is not None else q.get('basket_quadrant_tilt_trim_deg', 0.0))
 
@@ -1223,6 +1228,8 @@ def parse_args(argv=None):
             p.error('--insert-force-limit-n requires --task plate --execute --place basket --insert quadrant; default remains off')
     if a.plate_color == 'white' and a.no_library:
         p.error('--plate_color white uses the library grasp (its +1 cm is radial there); not with --no_library')
+    if a.insert_landed_pins and not all(np.isfinite(v) and v >= 1 for v in a.insert_landed_pins):
+        p.error('--insert_landed_pins must be finite pin numbers >= 1 (fractions like 7.5 allowed)')
     if a.insert_landed_pins and a.insert_policy is None:
         p.error('--insert_landed_pins needs --insert_policy (a policy trained seeing the gap error)')
     if a.insert_policy is not None:

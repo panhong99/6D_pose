@@ -281,6 +281,9 @@ class Pipeline(unittest.TestCase):
             self.assertGreater(e[0], 0.03)
             self.assertEqual(e[1], 0.0)
             np.testing.assert_allclose(pipeline.landed_gap_error(Tbb, qd, 6, [6, 6]), [0, 0], atol=1e-12)
+            for bad in ([0], [999], [float('nan')], []):          # (10/18) out of range must fail, not clamp
+                with self.assertRaises(ValueError):
+                    pipeline.landed_gap_error(Tbb, qd, 6, bad)
         self.assertIsNone(pipeline.parse_args([]).insert_landed_pins)
         with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
             pipeline.parse_args(['--insert_landed_pins', '3.5'])
