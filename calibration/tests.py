@@ -751,6 +751,54 @@ class ModelOverlayTests(unittest.TestCase):
         self.assertEqual([g['number'] for g in groups], [None, None])
         self.assertEqual([g['number_candidate'] for g in groups], [number, number])
 
+    def test_tine_station_pairs_form_numbered_gaps_between_adjacent_stations(self):
+        import camera_tools as camera
+        from plate_plans import basket_gaps, pin_gap
+
+        gaps = basket_gaps()
+        for yaw_deg in (0.1, 180.1):
+            Tbb = np.eye(4)
+            a = np.radians(yaw_deg)
+            Tbb[:2, :2] = [[np.cos(a), -np.sin(a)], [np.sin(a), np.cos(a)]]
+            Tbb[:3, 3] = [0.807, -0.192, 0.1442]
+            for quadrant, slots in gaps.items():
+                pitch = float(np.median(np.diff([g[0] for g in slots])))
+                tine_x = [float(slots[0][0]) - pitch/2]
+                tine_x += [float(slot[0]) + pitch/2 for slot in slots]
+                stations = [dict(quadrant=quadrant, station_id=i, model_pin_ids=[2*i, 2*i+1],
+                                 midpoint_uv=[640.0 + x*1000, 240.0], local_x_m=x,
+                                 row_y_m=[0.08, 0.18], status='detected',
+                                 correction_xy_mm=[0.5, -0.25], candidate_correction_xy_mm=[0.5, -0.25])
+                            for i, x in enumerate(tine_x)]
+                generated = camera._gap_groups_from_tine_pairs(Tbb, stations, gaps)
+                by_q = [g for g in generated if g['quadrant'] == quadrant]
+                self.assertEqual(len(by_q), len(slots))
+                self.assertEqual({g['number'] for g in by_q}, set(range(1, len(slots)+1)))
+                for group in by_q:
+                    self.assertAlmostEqual(group['local_x_m'], slots[pin_gap(Tbb, quadrant, group['number'])][0],
+                                           delta=5e-5)
+                    model_gap = np.asarray(slots[pin_gap(Tbb, quadrant, group['number'])], float)
+                    expected = (Tbb @ np.r_[model_gap, 1.0])[:3]
+                    expected += Tbb[:3, 0]*0.0005 - Tbb[:3, 1]*0.00025
+                    np.testing.assert_allclose(group['candidate_gap_centre_base_xyz'], expected, atol=1e-10)
+                    np.testing.assert_allclose(group['gap_centre_base_xyz'], expected, atol=1e-10)
+
+                # A station pair disagreement retains a candidate but cannot become a confirmed gap center.
+                stations[1]['status'] = 'pair_disagreement'
+                stations[1]['correction_xy_mm'] = None
+                generated = camera._gap_groups_from_tine_pairs(Tbb, stations, gaps)
+                affected = [g for g in generated if g['station_pair_ids'] == [0, 1]][0]
+                self.assertEqual(affected['status'], 'pair_disagreement')
+                self.assertIsNotNone(affected['candidate_gap_centre_base_xyz'])
+                self.assertIsNone(affected['gap_centre_base_xyz'])
+
+                # A missing station must not make non-adjacent tines look like a gap pair.
+                missing_station = [g for g in stations if g['station_id'] != 1]
+                generated = camera._gap_groups_from_tine_pairs(Tbb, missing_station, gaps)
+                self.assertFalse(any(g['station_pair_ids'] == [0, 2] for g in generated))
+                self.assertTrue(all(right_id - left_id == 1 for g in generated
+                                    for left_id, right_id in [g['station_pair_ids']]))
+
     def test_tine_numbering_is_far_to_near_for_all_quadrants(self):
         """(10/15, Codex AA review) the overlay's own numbering function: 1 = farthest from the robot in every quadrant."""
         import camera_tools as camera
