@@ -4532,3 +4532,10 @@
 - 동일 `_gap_number_candidate()`의 입력 x만 변화시키는 CPU 함수 민감도 확인에서 −0.02 mm 이동 시 후보가 **4→5**로 바뀌었다(오차 8.770 mm, 허용 8.775 mm). −0.01 mm 이동은 4, +0.01 mm 이동도 4였고, 기준 x에서는 4를 돌려줬다. 여기서 x 변화는 synthetic 수치 perturbation이며 사진·바구니·검출 결과를 수정하거나 새 GT를 만들지 않았다.
 - 의미: 유일하게 통과한 pair의 전수 번호 정답이 확인된 것은 아니다. 기록된 x 해상도(10 µm)와 매우 가까운 후보 경계 때문에 이 `number=4`는 작은 모델 좌표 변화에도 인접 번호로 바뀔 수 있는 취약한 제안으로 취급해야 한다. 실제 픽셀/포즈 오차가 번호에 미치는 효과를 이번 합성 perturbation에서 추정하지 않았고, 코드나 threshold를 바꾸지 않았다.
 - 한계/환경: 같은 부분 라벨·모델 출력 기반 진단이라 pin numbering의 정답, precision/recall, visible-pair recall을 산출하지 않는다. 별도 회귀시험은 해당 없는 함수 민감도 확인이라 미실행; 데이터/소스/config/checkpoint 및 이전 산출물 수정 없음. Isaac/GPU·카메라·로봇·그리퍼 사용 없음.
+
+## 2026-10-18 16:0x KST Codex — E: model-only pair 좌표와 gap 번호 후보의 구조 대조
+- 목적: 직전 E 감사에서 유일하게 확정된 pair의 후보 번호가 gap 경계에 매우 민감했던 원인을, 기존 model-only JSON 4장 안에서 좌표 정의만 대조했다. `/tmp/e_model_only_audit_20261017_1004/Q{1,2,3,4}/*/pairs.json`과 각 request, 현재 `camera_tools.py`·`plate_plans.py`를 읽었다. 코드·데이터는 수정하지 않았다.
+- 계산 재현: 네 JSON에서 `visible_in_image=true` pair group **133개**를 모았다. 각 group의 `local_x_m`와 두 `model_pin_ids`의 basket-frame `local_xyz[0]` 평균 차이는 최대 **3.4×10⁻¹³ mm**로, group x가 실제로 두 줄의 동일 x 빗살 위치를 나타냄을 수치로 확인했다. 반면 `_assign_gap_numbers()`는 그 x를 `basket_gaps()`가 정의한 인접 x 빗살 사이 gap 중심에 가장 가까운 번호로 넘긴다. model-only `--model_search_2d` 실행에서 두 개별 선이 모두 detected인 16개 group 중 pair status는 detected 1, pair_disagreement 15였고, 이 16개 중 번호 후보가 비어 있지 않은 것은 8개였다(후보 번호는 정답 판정 아님). 133개 전체의 가장 가까운 model gap-center 거리 중앙값은 **8.80 mm**였다.
+- 해석: 현 함수 흐름은 **두 줄에서 같은 x의 빗살 쌍 위치**를 직접 **인접 빗살 사이 gap 중심**으로 간주해 번호 후보화하는 구조로 보인다. 실제 배치에서 동일 x 빗살 두 줄을 묶는 것이 gap 주소를 뜻한다는 별도 도면/정의가 확인되지 않는 한, 이 번호 후보는 target gap 좌표로 취급할 수 없다. 이 좌표 정의 불일치는 직전의 단일 pair 경계 민감도와 일관되지만, JSON 산출물이 실제 바구니의 번호 GT를 제공하지는 않는다.
+- 다음 검증: 보스가 정의한 `핀 N = 빗살 N과 N+1 사이`와 모델의 `basket_gaps()/pin_gap()` 정의를 모델 생성·사진 overlay에서 함께 대조해 pair group이 gap center로 변환되는 근거가 있는지 확인한 뒤 수정 여부를 결정한다. 이번에는 코드·임계값·기존 그림/결과를 수정하지 않았으며 새 출력 파일도 만들지 않았다. 따라서 성능 개선이나 검출 정답률 판정이 아니다.
+- 한계/환경: 모델-only JSON은 10/13 저장 프레임 및 현재 모델을 사용한 결과이고 전수 visible-pin/pair GT가 없다. 수치가 의미하는 것은 코드 좌표 간 관계뿐이다. CPU JSON/소스 정적 대조만 수행; 로봇·그리퍼·카메라·Isaac/GPU 미사용.
