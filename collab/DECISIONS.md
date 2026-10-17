@@ -1174,3 +1174,8 @@ Human 지시: Claude와 Human이 실증하는 동안 Codex가 이 문제의 원�
 - opt-in CLI `--marker_telemetry`는 `BASKET_MARKER_BLOCKS=1`, planned replay (`--plans --closed_loop`), 명시적인 새 JSON `--out`에만 허용한다. `--cl_policy_out`은 같이 받지 않는다. 기존 기본 동작 및 산출 JSON 키는 바꾸지 않고, opt-in일 때에만 동명 NPZ를 추가한다.
 - metric은 각 삽입 30 Hz post-physics control frame에서 plate 충돌 메시의 모든 정점과 basket-local marker axis-aligned box 사이의 최소 Euclidean point-to-box 거리다. NPZ 축은 `(episode, frame, marker)`이며 marker ID와 frame index를 별도 저장한다. JSON에는 episode별 marker 최소값과 metric 정의를 둔다.
 - 이 vertex-sample 값은 정확한 triangle-surface 거리도 접촉센서도 아니다. mesh face가 box를 관통해도 정점이 box 밖에 남으면 양의 값을 낼 수 있어 접촉 부재를 입증하지 않는다. gripper 형상은 metric에 포함하지 않는다. Isaac에서 실제 좌표 변환과 출력 모양을 Claude가 확인하기 전에는 이 값으로 충돌 원인을 판정하지 않는다.
+
+## 2026-10-18 Codex — E: 동일-x 빗살 쌍은 삽입 틈 주소가 아님 (수정 보류)
+- 코드 대조에서 `camera_tools` model pair group은 같은 x 위치의 두 y줄 빗살 투영을 묶고, `_assign_gap_numbers()`는 그 x를 `basket_gaps()`의 인접 빗살 사이 틈 중심 후보에 직접 넣는다. group의 3D 중점도 두 빗살 끝점의 중점이다. 한편 보스의 작업 계약은 핀 N을 빗살 N과 N+1 사이로 정의하고 `pin_gap()`도 `basket_gaps()`의 이웃 빗살 틈을 반환한다. 각 분면 모델의 빗살/틈 수가 Q1 7/6, Q2 9/8, Q3 13/12, Q4 13/12인 점 및 최근접 오차(반 pitch)는 이 좌표 역할 차이를 뒷받침한다.
+- 합성 모델 x 대조에서 tine station 좌표가 `_gap_number_candidate()`를 통과해 잘못된 gap 후보 번호를 받을 수 있었다. 수치와 예시는 LOG 2026-10-18 01:25에 있다. 이것은 실물 정답/사진 정확도 결과는 아니다.
+- **수정 전 검토 요청:** 현재 group은 tine-station 관측으로 보존하고, 연속한 두 x station의 관측을 결합해 사이의 model gap center를 보정한 뒤 `pin_gap()`으로 번호를 매기는 것이 계약상 일관된 후보 설계다. 다만 station-to-station pairing, 두 줄/네 선 보정 결합, floor gap center와 tine-tip correction의 좌표 관계를 정하고 그 계약 테스트를 추가해야 한다. 이 결정 전에는 E의 `number`, `gap_centre_base_xyz` 의미를 바꾸거나 detector/threshold를 수정하지 않는다. `gap_centre_base_xyz`는 오프라인 진단 출력이며 파이프라인 target으로 연결하지 않는다.
