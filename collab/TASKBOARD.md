@@ -265,6 +265,17 @@
 - `calibration/run.sh` 변경이 `DEMO_PINS`의 네 필드·콤마 구분 landed pin 목록과 `DEMO_INSERT_POLICY`를 pipeline에 올바르게 전달하는지, landed 값만 있을 때 정책 없이 실행되지 않는지 검토한다. 실제 pipeline·ROS/로봇·Isaac/GPU 실행 금지.
 - Codex 상태: **완료(325089f)**. shell syntax 및 관련 CLI 시험 2/2 통과; 임시 mock으로 2개 demo tuple의 args 전달 및 정책 누락 시 pipeline 미호출 확인. 누락 정책은 tuple을 skip하고 계속하므로 경고 출력을 확인할 것. LOG 2026-10-17 03:24 KST.
 
+### 새 일 AW: 높은 운반 경로 critic 검토 (10/18 13:5x Claude, 보스 지시: 마커판 충돌)
+- 보스 10/18: 운반이 낮아 접시가 마커판(10×10 cm)과 부딪힘 → 잡은 뒤 **15 cm 이상 수직 상승 후** 이동. 같은 칸은 **큰 번호부터**.
+- Claude 변경(커밋 예정, Claude 파일): `plate_plans.high_carry`·`quadrant_plan(grasp_deg, plates)`·`basket_boxes(plates)`, config `basket_carry_rise_m: 0.15`·`basket_carry_clear_m: 0.05`, `pipeline --basket_plates`, `run.sh demo4`(칸 안 큰 번호 먼저 재정렬 + 앞서 넣은 접시 전달, `DEMO_BASKET_PLATES`).
+- 검토할 것(CPU만, 코드 수정 금지 → LOG에 지적): (1) 운반 바닥 높이 = max(잡을 때 접시 최저점+0.15, 마커/서 있는 접시 상자 위+0.05)가 맞게 계산되는지, (2) 서 있는 접시를 수직 하강 검사에서만 빼는 판단(두 칸 3.5 cm, 접시 오목 2.5 cm)의 위험, (3) 관절 직선 대체 경로가 바닥 −1 cm까지 허용하는 것, (4) demo4 재정렬/실패 시 `placed` 미기록의 결과, (5) 빠진 시험.
+- 기하 감사: 새 계획 세트(LOG에 경로 적음, 10번·8번 각 100)와 예전 `random_20261017_011921`의 운반(lift+to_above) 중 접시 최저점(바구니 테두리 기준)·마커 상자까지 최소 거리를 FK로 표로. 스크립트 예: Claude scratch `carry_height.py` 방식.
+
+### 새 일 AX: 승인된 빗살 라벨로 4.4 cm 착지 오차 원인 가르기 (10/18 13:5x Claude)
+- 보스: "코덱스 빗금(승인된 Q2–Q4 라벨)이 기가 막히게 잘 돼 있다, 특정 번호 넣기 RL에 확실히 이용". 
+- 질문: 10/16 실기(Q?:6 겨냥 → 3·4 사이 착지 등, `real_pipeline/2026101[6]*` 기록)의 약 4.4 cm 줄 방향 오차가 (a) 빗살 모델 오차(라벨 대비 x MAE 1–1.7 mm라 작음), (b) 바구니 좌표(마커 배치) 한 칸 alias, (c) 손 안 접시/하강 동역학 중 무엇과 맞는지 수치로. 손목 사진의 라벨 빗살 위치를 그날 바구니 좌표로 옮겨 목표 칸 중심과의 차이를 낸다.
+- 산출: 표 1장 + "정책 seen 입력으로 라벨 기반 칸 오차를 쓸 수 있는가" 한 줄 판단. CPU만, 로봇/카메라 명령 금지.
+
 ## Codex 상태
 - 10/18 R1 최종 비교 CPU 사전 대조 **완료(c546d1c)**: `plans.jsonl`–기준 E3 JSON/NPZ의 415개 순서·이름·분면·목표 gap·exact 판정이 각 415/415 일치; Q별 표본 Q1–Q4 **114/100/110/91**, 기준 E3 exact **281/415**. R1 설정/명령도 full-DR·FP noise·noseen·canon으로 일치하고 `best.pt` 텐서가 `policy_0030.pt`와 동일(최고 eval 0.687; 55회차 동률은 best 갱신 안 함). 최종 `fulldr_r1_unseated025_it30.{json,npz,log}`는 아직 없어 R1 비교 자체는 계속 대기. 세부 경로·한계는 LOG 2026-10-18 Codex 항목.
 - 10/16 23:27 R1 unseated penalty CPU 실패분해 **완료(c3cae21)**: 같은 선택평가 598개에서 eval30→60은 **411→409 exact**, paired **21 gain/23 loss/554 ties (p=.880)**로 동률 범위. Q1은 **98→99/156**이고 pin5 outside-quadrant **4→8**, exact **13→12/26**; penalty 효과로 단정할 수 없음. seed15014 기준선(e3 281/415=67.7%)과 비교할 R1 best 최종 replay 대기. Claude GPU 실행 명령 및 새 `fulldr_r1_unseated025_it30.{json,npz,log}` 경로는 LOG 23:27; 기존 파일을 덮지 않는다.
