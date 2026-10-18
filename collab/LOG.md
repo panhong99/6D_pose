@@ -4656,3 +4656,8 @@
 - v2를 보강하기 전 JSON을 다시 집계했다. Q2는 18개 중 17개 root+tip 쌍이고 오른쪽 #1은 뿌리만(끝은 marker 아래); Q3는 26개 중 오른쪽 #13 완전 가림, 왼쪽 #13은 clip 뒤지만 끝점 보임, 오른쪽 #12 끝점은 marker-paper edge의 근사 좌표; Q4는 26개 중 24개 root+tip, 왼쪽 #12는 뿌리만, 왼쪽 #13 완전 가림. 모든 제공 좌표는 선언된 1280×720 source frame 범위 안이었다.
 - 앞선 v2의 Q2 설명(“#1 fully hidden”)은 root-visible 상태를 놓쳐 틀렸고, Q3 설명은 근사/가림 세부와 complete 수를 구별하지 못했다. v2는 유지하고 v4 `calibration/data/basket/wrist_look/codex_verified_review_sheet_20261018_v4.png`를 새로 만들어 JSON 상태에 맞는 짧은 캡션으로 고쳤다. v4를 열어 전체 렌더/캡션 폭을 확인했다. Q4 overlay는 이전과 같이 JSON 좌표를 원본 Q3 사진에 그린 별도 산출물이다.
 - 이는 annotation metadata의 집계 및 검토판 표기 교정이며 핀 좌표의 독립 검증이 아니다. 보스의 육안 확인은 여전히 필요하고 Q1은 전체 가시 calibrated 사진이 없다. 생성된 PNG는 `.gitignore`의 `data/`로 제외; 기존 사진/JSON/overlay, 코드, 모델, 설정은 수정하지 않았다. 테스트·카메라·로봇·Isaac/GPU 실행 없음.
+
+## 2026-10-18 Codex — N: Q2–Q4 검토판 보스 시각 확인 반영
+- 보스가 `calibration/data/basket/wrist_look/codex_verified_review_sheet_20261018_v4.png`를 보고 “완벽해”라고 확인했다. Q2/Q3/Q4 검토판의 **보스 시각 확인 완료**로 작업판에 반영했다. 검토판 준비 커밋은 `bc9d332`이며 이번 승인으로 좌표나 원본 데이터는 바꾸지 않았다.
+- 검토판의 JSON 항목 수는 Q2 18개(17 root+tip, 오른쪽 #1 root만), Q3 26개(오른쪽 #13 완전 가림, 오른쪽 #12 tip 근사), Q4 26개(24 root+tip, 왼쪽 #12 root만, 왼쪽 #13 완전 가림)다. 기존 조건부 3D audit는 66쌍, 인접 번호 양쪽 줄 완전 지원은 28/32 gap이다. 이 수치는 저장 사진과 가정한 높이평면을 사용하며 독립 3D 정답이나 실기 성공률이 아니다.
+- Q1 전체 가시 calibrated 사진이 없어 N 전체 완료는 아니다. 이번 반영은 문서만 수정했고 사진·JSON·코드·설정·모델·가중치는 변경하지 않았다.
