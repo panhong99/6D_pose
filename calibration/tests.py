@@ -304,11 +304,16 @@ class Pipeline(unittest.TestCase):
         Tbb = make_T(np.eye(3), [1.0, -0.17, 0.1449])
         base = {n for n, *_ in pp.basket_boxes(Tbb)}
         boxes = {n: (c, sz) for n, c, sz, _ in pp.basket_boxes(Tbb, plates=[('Q3', 2)])}
-        self.assertEqual(set(boxes) - base, {'plate_Q3_3'})
-        c, sz = boxes['plate_Q3_3']
+        self.assertEqual(set(boxes) - base, {f'plate_Q3_3_{k}' for k in range(7)})
         g = Tbb @ np.r_[pp.basket_gaps()['Q3'][2], 1.0]
-        np.testing.assert_allclose(c[:2], g[:2], atol=1e-9)
-        self.assertAlmostEqual(c[2] + sz[2] / 2 - Tbb[2, 3], g[2] - Tbb[2, 3] + 0.027 + 2 * pp.PLATE_R, places=9)
+        tops = [boxes[f'plate_Q3_3_{k}'][0][2] + boxes[f'plate_Q3_3_{k}'][1][2] / 2 - g[2] for k in range(7)]
+        self.assertAlmostEqual(max(tops), 0.027 + 2 * pp.PLATE_R, places=9)          # the middle slice reaches the disc top
+        self.assertLess(tops[0], 0.027 + 2 * pp.PLATE_R - 0.03)                       # the edge slices are lower (round plate)
+        np.testing.assert_allclose(tops, tops[::-1], atol=1e-9)
+        ys = [boxes[f'plate_Q3_3_{k}'][0][1] - g[1] for k in range(7)]
+        self.assertAlmostEqual(min(ys) - boxes['plate_Q3_3_0'][1][1] / 2, -pp.PLATE_R, places=9)
+        for k in range(7):
+            np.testing.assert_allclose(boxes[f'plate_Q3_3_{k}'][0][0], g[0], atol=1e-9)
 
     def test_high_carry_rises_first_and_never_goes_under_the_floor(self):
         # (10/18 보스) straight up from the start, across at the floor height, straight down onto the goal
