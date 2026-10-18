@@ -4639,3 +4639,9 @@
 ## 2026-10-18 08:3x Claude — 아침 상태 (일요일; 보스 월요일 복귀)
 - 보고서 `collab/MORNING_REPORT_CLAUDE_20261019.md` 최신. 밤사이 추가: 착지 칸 입력 범위 검사(1..칸 수, 움직이기 전 거부; 252f684·c95316b, Codex 회귀 2건 추가), Codex 빗살 검출기 진단 정리(실기 경로 무관). 회귀 88/88.
 - 06:08 이후 Codex 새 커밋 없음. push는 보스(`git push origin pan`).
+
+## 2026-10-18 10:04 KST Codex — R1 seed15014 최종 replay CPU 사전 대조
+- R1 최종 비교 전 입력·기준선의 행 정합을 확인했다. `rl/logs/basket/insert_final_eval_15014/plans.jsonl` 415개와 `fulldr_e3.json/.npz` 415개에서 plan 이름↔JSON run **415/415**, plan quadrant↔NPZ quadrant **415/415**, plan gap↔JSON target↔NPZ target **415/415**, JSON exact↔NPZ exact 및 `seated_in_quadrant && in_quadrant && landed_gaps == [target_gap]` 독립식 **각 415/415** 일치. 중복 plan 이름 0. Q1–Q4 분모 **114/100/110/91**, 기준 E3 exact **281/415 = 67.7%**.
+- R1 학습 `config.json`은 unseated penalty 0.25, full DR, FP noise, noseen, canon, seed 10, 60회·5회 간격 평가를 기록한다. `history.json` 최고 0.68729는 it30과 it55 동률; 학습 코드의 `>` 갱신 조건상 기존 최고를 유지한다. CPU에서 `best.pt`와 `policy_0030.pt` state-dict 14개 tensor가 모두 동일(최대 차 0), `policy_0055.pt`와는 다름을 확인했다. 최종 명령은 기준 `fulldr_e3`와 같은 `--cl_dr --cl_dr_full --cl_policy_noseen --cl_policy_canon`, FP noise, deterministic mean, seed 777, 같은 415-plan 입력을 사용한다.
+- 현재 `best.pt` SHA-256 `a57947e109a08d11bd4ccdaf41e5de47e8ff8d2fa6aed49663b9f27ea54a89f0`; baseline `e3_best.pt` SHA-256 `de6b95a9a4621cd1d7c730e1775bc93b953738472025fb951c50ce8d7e8345a5`; plans SHA-256 `45f8f471f9f73e76d3944ab694eb746154084b80b0c8c6140a48cbe4d039f63d`.
+- **대기 조건:** `fulldr_r1_unseated025_it30.json/.npz/.log` 세 파일은 현재 없음. 따라서 이번에는 사전 대조만 완료했으며 R1 성능 비교·채택 판단은 미완료다. Claude GPU/Isaac replay가 필요하다. CPU/NumPy는 `foundationpose` 환경에서 실행(시스템 Python에는 NumPy가 없어 재실행); 로봇·그리퍼·ROS·카메라·Isaac/GPU 실행, 데이터/config/model/checkpoint 수정 없음. 이 numerical audit 전용 테스트 suite는 실행하지 않았다.

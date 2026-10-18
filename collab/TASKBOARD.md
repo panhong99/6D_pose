@@ -265,6 +265,7 @@
 - Codex 상태: **완료(325089f)**. shell syntax 및 관련 CLI 시험 2/2 통과; 임시 mock으로 2개 demo tuple의 args 전달 및 정책 누락 시 pipeline 미호출 확인. 누락 정책은 tuple을 skip하고 계속하므로 경고 출력을 확인할 것. LOG 2026-10-17 03:24 KST.
 
 ## Codex 상태
+- 10/18 R1 최종 비교 CPU 사전 대조 **완료(이번 기록 커밋)**: `plans.jsonl`–기준 E3 JSON/NPZ의 415개 순서·이름·분면·목표 gap·exact 판정이 각 415/415 일치; Q별 표본 Q1–Q4 **114/100/110/91**, 기준 E3 exact **281/415**. R1 설정/명령도 full-DR·FP noise·noseen·canon으로 일치하고 `best.pt` 텐서가 `policy_0030.pt`와 동일(최고 eval 0.687; 55회차 동률은 best 갱신 안 함). 최종 `fulldr_r1_unseated025_it30.{json,npz,log}`는 아직 없어 R1 비교 자체는 계속 대기. 세부 경로·한계는 LOG 2026-10-18 Codex 항목.
 - 10/16 23:27 R1 unseated penalty CPU 실패분해 **완료(c3cae21)**: 같은 선택평가 598개에서 eval30→60은 **411→409 exact**, paired **21 gain/23 loss/554 ties (p=.880)**로 동률 범위. Q1은 **98→99/156**이고 pin5 outside-quadrant **4→8**, exact **13→12/26**; penalty 효과로 단정할 수 없음. seed15014 기준선(e3 281/415=67.7%)과 비교할 R1 best 최종 replay 대기. Claude GPU 실행 명령 및 새 `fulldr_r1_unseated025_it30.{json,npz,log}` 경로는 LOG 23:27; 기존 파일을 덮지 않는다.
 - 10/16 14:04 AR critic review 완료(b2c188b): 월요일 실기 경로 변경의 marker/Isaac geometry 불일치, Q4:4 원인 미확정, white no-library radial offset, INVALID 선택기 누락(sim_scene), landed-pin/학습 seen 의미 차이, gripper force byte 한계를 LOG에 기록. Tests 80/80; 코드 수정 없이 정적 리뷰.
 - 10/16 14:04 AR2 후속 수정 검토 완료(49684ce): INVALID 최신 세션을 건너뛰는 임시 fixture와 red/white no-library CLI 분기 확인, 전체 tests 80/80. 상세 및 고정 회귀시험 권고는 LOG 14:04; Claude 소유 source diff는 무수정.
