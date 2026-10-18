@@ -69,6 +69,7 @@
 | AY | demo4 새 흐름 CPU/mock 검증 | 새 일 AY; 임시 가짜 conda로 순서·누적·실패·건너뛰기·정책 인자를 기록하고 CLI parser 거부 확인 | 완료(5941b7d): 4개 mock 시나리오 및 CLI 7개 경계 확인; 새 high-carry 시험 2/2, 단독 flaky 시험 1/1 통과. 전체 90개 중 1개 stable-pose timeout(동시 계산 중)으로 실패, LOG 참고 |
 | AZ | 바구니 전 분면 빗살 찾기 + 선 그리기 | 새 일 AZ; 10/16 최신 배치 사진으로 네 분면 번호·root/tip 선 재작성 | 막힘: 10/16 저장 사진은 넓은 전경 또는 접시/마커 가림이고 model-only 확정 pair 0; 같은 품질의 새 배치 번호·root/tip 전수 좌표를 만들 수 없음. 기존 승인 Q2–Q4와 최신 전경 비교판·분면별 입력 상태 JSON/PNG `calibration/data/basket/wrist_look/az_new_layout_review_20261018_v1/`; 새 배치의 접시 없는 분면별 근접 calibrated 손목 사진 필요(LOG 15:0x) |
 | BA | 두 번째 칸 세트 sim 설정·결과 원시 감사 | 새 일 BA; 고친 계획과 오늘 세트 설정 대조, second/tuned_second/tuned_p10 짝 비교 | 완료(5dd5b24): 고친 64행과 다른 499행 모두 x shift=0, 중심 높이≈0.165 m, 손 안 tilt 일치; 결과 seated-exact second 38/64→tuned_second 9/64, p10 63/100→tuned_p10 18/100. `tr_train_second`는 결과 파일 0개라 추가 감사 대기. LOG 14:4x 참조 |
+| BB | 월요일 접시 없는 분면별 손목 사진 절차 | 새 일 BB; look_plans/mover/pre_photo 코드를 읽고 보스 실행 명령 순서와 저장값·한계 정리 | 완료(1e50d92): `collab/MONDAY_WRIST_PHOTOS_20261019.md`; 2°/s 저속·분면별 새 계획·원본/메타 확인, 10/16 바구니 위치 변경과 계획 FK 한계 명시. 실제 로봇·카메라 실행은 보스 몫(LOG 15:1x) |
 | F | marker 5/2.5 cm 비교 | 보스가 작은 마커를 붙이면 `basket_stats`로 같은 조건 측정 | 대기(보스) |
 | AF | **실물 접시 앉음 높이·기울기 측정 절차** | 보스가 Q1~Q4에 손으로 놓고 기록할 1장 절차·표, 로봇 명령 없음 | 완료(dce780d; 38/38 시험, LOG 기록) |
 | AG | **Q1 손 안 접시 퍼짐 원인 오프라인 분석** | `replay_q1nt_l05.json`의 들기 직후 `in_hand`와 운반·재겨냥 후 `pre`를 FK 기준으로 비교; regrip 비인과 한계 구분 | 완료(66b9681; Q1 pre y std 9.94 mm, 정확 시점·regrip 인과는 미확정) |
