@@ -4651,3 +4651,8 @@
 - 읽기 전용 Q4 JSON은 `quadrant=Q4`, `photo_name=Q3`, 원본 `20261013_190126_Q3.raw.png`(1280×720)를 가리킨다. 해당 JSON의 root/tip 좌표로 원본 사진 위에 Q4 주석을 새로 그려 `calibration/data/basket/wrist_look/labels_full_realQ4_codex_verified_20261018_review.png`를 만들었다. 이어 검토판을 `calibration/data/basket/wrist_look/codex_verified_review_sheet_20261018_v2.png`로 새 생성해 Q2/Q3/Q4의 실제 분면과 source-photo 이름, 가림 수를 분리 표기했다. 기존 v1·검증 PNG·JSON·원본은 덮어쓰지 않았다.
 - 새 Q4 overlay는 JSON 좌표를 기계적으로 그린 것이며 좌표 자체의 독립 정답이나 보스의 시각 확인을 뜻하지 않는다. Q2/Q3 기존 verified overlay도 사람 재확인 전이다. Q1 전체가 보이는 calibrated 입력은 없으므로 N 전체 완료나 전수 정확도 주장을 하지 않는다. 현재 필요한 조치는 보스의 v2 검토판 육안 확인 및 Q1 입력 제공이다.
 - PIL 생성은 `foundationpose` conda 환경에서 실행했고 새 PNG 두 개를 확인했다. 코드/설정/모델/checkpoint/원본 데이터는 수정하지 않았으며 로봇·그리퍼·카메라·ROS·Isaac/GPU 명령과 테스트는 실행하지 않았다. v1 PNG와 두 새 이미지 파일은 `.gitignore`의 `data/` 규칙으로 Git 제외됨; 본 로그와 작업판만 추적 문서 변경이다.
+
+## 2026-10-18 10:4x KST Codex — N: JSON 가림 상태 재집계 후 검토판 요약 수정
+- v2를 보강하기 전 JSON을 다시 집계했다. Q2는 18개 중 17개 root+tip 쌍이고 오른쪽 #1은 뿌리만(끝은 marker 아래); Q3는 26개 중 오른쪽 #13 완전 가림, 왼쪽 #13은 clip 뒤지만 끝점 보임, 오른쪽 #12 끝점은 marker-paper edge의 근사 좌표; Q4는 26개 중 24개 root+tip, 왼쪽 #12는 뿌리만, 왼쪽 #13 완전 가림. 모든 제공 좌표는 선언된 1280×720 source frame 범위 안이었다.
+- 앞선 v2의 Q2 설명(“#1 fully hidden”)은 root-visible 상태를 놓쳐 틀렸고, Q3 설명은 근사/가림 세부와 complete 수를 구별하지 못했다. v2는 유지하고 v4 `calibration/data/basket/wrist_look/codex_verified_review_sheet_20261018_v4.png`를 새로 만들어 JSON 상태에 맞는 짧은 캡션으로 고쳤다. v4를 열어 전체 렌더/캡션 폭을 확인했다. Q4 overlay는 이전과 같이 JSON 좌표를 원본 Q3 사진에 그린 별도 산출물이다.
+- 이는 annotation metadata의 집계 및 검토판 표기 교정이며 핀 좌표의 독립 검증이 아니다. 보스의 육안 확인은 여전히 필요하고 Q1은 전체 가시 calibrated 사진이 없다. 생성된 PNG는 `.gitignore`의 `data/`로 제외; 기존 사진/JSON/overlay, 코드, 모델, 설정은 수정하지 않았다. 테스트·카메라·로봇·Isaac/GPU 실행 없음.
