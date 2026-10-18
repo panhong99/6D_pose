@@ -689,6 +689,9 @@ def run_plate(args):
             mq = robot_quadrants(basket_T)[args.quadrant]
             if args.insert_landed_pins:                     # (10/18) check before any motion: a bad value must not stop a held plate
                 landed_gap_error(basket_T, mq, args.pin, args.insert_landed_pins)
+            rq = robot_quadrants(basket_T)                  # before motion: a bad pin raises here
+            plates = [(rq[v.split(':')[0]], pin_gap(basket_T, rq[v.split(':')[0]], int(v.split(':')[1]))) if ':' in v
+                      else (mq, pin_gap(basket_T, mq, int(v))) for v in (args.basket_plates or [])]
             qs = dict(H=H, tool=tool, yaw=args.yaw_trim if args.yaw_trim is not None else q.get('basket_quadrant_yaw_trim_deg', 0.0),
                       tilt=args.tilt_trim if args.tilt_trim is not None else q.get('basket_quadrant_tilt_trim_deg', 0.0))
 
@@ -707,7 +710,8 @@ def run_plate(args):
                 kw = dict(centre_h=q.get('basket_quadrant_centre_h_m', 0.18), tilt_deg=-qs['tilt'], x_shift_m=args.x_shift)
                 kw.update(sim_kw)
                 return quadrant_plan(basket_T, mq, pin_gap(basket_T, mq, args.pin), qs['H'], qs['tool'], start_deg, Tbc, q,
-                                     yaw_trim_deg=qs['yaw'], y_shift_m=args.y_shift, **kw)
+                                     yaw_trim_deg=qs['yaw'], y_shift_m=args.y_shift, grasp_deg=legs0['to_grasp']['waypoints_deg'][-1],
+                                     plates=plates, **kw)
             early, rep = qplan(legs0['lift']['waypoints_deg'][-1])
             if early is None:
                 raise RuntimeError(f'{args.quadrant} pin {args.pin}: no insert plan from this grasp ({rep["tried"][:4]})')
@@ -1182,6 +1186,9 @@ def parse_args(argv=None):
                    'from the robot) [m]; default config basket_quadrant_x_trim_m')
     p.add_argument('--sim_q', action='store_true', help='--insert quadrant: use config basket_quadrant_sim (Isaac per-quadrant '
                    'lean, aim, wrist flip; 10/15) instead of the real trims; --x_shift still overrides the aim')
+    p.add_argument('--basket_plates', nargs='+', default=None, metavar='[Q:]PIN',
+                   help='(10/18 보스) --insert quadrant: plates already in the basket, PIN (this --quadrant) or Q4:10 (any quadrant); '
+                        'the carry passes over them (collision boxes), the straight-down insert beside them')
     p.add_argument('--insert_landed_pins', type=float, nargs='+', default=None,
                    help='(10/16) with --insert_policy (a policy trained seeing the gap error): pins where earlier real inserts '
                         'aimed at this --pin landed (e.g. 3.5 = between 3 and 4); their mean error is the policy\'s gap input')
@@ -1230,6 +1237,12 @@ def parse_args(argv=None):
         p.error('--plate_color white uses the library grasp (its +1 cm is radial there); not with --no_library')
     if a.insert_landed_pins and not all(np.isfinite(v) and v >= 1 for v in a.insert_landed_pins):
         p.error('--insert_landed_pins must be finite pin numbers >= 1 (fractions like 7.5 allowed)')
+    for v in a.basket_plates or []:
+        q_, _, pin_ = v.rpartition(':')
+        if not pin_.isdigit() or int(pin_) < 1 or q_ not in ('', 'Q1', 'Q2', 'Q3', 'Q4'):
+            p.error(f'--basket_plates {v}: PIN >= 1 or Q1..Q4:PIN')
+        if int(pin_) == a.pin and q_ in ('', a.quadrant):
+            p.error('--basket_plates: the target --pin already holds a plate')
     if a.insert_landed_pins and a.insert_policy is None:
         p.error('--insert_landed_pins needs --insert_policy (a policy trained seeing the gap error)')
     if a.insert_policy is not None:

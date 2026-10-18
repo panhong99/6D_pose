@@ -903,9 +903,13 @@ def _reach_figure(xs, ys, grid, all4, path):
 PLATE_R = 0.134                                            # plate mesh 26.7 cm across, 2.5 cm thick
 
 
-def basket_boxes(Tbb, wall=0.012, top=0.03):
+STANDING_PLATE = dict(low_m=0.027, thick_m=0.02)           # a plate already in a gap: lowest rim ~27 mm above the floor
+
+
+def basket_boxes(Tbb, wall=0.012, top=0.03, plates=()):
     """Basket body as 4 oriented wall boxes (base frame): 53 x 52 cm, floor -0.144 .. rim + rails/handle (`top`) in the
-    basket frame.  The pins are not boxes: the plate goes between them by design."""
+    basket frame.  The pins are not boxes: the plate goes between them by design.  `plates`: (model quadrant, gap index)
+    of plates already standing in the basket (10/18 보스: insert the larger pin first, the next plate passes over it)."""
     import sys
     sys.path.insert(0, str(ROOT / 'rl'))
     import basket_env as be
@@ -923,6 +927,10 @@ def basket_boxes(Tbb, wall=0.012, top=0.03):
                 m = np.asarray(layout[str(i)], float)
                 loc.append((f'marker_{i}', [m[0], m[1], m[2] + mk['above_m'] - mk['height_m'] / 2],
                             [mk['size_m'], mk['size_m'], mk['height_m']]))
+    for qd, g in plates:                                     # upright plate, 26.8 cm across, a thin box in the gap
+        c = np.array(basket_gaps()[qd][g], float)
+        loc.append((f'plate_{qd}_{g + 1}', [c[0], c[1], z0 + STANDING_PLATE['low_m'] + PLATE_R],
+                    [STANDING_PLATE['thick_m'], 2 * PLATE_R, 2 * PLATE_R]))
     return [(n, (np.asarray(Tbb) @ np.r_[c, 1.0])[:3].tolist(), sz, R) for n, c, sz in loc]
 
 
@@ -934,15 +942,19 @@ def plate_cloud(H, tool):
     return (np.c_[pts, np.ones(len(pts))] @ (tool @ H).T)[:, :3]
 
 
-def quadrant_checkers(Tbc, q, Tbb, H, tool):
+def quadrant_checkers(Tbc, q, Tbb, H, tool, plates=()):
     """Collision checkers for the quadrant plan: (with the plate in the hand, after the release)."""
     import copy
     from robot_model import CollisionChecker, MultiChecker
     lib = library_checkers(Tbc, q)
     c = np.asarray(Tbb)[:3, 3]
-    basket = CollisionChecker(Kinematics(), basket_boxes(Tbb), resolution=0.005, margin=q.get('basket_wall_margin_m', 0.01),
+
+    def basket_checker(pl):
+        ch = CollisionChecker(Kinematics(), basket_boxes(Tbb, plates=pl), resolution=0.005, margin=q.get('basket_wall_margin_m', 0.01),
                               bounds=((c[0] - 0.5, c[0] + 0.5), (c[1] - 0.5, c[1] + 0.5), (-0.05, 0.6)))
-    basket.set_tool(q.get('tool_length_m', 0.165), q.get('tool_radius_m', 0.06))
+        ch.set_tool(q.get('tool_length_m', 0.165), q.get('tool_radius_m', 0.06))
+        return ch
+    basket = basket_checker(plates)
     plate = plate_cloud(H, tool)
 
     def with_plate(ch):
@@ -951,19 +963,129 @@ def quadrant_checkers(Tbc, q, Tbb, H, tool):
         return ch2
     held = [with_plate(lib['frame'][0]), with_plate(lib['table'][0]), with_plate(basket)]
     insert = held                                            # (10/14 실기) the plate rim vs the walls too (pins are not boxes)
+    if plates:                                               # (10/18) the straight-down insert passes a standing plate two gaps
+        insert = held[:2] + [with_plate(basket_checker(()))]   # away by design (3.5 cm, dish 2.5 cm deep): walls/markers only
     free = [lib['frame'][0], lib['table'][0], basket]
     return MultiChecker(held), MultiChecker(insert), MultiChecker(free)
 
 
+def high_carry(kin, start, goal, cloud, z_low, ok_lim, step_m=0.02):
+    """(10/18 보스: the plate hit the marker plates on a low carry) carry with the plate's lowest point never under `z_low`
+    (base z): straight up from `start`, across at that height, then straight down onto `goal` (the above pose, plate
+    upright).  Across: the joint-space line between the two high poses (like the old straight carry), each point lifted
+    straight up wherever the plate would dip under `z_low`; else position straight + orientation slerp, lifted the same way.
+    -> (joint waypoints (rad), index where the straight-down part starts)."""
+    from scipy.spatial.transform import Rotation, Slerp
+    low = lambda T: float((cloud @ T[:3, :3].T + T[:3, 3])[:, 2].min())    # noqa: E731
+    T0, T1 = kin.fk(start), kin.fk(goal)
+    up0, up1 = max(0.0, z_low - low(T0)), max(0.0, z_low - low(T1))
+
+    def vertical(T, d_from, d_to):
+        out = []
+        for d in np.linspace(d_from, d_to, max(2, int(np.ceil(abs(d_to - d_from) / 0.01)) + 1))[1:]:
+            T_ = T.copy()
+            T_[2, 3] += d
+            out.append(T_)
+        return out
+
+    def chain(poses, prev, what):
+        out = []
+        for T in poses:
+            try:
+                sol = kin.ik(T, prev)
+            except RuntimeError:
+                raise RuntimeError(f'high carry: {what} ik') from None
+            if not ok_lim(sol) or np.degrees(np.abs(sol - prev)).max() > 8:
+                raise RuntimeError(f'high carry: {what} limit/flip')
+            out.append(sol)
+            prev = sol
+        return out
+    start, goal = np.asarray(start, float), np.asarray(goal, float)
+    rise = chain(vertical(T0, 0.0, up0), start, 'rise') if up0 > 0 else []
+    q_up0 = rise[-1] if rise else start
+    drop_up = chain(vertical(T1, 0.0, up1), goal, 'drop') if up1 > 0 else []   # built upward from the goal, used reversed
+    q_up1 = drop_up[-1] if drop_up else goal
+    def lift_by_arm(qi, seed):
+        """qi with J2/J3 changed so the plate's lowest point is at z_low and the flange keeps its distance from the base
+        axis (the wrist joints stay on the joint line: no IK flip near the J5 = 0 wrist singularity)."""
+        from scipy.optimize import least_squares
+        p0 = kin.fk(qi)[:3, 3]
+        r0 = np.hypot(p0[0], p0[1])
+
+        def res(x):
+            q_ = qi.copy()
+            q_[1:3] = x
+            T = kin.fk(q_)
+            return [(low(T) - z_low) * 10, (np.hypot(T[0, 3], T[1, 3]) - r0) * 10]
+        fit = least_squares(res, seed[1:3], max_nfev=200)
+        if np.abs(res(fit.x)).max() > 1e-3:
+            raise RuntimeError('high carry: arm lift unreachable')
+        q_ = qi.copy()
+        q_[1:3] = fit.x
+        return q_
+
+    def raised_joint_line():                                 # the old carry's joint line, lifted where the plate would dip
+        n = max(2, int(np.ceil(np.degrees(np.abs(q_up1 - q_up0)).max() / 2.0)) + 1)
+        out, prev, off = [], q_up0, np.zeros(6)
+        for f in np.linspace(0, 1, n)[1:-1]:
+            qi = q_up0 + (q_up1 - q_up0) * f
+            dz = z_low - low(kin.fk(qi))
+            sol = lift_by_arm(qi, qi + off) if dz > 0 else qi
+            if not ok_lim(sol) or np.degrees(np.abs(sol - prev)).max() > 8:
+                raise RuntimeError(f'high carry: joint line limit/flip at {f:.2f} (+{dz:.3f} m, '
+                                   f'J{int(np.argmax(np.abs(sol - prev))) + 1} {np.degrees(np.abs(sol - prev)).max():.0f} deg)')
+            out.append(sol)
+            prev, off = sol, sol - qi
+        if np.degrees(np.abs(q_up1 - prev)).max() > 8:
+            raise RuntimeError('high carry: across limit/flip')
+        return out
+
+    def slerp_line():                                        # straight in space (the wrist may not follow it, e.g. J5 through 0)
+        rots = Slerp([0, 1], Rotation.from_matrix([T0[:3, :3], T1[:3, :3]]))
+        p0, p1 = T0[:3, 3] + [0, 0, up0], T1[:3, 3] + [0, 0, up1]
+        poses = []
+        for f in np.linspace(0, 1, max(2, int(np.ceil(np.linalg.norm(p1 - p0) / step_m)) + 1))[1:-1]:
+            T = np.eye(4)
+            T[:3, :3], T[:3, 3] = rots(f).as_matrix(), p0 + (p1 - p0) * f
+            T[2, 3] += max(0.0, z_low - low(T))
+            poses.append(T)
+        out = chain(poses, q_up0, 'across')
+        if np.degrees(np.abs(q_up1 - (out[-1] if out else q_up0))).max() > 8:
+            raise RuntimeError('high carry: across limit/flip')
+        return out
+    try:
+        across = raised_joint_line()
+    except RuntimeError as e:
+        try:
+            across = slerp_line()
+        except RuntimeError as e2:
+            raise RuntimeError(f'{e}; {e2}') from None
+    path = [start] + rise + across + [q_up1]
+    return path + drop_up[::-1][1:] + [goal], len(path) - 1
+
 def quadrant_plan(Tbb, quadrant, gap, H, tool, start_deg, Tbc, q, grasp_legs=None, tilt_deg=0.0, centre_h=0.18, above_m=0.11,
-                  phi_step=10, seeds=None, yaw_trim_deg=0.0, y_shift_m=None, x_shift_m=None, faces=(1.0, -1.0), y_extra_m=0.0):
-    """Plan.json for one quadrant gap from the plate in the hand: to_above (carry, straight or RRT), descend (straight
-    down, plate upright, +basket_policy_extra_down_m), ascend (straight up), to_home, abort_home.  -> (path, report)."""
+                  phi_step=10, seeds=None, yaw_trim_deg=0.0, y_shift_m=None, x_shift_m=None, faces=(1.0, -1.0), y_extra_m=0.0,
+                  grasp_deg=None, plates=()):
+    """Plan.json for one quadrant gap from the plate in the hand: to_above (carry, straight or RRT; with config
+    basket_carry_rise_m: high carry, see high_carry), descend (straight down, plate upright, +basket_policy_extra_down_m),
+    ascend (straight up), to_home, abort_home.  `plates`: gaps already holding a plate (index in this quadrant, or
+    (model quadrant, index)).
+    -> (path, report)."""
     import ros2_nodes
     from robot_model import polyline_path as pp
     kin = Kinematics()
     lo, hi = np.array(ros2_nodes.joint_limits_deg()).T
-    held, inserting, free = quadrant_checkers(Tbc, q, Tbb, H, tool)
+    plates = [tuple(g) if isinstance(g, (tuple, list)) else (quadrant, int(g)) for g in plates]   # gap here or (model qd, gap)
+    held, inserting, free = quadrant_checkers(Tbc, q, Tbb, H, tool, plates=plates)
+    rise = q.get('basket_carry_rise_m')
+    if rise is not None:                                     # (10/18 보스) carry floor: >= rise above the plate at the grasp,
+        cloud = plate_cloud(H, tool)                         # clear of the marker blocks and of standing plates
+        low_at = lambda dg: float((cloud @ kin.fk(np.radians(dg))[:3, :3].T + kin.fk(np.radians(dg))[:3, 3])[:, 2].min())  # noqa: E731
+        if grasp_deg is None and grasp_legs:
+            grasp_deg = grasp_legs['to_grasp'][-1]
+        clear = dict(marker=q.get('basket_carry_clear_m', 0.05), plate=q.get('basket_carry_plate_clear_m', 0.05))
+        tops = [(n_.split('_')[0], c[2] + sz[2] / 2) for n_, c, sz, _ in basket_boxes(Tbb, plates=plates) if n_.startswith(('marker', 'plate'))]
+        z_low = max([low_at(grasp_deg if grasp_deg is not None else start_deg) + float(rise)] + [t + clear[k] for k, t in tops])
     g_ = np.array(basket_gaps()[quadrant][gap], float)
     if y_shift_m is None:                                    # (10/14 실기) keep the rim off the side wall: 26.8 cm plate,
         import sys                                           # pair A at y +0.129 put the rim on the +y wall
@@ -1020,7 +1142,15 @@ def quadrant_plan(Tbb, quadrant, gap, H, tool, start_deg, Tbc, q, grasp_legs=Non
             tried.append(((int(side), phi), f'insert clearance {c_ins:.2f}'))
             continue
         try:
-            carry, how = held.plan(np.radians(start_deg), down[0])
+            if rise is None:
+                carry, how = held.plan(np.radians(start_deg), down[0])
+            else:
+                carry, k = high_carry(kin, np.radians(start_deg), down[0], cloud, z_low, ok_lim)
+                how = f'high {z_low:.3f}'                    # straight down at the end: the insert check (standing plates beside)
+                c_car = min(held.path_clearance(pp(np.array(carry[:k + 1]), 0.5)),
+                            inserting.path_clearance(pp(np.array(carry[k:]), 0.5)))
+                if c_car < 1.0:
+                    raise RuntimeError(f'high carry clearance {c_car:.2f}')
             home, how_h = free.plan(down[0], np.radians(HOME_JOINTS_DEG))
         except RuntimeError as e:
             tried.append(((int(side), phi), str(e)))
@@ -1033,7 +1163,7 @@ def quadrant_plan(Tbb, quadrant, gap, H, tool, start_deg, Tbc, q, grasp_legs=Non
         path = taught_plan(legs, Tbc, q, f'quadrant {quadrant} gap {gap + 1}')
         plan = json.loads(Path(path).read_text())
         rep = dict(quadrant=quadrant, gap=gap + 1, phi_deg=phi, face=int(side), y_shift_m=round(y_shift_m, 4), x_shift_m=round(x_shift_m, 4), carry=how, home=how_h, tried=tried, accepted=plan['accepted'],
-                   clearance_ratio=dict(carry=round(held.path_clearance(pp(np.array(carry), 0.5)), 2), insert=round(c_ins, 2),
+                   clearance_ratio=dict(carry=round(held.path_clearance(pp(np.array(carry), 0.5)) if rise is None else c_car, 2), insert=round(c_ins, 2),
                                         after=round(free.path_clearance(pp(np.array(home), 0.5)), 2)))
         plan.update(basket_T=np.asarray(Tbb).tolist(), plate_in_tcp=np.asarray(H).tolist(), quadrant_plan=rep)
         Path(path).write_text(json.dumps(plan, indent=1))

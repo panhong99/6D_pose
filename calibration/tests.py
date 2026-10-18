@@ -291,6 +291,49 @@ class Pipeline(unittest.TestCase):
             with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
                 pipeline.parse_args(['--insert_landed_pins', bad])
 
+    def test_basket_plates_cli_and_standing_plate_box(self):
+        # (10/18 보스) plates already in the basket: CLI checks, and the box stands in its gap up to ~15 cm over the rim
+        import plate_plans as pp
+        self.assertIsNone(pipeline.parse_args([]).basket_plates)
+        self.assertEqual(pipeline.parse_args(['--pin', '8', '--basket_plates', '10', 'Q4:8']).basket_plates, ['10', 'Q4:8'])
+        self.assertEqual(pipeline.parse_args(['--quadrant', 'Q3', '--pin', '8', '--basket_plates', 'Q4:8']).basket_plates, ['Q4:8'])
+        for bad in (['--pin', '8', '--basket_plates', '8'], ['--pin', '8', '--basket_plates', '0'], ['--basket_plates', 'Q5:3'],
+                    ['--basket_plates', 'x'], ['--quadrant', 'Q3', '--pin', '8', '--basket_plates', 'Q3:8']):
+            with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+                pipeline.parse_args(bad)
+        Tbb = make_T(np.eye(3), [1.0, -0.17, 0.1449])
+        base = {n for n, *_ in pp.basket_boxes(Tbb)}
+        boxes = {n: (c, sz) for n, c, sz, _ in pp.basket_boxes(Tbb, plates=[('Q3', 2)])}
+        self.assertEqual(set(boxes) - base, {'plate_Q3_3'})
+        c, sz = boxes['plate_Q3_3']
+        g = Tbb @ np.r_[pp.basket_gaps()['Q3'][2], 1.0]
+        np.testing.assert_allclose(c[:2], g[:2], atol=1e-9)
+        self.assertAlmostEqual(c[2] + sz[2] / 2 - Tbb[2, 3], g[2] - Tbb[2, 3] + 0.027 + 2 * pp.PLATE_R, places=9)
+
+    def test_high_carry_rises_first_and_never_goes_under_the_floor(self):
+        # (10/18 보스) straight up from the start, across at the floor height, straight down onto the goal
+        import plate_plans as pp
+        from robot_model import HOME_JOINTS_DEG
+        kin = Kinematics()
+        cloud = np.array([[0.0, 0.0, 0.30], [0.1, 0.0, 0.30], [0.0, 0.1, 0.25]])
+        low = lambda q: float((cloud @ kin.fk(q)[:3, :3].T + kin.fk(q)[:3, 3])[:, 2].min())   # noqa: E731
+        start = np.radians(HOME_JOINTS_DEG) + np.radians([0, 10, 10, 0, 0, 0])
+        goal = start + np.radians([30, 0, 0, 0, 0, 0])
+        z_low = max(low(start), low(goal)) + 0.10
+        path, k = pp.high_carry(kin, start, goal, cloud, z_low, lambda q: True)
+        np.testing.assert_allclose(path[0], start)
+        np.testing.assert_allclose(path[-1], goal)
+        xy0 = kin.fk(start)[:2, 3]
+        rise = [w for w in path[1:k + 1] if low(w) < z_low - 1e-3]
+        for w in rise:                                        # below the floor only while going straight up
+            np.testing.assert_allclose(kin.fk(w)[:2, 3], xy0, atol=1e-3)
+        self.assertGreaterEqual(min(low(w) for w in path[len(rise) + 1:k + 1]), z_low - 1e-4)
+        xy1 = kin.fk(goal)[:2, 3]
+        for w in path[k:]:                                    # straight down at the end
+            np.testing.assert_allclose(kin.fk(w)[:2, 3], xy1, atol=1e-3)
+        steps = np.degrees(np.abs(np.diff(np.array(path), axis=0))).max()
+        self.assertLessEqual(steps, 8.0 + 1e-6)
+
     def test_landed_pin_bounds_follow_each_quadrants_gap_count(self):
         # Regression for the per-quadrant upper bound: Q1/Q2 have fewer gaps than Q3/Q4.
         from plate_plans import basket_gaps

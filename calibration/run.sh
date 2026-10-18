@@ -4,7 +4,7 @@
 #   bash calibration/run.sh stream             read-only flange pose stream -> UDP 5006 (needed by calibrate.py)
 #   bash calibration/run.sh viz [--plan P]     read-only RViz: real robot, FoundationPose plate, plan preview (UDP 5011)
 #   bash calibration/run.sh pipeline [args]    terminal 2: cube pipeline in conda foundationpose (see pipeline.py)
-#   bash calibration/run.sh demo4 [--execute]  meeting demo: Q4, Q3, Q1, Q2 one --auto --sim_q run each; DEMO_PINS="Q3:4 Q3:9:white" picks pins/colour
+#   bash calibration/run.sh demo4 [--execute]  meeting demo: Q4, Q3, Q1, Q2 one --auto --sim_q run each; DEMO_PINS="Q3:9 Q3:4:white" picks pins/colour
 #   bash calibration/run.sh sim [args]         Isaac Sim digital twin of the cell (see sim_scene.py)
 #   bash calibration/run.sh mover --plan P --leg L [--execute]   one plan leg, Human-run
 #   bash calibration/run.sh wrist_look         read-only: wrist photo at the current pose + model pins (starts its own stream)
@@ -39,11 +39,21 @@ case "$mode" in
     cd "$DIR/.."
     # (10/16) optional colour: Q3:9:white (default red).  (10/17) optional landed pins of earlier inserts aimed at this
     # pin, comma separated (Q4:10:red:7.5,8), used with DEMO_INSERT_POLICY=<seen-gap policy .pt>
-    for qp in ${DEMO_PINS:-Q4:6 Q3:6 Q1:6 Q2:5}; do
+    # (10/18 보스) same quadrant: always the larger pin first -> the list is reordered inside each quadrant (the quadrant
+    # order stays), and every plate put earlier in this demo (all quadrants) is passed on (--basket_plates Q:pin) so the
+    # carry goes over it.  After a failed run Human says whether a plate stayed in the basket.
+    pins_in="${DEMO_PINS:-Q4:6 Q3:6 Q1:6 Q2:5}"
+    pins_run=$(python3 -c 'import sys; e = sys.argv[1:]; q = [x.split(":")[0] for x in e]
+s = {k: iter(sorted((x for x in e if x.split(":")[0] == k), key=lambda x: -int(x.split(":")[1]))) for k in set(q)}
+print(" ".join(next(s[k]) for k in q))' $pins_in)
+    [ "$pins_run" != "$(echo $pins_in)" ] && echo "### 같은 칸은 큰 번호부터: $pins_in -> $pins_run"
+    placed="${DEMO_BASKET_PLATES:-}"   # plates already in the basket before this demo, e.g. DEMO_BASKET_PLATES="Q3:10 Q4:10"
+    for qp in $pins_run; do
       IFS=: read -r q pin color landed <<< "$qp"; color=${color:-red}
       pol=()
+      [ -n "${placed// /}" ] && pol+=(--basket_plates $placed)
       if [ -n "${DEMO_INSERT_POLICY:-}" ]; then
-        pol=(--insert_policy "$DEMO_INSERT_POLICY")
+        pol+=(--insert_policy "$DEMO_INSERT_POLICY")
         [ -n "$landed" ] && pol+=(--insert_landed_pins ${landed//,/ })
       elif [ -n "$landed" ]; then
         echo "!!! ${qp}: 착지 기록은 DEMO_INSERT_POLICY 와 함께만 씁니다"; continue
@@ -52,9 +62,14 @@ case "$mode" in
       read -r ans
       [ "$ans" = q ] && break
       [ "$ans" = s ] && continue
-      conda run --no-capture-output -n foundationpose python -u "$DIR/pipeline.py" --task plate --plate_policy ik_bc \
-        --place basket --insert quadrant --quadrant "$q" --pin "$pin" --plate_color "$color" --sim_q --auto "${pol[@]}" "$@" \
-        || echo "!!! ${q} 실패 - 로그 확인 후 다음으로 (Enter)"
+      if conda run --no-capture-output -n foundationpose python -u "$DIR/pipeline.py" --task plate --plate_policy ik_bc \
+        --place basket --insert quadrant --quadrant "$q" --pin "$pin" --plate_color "$color" --sim_q --auto "${pol[@]}" "$@"; then
+        placed="$placed $q:$pin"
+      else
+        echo "!!! ${q} 핀 ${pin} 실패 - 로그 확인. 이 접시가 바구니에 꽂혀 남았으면 y, 아니면 Enter"
+        read -r left
+        [ "$left" = y ] && placed="$placed $q:$pin"
+      fi
     done ;;
   sim)
     unset CONDA_PREFIX CONDA_DEFAULT_ENV PYTHONPATH LD_LIBRARY_PATH
