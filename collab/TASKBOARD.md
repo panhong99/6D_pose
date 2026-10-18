@@ -67,6 +67,7 @@
 | AW | 높은 운반 경로 CPU critic | 새/구 100개 경로의 테두리·마커 거리 재집계, 기존 접시 하강 간섭·demo4 전달 검토 | 완료(e26908f): pin10 마커 최소 0.9→5.9 cm; pin8 기존 접시 하강 간격 최소 9.8 mm, 타 분면 기존 접시 전달 누락 등 위험 LOG 기록 |
 | AX | 승인 빗살 라벨로 10/16 착지 4.4 cm 오차 원인 분리 | 새 일 AX; 저장 실기 사진·좌표·라벨을 CPU로 대조해 표와 seen 입력 판단 | 완료(0deccbc): Q3 목표6↔착지3.5 모델 43.50 mm, 조건부 라벨 43.56 mm; 국소 모델 잔차 −1.16 mm. 당일 Q3 pin6 전후 사진이 없어 marker alias vs 동역학 원인 판정은 막힘; 과거 라벨만으로 seen 계측 불가(LOG) |
 | AY | demo4 새 흐름 CPU/mock 검증 | 새 일 AY; 임시 가짜 conda로 순서·누적·실패·건너뛰기·정책 인자를 기록하고 CLI parser 거부 확인 | 완료(5941b7d): 4개 mock 시나리오 및 CLI 7개 경계 확인; 새 high-carry 시험 2/2, 단독 flaky 시험 1/1 통과. 전체 90개 중 1개 stable-pose timeout(동시 계산 중)으로 실패, LOG 참고 |
+| AZ | 바구니 전 분면 빗살 찾기 + 선 그리기 | 새 일 AZ; 10/16 최신 배치 사진으로 네 분면 번호·root/tip 선 재작성 | 막힘: 10/16 저장 사진은 넓은 전경 또는 접시/마커 가림이고 model-only 확정 pair 0; 같은 품질의 새 배치 번호·root/tip 전수 좌표를 만들 수 없음. 기존 승인 Q2–Q4와 최신 전경 비교판·분면별 입력 상태 JSON/PNG `calibration/data/basket/wrist_look/az_new_layout_review_20261018_v1/`; 새 배치의 접시 없는 분면별 근접 calibrated 손목 사진 필요(LOG 15:0x) |
 | F | marker 5/2.5 cm 비교 | 보스가 작은 마커를 붙이면 `basket_stats`로 같은 조건 측정 | 대기(보스) |
 | AF | **실물 접시 앉음 높이·기울기 측정 절차** | 보스가 Q1~Q4에 손으로 놓고 기록할 1장 절차·표, 로봇 명령 없음 | 완료(dce780d; 38/38 시험, LOG 기록) |
 | AG | **Q1 손 안 접시 퍼짐 원인 오프라인 분석** | `replay_q1nt_l05.json`의 들기 직후 `in_hand`와 운반·재겨냥 후 `pre`를 FK 기준으로 비교; regrip 비인과 한계 구분 | 완료(66b9681; Q1 pre y std 9.94 mm, 정확 시점·regrip 인과는 미확정) |
