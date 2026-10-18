@@ -283,6 +283,11 @@
 - AW 지적 반영(196ca11): `--basket_plates [Q:]PIN`(모든 분면), demo4 `placed`는 전 분면 누적, 실패 시 "남았으면 y" 질문, `DEMO_BASKET_PLATES`.
 - 확인: (1) `DEMO_PINS="Q4:8 Q3:8 Q4:10 Q3:10:white"` → 칸 안 큰 번호 먼저 재정렬(Q4:10 Q3:10:white Q4:8 Q3:8)과 출력 경고, (2) 성공/실패(y/Enter)/건너뛰기(s)에 따라 다음 실행에 넘어가는 `--basket_plates` 목록, (3) `DEMO_INSERT_POLICY`·landed 필드와 함께 쓸 때 인자 순서, (4) pipeline CLI 거부 경우. pipeline은 mock(임시 PATH의 가짜 conda)로만, ROS/로봇/Isaac 금지. 결과 LOG, 빠진 시험 제안.
 
+### 새 일 AZ: 바구니 전 분면 빗살 찾기 + 선 그리기 (10/18 15:0x 보스 지시, Codex 최우선)
+- 보스: "지금 했던 작업처럼 모든 바구니의 각 분면 빗살에 이전과 동일하게 빗살 찾고 line 그리기". 승인된 Q2–Q4 방식(번호 라벨 + root/tip 선)을 **Q1 포함 네 분면 전부**에, 가장 최근 손목 사진(`calibration/data/basket/wrist_look/`, `real_pipeline/*/wrist_above.raw.png`)으로 다시 한다. 10/16 바구니 이동·마커 재부착 이후 사진을 우선.
+- 산출: 분면별 overlay PNG + JSON(번호, root/tip 픽셀, 가림 상태, 원본 사진·카메라 자세), 검토판 1장. 이전 승인본과 같은 형식으로, 원본/승인본은 덮어쓰지 않음. 사진이 없거나 가려진 분면은 "입력 필요"로 표시(보스가 월요일 접시 없는 손목 사진 찍을 때 필요한 자세 목록).
+- 용도: 특정 번호 넣기 RL의 칸 위치 입력. CPU만, 로봇/카메라 명령 금지.
+
 ## Codex 상태
 - 10/18 R1 최종 비교 CPU 사전 대조 **완료(c546d1c)**: `plans.jsonl`–기준 E3 JSON/NPZ의 415개 순서·이름·분면·목표 gap·exact 판정이 각 415/415 일치; Q별 표본 Q1–Q4 **114/100/110/91**, 기준 E3 exact **281/415**. R1 설정/명령도 full-DR·FP noise·noseen·canon으로 일치하고 `best.pt` 텐서가 `policy_0030.pt`와 동일(최고 eval 0.687; 55회차 동률은 best 갱신 안 함). 최종 `fulldr_r1_unseated025_it30.{json,npz,log}`는 아직 없어 R1 비교 자체는 계속 대기. 세부 경로·한계는 LOG 2026-10-18 Codex 항목.
 - 10/16 23:27 R1 unseated penalty CPU 실패분해 **완료(c3cae21)**: 같은 선택평가 598개에서 eval30→60은 **411→409 exact**, paired **21 gain/23 loss/554 ties (p=.880)**로 동률 범위. Q1은 **98→99/156**이고 pin5 outside-quadrant **4→8**, exact **13→12/26**; penalty 효과로 단정할 수 없음. seed15014 기준선(e3 281/415=67.7%)과 비교할 R1 best 최종 replay 대기. Claude GPU 실행 명령 및 새 `fulldr_r1_unseated025_it30.{json,npz,log}` 경로는 LOG 23:27; 기존 파일을 덮지 않는다.
