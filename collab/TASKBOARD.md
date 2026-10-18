@@ -294,6 +294,10 @@
 - Claude 실수: 서 있는 접시가 있는 두 번째 칸 계획을 scratch 스크립트(`pin_with10.py`·`pin2_with10.py`·`p8_with10.py`·`p8_old.py`, Claude scratch 폴더)가 `_RANDOM['plan_kw']`를 `plates`로 덮어써 `random_plans --sim`의 `x_shift_m=0, centre_h=0.165, hand_tilt=(-12.9,4.9)`가 빠졌다 → 목표 중심 2 cm 어긋남, sim 2%/0% (가짜 결과, `x90/bug_no_simkw/`·`p8w10_high`). 고친 뒤 재생성 중(`x90/run_fix.sh`).
 - 할 일(CPU): (1) 고친 `plans_second.jsonl`과 `random_20261018_140945`(pin 10, --sim)의 같은 k 행에서 target_centre·plan 설정(centre_h, x_shift)·hand tilt가 같은 규칙인지 원시 대조, (2) 오늘 만든 다른 세트(`random_20261018_132513/132809/134020/134227/140945`, 학습용 `tr_*`)도 같은 설정인지, (3) 결과(second/tuned_second/tuned_p10)가 나오면 원시 재집계 + 짝 비교. 결과 LOG.
 
+### 새 일 BB: 월요일 접시 없는 분면별 손목 사진 절차 (10/18 15:4x Claude, AZ 입력 준비)
+- AZ에 필요한 사진(접시 없음, 분면마다 두 줄 전체, 가능한 수직)을 보스가 월요일 아침에 바로 찍을 수 있게, 기존 `plate_plans.py look_plans`(손목 look 자세 계획 + mover 명령 출력)와 `camera_tools.py pre_photo`/`run.sh wrist_look` 흐름을 코드로 확인하고 **명령 순서 1장**(`collab/MONDAY_WRIST_PHOTOS_20261019.md`)을 쓴다. 바구니 위치는 10/16 저장값(또는 보스가 x 0.90으로 당기면 다시 측정) 기준, 각 사진에 K·T_base_flange·T_flange_cam·T_base_basket 저장되는지 확인.
+- 실행 금지(로봇/카메라/ROS). look_plans는 offline 계획만이지만 UDP viz 송신이 있으니 실행하지 말고 코드 읽기로만. 속도는 가장 느리게(mover 명령의 vel 값 확인).
+
 ## Codex 상태
 - 10/18 R1 최종 비교 CPU 사전 대조 **완료(c546d1c)**: `plans.jsonl`–기준 E3 JSON/NPZ의 415개 순서·이름·분면·목표 gap·exact 판정이 각 415/415 일치; Q별 표본 Q1–Q4 **114/100/110/91**, 기준 E3 exact **281/415**. R1 설정/명령도 full-DR·FP noise·noseen·canon으로 일치하고 `best.pt` 텐서가 `policy_0030.pt`와 동일(최고 eval 0.687; 55회차 동률은 best 갱신 안 함). 최종 `fulldr_r1_unseated025_it30.{json,npz,log}`는 아직 없어 R1 비교 자체는 계속 대기. 세부 경로·한계는 LOG 2026-10-18 Codex 항목.
 - 10/16 23:27 R1 unseated penalty CPU 실패분해 **완료(c3cae21)**: 같은 선택평가 598개에서 eval30→60은 **411→409 exact**, paired **21 gain/23 loss/554 ties (p=.880)**로 동률 범위. Q1은 **98→99/156**이고 pin5 outside-quadrant **4→8**, exact **13→12/26**; penalty 효과로 단정할 수 없음. seed15014 기준선(e3 281/415=67.7%)과 비교할 R1 best 최종 replay 대기. Claude GPU 실행 명령 및 새 `fulldr_r1_unseated025_it30.{json,npz,log}` 경로는 LOG 23:27; 기존 파일을 덮지 않는다.
