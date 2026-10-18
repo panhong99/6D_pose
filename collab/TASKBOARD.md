@@ -278,6 +278,10 @@
 - 질문: 10/16 실기(Q?:6 겨냥 → 3·4 사이 착지 등, `real_pipeline/2026101[6]*` 기록)의 약 4.4 cm 줄 방향 오차가 (a) 빗살 모델 오차(라벨 대비 x MAE 1–1.7 mm라 작음), (b) 바구니 좌표(마커 배치) 한 칸 alias, (c) 손 안 접시/하강 동역학 중 무엇과 맞는지 수치로. 손목 사진의 라벨 빗살 위치를 그날 바구니 좌표로 옮겨 목표 칸 중심과의 차이를 낸다.
 - 산출: 표 1장 + "정책 seen 입력으로 라벨 기반 칸 오차를 쓸 수 있는가" 한 줄 판단. CPU만, 로봇/카메라 명령 금지.
 
+### 새 일 AY: demo4 새 흐름 mock 검증 (10/18 14:4x Claude, 196ca11 이후, CPU/mock only)
+- AW 지적 반영(196ca11): `--basket_plates [Q:]PIN`(모든 분면), demo4 `placed`는 전 분면 누적, 실패 시 "남았으면 y" 질문, `DEMO_BASKET_PLATES`.
+- 확인: (1) `DEMO_PINS="Q4:8 Q3:8 Q4:10 Q3:10:white"` → 칸 안 큰 번호 먼저 재정렬(Q4:10 Q3:10:white Q4:8 Q3:8)과 출력 경고, (2) 성공/실패(y/Enter)/건너뛰기(s)에 따라 다음 실행에 넘어가는 `--basket_plates` 목록, (3) `DEMO_INSERT_POLICY`·landed 필드와 함께 쓸 때 인자 순서, (4) pipeline CLI 거부 경우. pipeline은 mock(임시 PATH의 가짜 conda)로만, ROS/로봇/Isaac 금지. 결과 LOG, 빠진 시험 제안.
+
 ## Codex 상태
 - 10/18 R1 최종 비교 CPU 사전 대조 **완료(c546d1c)**: `plans.jsonl`–기준 E3 JSON/NPZ의 415개 순서·이름·분면·목표 gap·exact 판정이 각 415/415 일치; Q별 표본 Q1–Q4 **114/100/110/91**, 기준 E3 exact **281/415**. R1 설정/명령도 full-DR·FP noise·noseen·canon으로 일치하고 `best.pt` 텐서가 `policy_0030.pt`와 동일(최고 eval 0.687; 55회차 동률은 best 갱신 안 함). 최종 `fulldr_r1_unseated025_it30.{json,npz,log}`는 아직 없어 R1 비교 자체는 계속 대기. 세부 경로·한계는 LOG 2026-10-18 Codex 항목.
 - 10/16 23:27 R1 unseated penalty CPU 실패분해 **완료(c3cae21)**: 같은 선택평가 598개에서 eval30→60은 **411→409 exact**, paired **21 gain/23 loss/554 ties (p=.880)**로 동률 범위. Q1은 **98→99/156**이고 pin5 outside-quadrant **4→8**, exact **13→12/26**; penalty 효과로 단정할 수 없음. seed15014 기준선(e3 281/415=67.7%)과 비교할 R1 best 최종 replay 대기. Claude GPU 실행 명령 및 새 `fulldr_r1_unseated025_it30.{json,npz,log}` 경로는 LOG 23:27; 기존 파일을 덮지 않는다.
