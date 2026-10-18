@@ -289,6 +289,10 @@
 - 산출: 분면별 overlay PNG + JSON(번호, root/tip 픽셀, 가림 상태, 원본 사진·카메라 자세), 검토판 1장. 이전 승인본과 같은 형식으로, 원본/승인본은 덮어쓰지 않음. 사진이 없거나 가려진 분면은 "입력 필요"로 표시(보스가 월요일 접시 없는 손목 사진 찍을 때 필요한 자세 목록).
 - 용도: 특정 번호 넣기 RL의 칸 위치 입력. CPU만, 로봇/카메라 명령 금지.
 
+### 새 일 BA: 두 번째 칸 세트 설정 감사 (10/18 15:2x Claude, AZ가 사진 대기라 그동안)
+- Claude 실수: 서 있는 접시가 있는 두 번째 칸 계획을 scratch 스크립트(`pin_with10.py`·`pin2_with10.py`·`p8_with10.py`·`p8_old.py`, Claude scratch 폴더)가 `_RANDOM['plan_kw']`를 `plates`로 덮어써 `random_plans --sim`의 `x_shift_m=0, centre_h=0.165, hand_tilt=(-12.9,4.9)`가 빠졌다 → 목표 중심 2 cm 어긋남, sim 2%/0% (가짜 결과, `x90/bug_no_simkw/`·`p8w10_high`). 고친 뒤 재생성 중(`x90/run_fix.sh`).
+- 할 일(CPU): (1) 고친 `plans_second.jsonl`과 `random_20261018_140945`(pin 10, --sim)의 같은 k 행에서 target_centre·plan 설정(centre_h, x_shift)·hand tilt가 같은 규칙인지 원시 대조, (2) 오늘 만든 다른 세트(`random_20261018_132513/132809/134020/134227/140945`, 학습용 `tr_*`)도 같은 설정인지, (3) 결과(second/tuned_second/tuned_p10)가 나오면 원시 재집계 + 짝 비교. 결과 LOG.
+
 ## Codex 상태
 - 10/18 R1 최종 비교 CPU 사전 대조 **완료(c546d1c)**: `plans.jsonl`–기준 E3 JSON/NPZ의 415개 순서·이름·분면·목표 gap·exact 판정이 각 415/415 일치; Q별 표본 Q1–Q4 **114/100/110/91**, 기준 E3 exact **281/415**. R1 설정/명령도 full-DR·FP noise·noseen·canon으로 일치하고 `best.pt` 텐서가 `policy_0030.pt`와 동일(최고 eval 0.687; 55회차 동률은 best 갱신 안 함). 최종 `fulldr_r1_unseated025_it30.{json,npz,log}`는 아직 없어 R1 비교 자체는 계속 대기. 세부 경로·한계는 LOG 2026-10-18 Codex 항목.
 - 10/16 23:27 R1 unseated penalty CPU 실패분해 **완료(c3cae21)**: 같은 선택평가 598개에서 eval30→60은 **411→409 exact**, paired **21 gain/23 loss/554 ties (p=.880)**로 동률 범위. Q1은 **98→99/156**이고 pin5 outside-quadrant **4→8**, exact **13→12/26**; penalty 효과로 단정할 수 없음. seed15014 기준선(e3 281/415=67.7%)과 비교할 R1 best 최종 replay 대기. Claude GPU 실행 명령 및 새 `fulldr_r1_unseated025_it30.{json,npz,log}` 경로는 LOG 23:27; 기존 파일을 덮지 않는다.
