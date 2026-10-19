@@ -22,6 +22,21 @@ STEPS = (('Q3', 'front', 'red', ()), ('Q3', 'back', 'white', ('Q3:12',)),
          ('Q4', 'back', 'red', ()), ('Q4', 'front', 'white', ('Q4:6',)))
 
 
+def plate_blocked(p, Tb, rim=0.134, pad=0.01):
+    """Name of a cell frame box / the basket / a marker block that a flat plate (rim radius) at root p would overlap."""
+    import plate_plans as pp
+    from robot_model import frame_layout, measured_cell
+    a = np.linspace(0, 2 * np.pi, 72, endpoint=False)
+    disc = np.array([[p[0] + rr * np.cos(t), p[1] + rr * np.sin(t), p[2] + 0.01] for rr in (rim * 0.5, rim) for t in a])
+    for name, c, sz, *R in frame_layout(measured_cell()) + list(pp.basket_boxes(Tb)):
+        if name == 'table':
+            continue
+        loc = (disc - np.asarray(c)) @ (np.asarray(R[0]) if R else np.eye(3))
+        if np.any(np.all(np.abs(loc) <= np.asarray(sz) / 2 + pad, axis=1)):
+            return name
+    return ''
+
+
 def plan_step(job):
     import contextlib
     import io
@@ -40,6 +55,10 @@ def plan_step(job):
     pp.DATA.mkdir(parents=True, exist_ok=True)
     t0 = time.monotonic()
     res = dict(quadrant=qd, region=region, colour=colour, r=r, az=az_deg, ok=False, why='', pin=None, grasps_tried=0)
+    blocked = plate_blocked(p, Tb)                          # a plate that would overlap the cell frame or the basket
+    if blocked:                                             # cannot be put there at all: not a planner failure
+        res.update(why=f'physical: {blocked}', t=0.0)
+        return res
     try:
         with contextlib.redirect_stdout(io.StringIO()):
             lr, la = pp.library_target(p, q)
@@ -88,12 +107,13 @@ if __name__ == '__main__':
     a.add_argument('--grasp_all', action='store_true')
     a.add_argument('--workers', type=int, default=6)
     a.add_argument('--radii', default='0.85,0.90,0.95,1.00,1.05,1.10,1.15,1.20,1.25')
+    a.add_argument('--steps', default='0,1,2,3', help='which of STEPS (Q3 front, Q3 back, Q4 back, Q4 front)')
     a.add_argument('--az', default='10,20,30,40')
     a = a.parse_args()
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=False)
     pos = [(float(r), float(z)) for r in a.radii.split(',') for z in a.az.split(',')]
-    jobs = [(s, p_, a.grasp_all, str(out)) for s in STEPS for p_ in pos]
+    jobs = [(STEPS[int(i)], p_, a.grasp_all, str(out)) for i in a.steps.split(',') for p_ in pos]
     t0 = time.time()
     with Pool(a.workers) as pool, open(out / 'results.jsonl', 'w') as f:
         for res in pool.imap_unordered(plan_step, jobs):
