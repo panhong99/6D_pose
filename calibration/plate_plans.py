@@ -1361,19 +1361,49 @@ def quadrant_plan(Tbb, quadrant, gap, H, tool, start_deg, Tbc, q, grasp_legs=Non
                                 top, how = cand, f'prior {prior.get("source", "")[-40:]}'
                             elif os.environ.get('PRIOR_DEBUG'):
                                 print(f'   prior refused: clearance {c_pr:.2f}, wrist {wr:.0f}', flush=True)
+                        s0, pre = np.radians(start_deg), []
+                        lift_max = q.get('basket_carry_start_lift_m', 0.0)   # (10/19 night, opt-in) the lifted plate a bit
+                        if top is None and lift_max > 0 and mc_.clearance(s0) < 1.0:   # inside the margin (frame post):
+                            T0_ = kin.fk(s0)                                            # a short straight move away
+                            inward = -np.r_[T0_[:2, 3], 0.0] / max(np.linalg.norm(T0_[:2, 3]), 1e-9)   # first (up, back
+                            for dvec in (np.r_[0, 0, 1.0], inward, (inward + np.r_[0, 0, 1.0]) / np.sqrt(2)):   # toward the
+                                pre, prev_ = [], s0                                     # robot, or both), then the RRT
+                                for d in np.arange(0.01, lift_max + 1e-9, 0.01):
+                                    T_ = T0_.copy()
+                                    T_[:3, 3] += d * dvec
+                                    try:
+                                        sol = kin.ik(T_, prev_)
+                                    except RuntimeError:
+                                        break
+                                    if not ok_lim(sol) or np.degrees(np.abs(sol - prev_)).max() > 8:
+                                        break
+                                    pre.append(sol)
+                                    prev_ = sol
+                                    if mc_.clearance(sol) >= 1.0:
+                                        break
+                                if pre and mc_.clearance(pre[-1]) >= 1.0:
+                                    s0 = pre[-1]
+                                    break
+                                pre = []
                         if top is None:
-                            top, how = rrt_carry(held, fl, np.radians(start_deg), drop[-1], seeds=tuple(rr.get('seeds', (0, 1))),
+                            top, how = rrt_carry(held, fl, s0, drop[-1], seeds=tuple(rr.get('seeds', (0, 1))),
                                                  max_wrist_deg=rr.get('max_wrist_deg', 100.0), max_nodes=rr.get('max_nodes', 1500),
                                                  step_deg=rr.get('step_deg', 2.0), span_deg=rr.get('span_deg', 90.0))
                     except RuntimeError as e_rrt:
                         raise RuntimeError(f'{e_rule}; {e_rrt}') from None
+                    if pre and not how.startswith('prior'):
+                        top = [np.radians(start_deg)] + pre[:-1] + list(top)
+                        how += f' +lift {len(pre)} cm'
                     carry = [np.asarray(c_) for c_ in top] + [np.asarray(c_) for c_ in drop[::-1][1:]]
                     k = len(top) - 1
-                c_car = min(held.path_clearance(pp(np.array(carry[:k + 1]), 0.5)),
+                thr = 1.0                                     # (10/19 night, opt-in start lift) never closer than the lifted
+                if q.get('basket_carry_start_lift_m', 0.0) > 0:   # start itself (it is already there), else the margin
+                    thr = min(1.0, max(0.5, held.clearance(np.asarray(carry[0]))) - 1e-6)   # never below half the margin
+                c_car = min(held.path_clearance(pp(np.array(carry[:k + 1]), 0.5)) / thr,
                             inserting.path_clearance(pp(np.array(carry[k:]), 0.5)))
                 if c_car < 1.0:
                     raise RuntimeError(f'high carry clearance {c_car:.2f}')
-                clear_of = lambda c, k_: min(held.path_clearance(pp(np.array(c[:k_ + 1]), 0.5)),   # noqa: E731
+                clear_of = lambda c, k_: min(held.path_clearance(pp(np.array(c[:k_ + 1]), 0.5)) / thr,   # noqa: E731
                                              inserting.path_clearance(pp(np.array(c[k_:]), 0.5)))
                 ev, k_ev = even_carry(carry, k)               # (10/19 보스) evenly spaced, <= 60 points (movesj limit 100)
                 if clear_of(ev, k_ev) >= 1.0:

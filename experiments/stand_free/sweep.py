@@ -44,8 +44,9 @@ def plan_step(job):
     import plate_plans as pp
     import basket_env as be
     from calib_core import load_json, latest_t_base_cam
-    (qd, region, colour, standing), (r, az_deg), grasp_all, out = job
+    (qd, region, colour, standing), (r, az_deg), grasp_all, out, extra = job
     q = pl.plate_cfg('ik_bc')
+    q.update(extra)
     if colour == 'white':
         q['offset_m'] = [q['offset_m'][0] + pl.C['white_plate']['grasp_deeper_m'], q['offset_m'][1]]
     Tbc = np.array(load_json(latest_t_base_cam())['T_base_cam'])
@@ -105,6 +106,7 @@ if __name__ == '__main__':
     a = argparse.ArgumentParser()
     a.add_argument('--out', required=True)
     a.add_argument('--grasp_all', action='store_true')
+    a.add_argument('--start_lift', type=float, default=0.0, help='basket_carry_start_lift_m (opt-in)')
     a.add_argument('--workers', type=int, default=6)
     a.add_argument('--radii', default='0.85,0.90,0.95,1.00,1.05,1.10,1.15,1.20,1.25')
     a.add_argument('--steps', default='0,1,2,3', help='which of STEPS (Q3 front, Q3 back, Q4 back, Q4 front)')
@@ -113,7 +115,8 @@ if __name__ == '__main__':
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=False)
     pos = [(float(r), float(z)) for r in a.radii.split(',') for z in a.az.split(',')]
-    jobs = [(STEPS[int(i)], p_, a.grasp_all, str(out)) for i in a.steps.split(',') for p_ in pos]
+    extra = {'basket_carry_start_lift_m': a.start_lift} if a.start_lift > 0 else {}
+    jobs = [(STEPS[int(i)], p_, a.grasp_all, str(out), extra) for i in a.steps.split(',') for p_ in pos]
     t0 = time.time()
     with Pool(a.workers) as pool, open(out / 'results.jsonl', 'w') as f:
         for res in pool.imap_unordered(plan_step, jobs):
