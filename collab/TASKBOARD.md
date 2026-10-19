@@ -71,6 +71,7 @@
 | BA | 두 번째 칸 세트 sim 설정·결과 원시 감사 | 새 일 BA; 고친 계획과 오늘 세트 설정 대조, second/tuned_second/tuned_p10 짝 비교 | 완료(5dd5b24): 고친 64행과 다른 499행 모두 x shift=0, 중심 높이≈0.165 m, 손 안 tilt 일치; 결과 seated-exact second 38/64→tuned_second 9/64, p10 63/100→tuned_p10 18/100. `tr_train_second`는 결과 파일 0개라 추가 감사 대기. LOG 14:4x 참조 |
 | BB | 월요일 접시 없는 분면별 손목 사진 절차 | 새 일 BB; look_plans/mover/pre_photo 코드를 읽고 보스 실행 명령 순서와 저장값·한계 정리 | 완료(1e50d92): `collab/MONDAY_WRIST_PHOTOS_20261019.md`; 2°/s 저속·분면별 새 계획·원본/메타 확인, 10/16 바구니 위치 변경과 계획 FK 한계 명시. 실제 로봇·카메라 실행은 보스 몫(LOG 15:1x) |
 | BC | seed15 재학습 데이터·평가 원시 감사 | 새 일 BC; train/val/x90 배치 교집합, 11개 eval JSON/NPZ와 짝 변화, x90 비교·선택 편향 검증 | 완료(84600cd): train 성공 plan 799/800(1건 CRC 실패), train/val/x90 exact scene 교집합 0; eval 2,640행·x90 비교 422행 불일치 0. 최고 it25 147/240, x90 pin10 63→67/100·두 번째 칸 변화 0, gx30_seen 유지 판단과 일치(LOG 09:13) |
+| BD | Q3 두 번째 칸 pin7/pin8 같은 배치 비교 | x90 저장 계획·replay에서 실제 목표 번호와 공통 배치의 계획/앉음 결과 재집계 | 완료(2907451): pin7 계획 11/47·sim 0/11, pin8 계획 47/47·sim 32/47; 공통 11개 배치에서 pin8 8/11. `second` Q3는 pin7이라 월요일 pin8 성능으로 해석 금지(LOG 09:15) |
 | F | marker 5/2.5 cm 비교 | 보스가 작은 마커를 붙이면 `basket_stats`로 같은 조건 측정 | 대기(보스) |
 | AF | **실물 접시 앉음 높이·기울기 측정 절차** | 보스가 Q1~Q4에 손으로 놓고 기록할 1장 절차·표, 로봇 명령 없음 | 완료(dce780d; 38/38 시험, LOG 기록) |
 | AG | **Q1 손 안 접시 퍼짐 원인 오프라인 분석** | `replay_q1nt_l05.json`의 들기 직후 `in_hand`와 운반·재겨냥 후 `pre`를 FK 기준으로 비교; regrip 비인과 한계 구분 | 완료(66b9681; Q1 pre y std 9.94 mm, 정확 시점·regrip 인과는 미확정) |
