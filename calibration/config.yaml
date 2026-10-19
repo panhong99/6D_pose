@@ -152,6 +152,8 @@ plate_ik_bc:                       # --plate_policy ik_bc (overrides plate_rl ke
                                        # plate is >= 15 cm above its grasp height, across at that height, straight down onto the above pose
                                        # (null = old straight/RRT carry)
   basket_carry_clear_m: 0.05           # and >= 5 cm over the marker blocks
+  basket_carry_mode: rrt               # (10/19 18:0x 보스 'RRT써서 경로 찾게') rrt: bidirectional RRT over the cell + basket walls + marker blocks +
+                                       # standing plates, plate's lowest point >= marker tops + 5 cm over the basket, then the vertical drop; rule: rise/across/drop
   basket_carry_rrt_fallback: true     # (10/19 17:4x 보스 'RRT로') when the rise/across/drop rule fails: RRT to the point over the slot with the
                                        # plate's lowest point >= marker tops + basket_carry_clear_m over the basket, J4/J6 turn <= 100 deg, then the same drop
   basket_carry_plate_clear_m: 0.05     # and >= 5 cm over a plate already standing in the basket (its top ~15 cm over the rim). Pin 8 after

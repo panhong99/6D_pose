@@ -1199,7 +1199,7 @@ def quadrant_plan(Tbb, quadrant, gap, H, tool, start_deg, Tbc, q, grasp_legs=Non
     (model quadrant, index)).  `grasp_low_z`: the plate's lowest point on the stand (base z) for the rise rule (else
     the in-hand plate model at the grasp joints, which sits ~3 cm low once the plate has tilted in the hand).
     -> (path, report)."""
-    if q.get('basket_carry_rrt_fallback') and not q.get('_rrt_pass'):   # (10/19) every face/phi with the rule first; the
+    if q.get('basket_carry_rrt_fallback') and not q.get('_rrt_pass') and q.get('basket_carry_mode', 'rule') != 'rrt':   # (10/19) every face/phi with the rule first; the
         args_ = dict(Tbb=Tbb, quadrant=quadrant, gap=gap, H=H, tool=tool, start_deg=start_deg, Tbc=Tbc, grasp_legs=grasp_legs,
                      tilt_deg=tilt_deg, centre_h=centre_h, above_m=above_m, phi_step=phi_step, seeds=seeds,
                      yaw_trim_deg=yaw_trim_deg, y_shift_m=y_shift_m, x_shift_m=x_shift_m, faces=faces, y_extra_m=y_extra_m,
@@ -1300,10 +1300,12 @@ def quadrant_plan(Tbb, quadrant, gap, H, tool, start_deg, Tbc, q, grasp_legs=Non
                 carry, how = held.plan(np.radians(start_deg), down[0])
             else:
                 try:
+                    if q.get('basket_carry_mode', 'rule') == 'rrt':   # (10/19 18:0x 보스 'RRT써서 경로 찾게') RRT first
+                        raise RuntimeError('carry mode rrt')
                     carry, k = high_carry(kin, np.radians(start_deg), down[0], cloud, z_low, ok_lim)
                     how = f'high {z_base:.3f}' + (f'/{z_top:.3f}' if stand else '')                    # straight down at the end: the insert check (standing plates beside)
                 except RuntimeError as e_rule:              # (10/19 보스) the rule failed: RRT with the floor over the basket
-                    if not q.get('basket_carry_rrt_fallback', False):
+                    if not (q.get('basket_carry_rrt_fallback', False) or q.get('basket_carry_mode') == 'rrt'):
                         raise
                     z_mk = max([t + clear['marker'] for k_, t in tops if k_ == 'marker'] or [0.0])
                     try:
