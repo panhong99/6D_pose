@@ -471,20 +471,21 @@ def load_basket_insert_policy(path):
     return expert
 
 
-def region_pins(n, region, occupied=()):
+def region_pins(n, region, occupied=(), spacing=4):
     """(10/19 보스) candidate pins for "a plate in the front / back of the quadrant", in the order to try; pin 1 = farthest
     from the robot, n = nearest.  front: the robot half, nearest first (leaves room behind it).  back: farther than every
-    plate already in this quadrant (one empty gap between plates), nearest first; with none there, the far half.
-    Pins next to a plate already there are never candidates (two plates one gap apart touch)."""
+    plate already in this quadrant, nearest first; with none there, the far half.
+    No candidate is closer than `spacing` pins to a plate already there (보스: red at 10 -> white at 6 or farther; with 2
+    the white went in at 9, and real plates land ~1-2 pins off the aim)."""
     occupied = [int(o) for o in occupied]
     if region == 'front':
         cand = list(range(n, n // 2, -1))
     elif region == 'back':
-        top = min(occupied) - 2 if occupied else n // 2
+        top = min(occupied) - spacing if occupied else n // 2
         cand = list(range(top, 0, -1))
     else:
         raise ValueError(f'region {region!r}: front or back')
-    return [c for c in cand if all(abs(c - o) >= 2 for o in occupied)]
+    return [c for c in cand if all(abs(c - o) >= spacing for o in occupied)]
 
 
 def landed_gap_error(Tbb, quadrant, pin, landed_pins):
@@ -733,7 +734,7 @@ def run_plate(args):
             if args.region:                                 # (10/19 보스) any pin of the front / back half that has a plan
                 from plate_plans import basket_gaps
                 same_q = [int(v.split(':')[-1]) for v in (args.basket_plates or []) if ':' not in v or v.split(':')[0] == args.quadrant]
-                cands = region_pins(len(basket_gaps()[mq]), args.region, same_q)
+                cands = region_pins(len(basket_gaps()[mq]), args.region, same_q, int(q.get('basket_region_min_spacing', 4)))
                 print(f'   {args.quadrant} {args.region}: 후보 핀 {cands} (이미 있는 접시 {same_q})', flush=True)
                 early, rep, why = None, None, {}
                 order = sim_kw.get('faces', (1.0, -1.0))   # (10/19 보스: the wrist spun ~170 deg on Q3 pin 12) every pin with the

@@ -163,6 +163,7 @@ plate_ik_bc:                       # --plate_policy ik_bc (overrides plate_rl ke
   basket_quadrant_sim_real_dh_m: 0.010   # (10/15 17:1x 보스 실기 "1 cm 덜 깊게") --sim_q: real-robot release height = sim centre_h + this
   basket_quadrant_sim_real_dy_m: {Q3: 0.005}   # (10/15 18:3x: +1.5 cm hit the wall check (clearance 0.5); 17:2x 보스 asked +1.5) --sim_q: extra basket-y (+ = left) on top of the automatic wall shift (Q3 -3.0 cm)
   basket_quadrant_centre_h_m: 0.165    # --insert quadrant: plate centre above the basket floor at the end (10/13 보스 0.18 too deep -> 0.21; 10/14 -2.5 cm -> 0.185; 10/14 11:2x 보스 -2 cm)
+  basket_region_min_spacing: 4        # (10/19 보스) --region: a new plate at least this many pins from one already in the quadrant (red at 10 -> white <= 6; 2 put the white at 9)
   basket_quadrant_x_trim_m: -0.020     # (10/14 실기) plate landed 1.9 cm (11:5x, pin 7 -> 6-7) and ~3 cm (10:3x) farther than planned
   basket_quadrant_tilt_trim_deg: 0.0   # --insert quadrant: plate leaned along the pin rows at the insert, + = top toward the far side
   basket_quadrant_yaw_trim_deg: 0.0    # --insert quadrant: plate face turned about the vertical at the insert, + = CCW from above (tune on the real robot)

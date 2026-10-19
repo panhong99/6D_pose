@@ -78,7 +78,7 @@
 | BJ | v2 확대 재검토: 가림 표시·Q4 #13 root 교정 + 전체 conditional 3D 진단 | v2 보존, 새 v3 JSON/PNG, 84개 번호·79쌍 검사, 결과·한계 LOG | 완료(0282993): Q4 row1 #12/#13 root 간격 4.83 px(주변 pitch≈20 px)라 #13 root를 null 처리하고 이전값 보존; 79쌍 3D는 진단 전용, LOG 경로 참조 |
 | BG | after-release 손목 사진의 관절 자세 freshness guard | `look()`이 5초 내 새 `robot_state`를 못 받으면 stale `posj`로 사진 메타데이터를 저장하지 않도록 fail-closed | 완료(2885eff: 5초 안 fresh joint state 없으면 사진 저장 skip; 회귀 결과는 별도 확인되지 않음) |
 | BI | 보스 지정점 부분 3D 변환 sanity check | 지정점 10개 표기 확인을 기록하고, 보이는 7점만 기존 ray/height-plane 수식으로 투영해 한계 확인 | 완료(dbf9a5e): visible 7점 투영, Q별 transverse mismatch/lean 표는 LOG 10/19 부분 확인; 큰 mismatch와 계획 FK 한계 때문에 3D fit/모델 갱신은 보류. AZ 전수 완료 아님 |
-| BK | 받침 위 접시 위치별 경로 가능 지도 (CPU dry-run) | 아래 '새 일 BK'; 접시 root 격자마다 Q3/Q4 front/back 계획 성공·실패 이유 표+그림 | 부분 완료(2026-10-19 13:05 KST): 축소 격자 168/168 조건 완료, 56 plan accepted·112 no-plan. 10/20/30° 세 yaw만 조사해 전체 r=0.80–1.30 m·yaw=0–40° 지도는 미완료. CSV/JSON/PNG·분석은 LOG 13:05. 축소표본을 시연 안전 보증으로 해석하지 말 것 |
+| BK | 받침 위 접시 위치별 경로 가능 지도 (CPU dry-run) | 아래 '새 일 BK'; 접시 root 격자마다 Q3/Q4 front/back 계획 성공·실패 이유 표+그림 | 재작업(Claude 13:1x): v3(b112aea)는 r축이 무효 — 아래 'BK 재작업' |
 | F | marker 5/2.5 cm 비교 | 보스가 작은 마커를 붙이면 `basket_stats`로 같은 조건 측정 | 대기(보스) |
 | AF | **실물 접시 앉음 높이·기울기 측정 절차** | 보스가 Q1~Q4에 손으로 놓고 기록할 1장 절차·표, 로봇 명령 없음 | 완료(dce780d; 38/38 시험, LOG 기록) |
 | AG | **Q1 손 안 접시 퍼짐 원인 오프라인 분석** | `replay_q1nt_l05.json`의 들기 직후 `in_hand`와 운반·재겨냥 후 `pre`를 FK 기준으로 비교; regrip 비인과 한계 구분 | 완료(66b9681; Q1 pre y std 9.94 mm, 정확 시점·regrip 인과는 미확정) |
@@ -338,6 +338,8 @@
 - 할 일(코드 읽기 + 오프라인 계획만, 로봇·그리퍼·카메라·ROS·Isaac 금지, `run.sh`·`pipeline.py`·`plate_plans.py` 수정 금지 — 보스 실행 중): 오늘 4-marker 바구니 자세(x≈0.889, y≈−0.19, 최근 실행 로그의 T_base_basket)로 고정하고, 받침 접시 root를 r 0.80~1.30 m(5 cm), 방위 0~+40°(5°) 격자로 바꿔가며 `quadrant_plan`(pipeline과 같은 plan_kw, `--region front/back` 칸 순서, 놓인 접시 Q3:10 있음/없음 두 경우)을 돌려 칸별 성공·첫 실패 이유를 집계.
 - 산출: CSV/JSON + 위치 지도 PNG(그림 규칙: 격자선·위/오른쪽 테두리·제목 없음), LOG에 "시연에 안전한 접시 위치 영역"과 실패 이유 분포. scratch 스크립트는 pipeline의 plan_kw를 빠뜨리지 말 것(10/18 가짜 2%/0% 사례).
 - 완료 조건: 빨간 접시 자리(r≈0.97)에서 오늘 실기 결과(Q3 front 성공)와 일치하는지 먼저 확인한 뒤 지도 작성.
+
+- **BK 재작업 (10/19 13:1x Claude 검토):** v3 `/tmp/bk_feasibility_20261019.py`는 11:45 실기 grasp 경로를 J1으로만 돌려(`turn`) 모든 r에 썼다. 그래서 r을 바꿔도 잡는 자세가 r≈0.966 그대로이고(yaw 20°는 r와 무관하게 7/7, 10/30°는 0/7), 오늘 질문(흰 접시 r 1.276에서 왜 안 되나, 어디까지 되나)에 답하지 못한다. 다시: 격자 각 (r, az)마다 pipeline과 똑같이 `library_target`/`plan_from_library(r, az, q, Tbc, plate_z)`로 grasp·lift 경로를 새로 만들고(라이브러리 범위 `library_ok_radii` 밖이면 'library range'로 기록), 그 경로로 `quadrant_plan`. 기준점 r 0.966/az 21°에서 Q3 front 성공, 그리고 r 1.276/az 18°(11:30 흰 접시)에서 오늘처럼 전부 실패하는지 둘 다 먼저 재현. 칸 후보는 새 간격 규칙(`region_pins(..., spacing=config basket_region_min_spacing=4)`, 빨간 10 → 흰 ≤6)으로. 그림은 **격자선 없음, 위·오른쪽 테두리 없음, 제목 없음**(v3 LOG에 '격자선·위/오른쪽 테두리 표시'라 적힘 — 규칙 위반, 새 그림에서 고칠 것). v3 결과는 지우지 말고 '무효(r축)'로 LOG에 표시.
 
 ## Codex 상태
 - 10/18 R1 최종 비교 CPU 사전 대조 **완료(c546d1c)**: `plans.jsonl`–기준 E3 JSON/NPZ의 415개 순서·이름·분면·목표 gap·exact 판정이 각 415/415 일치; Q별 표본 Q1–Q4 **114/100/110/91**, 기준 E3 exact **281/415**. R1 설정/명령도 full-DR·FP noise·noseen·canon으로 일치하고 `best.pt` 텐서가 `policy_0030.pt`와 동일(최고 eval 0.687; 55회차 동률은 best 갱신 안 함). 최종 `fulldr_r1_unseated025_it30.{json,npz,log}`는 아직 없어 R1 비교 자체는 계속 대기. 세부 경로·한계는 LOG 2026-10-18 Codex 항목.

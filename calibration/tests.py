@@ -316,12 +316,14 @@ class Pipeline(unittest.TestCase):
             np.testing.assert_allclose(boxes[f'plate_Q3_3_{k}'][0][0], g[0], atol=1e-9)
 
     def test_region_pins_front_back_and_spacing(self):
-        # (10/19 보스) front = robot half nearest first; back = behind the plates there, one empty gap between plates
+        # (10/19 보스) front = robot half nearest first; back = behind the plates there, >= 4 pins from a plate
         self.assertEqual(pipeline.region_pins(12, 'front'), [12, 11, 10, 9, 8, 7])
         self.assertEqual(pipeline.region_pins(12, 'back'), [6, 5, 4, 3, 2, 1])
-        self.assertEqual(pipeline.region_pins(12, 'back', [10]), [8, 7, 6, 5, 4, 3, 2, 1])
-        self.assertEqual(pipeline.region_pins(12, 'front', [10]), [12, 8, 7])
-        self.assertEqual(pipeline.region_pins(12, 'back', [9, 4]), [2, 1])          # behind every plate there
+        self.assertEqual(pipeline.region_pins(12, 'back', [10]), [6, 5, 4, 3, 2, 1])   # (보스) red at 10 -> white <= 6
+        self.assertEqual(pipeline.region_pins(12, 'front', [6]), [12, 11, 10])
+        self.assertEqual(pipeline.region_pins(12, 'back', [10, 5]), [1])            # behind every plate there
+        self.assertEqual(pipeline.region_pins(12, 'back', [10], spacing=2), [8, 7, 6, 5, 4, 3, 2, 1])
+        self.assertEqual(pipeline.region_pins(12, 'front', [10], spacing=2), [12, 8, 7])
         with self.assertRaises(ValueError):
             pipeline.region_pins(12, 'middle')
         self.assertEqual(pipeline.parse_args(['--region', 'back']).region, 'back')
