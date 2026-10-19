@@ -71,10 +71,12 @@ https://chungmin99.github.io/pyroki/examples/07_trajopt/ .
 
 ## BN carry candidate (in progress)
 
-`trajopt_backend.py` uses PyRoki FK and its M1013 collision capsules inside a
-JAX-differentiated joint trajectory objective. It also penalizes the attached
-plate point cloud against the current world boxes, a raised basket floor, and
-J4/J6 excursion. It fixes the supplied joint endpoints exactly. Crucially,
+`trajopt_backend.py` uses PyRoki FK in a JAX-differentiated joint trajectory
+objective. It penalizes the attached plate point cloud against the current
+world boxes, a raised basket floor, and J4/J6 excursion. It fixes the supplied
+joint endpoints exactly. An optional robot-capsule cost is available for
+diagnosis, but its default weight is zero: it penalized current-checker-valid
+saved paths and pushed candidate trajectories into failures. Crucially,
 `validate()` densifies every segment at <=2° and uses the existing held-plate
 checker and `FloorCheck`; failed candidates are discarded. This is an offline
 candidate generator in `experiments/`, with no production backend switch yet.
@@ -143,3 +145,30 @@ joint-space trust penalty of 100 also failed (held ratio 0.283, floor 0.220),
 so it was not retained. Results: `bench_q3_red_legacyseed_v2.json` and
 `bench_q3_red_legacyseed_trust100.json`. The backend discards a failed candidate;
 it does not silently return the original path as a PyRoki result.
+
+## Corrected capsule-cost experiment (current offline default)
+
+The approximate capsule/box cost disagreed with the current exact checker:
+Q3 red's **valid** 20-knot RRT seed had unweighted robot penalty 0.1803
+(weighted objective contribution 3606), and minimizing that term moved the
+trajectory into the current checker collision. The default now leaves this
+proxy cost off; the existing held-plate checker, joint/wrist limits, and
+`FloorCheck` remain mandatory at <=2° interpolation. This is only as strong
+as those existing checkers; no physical collision proof is claimed.
+
+| Carry library | Current checker on saved prefix | PyRoki exact-gate seeds (proxy weight 0) | Selected travel vs saved | First optimization wall time |
+|---|---|---:|---:|---:|
+| Q3 red | pass | 4/4 (includes RRT seed) | 155.2° vs 155.8° | 3.74 s |
+| Q3 white with `Q3:12` | fail under current reconstruction | 3/3 | 174.5° vs 174.4° | 6.3 s |
+| Q4 red | pass | 4/4 (includes RRT seed) | 143.9° vs 143.7° | 4.87 s |
+| Q4 white with `Q4:6` | fail under current reconstruction | 2/3 | 173.5° vs 173.0° | 4.3 s |
+
+Q3/Q4 red used the extra RRT seed; all three independent seeds also passed.
+The white saved prefixes fail the *current* reconstructed gate, so their
+numbers are diagnostics rather than direct RRT-versus-PyRoki evidence. Q3 red
+identical-input repeats were 2.32/1.88 s; Q4 red 3.00/2.69 s, with 0°
+accepted-path variation in each pair. These times exclude Python/import and
+checker setup. Local results: `bench_q3_red_norobotproxy.json`,
+`bench_q3_red_default_repeat2.json`, `bench_q3_white_norobotproxy.json`,
+`bench_q4_red_norobotproxy.json`, `bench_q4_red_default_repeat2.json`,
+`bench_q4_white_norobotproxy.json`. No production backend was switched.

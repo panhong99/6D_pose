@@ -59,12 +59,16 @@ def main():
                         help="Saved carry-library JSON with source plan and exact drop_start")
     parser.add_argument("--seed-from-legacy", action="store_true",
                         help="Also optimize a saved RRT seed (hybrid postprocessing, not an RRT replacement)")
+    parser.add_argument("--robot-penalty-weight", type=float, default=0.0,
+                        help="Diagnostic weight for approximate capsule/box cost; exact legacy gate always applies")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--standing", action="append", default=[], metavar="Q:PIN",
                         help="Existing upright plate, e.g. Q4:11; may be repeated")
     a = parser.parse_args()
     if a.repeat < 1:
         parser.error("--repeat must be >= 1")
+    if a.robot_penalty_weight < 0:
+        parser.error("--robot-penalty-weight must be >= 0")
     source = json.loads(a.plan.read_text())
     if not source["quadrant_plan"]["carry"].startswith(("rrt-floor", "prior")):
         raise ValueError("Saved plan is not an RRT/prior carry")
@@ -128,7 +132,8 @@ def main():
             path, attempts = optimize(robot, collision, old[0], old[-1], held, floor,
                                       cloud, world_boxes, basket, half, z_floor,
                                       n=a.n, maxiter=a.maxiter,
-                                      seed_paths=(old,) if a.seed_from_legacy else ())
+                                      seed_paths=(old,) if a.seed_from_legacy else (),
+                                      robot_penalty_weight=a.robot_penalty_weight)
             candidate = metrics(path, held, floor, old[0])
             accepted_paths.append(path)
         except CandidateRejected as exc:
@@ -147,6 +152,7 @@ def main():
         "world_boxes": len(world_boxes), "plate_cloud_points": len(cloud),
         "standing_plates": a.standing, "model_quadrant": model_quadrant,
         "seed_from_legacy": a.seed_from_legacy,
+        "robot_penalty_weight": a.robot_penalty_weight,
         "legacy_resampled_seed": legacy_seed_metric,
         "floor_z_m": float(z_floor), "legacy": metrics(old, held, floor, old[0]),
         "pyroki": repeats[0]["pyroki"], "attempts": repeats[0]["attempts"],

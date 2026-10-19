@@ -66,13 +66,14 @@ def validate(path, held, floor, start, max_wrist_deg=100.0, step_deg=2.0, limits
 
 def optimize(robot, robot_collision, start, goal, held, floor, attached_cloud,
              boxes, basket_T, basket_half_xy, floor_z, n=20,
-             max_wrist_deg=100.0, maxiter=120, seed_paths=()):
+             max_wrist_deg=100.0, maxiter=120, seed_paths=(), robot_penalty_weight=0.0):
     """Return a checked path or raise RuntimeError.
 
     `boxes` has the exact `plate_plans.basket_boxes` tuple format. This optimizer
-    adds differentiable robot-capsule and held-cloud penalties, then delegates
-    final acceptance to the existing collision/floor contract. It never treats
-    the differentiable approximation as proof of clearance.
+    adds differentiable held-cloud/floor penalties and can optionally add a
+    robot-capsule penalty. The capsule proxy disagreed with the existing
+    checker on valid saved paths, so its default weight is zero. Final
+    acceptance always uses the existing collision/floor contract.
     """
     start, goal = np.asarray(start, float), np.asarray(goal, float)
     cloud = jnp.asarray(attached_cloud, dtype=jnp.float32)
@@ -101,13 +102,16 @@ def optimize(robot, robot_collision, start, goal, held, floor, attached_cloud,
         points = jnp.einsum("tij,pj->tpi", R, cloud) + pose[:, None, 4:]
         box_dist = _point_box_distance(points, centres, rotations, half)
         plate_pen = jnp.sum(jnp.square(jnp.maximum(0.04 - box_dist, 0)))
-        caps = robot_collision.at_config(robot, path)
-        # The fixed base has no moving collision sample in the legacy checker.
-        caps = jax.tree.map(lambda x: x[:, 1:], caps)
-        cap_dist = coll.collide(caps.reshape((n, robot_collision.num_links - 1, 1)),
-                                 world.reshape((1, 1, len(boxes))))
-        cap_dist = jnp.nan_to_num(cap_dist, nan=1.0, posinf=1.0, neginf=-1.0)
-        robot_pen = jnp.sum(jnp.square(jnp.maximum(0.04 - cap_dist, 0)))
+        if robot_penalty_weight:
+            caps = robot_collision.at_config(robot, path)
+            # The fixed base has no moving collision sample in the legacy checker.
+            caps = jax.tree.map(lambda x: x[:, 1:], caps)
+            cap_dist = coll.collide(caps.reshape((n, robot_collision.num_links - 1, 1)),
+                                     world.reshape((1, 1, len(boxes))))
+            cap_dist = jnp.nan_to_num(cap_dist, nan=1.0, posinf=1.0, neginf=-1.0)
+            robot_pen = jnp.sum(jnp.square(jnp.maximum(0.04 - cap_dist, 0)))
+        else:
+            robot_pen = jnp.asarray(0.0)
         local = jnp.einsum("tpi,ij->tpj", points, basket_R.T) + basket_p
         over = jnp.all(jnp.abs(local[:, :, :2]) <= basket_half, axis=-1)
         floor_pen = jnp.sum(jnp.square(jnp.maximum(floor_z + 0.01 - points[:, :, 2], 0)) * over)
@@ -115,11 +119,14 @@ def optimize(robot, robot_collision, start, goal, held, floor, attached_cloud,
         accel = jnp.diff(path, n=2, axis=0)
         wrist = jnp.maximum(jnp.abs(path[:, jnp.array([3, 5])] - start_j[jnp.array([3, 5])]) - jnp.deg2rad(max_wrist_deg), 0)
         limits = jnp.maximum(limit_lo - path, 0) + jnp.maximum(path - limit_hi, 0)
-        return (0.05 * jnp.sum(step * step) + 1.0 * jnp.sum(accel * accel) +
-                2e4 * (plate_pen + robot_pen + floor_pen) +
-                1e4 * jnp.sum(wrist * wrist) + 1e4 * jnp.sum(limits * limits))
+        smooth = 0.05 * jnp.sum(step * step) + jnp.sum(accel * accel)
+        penalties = dict(plate=plate_pen, robot=robot_pen, floor=floor_pen,
+                         wrist=jnp.sum(wrist * wrist), limits=jnp.sum(limits * limits))
+        total = (smooth + 2e4 * (plate_pen + floor_pen) + robot_penalty_weight * robot_pen +
+                 1e4 * (penalties["wrist"] + penalties["limits"]))
+        return total, dict(smooth=smooth, **penalties)
 
-    fg = jax.jit(jax.value_and_grad(value))
+    fg = jax.jit(jax.value_and_grad(value, has_aux=True))
     seeds = [np.linspace(start, goal, n)]
     # Retain the exact chosen joint endpoints. Two deterministic elbow detours
     # help the optimizer avoid a straight-line local minimum.
@@ -140,8 +147,11 @@ def optimize(robot, robot_collision, start, goal, held, floor, attached_cloud,
     best = None
     for seed_name, seed in zip(seed_names, seeds):
         tic = time.perf_counter()
+        initial_good, initial_check = validate(seed, held, floor, start, max_wrist_deg,
+                                               limits=(np.asarray(limit_lo), np.asarray(limit_hi)))
+        (initial_value, initial_terms), _ = fg(jnp.asarray(seed[1:-1].ravel(), dtype=jnp.float32))
         def fun(flat):
-            v, g = fg(jnp.asarray(flat, dtype=jnp.float32))
+            (v, _), g = fg(jnp.asarray(flat, dtype=jnp.float32))
             vv, gg = float(v), np.asarray(g, dtype=float)
             # A degenerate capsule occasionally gives a nonfinite derivative.
             # Reject such an iterate instead of handing NaN to L-BFGS-B.
@@ -151,10 +161,17 @@ def optimize(robot, robot_collision, start, goal, held, floor, attached_cloud,
         fit = minimize(fun, seed[1:-1].ravel(), jac=True, method="L-BFGS-B",
                        options={"maxiter": maxiter, "ftol": 1e-8})
         candidate = np.vstack([start, fit.x.reshape((n - 2, 6)), goal])
+        (_, final_terms), _ = fg(jnp.asarray(fit.x, dtype=jnp.float32))
         good, check = validate(candidate, held, floor, start, max_wrist_deg,
                                limits=(np.asarray(limit_lo), np.asarray(limit_hi)))
+        terms = {name: float(value_) for name, value_ in final_terms.items()}
+        initial_terms = {name: float(value_) for name, value_ in initial_terms.items()}
         attempts.append({"seed": seed_name, "time_s": time.perf_counter() - tic,
                          "objective": float(fit.fun),
+                         "initial_objective": float(initial_value),
+                         "initial_cost_terms_unweighted": initial_terms,
+                         "initial_valid": initial_good, "initial_gate": initial_check,
+                         "final_cost_terms_unweighted": terms,
                          "movement_from_seed_deg": float(np.degrees(np.linalg.norm(candidate - seed))),
                          "optimizer_success": bool(fit.success), "valid": good, **check})
         if good:
