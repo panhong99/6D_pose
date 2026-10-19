@@ -9,6 +9,14 @@
 - 검증 실행: `MPLCONFIGDIR=/tmp/mpl-cache /home/pan/miniconda3/envs/foundationpose/bin/python calibration/demo_audit.py --all --out calibration/data/teach/demo_audit_full_11_14_20261014_v2/audit.json`. 결과 파일은 git에 추가하지 않았다.
 - 작성자: Codex
 
+## 2026-10-19 10:38 KST Codex — BH: 새 배치 Q1–Q4 v1 초안 확대 검증
+- `labels_full_newlayout_Q{1,2,3,4}_claude_draft_20261019_v1.json/.png`와 연결된 옆 분면 raw 사진을 확대 대조했다. v1 생성 과정에서 반올림된 row 대표값 각각을 ±4 mm로 다시 고르는 바람에 두 물리 줄 중 하나가 두 번 들어갔다. Q1 `row2_y-0.062`와 row1은 7개 전부, Q2/Q3 `row2_y+0.177`와 row1은 각 9/13개 전부, Q4 `row2_y-0.062`와 row1은 13개 전부 root/tip/번호가 정확히 일치했다. 기존 v1은 보존하고 v2 별도 산출물에서 이 **42개 중복 alias**만 제외했다.
+- 확대 사진에서 인접 번호가 동일 빗살을 가리키는 네 중복도 발견했다: Q2 row1 5/6 tip 간격 1.8 px, Q3 row1 8/9 0.5 px, Q4 row0 2/3 0.4 px, Q4 row1 2/3 1.2 px. 실제로 보이는 끼인 빗살을 확대 원본과 대조해 Q2-6 `[305,411]→[240,381]`, Q3-8 `[305,376.9]→[235,421]`, Q4 row0-3 `[951,295]→[1027,316]`, Q4 row1-3 `[849,296]→[900,320]`으로 시각 보정했다. 이 네 위치는 JSON에 원 좌표·수정 이유를 함께 기록했다. Q4 row1 12/13은 0.9 px로 중복되고 13번 끝점은 가까운 흰 마커 블록에 가려져, 13번 `tip_uv`를 추측하지 않고 null/occluded로 남겼다.
+- 저대비/가림 끝점도 번호를 유지하고 null로 보류했다: Q1 row0-7, row1-1/7(위쪽 마커판 1, 아래 clip/crossbar 2), Q2 row1-9(아래 clip), Q4 row1-13(흰 블록), 합 **5개**. v2 결과는 Q1 14개(7×2), Q2 18개(9×2), Q3 26개(13×2), Q4 26개(13×2); 보이는 tip 후보 79개, 명시적 가림 5개. 각 row의 1..N 연속 번호와 총수/JSON 경로/옆사진 대응을 확인했다. PNG 4장은 1280×758, blue=root, green=가시 tip, orange=가림이다.
+- v2 산출물(원본 draft/raw/JSON 및 v1을 덮지 않음): `calibration/data/basket/wrist_look/labels_full_newlayout_Q{1,2,3,4}_codex_verified_20261019_v2.{json,png}`. CPU 구조검사에서 네 JSON 각각 2 rows, 예상 개수, 연속 번호, 가림의 null tip, finite visible coords, 연결 PNG 크기 assert 통과. 사진별 확인판은 위의 네 PNG다.
+- 검토 범위는 픽셀 상의 보이는 빗살·번호와 draft 중복/가림 처리다. 저대비/가려진 끝은 정답으로 추정하지 않았고, 시각 보정값은 독립 3D ground truth가 아니다. 메타데이터 `T_base_flange`는 촬영 순간 관절 측정치가 아닌 계획 FK다. 보스의 v2 육안 OK 뒤에만 `pin_layout_measure` 3D 확인과 모델 갱신 여부를 판단한다. 이 작업은 raw/draft/config/model/checkpoint/source를 수정하지 않았고 테스트 실행도 필요하지 않았다.
+- 작성자: Codex
+
 ## 2026-10-14 Codex — N 실제 Q2/Q3/Q4 라벨의 조건부 3D 역투영 및 모델 비교
 - 보스가 시각 확인한 realQ2/Q3/Q4 픽셀 라벨을 저장 K, `T_base_flange @ T_flange_cam`, `T_base_basket`와 rail/tip 높이평면으로 역투영했다. Q2는 뿌리 y를 바로잡은 최신 `labels_full_realQ2_codex_verified_20261014_v2.json` 사용. Q3/Q4는 각 Codex 검증본을 사용했다. 모델 비교는 현재 `rl/basket.yaml`의 번호 방향·분면별 pitch/clip/lean을 반영했다.
 - **70개 핀 항목** 중 root 68, tip 66, 완전 root-tip 66쌍, root-only 2, 완전 가림 2. 6개 사진줄의 모델 대비 root x MAE는 가중 평균 **1.69 mm**, tip x MAE **2.96 mm**. 추정 피치 root/tip (mm): Q2 `17.62/17.28`, `17.47/17.12` (모델 17.56); Q3 `17.34/17.18`, `17.15/16.78` (모델 17.40); Q4 `17.46/16.68`, `17.26/16.61` (모델 17.87). 모델 줄 y 대비 median offset: Q2 −12.13/−13.15 mm, Q3 −8.94/−11.76 mm, Q4 +1.75/+16.73 mm.

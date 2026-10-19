@@ -73,7 +73,8 @@
 | BC | seed15 재학습 데이터·평가 원시 감사 | 새 일 BC; train/val/x90 배치 교집합, 11개 eval JSON/NPZ와 짝 변화, x90 비교·선택 편향 검증 | 완료(84600cd): train 성공 plan 799/800(1건 CRC 실패), train/val/x90 exact scene 교집합 0; eval 2,640행·x90 비교 422행 불일치 0. 최고 it25 147/240, x90 pin10 63→67/100·두 번째 칸 변화 0, gx30_seen 유지 판단과 일치(LOG 09:13) |
 | BD | Q3 두 번째 칸 pin7/pin8 같은 배치 비교 | x90 저장 계획·replay에서 실제 목표 번호와 공통 배치의 계획/앉음 결과 재집계 | 완료(2907451): pin7 계획 11/47·sim 0/11, pin8 계획 47/47·sim 32/47; 공통 11개 배치에서 pin8 8/11. `second` Q3는 pin7이라 월요일 pin8 성능으로 해석 금지(LOG 09:15) |
 | BE | `look4` 셸 흐름 검토·AZ 사진 수집 경로 | 아래 '새 일 BE'; mock으로 dry-run, 촬영, 계획/이동/사진/복귀 실패 흐름 확인; 기존 수동 절차에 한 번 실행 명령 추가 | 완료(4da3a17: mock 검토·오류 표시 수정·절차 갱신; 실제 촬영 4/4 도착, AZ 후속은 BF, LOG 09:53/10:08) |
-| BF | 새 look4 사진으로 AZ 네 분면 초안 라벨 검증 | 새 일 BF; 10/19 접시 없는 Q1–Q4 사진에서 초안 번호/root/tip 전부 확대 검증·필요한 점만 수정 | 진행 중: 사진 4/4와 메타데이터 검증 완료; Claude 새 배치 draft labels 미발견, 초안 도착 후 Codex가 검증·수정(LOG 10:08). 별도 BG freshness guard는 완료(2885eff) |
+| BF | 새 look4 사진으로 AZ 네 분면 초안 라벨 검증 | 새 일 BF; 10/19 접시 없는 Q1–Q4 사진에서 초안 번호/root/tip 전부 확대 검증·필요한 점만 수정 | 완료(후속 BH): 촬영·메타데이터 확인은 4/4 완료, draft 도착 뒤 검증 결과는 BH와 LOG 10:38에 기록. 별도 BG freshness guard 완료(2885eff) |
+| BH | 새 배치 Q1–Q4 tine draft 확대 검증·오류 수정 | 옆 분면 사진의 번호/root/tip를 대조하고 중복·가림을 표시; v2 JSON+PNG별 수·검증 조건 LOG | 완료(커밋 반영 예정): v2 출력은 Q1 14, Q2 18, Q3/Q4 각 26개; 동일 row alias 42개 제거, 보이는 인접번호 중복 4곳 수정, 끝점 가림 5개 명시. Boss 시각 OK와 3D 변환은 AZ 후속 대기(LOG 10:38) |
 | BG | after-release 손목 사진의 관절 자세 freshness guard | `look()`이 5초 내 새 `robot_state`를 못 받으면 stale `posj`로 사진 메타데이터를 저장하지 않도록 fail-closed | 완료(2885eff: 5초 안 fresh joint state 없으면 사진 저장 skip; 회귀 결과는 별도 확인되지 않음) |
 | F | marker 5/2.5 cm 비교 | 보스가 작은 마커를 붙이면 `basket_stats`로 같은 조건 측정 | 대기(보스) |
 | AF | **실물 접시 앉음 높이·기울기 측정 절차** | 보스가 Q1~Q4에 손으로 놓고 기록할 1장 절차·표, 로봇 명령 없음 | 완료(dce780d; 38/38 시험, LOG 기록) |
@@ -316,13 +317,16 @@
 - 보스가 `run.sh look4 --execute`로 접시 없는 4분면 사진 촬영 완료(09:47–09:56): `calibration/data/basket/wrist_look/20261019_{094749_Q1,095110_Q2,095350_Q3,095544_Q4}.{raw.png,png,json,req.json}` (로그 `look4_20261019_*_Q?.log`, 분면마다 마커로 바구니 재측정).
 - Claude 육안: 위에서 수직, 선명, 흰 배경, 바구니 안 접시 없음. 각 사진에서 해당 분면 두 줄이 클립~가장자리 전부 보임. 주의: Q1·Q2는 위쪽 가운데 마커 판이 첫 빗살 근처에 걸칠 수 있음, Q3 맨 끝 1–2개는 아래 흰 마커 블록 근처. 그리퍼 손가락은 다른 분면 영역만 가림.
 - Codex 입력 확인(10/19 10:08): 네 raw는 1280×720, 네 JSON 모두 K(3×3) 및 세 변환(4×4) 유한값, req quadrant/model_quadrant 일치. 로그 marker fit 6.6/7.9/7.9/6.8 mm; 네 T_base_basket의 최대 pairwise XY 변동은 2.32 mm, yaw 범위는 0.21° 이내. `.png`는 model overlay이며 라벨 정답이 아니다. RGB 육안상 접시 없는 바구니와 빗살은 선명하나 Q1/Q2 위쪽 마커판과 Q3/Q4 가까운 흰 블록은 root/tip 혼동 가능 구간이라 확대 확인 대상으로 남긴다. `T_base_flange`는 계획 FK이므로 3D 잔차 해석 때 실제 캡처 순간 자세와 같다고 가정하지 않는다.
-- 다음: 현재 N의 분담대로 Claude가 이 네 새 사진의 전수 번호/root/tip 초안(JSON+겹침 PNG)을 작성하면 Codex가 확대 검증·오류 수정한다. 현재 새 사진용 라벨 JSON은 아직 없어, 사진 수신을 라벨 완료로 표시하지 않는다.
+- 다음: 10/19 10:16 Claude의 v1 초안이 도착해 BH에서 확대 검증했다. 출력과 제한은 아래 BH/LOG 10:38. 보스가 v2 시각 확인 후 OK하면 N의 3D 재투영·측정표로 이어간다.
 
 ### 새 일 BH: Claude 새 배치 빗살 초안 v1 도착 → Codex 확대 검증 (10/19 10:3x Claude)
 - 초안: `calibration/data/basket/wrist_look/labels_full_newlayout_Q{1,2,3,4}_claude_draft_20261019_v1.{json,png}`. 핀마다 `row`, `num`(줄마다 1 = 로봇에서 가장 먼 쪽), `root_uv`, `tip_uv`, `model_*_uv`, `fit`(refined / low_contrast / out_of_view), `contrast`, `shift_px`.
 - **중요(시점):** 바로 위에서 찍으면 그 분면의 빗살은 사진 가운데서 카메라 쪽을 향해 짧게 보인다. 그래서 각 분면은 **옆 분면 사진**에서 라벨링했다: Q1←Q2 사진, Q2←Q1, Q3←Q4, Q4←Q3(`photo_of` 필드). 자기 사진 초안(v0)은 `newlayout_draft_v0_selfview_20261019/`(쓰지 말 것).
 - 방법: 모델 투영 → 선분을 ±14 px 이동·±10° 회전해 가장 어두운 선에 맞춤 → tip = 어두운 구간 끝. refined Q1 16/21, Q2 25/27, Q3 39/39, Q4 39/39 (Q1·Q2는 모델 핀 수가 Q3·Q4보다 적음 — 맞는지 확인). tip 이동 중앙값 10–15 px, 최대 48 px.
 - Codex: 번호(1번 끝)·root/tip 확대 검증, 틀린 점만 수정해 `_codex_verified_20261019` 저장. low_contrast와 이동 30 px 이상 우선 확인.
+- Codex 결과(10/19 10:38): 네 v1 JSON은 모델 행 y를 반올림한 뒤 각 대표 y에서 ±4 mm row를 다시 묶어 같은 물리 줄을 두 번 포함했다. `row2`의 root/tip/번호 전체가 `row1`과 정확히 같음(Q1 7, Q2 9, Q3/Q4 각 13개) → v2에서 중복 alias 42개를 제외하고 실제 두 줄만 유지했다. 확대 검사 중 adjacent 번호의 tip이 같은 빗살에 겹친 4곳도 확인: Q2 row1 5/6(1.8 px), Q3 row1 8/9(0.5 px), Q4 row0 2/3(0.4 px), Q4 row1 2/3(1.2 px). 네 누락된 서로 다른 빗살을 사진에서 확인해 각각 Q2-6, Q3-8, Q4 두 줄의 3번 좌표를 v2에서 시각 보정했다. Q4 row1 12/13은 0.9 px로 겹쳤고 13번 끝은 가까운 흰 마커 블록 뒤에 있어 13번 tip을 추정하지 않고 가림 처리했다.
+- 가림/저대비 끝점은 Q1 3개(위 마커판 1, 아래 클립/가로대 2), Q2 1개(아래 클립), Q4 1개(흰 블록)로 보존 번호를 유지하면서 `fit=occluded`, `tip_uv=null`로 표시했다. v2는 Q1 14개(7×2), Q2 18개(9×2), Q3 26개(13×2), Q4 26개(13×2); numbered visible tips 79개, 명시적 occlusion 5개. 별도 JSON/PNG: `calibration/data/basket/wrist_look/labels_full_newlayout_Q{1,2,3,4}_codex_verified_20261019_v2.{json,png}`. PNG는 blue=root, green=가시 끝점, orange=가림이며 1280×758.
+- JSON 구조·분면/옆사진 매핑·2 rows×예상 빗살수·row별 1..N 연속 번호·가림 null·PNG 크기를 assert하는 CPU 검사 통과. 이 픽셀 좌표 검증은 보스의 최종 시각 OK나 독립 3D GT가 아니며, `T_base_flange`도 실제 캡처시각 측정이 아니다. 따라서 지금은 3D 정확도나 바구니 모델 갱신을 주장하지 않는다. 다음: 보스가 v2 PNG에서 번호/root/tip과 orange occlusion을 육안 확인해 주면 OK 뒤 3D 변환을 수행한다. BG freshness guard는 완료(2885eff).
 
 ## Codex 상태
 - 10/18 R1 최종 비교 CPU 사전 대조 **완료(c546d1c)**: `plans.jsonl`–기준 E3 JSON/NPZ의 415개 순서·이름·분면·목표 gap·exact 판정이 각 415/415 일치; Q별 표본 Q1–Q4 **114/100/110/91**, 기준 E3 exact **281/415**. R1 설정/명령도 full-DR·FP noise·noseen·canon으로 일치하고 `best.pt` 텐서가 `policy_0030.pt`와 동일(최고 eval 0.687; 55회차 동률은 best 갱신 안 함). 최종 `fulldr_r1_unseated025_it30.{json,npz,log}`는 아직 없어 R1 비교 자체는 계속 대기. 세부 경로·한계는 LOG 2026-10-18 Codex 항목.
