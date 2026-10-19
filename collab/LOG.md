@@ -5015,3 +5015,6 @@
 ## 2026-10-20 04:3x KST Codex — BM 검토 완료 기록·오래된 진단 정정
 - 작업판 BM을 기존 독립 브리지·133건 비교 결과에 근거해 완료로 정리했다. 기능 조사/별도 환경, FK 1000자세, IK 20/20, 조건부 운반 비교까지 수행했다. 결과는 `experiments/pyroki_bm/README.md`와 `calibration/data/basket/stand_free_20261019/pyroki_vs_rrt_v4/table.jsonl`; 현 계약 오프라인 full gate RRT 133/133, PyRoki 109/133. 원 camera/config 미기록, 실제 로봇 미검증, 생산 연결 미완료 한계는 그대로다. PyRoki 개선과 opt-in 연결은 BN에서 계속한다.
 - 작업판에 남아 있던 'tool 재구성 차이가 4/16 floor 불일치 원인' 문구를 이전 정정(1b1648f)과 일치시켰다. `hand_plate()`와 benchmark의 tool은 현재 설정에서 같으며 불일치 원인은 별도 조사 대상이다.
+
+## 2026-10-20 04:5x KST Codex — BN 독립 backend 실제 호출 smoke
+- `OfflinePyrokiBackend`를 M1013 URDF로 생성해 CPU PyRoki trajopt를 직접 호출했다. 로봇·카메라·ROS 연결 없이, 6관절 0→각 0.05 rad, 멀리 떨어진 상자 하나, 합성 clearance 1.5, 20 knot·3 seed·최대 10 iteration 조건에서 **3/3 후보 gate 통과**, 반환 배열 20×6, 시작·끝 관절 exact 일치. 실행 2.23 s(프로세스 전체 벽시각). 이는 인터페이스 연결 검증용 **장애물 없는 합성 장면**이며 실제 바구니 충돌 성능을 입증하지 않는다. 실장면 133건의 PyRoki 109/133 결과와 생산 경로 미연결 상태는 유지.
