@@ -394,6 +394,7 @@ class Pipeline(unittest.TestCase):
 
     def test_photo_after_release_is_opt_in(self):
         self.assertFalse(pipeline.parse_args([]).photo_after_release)
+        self.assertEqual(pipeline.parse_args(['--plate_color', 'auto']).plate_color, 'auto')   # (10/19) the plate on the stand
         self.assertTrue(pipeline.parse_args(['--photo_after_release']).photo_after_release)
 
     def test_high_carry_rises_first_and_never_goes_under_the_floor(self):

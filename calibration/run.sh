@@ -7,6 +7,8 @@
 #   bash calibration/run.sh demo4 [--execute]  meeting demo: Q4, Q3, Q1, Q2 one --auto --sim_q run each; DEMO_PINS="Q3:front Q3:back:white" picks pins/colour
 #   bash calibration/run.sh demo1022 Q3|Q4 [--execute]   10/22 demo: two plates in that quadrant, fixed order (collab/DEMO_20261022.md)
 #   bash calibration/run.sh markers            read-only: live fixed-camera view of the 4 basket markers (q quits)
+#   bash calibration/run.sh basket_check       read-only: marker blocks vs the stored layout (which block moved)
+#   bash calibration/run.sh basket_relayout    store moved marker blocks where they are now (typed y; new layout file)
 #   bash calibration/run.sh look4 [--execute]  plate-free wrist photo per quadrant (look pose -> photo -> home); LOOK_QUADRANTS="Q1 Q3"
 #   bash calibration/run.sh sim [args]         Isaac Sim digital twin of the cell (see sim_scene.py)
 #   bash calibration/run.sh mover --plan P --leg L [--execute]   one plan leg, Human-run
@@ -40,11 +42,18 @@ case "$mode" in
   demo1022)   # (10/19 보스) the 10/22 demo, one word per quadrant: two plates, the order the gripper side needs
     qd="${1:-}"; shift || true
     case "$qd" in
-      Q3) pins="Q3:front:red Q3:back:white" ;;      # Q3: gripper on the far side of the plate -> front first
-      Q4) pins="Q4:back:white Q4:front:red" ;;      # Q4: gripper on the robot side -> back first
+      Q3) pins="Q3:front:auto Q3:back:auto" ;;      # Q3: gripper on the far side of the plate -> front first
+      Q4) pins="Q4:back:auto Q4:front:auto" ;;      # Q4: gripper on the robot side -> back first; colour: the plate on the stand
       *) echo "usage: bash calibration/run.sh demo1022 Q3|Q4 [--execute]   (collab/DEMO_20261022.md)"; exit 2 ;;
     esac
+    ( cd "$DIR/.." && conda run --no-capture-output -n foundationpose python -u "$DIR/camera_tools.py" basket_check ) || {
+      echo "!!! 바구니 마커 점검 실패 - 위 메시지 확인. 바구니가 비어 있을 때만 블록 판정이 맞음"
+      echo "    (빈 바구니에서 블록이 밀렸으면: bash calibration/run.sh basket_relayout)"; exit 1; }
     DEMO_PINS="$pins" DEMO_BASKET_PLATES="" exec bash "$DIR/run.sh" demo4 "$@" ;;
+  basket_check)     # (10/19 보스) read-only: which marker block moved (exit 0 ok, 3 moved, 4 unsure)
+    cd "$DIR/.." && exec conda run --no-capture-output -n foundationpose python -u "$DIR/camera_tools.py" basket_check "$@" ;;
+  basket_relayout)  # (10/19 보스) the moved blocks stored where they are now, in the frame of the unmoved ones (asks y)
+    cd "$DIR/.." && exec conda run --no-capture-output -n foundationpose python -u "$DIR/camera_tools.py" basket_check --relayout "$@" ;;
   markers)    # (10/19) pre-demo check: all 4 basket markers seen by the fixed camera (close with q before the demo)
     cd "$DIR/.." && exec conda run --no-capture-output -n foundationpose python -u "$DIR/camera_tools.py" markers_live "$@" ;;
   demo4)      # (10/15 보스) meeting demo: Q4 -> Q3 -> Q1 -> Q2, each one --auto run (--sim_q settings); Human puts the plate
@@ -63,7 +72,7 @@ case "$mode" in
     echo "### 순서 그대로: $pins_run (Q3는 front 먼저, Q4는 back 먼저 - 그리퍼 쪽)"
     placed="${DEMO_BASKET_PLATES:-}"   # plates already in the basket before this demo, e.g. DEMO_BASKET_PLATES="Q3:10 Q4:10"
     for qp in $pins_run; do
-      IFS=: read -r q pin color landed <<< "$qp"; color=${color:-red}
+      IFS=: read -r q pin color landed <<< "$qp"; color=${color:-auto}   # (10/19 보스) auto = the plate on the stand
       pol=()
       [ "${DEMO_PHOTOS:-1}" = 1 ] && pol+=(--photo_after_release)   # (10/19 보스) wrist photo after each release, DEMO_PHOTOS=0 = off
       [ -n "${placed// /}" ] && pol+=(--basket_plates $placed)

@@ -471,6 +471,41 @@ def load_basket_insert_policy(path):
     return expert
 
 
+def plate_color_auto(C, Tbc, centre=(0.90, 0.35, 0.068), radius=0.09, cam=None):
+    """(10/19 보스: "굳이 순서 (red, white) 신경써야 하나, 걍 잡게 해") the colour of the plate on the stand from one
+    fixed-camera frame: HSV of the disc around the usual plate spot.  Returns ('red' | 'white', red share, white share)."""
+    import cv2
+    from sensors import ColorCam
+    own = cam is None
+    cam = cam or ColorCam(C['cameras']['fixed_serial'])
+    try:
+        for _ in range(10):                                 # auto exposure settles
+            fr = cam.read()
+    finally:
+        if own:
+            cam.close()
+    a = np.linspace(0, 2 * np.pi, 48, endpoint=False)
+    rr = np.linspace(0.0, radius, 8)
+    pts = np.array([[centre[0] + r * np.cos(t), centre[1] + r * np.sin(t), centre[2]] for r in rr for t in a])
+    Tcb = np.linalg.inv(np.asarray(Tbc, float))
+    xyz = pts @ Tcb[:3, :3].T + Tcb[:3, 3]
+    uv = (xyz @ np.asarray(fr.K).T)[:, :2] / xyz[:, 2:3]
+    h, w = fr.rgb.shape[:2]
+    uv = uv[(uv[:, 0] >= 0) & (uv[:, 0] < w) & (uv[:, 1] >= 0) & (uv[:, 1] < h)].astype(int)
+    if len(uv) < 50:
+        raise RuntimeError('plate colour: the stand spot is outside the fixed camera image')
+    hsv = cv2.cvtColor(fr.rgb, cv2.COLOR_RGB2HSV)[uv[:, 1], uv[:, 0]].astype(int)
+    hue, sat, val = hsv[:, 0], hsv[:, 1], hsv[:, 2]
+    red = float(np.mean(((hue <= 10) | (hue >= 170)) & (sat >= 90) & (val >= 40)))
+    white = float(np.mean((sat <= 45) & (val >= 150)))
+    if red >= 0.25 and red > white:
+        return 'red', red, white
+    if white >= 0.35:
+        return 'white', red, white
+    raise RuntimeError(f'plate colour unclear on the stand (red {red:.2f}, white {white:.2f}): '
+                       'put the plate on the marked spot or pass --plate_color red|white')
+
+
 def _last_good_path():
     return DATA / 'basket' / 'last_good_basket.json'
 
@@ -604,6 +639,10 @@ def run_plate(args):
     Legs: to_ready, grasp, [close + object check], lift, [Human: lower?], lower, [open], retreat, to_home."""
     q, udp = plate_cfg(args.plate_policy), C['udp']
     grip_force = None
+    if args.plate_color == 'auto':                          # (10/19 보스) whichever plate is on the stand
+        t_auto = (args.t_base_cam or latest_t_base_cam()).resolve()
+        args.plate_color, red, white = plate_color_auto(C, check_T(load_json(t_auto)['T_base_cam'], f'T_base_cam {t_auto}'))
+        print(f'[plate] 받침 위 접시 색 자동: {args.plate_color} (red {red:.2f}, white {white:.2f})', flush=True)
     if args.plate_color == 'white':                         # (10/16 보스) flatter rim slips: deeper grasp, 2x force
         wp = C['white_plate']
         q['offset_m'] = [q['offset_m'][0] + wp['grasp_deeper_m'], q['offset_m'][1]]   # +radial = TCP further onto the plate
@@ -1328,7 +1367,7 @@ def parse_args(argv=None):
     p.add_argument('--pregrasp_height_m', type=float, default=pl['pregrasp_height_m'])
     p.add_argument('--conf', type=float, default=pl['conf'])
     p.add_argument('--prompt', default=pl['prompt'])
-    p.add_argument('--plate_color', choices=('red', 'white'), default='red',
+    p.add_argument('--plate_color', choices=('red', 'white', 'auto'), default='red',
                    help='(10/16) plate: white = the white plate (YOLOE prompt + white-textured 029 mesh, same shape); default red')
     p.add_argument('--timeout', type=float, default=pl['timeout_s'], help='seconds allowed to obtain a stable pose/plan')
     p.add_argument('--robot_id', default=rb['robot_id'])
