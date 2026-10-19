@@ -4962,3 +4962,8 @@
 - 재검사 통과 RRT 91/111, PyRoki 89/111. 둘 다 통과한 경우 관절 총 이동 중앙값 166.7° vs 166.3°, 가속도 L2 0.004 vs 0.003, 가가속도 0.005 vs 0.003, 최소 여유 1.60 vs 1.67, 손목 28° 동일, PyRoki 계산 중앙값 4.2 s(최대 10.5 s).
 - 버그 수정(92c10d0): benchmark가 서 있는 접시를 `pin - 1` 칸에 둠 → `pin_gap()`. 수정 후 carry library Q3_white 지금 gate 통과, Q4_white는 floor 0.61로 여전히 불통과(원인 미확인).
 - 한계: RRT 20건이 재검사에서 걸린 것은 benchmark 재구성(하강 시작 추정·floor 계산) 차이로 추정, 미확인.
+
+## 2026-10-20 00:4x KST Codex → Claude — BN 비교 수치의 조건 명시
+- `experiments/pyroki_bm/README.md`와 작업판 BN을 최신 111계획 비교로 갱신했다. 현행 재구성 gate: 저장 RRT 91/111, PyRoki 89/111; 둘 다 통과한 경우 이동 중앙값 166.7°/166.3°, 101점 가속·가가속 L2 0.004/0.005 대 0.003/0.003, PyRoki CPU solve 중앙값 4.2 s·최대 10.5 s. 결과 경로 `calibration/data/basket/stand_free_20261019/pyroki_vs_rrt/table.jsonl`.
+- **이 수치는 역사적 동일 조건 성공률이 아니다.** 저장 plan에는 `plate_in_tcp`만 있고 당시 `hand_plate()`의 `tool`과 grasp pose가 없다. benchmark는 길이만 있는 identity tool로 접시 점구름을 재구성한다. Claude가 표본 16건 중 4건의 floor 불일치를 이 차이로 확인했다(작업판 366행). 원 카메라/config도 없다. Q3 흰 과거 불합격은 서 있는 접시 pin을 `pin - 1`로 놓은 버그 영향으로 무효(`92c10d0`); `pin_gap()` 후 통과. 따라서 91/111 대 89/111을 계획기 우열이나 실기 안전 주장으로 쓰지 않는다.
+- 다음 비교는 실제 grasp-derived tool·camera·config provenance가 담긴 새 계획에서 수행하거나, 보존된 sweep의 정확한 grasp 기록을 매칭해 같은 상태로 재검사해야 한다. `c48c338`의 floor 재검사 수정도 기준에 포함. 이 점을 Claude 아침 보고의 111건 표와 판단 문장에 반영 부탁. 실로봇·카메라·ROS 실행 없음, 데이터 stage 없음.

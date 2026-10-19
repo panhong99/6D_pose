@@ -36,7 +36,7 @@ comparison with RRT or an executable replacement.
 
 The official IK example's `_solve_ik_jax` wrapper passes an int64 link index when JAX x64 is enabled, while the analytic Jacobian asserts int32. `compare_ik.py` calls the same upstream JIT with an explicit int32 link index. `bridge.py` does the same. This was an integration detail, not an FK/IK accuracy failure.
 
-## Why RRT has not been replaced
+## Why the demo still uses RRT
 
 PyRoki supplies URDF FK/IK and gradient-based trajectory optimization with
 collision costs/constraints; its README states it does not include a sampling
@@ -46,9 +46,13 @@ floor-over-basket condition, and J4/J6 <=100 degree excursion. The official
 PyRoki trajopt example approximates robot meshes as capsules, uses primitive
 world obstacles, and initializes from start/end IK. It does not encode this
 project's attached plate cloud or `FloorCheck` automatically. Replacing RRT
-now would remove collision requirements; no equivalent-obstacle trajectory
-comparison has been completed. Optimization also does not guarantee the
-globally shortest path and may fail from a straight-line initial trajectory.
+without the exact saved context would lose collision requirements. The offline
+candidate generator below now models the attached plate and reconstructed
+obstacles, then rejects any path failing the existing `MultiChecker` and
+`FloorCheck`. This is a conditional same-gate comparison: saved plans omit the
+original camera calibration and the grasp-derived plate/tool transform, and
+the current configuration may differ. Optimization does not guarantee the
+globally shortest path and can fail from a straight-line initial trajectory.
 
 ## Suggested integration for Claude
 
@@ -61,13 +65,32 @@ globally shortest path and may fail from a straight-line initial trajectory.
    represent the gripper/tool, attached plate cloud, cell/table, basket walls,
    marker boxes, standing plates, and `FloorCheck` rule. Validate *every*
    optimized segment with current `MultiChecker` before accepting it.
-4. Benchmark stored `calibration/data/rl_plans/20261019_*_taught/plan.json`
-   carry endpoints against `rrt_carry` with identical obstacles, then compare
-   solve/compile time, path length, J4/J6 excursion and minimum clearance.
-   Only after parity is demonstrated should trajopt be an opt-in alternative.
+4. Record camera calibration, grasp-derived tool transform and standing-plate
+   state alongside future plans. Recheck both candidate and saved trajectories
+   under that exact state before considering an opt-in production alternative.
 
 Official sources: https://github.com/chungmin99/pyroki and
 https://chungmin99.github.io/pyroki/examples/07_trajopt/ .
+
+## Stand-map comparison and its provenance limit
+
+Claude's offline `bench_sweep.py` ran the same saved carry endpoints across
+111 stand-map plans. Under the reconstructed current checker, 91/111 saved
+RRT carries and 89/111 PyRoki carries passed. Among cases where both passed,
+median joint travel was 166.7° versus 166.3°, and 101-point acceleration /
+jerk L2 norms were 0.004/0.005 versus 0.003/0.003. PyRoki solve time had a
+4.2 s median and 10.5 s maximum (CPU). Results:
+`calibration/data/basket/stand_free_20261019/pyroki_vs_rrt/table.jsonl`.
+
+These are **not** 111 exact historical replays. The saved plan has
+`plate_in_tcp` but not the grasp-derived `tool` transform; the benchmark uses
+an identity tool with configured length. Claude found this changes the held
+plate cloud and explains at least 4 of 16 sampled floor disagreements. The
+saved plans also omit original camera calibration/config provenance. The
+91/111 and 89/111 figures describe this conditional reconstruction only;
+they should not be used to rank planner reliability or safety. The benchmark
+now reads a saved `drop_start` when present, and standing-plate pins use
+`pin_gap()` (commit `92c10d0`).
 
 ## BN carry candidate (in progress)
 
