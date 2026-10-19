@@ -81,6 +81,7 @@
 | BK | 받침 위 접시 위치별 경로 가능 지도 (CPU dry-run) | 아래 '새 일 BK'; 접시 root 격자마다 Q3/Q4 front/back 계획 성공·실패 이유 표+그림 | 재작업 필요: v6 528/1188 조건에서 중단·보존. v6은 현행 `pipeline.py --sim_q`의 분면별 aim/lean/centre_h/face를 전달하지 않아 현재 실기 설정 지도 근거로 무효. 10/22 시연 중 CPU 다중 작업 금지; 설정·코드 고정 후 새 폴더에서 pilot부터 재검증(LOG 2026-10-19 17:xx). |
 | BL | v4 빗살 라벨 → 바구니 모델 실측 보정 (3D) | 아래 '새 일 BL'; 84개 root/tip 3D 변환, 분면별 pitch·clip 거리·기울기·줄 y 맞춤, 모델 대비 칸 중심 차이와 10/19 착지 2칸 차이 설명 | 완료(05b0d22): 조건부 84 tip·83 root·38 pin 중심 변환, Q1/Q4 모델 x 차이와 Q1 높이 모순 기록. `bl_model_fit_20261019_v3/` JSON/CSV/PNG, LOG 14:1x. 실제 모델 수정 없음. |
 | BM | PyRoki 검토: IK·경로 생성에 쓸 수 있는지 | 아래 '새 일 BM'; 언어/의존성 사실 확인, 별도 환경 설치, M1013 URDF로 IK·궤적 시험, 오늘 RRT와 비교표 | 진행 중(10/19 19:2x): 별도 환경 설치, M1013 FK 1000자세 수치 일치, IK 20/20 및 독립 FK/IK 브리지 구현(README·LOG 참조). RRT 동등 장애물/쥔 접시/바닥 조건을 PyRoki trajopt에 아직 재현하지 못해 시연 경로 전환은 보류. Claude에게 공유. |
+| BN | **오늘 밤 최우선: PyRoki로 FK/IK/경로 생성 교체 실험** | 아래 '새 일 BN'; 별도 모듈·옵션, 같은 장애물/규칙, 오늘 저장 경로와 비교, 아침 비교표 | 대기(Codex, 10/19 밤) |
 | F | marker 5/2.5 cm 비교 | 보스가 작은 마커를 붙이면 `basket_stats`로 같은 조건 측정 | 대기(보스) |
 | AF | **실물 접시 앉음 높이·기울기 측정 절차** | 보스가 Q1~Q4에 손으로 놓고 기록할 1장 절차·표, 로봇 명령 없음 | 완료(dce780d; 38/38 시험, LOG 기록) |
 | AG | **Q1 손 안 접시 퍼짐 원인 오프라인 분석** | `replay_q1nt_l05.json`의 들기 직후 `in_hand`와 운반·재겨냥 후 `pre`를 FK 기준으로 비교; regrip 비인과 한계 구분 | 완료(66b9681; Q1 pre y std 9.94 mm, 정확 시점·regrip 인과는 미확정) |
@@ -356,7 +357,13 @@
 - 산출: LOG에 사실 확인 결과 + 비교표 + "쓸 수 있는 방법" 제안(어디에 어떻게 연결할지, opt-in 플래그 형태). 그림 규칙(격자선·위/오른쪽 테두리·제목 없음).
 - 금지: 10/22 시연 끝까지 `calibration/` 코드·config·run.sh 수정 금지(시험 스크립트는 /tmp나 새 폴더). 보스가 로봇을 돌릴 때(`pgrep -af run.sh`) CPU 다중 작업 금지. 로봇·그리퍼·카메라·ROS 실행 금지.
 
+### 새 일 BN: PyRoki로 FK/IK/경로 생성 교체 — 코드 + 실험 (10/19 19:4x 보스 퇴근 전 지시, 밤샘)
+- 보스: "오늘 밤에 지금 IK, FK, RRT로 하는 거 PyRoki로 변경해서 경로 생성하는 코드 생성 및 실험". **GPU는 Codex 우선**(Claude와 겹쳐 OOM이면 Claude가 양보). 오늘 시연(태그 `demo-20261022`)은 고정: `calibration/` 시연 경로 기본값을 바꾸지 말고, 새 백엔드는 **opt-in**(예: config `basket_planner_backend: numpy|pyroki`, 기본 numpy)으로.
+- 할 일: (1) BM 브리지(`experiments/pyroki_bm/bridge.py`)를 바탕으로 PyRoki FK/IK 백엔드. (2) 운반 경로: PyRoki trajopt로 `rrt_carry`와 **같은 계약** — 손에 든 접시 점구름(캡슐/구 근사), 셀·테이블·고정 카메라, 바구니 벽·마커 블록(`plate_plans.basket_boxes`), 서 있는 접시, 바구니 위 접시 최저점 ≥ 마커 위 5 cm(Q4는 서 있는 접시 위 5 cm), J4/J6 ≤ 100°, 끝은 슬롯 위에서 수직 하강. 최적화 결과는 **반드시 기존 `MultiChecker`(+`FloorCheck`)로 재검증**, 통과 못 하면 버림. (3) 실험: 오늘 저장된 `calibration/data/rl_plans/20261019_1[5-9]*_taught/plan.json`와 `calibration/data/carry_library/*.json` 조건(같은 시작·끝·바구니 자세)에서 numpy(지금) vs PyRoki: 성공률, 계산 시간(첫 컴파일 따로), 관절 총 이동, J4/J6 회전, 최소 여유, 경로 매끄러움(가가속도 등), 같은 입력 반복 시 경로 변동. 받침 위 접시 위치를 바꾼 조건(r 0.85–1.2 m, 방향 10–40°)도 포함하면 좋음. (4) LOG에 표 + 재현 명령; 아침 08:00 전 커밋 → Claude가 08:30 보고서에 비교표로 넣음.
+- 금지: 로봇·그리퍼·카메라·ROS 실행, 시연 기본값 변경, 기존 데이터/설정 덮어쓰기.
+
 ## Codex 상태
+- **오늘 밤 최우선 (10/19 19:4x 보스): BN PyRoki로 FK/IK/경로 생성 교체 실험.** GPU 우선권 Codex. 아침 비교표.
 - **다음 (10/19 18:1x Claude): BM PyRoki 검토** (보스 지시). BK 지도 재작업은 그다음(지금 운반은 RRT 우선이라 BK 조건을 `basket_carry_mode: rrt`로 맞출 것).
 - **10/22 시연 고정 (10/19 16:2x Claude):** 기준 태그 `demo-20261022`, 안내 `collab/DEMO_20261022.md`. 10/22 시연 끝까지 `calibration/config.yaml`·`run.sh`·`pipeline.py`·`plate_plans.py`·`robot_model.py` 수정 금지(제안은 LOG에). 보스가 실기 시연 중일 때는 CPU 다중 작업(BK 격자 등) 금지 — 계획이 느려진다; 시작 전 `pgrep -af run.sh`로 확인. 참고: 47c8f56의 FK 변경은 수치 동일(1e-15)이라 BK v6 결과에 영향 없음.
 - **BK 재계산 (10/19 15:2x Codex):** 계획기의 새 충돌 검사 `95f0762`가 기존 접시 조건 결과에 영향을 주므로 v5 실행을 정확한 PID로 중지(156/1188행은 보존, 최종 지도에 사용하지 않음). 새 코드로 기준점 두 개를 재확인한 뒤 v6 새 폴더 `calibration/data/basket/stand_feasibility_20261019_BK_1523_v6/`에서 99 위치×12 조건 CPU 계산 중(PID 3480057, 세션 84660). 완료 후 결과 검증·BK 종료 기록.
