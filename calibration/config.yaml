@@ -163,8 +163,8 @@ plate_ik_bc:                       # --plate_policy ik_bc (overrides plate_rl ke
   basket_policy_range: {x: [1.02, 1.22], y: [-0.39, -0.19], y_sim_checked: [-0.39, 0.20], yaw_deg: [-14, 16]}   # RL start states (10/13); y up to +0.20 only sim-checked
   basket_policy_vel_deg_s: 5.0         # policy start + insert (merged spline) (10/13 보스: 7.0 -> a bit slower)
   basket_quadrant_vel_deg_s: 3.5       # --insert quadrant: straight-down insert (10/13 19:5x 보스: 5.0 -> a bit slower)
-  basket_quadrant_sim_real_dh_m: 0.010   # (10/15 17:1x 보스 실기 "1 cm 덜 깊게") --sim_q: real-robot release height = sim centre_h + this
-  basket_quadrant_sim_real_dy_m: {Q3: 0.005}   # (10/15 18:3x: +1.5 cm hit the wall check (clearance 0.5); 17:2x 보스 asked +1.5) --sim_q: extra basket-y (+ = left) on top of the automatic wall shift (Q3 -3.0 cm)
+  basket_quadrant_sim_real_dh_m: 0.020   # (10/19 14:xx 보스 "지금도 조금 깊어" +1 cm, with the basket height fixed at 0.144; 10/15 17:1x 보스 실기 "1 cm 덜 깊게" 0.010) --sim_q: real-robot release height = sim centre_h + this
+  basket_quadrant_sim_real_dy_m: {Q3: 0.0}   # (10/19 14:xx: +0.5 cm left the Q3 rim 9.9 mm from the +y wall = under the 1 cm margin, every pin refused with a 3-marker fit; 0 gives 5 mm room) (10/15 18:3x: +1.5 cm hit the wall check (clearance 0.5); 17:2x 보스 asked +1.5) --sim_q: extra basket-y (+ = left) on top of the automatic wall shift (Q3 -3.0 cm)
   basket_quadrant_centre_h_m: 0.165    # --insert quadrant: plate centre above the basket floor at the end (10/13 보스 0.18 too deep -> 0.21; 10/14 -2.5 cm -> 0.185; 10/14 11:2x 보스 -2 cm)
   basket_region_min_spacing: 4        # (10/19 보스) --region: a new plate at least this many pins from one already in the quadrant (red at 10 -> white <= 6; 2 put the white at 9)
   basket_quadrant_x_trim_m: -0.020     # (10/14 실기) plate landed 1.9 cm (11:5x, pin 7 -> 6-7) and ~3 cm (10:3x) farther than planned
