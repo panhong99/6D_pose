@@ -68,3 +68,31 @@ globally shortest path and may fail from a straight-line initial trajectory.
 
 Official sources: https://github.com/chungmin99/pyroki and
 https://chungmin99.github.io/pyroki/examples/07_trajopt/ .
+
+## BN carry candidate (in progress)
+
+`trajopt_backend.py` uses PyRoki FK and its M1013 collision capsules inside a
+JAX-differentiated joint trajectory objective. It also penalizes the attached
+plate point cloud against the current world boxes, a raised basket floor, and
+J4/J6 excursion. It fixes the supplied joint endpoints exactly. Crucially,
+`validate()` densifies every segment at <=2° and uses the existing held-plate
+checker and `FloorCheck`; failed candidates are discarded. This is an offline
+candidate generator in `experiments/`, with no production backend switch yet.
+
+Reproduce a saved-path pilot (CPU):
+
+`JAX_PLATFORM_NAME=cpu .envs/pyroki-bm-20261019/bin/python experiments/pyroki_bm/benchmark_saved.py calibration/data/rl_plans/20261019_183143_663_taught/plan.json --n 20 --maxiter 120 --output experiments/pyroki_bm/bench_q4_183143_best.json`
+
+Pilot using current configuration and latest camera calibration, with the
+historical RRT drop index inferred as its last floor-valid waypoint:
+
+| Saved prefix | Existing prefix exact gate | PyRoki candidate exact gate | First-call wall time | Joint travel |
+|---|---|---|---:|---|
+| Q3 `174044_615` | pass | 0/3 seeds pass | 9.41 s | existing 174.2° |
+| Q4 `183143_663` | pass | 1/3 seeds pass | 9.65 s | existing 167.0°, candidate 243.2° |
+
+These are *not* a historical, equivalent-environment RRT comparison: the
+stored file omits the original camera calibration path and drop-start index,
+and the current configuration can differ. The accepted Q4 candidate is longer
+and has a larger resampled acceleration/jerk norm; it does not justify a
+production switch. JSON pilots are local result data and are not staged.

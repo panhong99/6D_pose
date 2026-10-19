@@ -4909,3 +4909,8 @@
 ## 2026-10-19 19:4x KST Codex — BN 새 우선순위 시작
 - 최신 보스/Claude 작업판 f860d05에서 BN이 밤샘 최우선으로 추가됨. BM 브리지 기반 `experiments/pyroki_bm/trajopt_backend.py`에 PyRoki FK + URDF collision capsule, 쥔 접시 점구름 대 상자, 바구니 위 최저 높이, J4/J6 변위 penalty를 넣은 오프라인 후보 생성기와 기존 `held`/`FloorCheck`의 2° 촘촘한 최종 검증 gate를 작성했다. 시작/끝 관절은 정확히 고정한다.
 - 단순 8-waypoint smoke(저장 18:58 `to_above` 관절 양 끝, 멀리 떨어진 가짜 상자, 항상 자유인 가짜 검사기)는 2.73 s 첫 solve, 71점 검사, wrist 최대 20.75°로 코드 실행만 확인했다(`/tmp/pyroki_bn_solver_smoke.log`). **실제 장애물·쥔 접시·기존 checker 통과나 RRT 대비 성능은 아직 검증되지 않았다.** 이 단순 smoke를 사용 가능 경로로 취급하지 않는다. 다음은 실제 저장 경로에서 정확한 검사기·박스·접시 cloud 재구성 후 비교. 시연 파일 수정/실로봇 실행 없음.
+
+## 2026-10-19 20:1x KST Codex — BN 저장 경로 2건 조건부 pilot
+- 새 `experiments/pyroki_bm/benchmark_saved.py`: 저장 plan의 carry prefix를 추출하고, 현행 config·최신 T_base_cam으로 `quadrant_checkers`/`FloorCheck` 및 셀·테이블·카메라·바구니 wall/marker box를 다시 만들어 PyRoki 후보를 기존 checker로 판정한다. 접시 점구름 193점, world box 18개(Q3/Q4), 바닥 기준 z=0.21203 m. 저장 파일에 원 실행의 camera calibration 경로와 RRT drop-start index가 없어 최신 camera와 마지막 floor-valid waypoint를 쓴 **조건부 재구성**이다. 오늘 저장 RRT와 완전 동일 조건이라고 주장하지 않는다.
+- `bench_q3_174044_margin.json`: 기존 prefix gate 통과(held ratio 1.61, floor 1.25, 관절 이동 174.2°), PyRoki 3 seed 전부 gate 실패, 첫 전체 계산 9.41 s. `bench_q4_183143_best.json`: 기존 통과(held 1.40, floor 1.10, 167.0°); PyRoki 1/3 seed 통과(held 1.40, floor 1.50, 243.2°), 9.65 s. 후보 Q4는 경로가 길고 101 균일 표본 가속/가가속 크기도 기존보다 큼. 정확한 수치는 해당 JSON. 기존 데이터/가중치 stage 안 함.
+- `trajopt_backend.validate()`는 2° 간격 각 분절에서 비유한/관절 한계/J4·J6/held/FloorCheck를 검사한다. 가짜 checker를 이용한 gate 단위시험 5/5 통과. 실패 Q3은 배포하지 않으며, Q4도 현재 조건부 오프라인 pilot만으로 생산 경로에 연결하지 않는다. 다음: 원 계획 조건 provenance를 찾아 정확히 맞춘 비교, 실제 후보 반복성/속도/접시 위 floor 등을 더 확인. 실로봇·그리퍼·카메라·ROS 실행 없음.

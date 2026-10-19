@@ -16,7 +16,8 @@ def _point_box_distance(points, centres, rotations, half):
     # points [time, point, xyz], boxes [box, xyz]
     local = jnp.einsum("tpbi,bij->tpbj", points[:, :, None, :] - centres[None, None], rotations)
     delta = jnp.abs(local) - half[None, None]
-    return jnp.linalg.norm(jnp.maximum(delta, 0), axis=-1) + jnp.minimum(jnp.max(delta, axis=-1), 0)
+    outside = jnp.maximum(delta, 0)
+    return jnp.sqrt(jnp.sum(outside * outside, axis=-1) + 1e-12) + jnp.minimum(jnp.max(delta, axis=-1), 0)
 
 
 def _densify(path, step_deg=2.0):
@@ -27,9 +28,15 @@ def _densify(path, step_deg=2.0):
     return np.asarray(out)
 
 
-def validate(path, held, floor, start, max_wrist_deg=100.0, step_deg=2.0):
+def validate(path, held, floor, start, max_wrist_deg=100.0, step_deg=2.0, limits=None):
     """Exact existing checkers are authoritative, including held plate and floor."""
     dense = _densify(np.asarray(path, float), step_deg)
+    if not np.isfinite(dense).all():
+        return False, {"reason": "nonfinite"}
+    if limits is not None:
+        lo, hi = limits
+        if np.any(dense < np.asarray(lo)) or np.any(dense > np.asarray(hi)):
+            return False, {"reason": "joint_limits"}
     wrist = np.max(np.degrees(np.abs(dense[:, [3, 5]] - np.asarray(start)[[3, 5]])))
     if wrist > max_wrist_deg:
         return False, {"reason": "wrist", "max_wrist_deg": float(wrist)}
@@ -56,7 +63,6 @@ def optimize(robot, robot_collision, start, goal, held, floor, attached_cloud,
     centres = jnp.asarray([b[1] for b in boxes], dtype=jnp.float32)
     rotations = jnp.asarray([b[3] for b in boxes], dtype=jnp.float32)
     half = jnp.asarray([b[2] for b in boxes], dtype=jnp.float32) / 2
-    box_wxyz = np.stack([np.r_[1.0, 0.0, 0.0, 0.0] for _ in boxes])
     # Box orientation is converted from the supplied rotation matrices.
     from scipy.spatial.transform import Rotation
     box_wxyz = Rotation.from_matrix(np.asarray(rotations)).as_quat()[:, [3, 0, 1, 2]]
@@ -78,14 +84,17 @@ def optimize(robot, robot_collision, start, goal, held, floor, attached_cloud,
         R = jaxlie.SO3(pose[:, :4]).as_matrix()
         points = jnp.einsum("tij,pj->tpi", R, cloud) + pose[:, None, 4:]
         box_dist = _point_box_distance(points, centres, rotations, half)
-        plate_pen = jnp.sum(jnp.square(jnp.maximum(0.015 - box_dist, 0)))
+        plate_pen = jnp.sum(jnp.square(jnp.maximum(0.04 - box_dist, 0)))
         caps = robot_collision.at_config(robot, path)
-        cap_dist = coll.collide(caps.reshape((n, robot_collision.num_links, 1)),
+        # The fixed base has no moving collision sample in the legacy checker.
+        caps = jax.tree.map(lambda x: x[:, 1:], caps)
+        cap_dist = coll.collide(caps.reshape((n, robot_collision.num_links - 1, 1)),
                                  world.reshape((1, 1, len(boxes))))
-        robot_pen = jnp.sum(jnp.square(jnp.maximum(0.015 - cap_dist, 0)))
+        cap_dist = jnp.nan_to_num(cap_dist, nan=1.0, posinf=1.0, neginf=-1.0)
+        robot_pen = jnp.sum(jnp.square(jnp.maximum(0.04 - cap_dist, 0)))
         local = jnp.einsum("tpi,ij->tpj", points, basket_R.T) + basket_p
         over = jnp.all(jnp.abs(local[:, :, :2]) <= basket_half, axis=-1)
-        floor_pen = jnp.sum(jnp.square(jnp.maximum(floor_z - points[:, :, 2], 0)) * over)
+        floor_pen = jnp.sum(jnp.square(jnp.maximum(floor_z + 0.01 - points[:, :, 2], 0)) * over)
         step = jnp.diff(path, axis=0)
         accel = jnp.diff(path, n=2, axis=0)
         wrist = jnp.maximum(jnp.abs(path[:, jnp.array([3, 5])] - start_j[jnp.array([3, 5])]) - jnp.deg2rad(max_wrist_deg), 0)
@@ -103,17 +112,29 @@ def optimize(robot, robot_collision, start, goal, held, floor, attached_cloud,
         path[:, 1] += sign * np.sin(np.linspace(0, np.pi, n)) * np.deg2rad(15)
         seeds.append(path)
     attempts = []
+    best = None
     for seed in seeds:
         tic = time.perf_counter()
         def fun(flat):
             v, g = fg(jnp.asarray(flat, dtype=jnp.float32))
-            return float(v), np.asarray(g, dtype=float)
+            vv, gg = float(v), np.asarray(g, dtype=float)
+            # A degenerate capsule occasionally gives a nonfinite derivative.
+            # Reject such an iterate instead of handing NaN to L-BFGS-B.
+            if not np.isfinite(vv) or not np.isfinite(gg).all():
+                return 1e12, np.zeros_like(np.asarray(flat, dtype=float))
+            return vv, gg
         fit = minimize(fun, seed[1:-1].ravel(), jac=True, method="L-BFGS-B",
                        options={"maxiter": maxiter, "ftol": 1e-8})
         candidate = np.vstack([start, fit.x.reshape((n - 2, 6)), goal])
-        good, check = validate(candidate, held, floor, start, max_wrist_deg)
+        good, check = validate(candidate, held, floor, start, max_wrist_deg,
+                               limits=(np.asarray(limit_lo), np.asarray(limit_hi)))
         attempts.append({"time_s": time.perf_counter() - tic, "objective": float(fit.fun),
+                         "movement_from_seed_deg": float(np.degrees(np.linalg.norm(candidate - seed))),
                          "optimizer_success": bool(fit.success), "valid": good, **check})
         if good:
-            return candidate, attempts
+            travel = float(np.linalg.norm(np.diff(candidate, axis=0), axis=1).sum())
+            if best is None or travel < best[0]:
+                best = (travel, candidate)
+    if best is not None:
+        return best[1], attempts
     raise RuntimeError(f"PyRoki candidate failed legacy clearance gate: {attempts}")
