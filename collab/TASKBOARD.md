@@ -78,6 +78,7 @@
 | BJ | v2 확대 재검토: 가림 표시·Q4 #13 root 교정 + 전체 conditional 3D 진단 | v2 보존, 새 v3 JSON/PNG, 84개 번호·79쌍 검사, 결과·한계 LOG | 완료(0282993): Q4 row1 #12/#13 root 간격 4.83 px(주변 pitch≈20 px)라 #13 root를 null 처리하고 이전값 보존; 79쌍 3D는 진단 전용, LOG 경로 참조 |
 | BG | after-release 손목 사진의 관절 자세 freshness guard | `look()`이 5초 내 새 `robot_state`를 못 받으면 stale `posj`로 사진 메타데이터를 저장하지 않도록 fail-closed | 완료(2885eff: 5초 안 fresh joint state 없으면 사진 저장 skip; 회귀 결과는 별도 확인되지 않음) |
 | BI | 보스 지정점 부분 3D 변환 sanity check | 지정점 10개 표기 확인을 기록하고, 보이는 7점만 기존 ray/height-plane 수식으로 투영해 한계 확인 | 완료(dbf9a5e): visible 7점 투영, Q별 transverse mismatch/lean 표는 LOG 10/19 부분 확인; 큰 mismatch와 계획 FK 한계 때문에 3D fit/모델 갱신은 보류. AZ 전수 완료 아님 |
+| BK | 받침 위 접시 위치별 경로 가능 지도 (CPU dry-run) | 아래 '새 일 BK'; 접시 root 격자마다 Q3/Q4 front/back 계획 성공·실패 이유 표+그림 | 대기(Codex) |
 | F | marker 5/2.5 cm 비교 | 보스가 작은 마커를 붙이면 `basket_stats`로 같은 조건 측정 | 대기(보스) |
 | AF | **실물 접시 앉음 높이·기울기 측정 절차** | 보스가 Q1~Q4에 손으로 놓고 기록할 1장 절차·표, 로봇 명령 없음 | 완료(dce780d; 38/38 시험, LOG 기록) |
 | AG | **Q1 손 안 접시 퍼짐 원인 오프라인 분석** | `replay_q1nt_l05.json`의 들기 직후 `in_hand`와 운반·재겨냥 후 `pre`를 FK 기준으로 비교; regrip 비인과 한계 구분 | 완료(66b9681; Q1 pre y std 9.94 mm, 정확 시점·regrip 인과는 미확정) |
@@ -331,6 +332,12 @@
 - **BJ v3 수정:** v2 PNG는 `tip_uv=null`인 점에도 `model_tip_uv` 위치에 주황 원을 그려 예상 모델점이 관측점처럼 보일 수 있었다. 새 `labels_full_newlayout_Q{1,2,3,4}_codex_verified_20261019_v3_clear_occlusion.{json,png}`는 실제 `tip_uv`가 있는 경우에만 선·tip을 그리고, 가린 끝점은 root 옆 텍스트로 표시한다(2560×1558). 확대 재검토에서 Q4 row1 #12/#13 root 픽셀 거리가 **4.83 px**로, 같은 줄의 주변 root 간격 약 20 px보다 훨씬 작았다. #13의 tip도 흰 블록 뒤라 식별되지 않아, 새 v3에서 기존 root `[849.4,479.9]`를 `root_uv_v2`로 보존하고 `root_uv=null`로 낮췄다. v2 원본은 수정하지 않았다.
 - 구조 검사: 84개 번호 연속성/분면별 수 유지, visible root 83, visible tip 79, 완전 root-tip 쌍 79, tip null 5, Q4 #13 root/tip 둘 다 미확정. conditional 3D ray-plane 진단 79쌍은 `calibration/data/basket/wrist_look/labels_full_newlayout_codex_v3_3d_diagnostic_20261019/pin_layout_measured_conditional.json`. Q1/Q2/Q3/Q4 median |root-tip transverse| **22.88/12.01/11.29/16.03 mm**, median lean **−24.75/−22.20/+21.93/+19.80°**. 이 값은 가정 tine/rail 높이 및 사진 JSON의 **계획 FK**에 의존하는 진단으로, 3D GT·핀 간격 검증·모델 갱신 근거가 아니다.
 - 모든 계산은 CPU 오프라인이며 로봇·그리퍼·카메라·ROS·Isaac/GPU를 실행하지 않았다. 다음은 v3 화면 기준 visible root/tip의 잔여 오류와 보스 지정점 해석을 반영해 픽셀 라벨을 계속 다듬는 것; occluded 좌표를 추측해 채우지 않는다. 3D 모델 반영은 독립 측정/실제 flange pose 없이 수행하지 않는다.
+
+### 새 일 BK: 받침 위 접시 위치별 경로 가능 지도 (10/19 12:0x Claude, CPU only)
+- 배경: 10/19 11:30 Q3 back(흰 접시) 계획이 8칸×2면 전부 `ik/limit`/`insert`/`high carry`로 실패. 흰 접시 root가 (1.217, 0.336), r 1.276 m로 놓였고(빨간 접시 r≈0.97), SYSTEM_SPEC의 잡기 라이브러리 검증 범위 0.86~1.15 m 밖. 이번 주 시연은 빨간 접시 자리에 두기로 함(보스).
+- 할 일(코드 읽기 + 오프라인 계획만, 로봇·그리퍼·카메라·ROS·Isaac 금지, `run.sh`·`pipeline.py`·`plate_plans.py` 수정 금지 — 보스 실행 중): 오늘 4-marker 바구니 자세(x≈0.889, y≈−0.19, 최근 실행 로그의 T_base_basket)로 고정하고, 받침 접시 root를 r 0.80~1.30 m(5 cm), 방위 0~+40°(5°) 격자로 바꿔가며 `quadrant_plan`(pipeline과 같은 plan_kw, `--region front/back` 칸 순서, 놓인 접시 Q3:10 있음/없음 두 경우)을 돌려 칸별 성공·첫 실패 이유를 집계.
+- 산출: CSV/JSON + 위치 지도 PNG(그림 규칙: 격자선·위/오른쪽 테두리·제목 없음), LOG에 "시연에 안전한 접시 위치 영역"과 실패 이유 분포. scratch 스크립트는 pipeline의 plan_kw를 빠뜨리지 말 것(10/18 가짜 2%/0% 사례).
+- 완료 조건: 빨간 접시 자리(r≈0.97)에서 오늘 실기 결과(Q3 front 성공)와 일치하는지 먼저 확인한 뒤 지도 작성.
 
 ## Codex 상태
 - 10/18 R1 최종 비교 CPU 사전 대조 **완료(c546d1c)**: `plans.jsonl`–기준 E3 JSON/NPZ의 415개 순서·이름·분면·목표 gap·exact 판정이 각 415/415 일치; Q별 표본 Q1–Q4 **114/100/110/91**, 기준 E3 exact **281/415**. R1 설정/명령도 full-DR·FP noise·noseen·canon으로 일치하고 `best.pt` 텐서가 `policy_0030.pt`와 동일(최고 eval 0.687; 55회차 동률은 best 갱신 안 함). 최종 `fulldr_r1_unseated025_it30.{json,npz,log}`는 아직 없어 R1 비교 자체는 계속 대기. 세부 경로·한계는 LOG 2026-10-18 Codex 항목.
