@@ -725,6 +725,8 @@ def run_plate(args):
             def qplan(start_deg):                           # the insert plan for the current hand model and trims
                 kw = dict(centre_h=q.get('basket_quadrant_centre_h_m', 0.18), tilt_deg=-qs['tilt'], x_shift_m=args.x_shift)
                 kw.update(sim_kw)
+                if qs.get('faces'):                         # (10/19) region mode: keep the face the pin was chosen with
+                    kw['faces'] = qs['faces']
                 return quadrant_plan(basket_T, mq, pin_gap(basket_T, mq, args.pin), qs['H'], qs['tool'], start_deg, Tbc, q,
                                      yaw_trim_deg=qs['yaw'], y_shift_m=args.y_shift, grasp_deg=legs0['to_grasp']['waypoints_deg'][-1],
                                      plates=plates, grasp_low_z=float(p[2]), **kw)   # (10/19) 15 cm from the plate on the stand
@@ -734,13 +736,20 @@ def run_plate(args):
                 cands = region_pins(len(basket_gaps()[mq]), args.region, same_q)
                 print(f'   {args.quadrant} {args.region}: 후보 핀 {cands} (이미 있는 접시 {same_q})', flush=True)
                 early, rep, why = None, None, {}
-                for pin_ in cands:
-                    args.pin = pin_
-                    early, rep = qplan(legs0['lift']['waypoints_deg'][-1])
+                order = sim_kw.get('faces', (1.0, -1.0))   # (10/19 보스: the wrist spun ~170 deg on Q3 pin 12) every pin with the
+                for faces_ in ((order[0],), tuple(order)):  # usual plate face first, the flipped wrist only if none has a plan
+                    qs['faces'] = faces_
+                    for pin_ in cands:
+                        args.pin = pin_
+                        early, rep = qplan(legs0['lift']['waypoints_deg'][-1])
+                        if early is not None:
+                            break
+                        why[(pin_, len(faces_))] = sorted({w.split(':')[0] if ':' in w else w.split(' ')[0] for _, w in rep['tried']})
+                        print(f'   핀 {pin_} ({"평소 면" if len(faces_) == 1 else "손목 뒤집기 포함"}): 경로 없음 '
+                              f'{why[(pin_, len(faces_))]}', flush=True)
                     if early is not None:
                         break
-                    why[pin_] = sorted({w.split(':')[0] if ':' in w else w.split(' ')[0] for _, w in rep['tried']})
-                    print(f'   핀 {pin_}: 경로 없음 {why[pin_]}', flush=True)
+                qs['faces'] = (float(rep['face']),) if early is not None else None
                 if early is None:
                     raise RuntimeError(f'{args.quadrant} {args.region}: no pin with an insert plan ({why})')
                 if args.chosen_pin_out:
