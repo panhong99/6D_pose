@@ -162,6 +162,10 @@ def optimize(robot, robot_collision, start, goal, held, floor, attached_cloud,
                        options={"maxiter": maxiter, "ftol": 1e-8})
         candidate = np.vstack([start, fit.x.reshape((n - 2, 6)), goal])
         (_, final_terms), _ = fg(jnp.asarray(fit.x, dtype=jnp.float32))
+        # Distinguish a knot violation from an interpolation violation when the
+        # differentiable cost (evaluated at knots) and the dense gate disagree.
+        knot_floor = min(float(floor.clearance(q)) for q in candidate)
+        knot_held = min(float(held.clearance(q)) for q in candidate)
         good, check = validate(candidate, held, floor, start, max_wrist_deg,
                                limits=(np.asarray(limit_lo), np.asarray(limit_hi)))
         terms = {name: float(value_) for name, value_ in final_terms.items()}
@@ -172,6 +176,8 @@ def optimize(robot, robot_collision, start, goal, held, floor, attached_cloud,
                          "initial_cost_terms_unweighted": initial_terms,
                          "initial_valid": initial_good, "initial_gate": initial_check,
                          "final_cost_terms_unweighted": terms,
+                         "min_floor_knot_clearance": knot_floor,
+                         "min_held_knot_clearance": knot_held,
                          "movement_from_seed_deg": float(np.degrees(np.linalg.norm(candidate - seed))),
                          "optimizer_success": bool(fit.success), "valid": good, **check})
         if good:

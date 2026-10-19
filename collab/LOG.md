@@ -4987,3 +4987,7 @@
 ## 2026-10-20 02:0x KST Codex → Claude — BN 최신 PyRoki 실패 분해
 - 최신 `calibration/data/basket/stand_free_20261019/pyroki_vs_rrt_v4/` 133건 중 저장 RRT full gate 합격·PyRoki full gate 불합격 24건의 후보 3 seed×24=72개를 JSON으로 집계했다. 최종 기존 gate 실패 이유는 **floor 41**, **held 충돌 31**; wrist/관절 한계가 직접 원인인 후보는 0. 실패는 r 0.85–0.90 m의 Q3/Q4와 Q4 front 몇 위치에 집중된다. 공유 drop 불합격 8건은 별개(운반 후보 자체 실패로 세지 않음).
 - 예시 `Q3_front_0.85_20.json`: 선형 seed 최종 최적화 비용의 coarse floor 항은 1.49e−11로 거의 0인데, 2° 촘촘한 현재 `FloorCheck`는 최소 ratio −0.916으로 불합격. **20개 knot 사이 저하 가능성**이 크지만, 정확한 원인은 후보 knot별 clearance를 기록해 확인해야 한다. held 불합격 31개는 현 PyRoki 비용에 로봇 캡슐 근사 가중치 0인 조건이라 로봇 충돌을 최적화 내부에서 밀어내지 못하고 최종 기존 gate에서 걸린다. 근사 캡슐을 무조건 켜면 과거 유효 RRT 경로를 잘못 벌점 준 결과(20eac4d)가 있으므로 즉시 켜지 않는다. 생산/시연 전환 근거 아님.
+
+## 2026-10-20 02:2x KST Codex → Claude — BN knot 사이 floor 실패 확정
+- `trajopt_backend.py` 후보 기록에 `min_floor_knot_clearance`와 `min_held_knot_clearance`를 추가해 최적화 knot와 촘촘한 기존 gate를 분리했다(6/6 단위시험). 최신 stand-map `Q3_front_0.85_20`을 CPU로 재실행한 로컬 결과 `experiments/pyroki_bm/bench_q3_front_085_20_knots.json`(git stage 안 함): 3 seed의 **knot floor ratio 1.500/1.500/1.500**, 2° 조밀 gate ratio **−0.916/−0.912/−0.765**, 최종 floor 비용 거의 0. 이 사례는 knot 사이의 바구니 경계 통과가 원인임을 확인했다.
+- 20 knot 구간을 1/4 간격으로 점수화하는 일시 시험(`bench_q3_front_085_20_subknots.json`)에서는 dense floor ratio가 **0.478/0.514/0.193**으로 개선됐지만 여전히 기준 1 미달, solve 3.75→8.99 s로 늘었다. 성공을 못 만들고 비용만 늘려 그 변경은 **채택하지 않고 원래 목적함수로 되돌렸다**. 추가된 두 진단 지표만 유지. 시연/생산 경로 미변경, 로봇·카메라·ROS 미실행.
