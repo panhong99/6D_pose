@@ -107,6 +107,7 @@ if __name__ == '__main__':
     a.add_argument('--out', required=True)
     a.add_argument('--grasp_all', action='store_true')
     a.add_argument('--start_lift', type=float, default=0.0, help='basket_carry_start_lift_m (opt-in)')
+    a.add_argument('--extra', default='{}', help='json merged into the plate config, e.g. {"basket_rrt": {"seeds": [0, 1, 2]}}')
     a.add_argument('--workers', type=int, default=6)
     a.add_argument('--radii', default='0.85,0.90,0.95,1.00,1.05,1.10,1.15,1.20,1.25')
     a.add_argument('--steps', default='0,1,2,3', help='which of STEPS (Q3 front, Q3 back, Q4 back, Q4 front)')
@@ -116,6 +117,7 @@ if __name__ == '__main__':
     out.mkdir(parents=True, exist_ok=False)
     pos = [(float(r), float(z)) for r in a.radii.split(',') for z in a.az.split(',')]
     extra = {'basket_carry_start_lift_m': a.start_lift} if a.start_lift > 0 else {}
+    extra.update(json.loads(a.extra))
     jobs = [(STEPS[int(i)], p_, a.grasp_all, str(out), extra) for i in a.steps.split(',') for p_ in pos]
     t0 = time.time()
     with Pool(a.workers) as pool, open(out / 'results.jsonl', 'w') as f:
