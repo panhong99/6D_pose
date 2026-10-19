@@ -380,6 +380,18 @@ class Pipeline(unittest.TestCase):
         three = dict(two); three[2] = three[2] + [0.015, 0.015, 0.0]
         self.assertEqual(ct.basket_consistency(three, layout)['verdict'], 'unsure')
 
+    def test_last_good_basket_is_reused_only_young_and_same_layout(self):
+        # (10/19 보스) a plate standing in the basket hides a marker: the 1st plate's 4-marker pose is reused
+        with tempfile.TemporaryDirectory() as tmp, patch.object(pipeline, '_last_good_path', return_value=Path(tmp) / 'g.json'):
+            cb = {'layout': 'a.json', 'reuse_last_good_min': 30}
+            self.assertIsNone(pipeline.basket_last_good(cb))
+            T = np.eye(4); T[:3, 3] = [1.0, -0.18, 0.144]
+            pipeline.save_last_good_basket(cb, T, 0.002, [2, 3, 4, 5], now=1000.0)
+            got = pipeline.basket_last_good(cb, now=1000.0 + 29 * 60)
+            np.testing.assert_allclose(got[0], T)
+            self.assertIsNone(pipeline.basket_last_good(cb, now=1000.0 + 31 * 60))
+            self.assertIsNone(pipeline.basket_last_good({'layout': 'b.json'}, now=1001.0))
+
     def test_photo_after_release_is_opt_in(self):
         self.assertFalse(pipeline.parse_args([]).photo_after_release)
         self.assertTrue(pipeline.parse_args(['--photo_after_release']).photo_after_release)

@@ -53,6 +53,7 @@ basket:                            # dish basket pose from 4 ArUco markers on it
   fixed_z_m: 0.144                  # (10/19 보스: basket 17.5 cm overall, tines 6 cm, fixed on the table) basket frame height used for every run
                                     # instead of the marker fit (10/19 fits 0.125 / 0.131 / 0.143 -> the insert went up to 1.9 cm deeper); 10/8 measured 0.1442, teach 0.1442
   fixed_z_tol_m: 0.03               # a marker fit farther than this from fixed_z_m stops the run before motion
+  reuse_last_good_min: 30            # (10/19 보스) with plates standing in the basket a failed marker fit reuses the last 4-marker pose this young
   marker_blocks: {size_m: 0.14, height_m: 0.10, above_m: 0.01}   # (10/16 보스: Q4 pin 4 hit a marker plate) each marker block + its bolts (they reach into the basket) as a collision box: 14 cm square around the marker centre, 1 cm above it down 10 cm. With it Q3 pins 4-5 have no insert plan and Q3 7 fails 83 % with sim sag (marker 4); targets Q3/Q4 8 and 11
 
 capture:                           # one sample = n_frames marker poses averaged while the robot is still
@@ -165,7 +166,7 @@ plate_ik_bc:                       # --plate_policy ik_bc (overrides plate_rl ke
   basket_policy_vel_deg_s: 5.0         # policy start + insert (merged spline) (10/13 보스: 7.0 -> a bit slower)
   basket_quadrant_vel_deg_s: 7.0       # --insert quadrant: straight-down insert (10/19 보스: 3.5 -> 7; 10/13 19:5x 보스: 5.0 -> a bit slower)
   basket_quadrant_sim_real_dh_m: 0.020   # (10/19 14:xx 보스 "지금도 조금 깊어" +1 cm, with the basket height fixed at 0.144; 10/15 17:1x 보스 실기 "1 cm 덜 깊게" 0.010) --sim_q: real-robot release height = sim centre_h + this
-  basket_quadrant_model_dx_m: {Q4: 0.015}   # (10/19 16:4x 보스: Q4 pin 6 went in L3/R2) --sim_q: model gap x -> measured, from the v4 tine labels
+  basket_quadrant_model_dx_m: {Q4: 0.007}   # (10/19 17:0x 보스: +15 mm went too far +x -> half; 16:4x 보스: Q4 pin 6 went in L3/R2 at 0) --sim_q: model gap x -> measured, from the v4 tine labels
                                        # (Codex BL bl_model_fit_20261019_v3/pin_centres.csv: Q4 model - measured -13..-22 mm, pin 6 -15.1 mm; Q3 within 2 mm)
   basket_insert_wall_margin_m: 0.005   # (10/19) wall/marker margin for the straight-down insert only (carry keeps basket_wall_margin_m 1 cm): with Q3 +0.5 cm the rim is ~10 mm from the wall and a 3-marker fit refused every pin at 9.9 mm
   basket_quadrant_sim_real_dy_m: {Q3: 0.005}   # (10/19 14:xx 보스 "조금 더 왼쪽" -> back to +0.5 cm; at 0 for one run. +0.5 leaves the rim ~10 mm from the +y wall, so the insert wall margin is 5 mm below) (10/15 18:3x: +1.5 cm hit the wall check (clearance 0.5); 17:2x 보스 asked +1.5) --sim_q: extra basket-y (+ = left) on top of the automatic wall shift (Q3 -3.0 cm)

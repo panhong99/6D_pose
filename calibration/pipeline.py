@@ -471,6 +471,29 @@ def load_basket_insert_policy(path):
     return expert
 
 
+def _last_good_path():
+    return DATA / 'basket' / 'last_good_basket.json'
+
+
+def save_last_good_basket(cb, Tb, res, seen, now=None):
+    """(10/19) the basket pose of a run where all 4 markers fit (reused while plates stand in the basket)."""
+    _last_good_path().write_text(json.dumps(dict(T_base_basket=np.asarray(Tb).tolist(), fit_m=float(res),
+                                                 markers=[int(i) for i in seen], t=time.time() if now is None else now,
+                                                 layout=cb.get('layout'))))
+
+
+def basket_last_good(cb, now=None):
+    """(T, age s) of the last 4-marker basket pose if younger than reuse_last_good_min and from the same layout, else None."""
+    p = _last_good_path()
+    if not p.is_file():
+        return None
+    d = json.loads(p.read_text())
+    age = (time.time() if now is None else now) - float(d['t'])
+    if d.get('layout') != cb.get('layout') or not 0 <= age <= 60 * cb.get('reuse_last_good_min', 30):
+        return None
+    return np.array(d['T_base_basket'], float), age
+
+
 def fixed_basket_z(Tb, cb):
     """(10/19 보스) the basket stands on the table and its height never changes (17.5 cm overall, tines 6 cm), but the
     marker fit put the frame at z 0.125-0.143 m run to run, and the insert went that much deeper.  With `fixed_z_m` the
@@ -634,7 +657,15 @@ def run_plate(args):
             slot1 = json.loads((DATA / 'basket' / 'slot_01_in_basket.json').read_text())
             layout = json.loads(cpath(C['basket']['layout']).read_text())
             Tb, res, seen = basket_fit_robust(basket_measure(C), layout, C['basket'].get('max_fit_residual_m', 0.008))
+            good = res <= C['basket'].get('max_fit_residual_m', 0.008) and len(seen) >= 3
+            reuse = None if good or not args.basket_plates else basket_last_good(C['basket'])
+            if reuse is not None:                           # (10/19 보스: '3 markers' on every 2nd plate) a plate standing in
+                print(f'[basket] markers {seen} unreliable ({res * 1000:.1f} mm) with plates standing -> 저장된 바구니 위치 사용 '
+                      f'({reuse[1] / 60:.0f} 분 전, 4마커)', flush=True)   # the basket hides part of a marker and misplaces it by
+                Tb, (res, seen) = reuse[0], (0.0, ['last good'])   # cm; the basket has not moved since the 1st plate: reused
             Tb = fixed_basket_z(Tb, C['basket'])
+            if good and len(seen) >= 4:
+                save_last_good_basket(C['basket'], Tb, res, seen)
             T0 = np.array(slot1['T_base_basket_at_teach'])
             basket_delta = Tb @ np.linalg.inv(T0)
             basket_T = Tb
@@ -642,8 +673,9 @@ def run_plate(args):
             yaw = np.degrees(np.arctan2(basket_delta[1, 0], basket_delta[0, 0]))
             print(f'[basket] markers {seen}, fit {res * 1000:.1f} mm: moved x {mv[0]:+.0f} y {mv[1]:+.0f} mm, '
                   f'yaw {yaw:+.1f} deg since the teaching', flush=True)
-            if res > C['basket'].get('max_fit_residual_m', 0.008) or len(seen) < 3:
-                raise RuntimeError(f'basket pose unreliable: {len(seen)} markers, residual {res * 1000:.1f} mm')
+            if reuse is None and (res > C['basket'].get('max_fit_residual_m', 0.008) or len(seen) < 3):
+                raise RuntimeError(f'basket pose unreliable: {len(seen)} markers, residual {res * 1000:.1f} mm '
+                                   '(empty basket: bash calibration/run.sh basket_check)')
         from sensors import FpStream
         fp = FpStream(udp['fp_pose'], st['n'], st['mm'], st['deg'], symmetric_z=True,   # round plate: yaw is noise
                       normalize=lambda T_: inv_T(Tbc) @ plate_upright(Tbc @ T_))       # (10/14) flips 179 deg <-> 1 deg
