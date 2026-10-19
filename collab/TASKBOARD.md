@@ -80,6 +80,7 @@
 | BI | 보스 지정점 부분 3D 변환 sanity check | 지정점 10개 표기 확인을 기록하고, 보이는 7점만 기존 ray/height-plane 수식으로 투영해 한계 확인 | 완료(dbf9a5e): visible 7점 투영, Q별 transverse mismatch/lean 표는 LOG 10/19 부분 확인; 큰 mismatch와 계획 FK 한계 때문에 3D fit/모델 갱신은 보류. AZ 전수 완료 아님 |
 | BK | 받침 위 접시 위치별 경로 가능 지도 (CPU dry-run) | 아래 '새 일 BK'; 접시 root 격자마다 Q3/Q4 front/back 계획 성공·실패 이유 표+그림 | 재작업 필요: v6 528/1188 조건에서 중단·보존. v6은 현행 `pipeline.py --sim_q`의 분면별 aim/lean/centre_h/face를 전달하지 않아 현재 실기 설정 지도 근거로 무효. 10/22 시연 중 CPU 다중 작업 금지; 설정·코드 고정 후 새 폴더에서 pilot부터 재검증(LOG 2026-10-19 17:xx). |
 | BL | v4 빗살 라벨 → 바구니 모델 실측 보정 (3D) | 아래 '새 일 BL'; 84개 root/tip 3D 변환, 분면별 pitch·clip 거리·기울기·줄 y 맞춤, 모델 대비 칸 중심 차이와 10/19 착지 2칸 차이 설명 | 완료(05b0d22): 조건부 84 tip·83 root·38 pin 중심 변환, Q1/Q4 모델 x 차이와 Q1 높이 모순 기록. `bl_model_fit_20261019_v3/` JSON/CSV/PNG, LOG 14:1x. 실제 모델 수정 없음. |
+| BM | PyRoki 검토: IK·경로 생성에 쓸 수 있는지 | 아래 '새 일 BM'; 언어/의존성 사실 확인, 별도 환경 설치, M1013 URDF로 IK·궤적 시험, 오늘 RRT와 비교표 | 대기(Codex) |
 | F | marker 5/2.5 cm 비교 | 보스가 작은 마커를 붙이면 `basket_stats`로 같은 조건 측정 | 대기(보스) |
 | AF | **실물 접시 앉음 높이·기울기 측정 절차** | 보스가 Q1~Q4에 손으로 놓고 기록할 1장 절차·표, 로봇 명령 없음 | 완료(dce780d; 38/38 시험, LOG 기록) |
 | AG | **Q1 손 안 접시 퍼짐 원인 오프라인 분석** | `replay_q1nt_l05.json`의 들기 직후 `in_hand`와 운반·재겨냥 후 `pre`를 FK 기준으로 비교; regrip 비인과 한계 구분 | 완료(66b9681; Q1 pre y std 9.94 mm, 정확 시점·regrip 인과는 미확정) |
@@ -349,7 +350,14 @@
 - 할 일: (1) root/tip 픽셀 → ray-plane(위 높이)으로 바구니 프레임 3D. (2) 분면·줄마다 빗살 x 위치에 직선 맞춤 → pitch, 클립에서 첫 빗살까지(clip_first_m), 줄 y, 기울기(root→tip). (3) `rl/basket.yaml` full의 tine_pitch / clip_first_m / clip_x / tine_lean_deg / 줄 y와 표로 비교, pin(칸) 중심 x 차이를 pin 1..N 전부. (4) 오늘 Q3 "pin 10 겨냥 → 약 8번 착지"(겨냥 shift −3.84 cm 포함)와 10/16 "6 → 3.5"가 모델 차이로 몇 cm·몇 칸 설명되는지.
 - 산출: 새 폴더 JSON/CSV + 그림(격자선·위/오른쪽 테두리·제목 없음). 제안 값은 LOG에만 — `basket.yaml`/`config.yaml`/코드 수정 금지(보스·Claude 결정, 학습 환경 영향). 로봇·카메라·ROS·Isaac 금지.
 
+### 새 일 BM: PyRoki 검토 — IK/FK·경로 생성에 쓸 수 있는가 (10/19 18:1x Claude, 보스 지시)
+- 배경: 지금 IK는 scipy `least_squares` 수치해, FK는 URDF 직접 계산, 운반 경로는 자체 양방향 RRT + 거리장 충돌(`calibration/robot_model.py`, 3eb5104부터 `basket_carry_mode: rrt`). 보스: "PyRoki가 경로도 만들어 주나? JAX가 아니고 Python이나 C++도 되는 걸로 안다." Claude는 JAX 기반으로 기억했으나 확실하지 않음 → **소스/문서로 사실 확인**(언어, 필수 의존성, GPU 필요 여부, 라이선스, 버전).
+- 할 일: (1) 공식 저장소/문서 확인 후 기능 표: IK, 충돌 포함 IK, 궤적 최적화/모션 플래닝(샘플링인지 최적화인지), 충돌 모델(구/메쉬/상자), 관절 한계·속도 제약, 경유점/자세 제약. (2) **별도 conda 환경**에 설치(`foundationpose` 환경은 건드리지 말 것). (3) M1013 URDF(`config.yaml paths.m1013_share`)로 우리 FK와 비교(무작위 1000자세, 오차), IK 성공률·시간을 우리 `Kinematics.ik`와 비교. (4) 오늘 저장된 계획 `calibration/data/rl_plans/20261019_*_taught/plan.json` 몇 개의 시작(lift 끝)→슬롯 위 목표를 같은 장애물(바구니 벽·마커 블록 상자: `plate_plans.basket_boxes`, 셀 프레임·테이블)로 PyRoki 궤적 생성 → 우리 RRT(`plate_plans.rrt_carry`)와 성공 여부, 시간, 관절 총 이동, 손목(J4/J6) 회전, 최소 여유 비교. 접시를 손에 든 상태의 충돌(점구름)을 넣을 수 있는지도.
+- 산출: LOG에 사실 확인 결과 + 비교표 + "쓸 수 있는 방법" 제안(어디에 어떻게 연결할지, opt-in 플래그 형태). 그림 규칙(격자선·위/오른쪽 테두리·제목 없음).
+- 금지: 10/22 시연 끝까지 `calibration/` 코드·config·run.sh 수정 금지(시험 스크립트는 /tmp나 새 폴더). 보스가 로봇을 돌릴 때(`pgrep -af run.sh`) CPU 다중 작업 금지. 로봇·그리퍼·카메라·ROS 실행 금지.
+
 ## Codex 상태
+- **다음 (10/19 18:1x Claude): BM PyRoki 검토** (보스 지시). BK 지도 재작업은 그다음(지금 운반은 RRT 우선이라 BK 조건을 `basket_carry_mode: rrt`로 맞출 것).
 - **10/22 시연 고정 (10/19 16:2x Claude):** 기준 태그 `demo-20261022`, 안내 `collab/DEMO_20261022.md`. 10/22 시연 끝까지 `calibration/config.yaml`·`run.sh`·`pipeline.py`·`plate_plans.py`·`robot_model.py` 수정 금지(제안은 LOG에). 보스가 실기 시연 중일 때는 CPU 다중 작업(BK 격자 등) 금지 — 계획이 느려진다; 시작 전 `pgrep -af run.sh`로 확인. 참고: 47c8f56의 FK 변경은 수치 동일(1e-15)이라 BK v6 결과에 영향 없음.
 - **BK 재계산 (10/19 15:2x Codex):** 계획기의 새 충돌 검사 `95f0762`가 기존 접시 조건 결과에 영향을 주므로 v5 실행을 정확한 PID로 중지(156/1188행은 보존, 최종 지도에 사용하지 않음). 새 코드로 기준점 두 개를 재확인한 뒤 v6 새 폴더 `calibration/data/basket/stand_feasibility_20261019_BK_1523_v6/`에서 99 위치×12 조건 CPU 계산 중(PID 3480057, 세션 84660). 완료 후 결과 검증·BK 종료 기록.
 - **BK 재개 진행 (10/19 15:xx Codex):** 오늘 설정으로 각 (r, az)에서 grasp/lift를 재계산하는 v5 CPU 격자 실행 중(PID 3471674, 실행 세션 20851, 새 산출 폴더 `calibration/data/basket/stand_feasibility_20261019_BK_1450_v5/`). 바구니 z=0.144, Q3 dy=+0.005, 간격 4, 기존 접시 Q3:12·8/Q4:11 조건을 포함했다. 빨간 기준 r=0.9658/az=21.02에서 Q3 front pin12 경로 성공; 흰 기준 r=1.276/az=18°, Q3 back+Q3:10에서 후보 pin6..1 전부 실패(주원인 insert clearance 308, high carry 22, ik/limit 12). 격자 전체·그림·수치는 계산 완료 뒤 검증한다.
