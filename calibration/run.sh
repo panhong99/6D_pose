@@ -41,6 +41,9 @@ case "$mode" in
     cd "$DIR/.." && exec conda run --no-capture-output -n foundationpose python -u "$DIR/pipeline.py" "$@" ;;
   demo1022)   # (10/19 보스) the 10/22 demo, one word per quadrant: two plates, the order the gripper side needs
     qd="${1:-}"; shift || true
+    for a in "$@"; do              # (10/19) two pasted lines ran as '--executebash calibration/run.sh demo1022 Q3': stop here
+      case "$a" in --execute) ;; *) echo "!!! demo1022: 알 수 없는 인자 '$a' (허용: --execute). 명령은 한 줄씩 실행"; exit 2 ;; esac
+    done
     case "$qd" in
       Q3) pins="Q3:front:red Q3:back:white" ;;      # (10/19 보스) always red first, then white; Q3: front first (gripper on the far side)
       Q4) pins="Q4:back:red Q4:front:white" ;;      # (10/19 보스) always red first, then white; Q4: back first (gripper on the robot side)

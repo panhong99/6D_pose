@@ -393,7 +393,8 @@ def wrist_snapshot(cfg, T_base_flange, T_base_basket, path, n_warm=15, after=Non
     frame = None
     if after is not None:                                         # perception owns the wrist camera: its shared frame
         t0 = time.time()
-        while frame is None and time.time() - t0 < 3:
+        while frame is None and time.time() - t0 < 8:            # (10/19 17:4x: the after-release frame came later than 3 s,
+                                                                  # the fallback found the wrist camera busy -> no photo)
             try:
                 z = np.load(share)
                 if float(z['t']) > after:
