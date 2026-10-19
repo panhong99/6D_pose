@@ -1866,6 +1866,95 @@ def plate_angle(req, out, radius_m=0.134):
     return result
 
 
+def basket_consistency(P, layout, tol=0.010, pair_tol=0.004):
+    """(10/19 보스: generalise the moved-marker-block fix) which basket marker blocks still match the stored layout.
+    Pairs whose xy distance matches the layout within pair_tol are consistent; the largest consistent group (>= 2
+    markers, never all from one fit) is taken as unmoved and the others as moved.  Returns a dict: verdict ok /
+    moved / unsure, group, moved, pair table, the full-fit xy residual and the basket pose from the group."""
+    import itertools
+    ids = sorted(i for i in P if str(i) in layout)
+    xy = lambda v: np.asarray(v, float)[:2]                                          # noqa: E731
+    pairs = [(a, b, float(np.linalg.norm(xy(P[a]) - xy(P[b]))), float(np.linalg.norm(xy(layout[str(a)]) - xy(layout[str(b)]))))
+             for a, b in itertools.combinations(ids, 2)]
+    ok_pair = {(a, b) for a, b, dm, dl in pairs if abs(dm - dl) <= pair_tol}
+    T, _, _ = basket_fit(P, layout)
+    full = max(float(np.linalg.norm(((T @ np.r_[layout[str(i)], 1.0])[:3] - P[i])[:2])) for i in ids)
+    out = dict(ids=ids, pairs=pairs, full_xy_res=full, verdict='ok', group=ids, moved=[], T=T)
+    if full <= tol:
+        return out
+    group = []
+    for n in range(len(ids) - 1, 1, -1):                # largest group whose every pair agrees with the layout
+        cands = [g for g in itertools.combinations(ids, n) if all((a, b) in ok_pair for a, b in itertools.combinations(g, 2))]
+        if cands:
+            span = lambda g: max(d for a, b, d, _ in pairs if a in g and b in g)   # noqa: E731
+            group = list(max(cands, key=span))            # the widest group: best yaw
+            break
+    if not group:
+        out.update(verdict='unsure', group=[], moved=ids)
+        return out
+    Tg, _, _ = basket_fit({i: P[i] for i in group}, layout)
+    out.update(verdict='moved', group=group, moved=[i for i in ids if i not in group], T=Tg)
+    return out
+
+
+def basket_check(cfg, relayout=False):
+    """(10/19 보스) pre-demo check of the basket marker blocks against the stored layout; --relayout stores the moved
+    blocks where they are now, in the basket frame of the unmoved ones (new file, config switched after a typed y).
+    Exit status: 0 ok, 3 moved (relayout possible), 4 unsure / too few markers."""
+    import json as _json
+    from calib_core import cpath
+    b = cfg['basket']
+    P = basket_measure(cfg)
+    layout = _json.loads(cpath(b['layout']).read_text())
+    names = {v: k for k, v in b['marker_ids'].items()}
+    tol = b.get('max_fit_residual_m', 0.010)
+    if len([i for i in P if str(i) in layout]) < 2:
+        print(f'markers seen {sorted(P)}: too few for the basket (run.sh markers)', flush=True)
+        return 4
+    r = basket_consistency(P, layout, tol)
+    print(f'layout {b["layout"]}', flush=True)
+    for a, c, dm, dl in r['pairs']:
+        print(f'  {a}-{c}: now {dm * 1000:6.1f} mm, layout {dl * 1000:6.1f} mm, diff {(dm - dl) * 1000:+6.1f}', flush=True)
+    missing = sorted(set(names) - set(P))
+    if missing:
+        print(f'  not seen: {missing}', flush=True)
+    if r['verdict'] == 'ok':
+        print(f'BASKET OK: markers {r["ids"]} fit {r["full_xy_res"] * 1000:.1f} mm (<= {tol * 1000:.0f})', flush=True)
+        return 0
+    if r['verdict'] == 'unsure':
+        print(f'BASKET UNSURE: fit {r["full_xy_res"] * 1000:.1f} mm and no two markers still match the layout - '
+              'several blocks or the basket moved; fix the blocks or re-measure the basket frame', flush=True)
+        return 4
+    moved = ', '.join(f'{i} ({names.get(i, "?")})' for i in r['moved'])
+    print(f'MARKER BLOCK MOVED: {moved}; unmoved {r["group"]} (fit {r["full_xy_res"] * 1000:.1f} mm > {tol * 1000:.0f})', flush=True)
+    if len(r['group']) == 2:
+        print('  only two unmoved markers: the basket frame from them is weaker (check the next placement)', flush=True)
+    Tg = np.array(r['T'])
+    Tg[2, 3] = b.get('fixed_z_m', Tg[2, 3])
+    Ti = np.linalg.inv(Tg)
+    new = {str(i): (Ti @ np.r_[P[i], 1.0])[:3].round(5).tolist() for i in r['ids']}
+    for i in r['moved']:
+        d = (np.array(new[str(i)]) - np.array(layout[str(i)]))[:2] * 1000
+        print(f'  marker {i}: moved {d[0]:+.1f} / {d[1]:+.1f} mm (basket x / y)', flush=True)
+    if not relayout:
+        print('  -> bash calibration/run.sh basket_relayout   (stores the moved blocks where they are now)', flush=True)
+        return 3
+    if input('type y to store the new layout and switch config basket.layout to it: ').strip() != 'y':
+        print('not stored', flush=True)
+        return 3
+    out = cpath(b['layout']).parent / f'basket_layout_5cm_{time.strftime("%Y%m%d_%H%M%S")}_relayout.json'
+    out.write_text(_json.dumps(dict(new, note=f'basket_check relayout: moved {r["moved"]}, frame from unmoved {r["group"]} '
+                                         f'(was {b["layout"]})'), indent=1))
+    cfg_path = Path(__file__).resolve().parent / 'config.yaml'
+    text = cfg_path.read_text()
+    line = next(l for l in text.splitlines() if l.startswith('  layout: '))
+    rel = str(out.relative_to(Path(__file__).resolve().parent))
+    cfg_path.write_text(text.replace(line, f'  layout: {rel}   # ({time.strftime("%m/%d %H:%M")} basket_relayout: moved '
+                                           f'{r["moved"]}, frame from {r["group"]})\n  # was:{line[1:]}', 1))
+    print(f'layout -> {out}\nconfig basket.layout switched (old line kept as a comment)', flush=True)
+    return 0
+
+
 def markers_live(cfg):
     """(10/19 보스, pre-demo check) live fixed-camera view of the 4 basket markers with the basket_measure detector:
     each marker green with its base x/y, the top bar OK/-- per marker.  Read-only; q / ESC quits (frees the camera)."""
@@ -1926,7 +2015,8 @@ def markers_live(cfg):
 if __name__ == '__main__':
     cfg = load_config()
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument('mode', choices=('preview', 'marker', 'markers_live', 'probe', 'locate', 'basket', 'wrist_look', 'pre_photo', 'pins', 'basket_stats', 'pin_layout', 'plate_angle', 'plate_plane', 'model_overlay', 'slot_targets', 'gap_error'))
+    p.add_argument('mode', choices=('preview', 'marker', 'markers_live', 'basket_check', 'probe', 'locate', 'basket', 'wrist_look', 'pre_photo', 'pins', 'basket_stats', 'pin_layout', 'plate_angle', 'plate_plane', 'model_overlay', 'slot_targets', 'gap_error'))
+    p.add_argument('--relayout', action='store_true', help='basket_check: store moved marker blocks where they are now')
     p.add_argument('--define', action='store_true', help='basket: define the basket frame / marker layout now')
     p.add_argument('--define_current', action='store_true', help='basket: marker layout in today\'s known basket frame (10/12)')
     p.add_argument('--golden', default=None, help='basket --define: also store this full teaching\'s slot in the basket frame')
@@ -1967,6 +2057,8 @@ if __name__ == '__main__':
         marker(a, cfg)
     elif a.mode == 'markers_live':
         markers_live(cfg)
+    elif a.mode == 'basket_check':
+        sys.exit(basket_check(cfg, a.relayout))
     elif a.mode == 'locate':
         locate(a, cfg)
     elif a.mode == 'basket':

@@ -361,6 +361,25 @@ class Pipeline(unittest.TestCase):
         self.assertLessEqual(len(pp.even_carry(list(np.radians(np.c_[np.arange(400.0), np.zeros((400, 5))])), 200)[0]),
                              pp.CARRY_MAX_WAYPOINTS)
 
+    def test_basket_consistency_finds_moved_marker_blocks(self):
+        # (10/19 보스) blocks 3 and 5 moved ~2 cm and every fit was > 10 mm: name the moved blocks, keep the frame
+        import camera_tools as ct
+        layout = {'2': [0.0, -0.27, 0.0], '3': [-0.28, 0.0, 0.0], '4': [0.0, 0.27, 0.0], '5': [0.28, 0.0, 0.0]}
+        a = np.radians(1.0)
+        T = np.eye(4); T[:2, :2] = [[np.cos(a), -np.sin(a)], [np.sin(a), np.cos(a)]]; T[:3, 3] = [1.0, -0.2, 0.144]
+        P = {int(i): (T @ np.r_[v, 1.0])[:3] for i, v in layout.items()}
+        self.assertEqual(ct.basket_consistency(P, layout)['verdict'], 'ok')
+        one = dict(P); one[3] = one[3] + [0.02, 0.0, 0.0]
+        r = ct.basket_consistency(one, layout)
+        self.assertEqual((r['verdict'], r['moved'], r['group']), ('moved', [3], [2, 4, 5]))
+        np.testing.assert_allclose(r['T'][:2, 3], T[:2, 3], atol=1e-9)
+        two = dict(one); two[5] = two[5] + [0.0, 0.02, 0.0]
+        r = ct.basket_consistency(two, layout)
+        self.assertEqual((r['verdict'], r['moved']), ('moved', [3, 5]))
+        np.testing.assert_allclose(r['T'][:2, 3], T[:2, 3], atol=1e-9)
+        three = dict(two); three[2] = three[2] + [0.015, 0.015, 0.0]
+        self.assertEqual(ct.basket_consistency(three, layout)['verdict'], 'unsure')
+
     def test_photo_after_release_is_opt_in(self):
         self.assertFalse(pipeline.parse_args([]).photo_after_release)
         self.assertTrue(pipeline.parse_args(['--photo_after_release']).photo_after_release)
