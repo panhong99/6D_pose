@@ -1202,3 +1202,7 @@ Human 지시: Claude와 Human이 실증하는 동안 Codex가 이 문제의 원�
 ## 2026-10-18 02:24 KST Codex — E audit erratum: require both rows for a gap-center comparison
 - The 02:06 aggregation had asymmetric boundary handling. Correct two-row support is Q2/Q3/Q4 **7/8, 11/12, 10/12** (28/32 total); Q2 gap 1 and Q3 gap 12/Q4 gaps 11–12 are one-row-only and excluded. See LOG 02:24.
 - Recomputing each two-row center from four checked tine endpoints gives median tip−root Δy **−6.27/−2.66/+3.21 mm**, with mean absolute Δy **6.29/2.70/3.19 mm** in Q2/Q3/Q4. The sample-handling correction does not change the caution: this remains conditional on plane and saved-transform assumptions, not a measured target error. The 02:15 per-label height sensitivity is unaffected.
+
+## 2026-10-19 보스 — 운반 경로: 오늘은 규칙, 점진적으로 자유 경로(AI)
+- 결정: 넣기 운반 구간은 오늘 실증에서 규칙 기반(수직 상승 ≥15 cm → 관절 직선 + J2/J3 높이 보정 → 수직 하강, 196ca11·e01f411)으로 간다. 이후 단계적으로 rule-based → free form(AI 경로 생성 등)으로 바꾼다.
+- 이유: 실증이 우선이고, 규칙 경로는 높이 하한을 항상 지키며 sim 검증 경로와 실기 경로가 같다. RRT는 충돌 모델만 피해 낮게 지나가 마커판과 부딪혔다(10/16). 숫자(15 cm, 마커·꽂힌 접시 +5 cm)는 보스 지시값이며 튜닝·학습값이 아니다. 학습된 것은 바구니 위 넣기 보정 PPO(gx30_seen)뿐.
