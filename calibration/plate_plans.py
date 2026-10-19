@@ -1233,11 +1233,19 @@ def quadrant_plan(Tbb, quadrant, gap, H, tool, start_deg, Tbc, q, grasp_legs=Non
                             inserting.path_clearance(pp(np.array(carry[k:]), 0.5)))
                 if c_car < 1.0:
                     raise RuntimeError(f'high carry clearance {c_car:.2f}')
-                carry, k = even_carry(carry, k)               # (10/19 보스) evenly spaced, <= 60 points (movesj limit 100)
-                c_car = min(held.path_clearance(pp(np.array(carry[:k + 1]), 0.5)),
-                            inserting.path_clearance(pp(np.array(carry[k:]), 0.5)))
-                if c_car < 1.0:
-                    raise RuntimeError(f'high carry (even) clearance {c_car:.2f}')
+                clear_of = lambda c, k_: min(held.path_clearance(pp(np.array(c[:k_ + 1]), 0.5)),   # noqa: E731
+                                             inserting.path_clearance(pp(np.array(c[k_:]), 0.5)))
+                ev, k_ev = even_carry(carry, k)               # (10/19 보스) evenly spaced, <= 60 points (movesj limit 100)
+                if clear_of(ev, k_ev) >= 1.0:
+                    carry, k = ev, k_ev
+                elif len(carry) > CARRY_MAX_WAYPOINTS:         # the even points cut a corner too close: the planned points,
+                    n_ = len(carry) - 1                        # thinned by index (before 10/19 14:2x)
+                    keep = np.unique(np.r_[np.linspace(0, k, max(2, CARRY_MAX_WAYPOINTS * k // n_)).round(),
+                                           np.linspace(k, n_, max(2, CARRY_MAX_WAYPOINTS * (n_ - k) // n_)).round()]).astype(int)
+                    carry, k = [carry[i] for i in keep], int(np.searchsorted(keep, k))
+                    c_car = clear_of(carry, k)
+                    if c_car < 1.0:
+                        raise RuntimeError(f'high carry (thinned) clearance {c_car:.2f}')
             home, how_h = free.plan(down[0], np.radians(HOME_JOINTS_DEG))
         except RuntimeError as e:
             tried.append(((int(side), phi), str(e)))
