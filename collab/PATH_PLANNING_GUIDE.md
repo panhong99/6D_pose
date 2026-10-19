@@ -94,8 +94,16 @@ for seed in (0, 0, 1):
 ~/miniconda3/envs/foundationpose/bin/python experiments/stand_free/sweep.py --out <새 폴더> --radii 0.95,1.05 --az 20,30
 ```
 
-## 7. PyRoki (Codex BN, 아침에 채움)
+## 7. PyRoki (Codex BN + Claude, 10/19 밤)
 
-- 무엇: Python 라이브러리이고 계산은 JAX로 한다(CPU 가능, MIT). FK, IK, **궤적 최적화**(충돌·매끄러움을 비용으로 넣어 한 번에 궤적을 만든다)를 제공한다. RRT 같은 무작위 탐색은 없다.
-- 지금 상태: `experiments/pyroki_bm/`. FK는 지금 코드와 1e-12 mm까지 같고, IK는 20/20 성공했다. 프로그램 시작 뒤 첫 호출에 컴파일 약 1.5초가 든다.
-- 손잡이와 사용법, 비교표는 Codex의 오늘 밤 결과로 채운다.
+- **무엇**: Python 라이브러리이고 계산은 JAX로 한다(CPU 가능, MIT). FK, IK, **궤적 최적화**를 제공한다. 궤적 최적화는 충돌·매끄러움을 비용으로 넣어 한 번에 경로를 만든다. RRT 같은 무작위 탐색은 없다.
+- **환경**: `.envs/pyroki-bm-20261019` (시연 conda 환경과 분리). 코드: `experiments/pyroki_bm/` (시연 코드 `calibration/`은 건드리지 않음).
+- **결과**: FK는 지금 코드와 1e-12 mm까지 같다. IK는 20/20 성공했다. 받침 지도 111건에서 RRT와 같은 길이로 더 매끄러운 경로를 만들었고(가속도 약 25%, 가가속도 약 40% 낮음), 경로 하나에 약 4초 걸렸다. 최종 합격은 지금 RRT와 같은 충돌 검사(`MultiChecker` + `FloorCheck`)로 정한다.
+- **손잡이** (`trajopt_backend.optimize`): `n`(경로 점 수, 기본 20), `maxiter`(최적화 반복, 120), `max_wrist_deg`(100), `seed_paths`(초기 경로, 예: RRT 경로를 주면 다듬기), `robot_penalty_weight`(근사 로봇 충돌 비용, 기본 0: 정확한 검사와 안 맞아서 끔).
+- **써 보기** (로봇 없음):
+  ```bash
+  JAX_PLATFORM_NAME=cpu .envs/pyroki-bm-20261019/bin/python experiments/pyroki_bm/benchmark_saved.py \
+      <저장된 plan.json> --standing Q4:6 --output /tmp/out.json      # 같은 출발·도착에서 RRT vs PyRoki
+  ~/miniconda3/envs/foundationpose/bin/python experiments/pyroki_bm/bench_sweep.py <sweep 폴더> <새 폴더>   # 받침 지도 전체
+  ```
+- **아직 안 된 것**: pipeline 연결(옵션). 시연 뒤에 "PyRoki 먼저, 실패하면 RRT" 또는 "RRT 경로를 PyRoki로 다듬기" 중 하나를 옵션으로 붙이는 것이 다음 단계다.

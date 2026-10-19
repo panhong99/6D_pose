@@ -4956,3 +4956,9 @@
   | + 출발 물러나기 0.10 | 62/62 | 62/62 | 62/62 | 60/62 |
   실패는 (+6, +6 cm) 모서리뿐. 산출 `calibration/data/basket/stand_free_20261019/basket_{demo,lift}/`. sweep `--basket_grid='dx..;dy..;dyaw..'`.
 - 결론: 바구니 ±6 cm/±4°, 접시 받침 띠(방향 18–24°, r 0.85–1.25 m) 안이면 지금 계획기 + 물러나기 옵션으로 약 90–100% 경로 생성. 남은 의존은 기하(프레임 기둥 옆, 바구니가 받침 쪽으로 오는 경우).
+
+## 2026-10-19 23:xx KST Claude — PyRoki vs RRT, 받침 지도 111계획 (CPU)
+- `experiments/pyroki_bm/bench_sweep.py`: `stand_free/sweep.py`(계획 경로 기록)의 성공 계획마다 Codex `benchmark_saved.py`를 같은 출발·도착·서 있는 접시로 실행. 산출 `calibration/data/basket/stand_free_20261019/pyroki_vs_rrt/table.jsonl`.
+- 재검사 통과 RRT 91/111, PyRoki 89/111. 둘 다 통과한 경우 관절 총 이동 중앙값 166.7° vs 166.3°, 가속도 L2 0.004 vs 0.003, 가가속도 0.005 vs 0.003, 최소 여유 1.60 vs 1.67, 손목 28° 동일, PyRoki 계산 중앙값 4.2 s(최대 10.5 s).
+- 버그 수정(92c10d0): benchmark가 서 있는 접시를 `pin - 1` 칸에 둠 → `pin_gap()`. 수정 후 carry library Q3_white 지금 gate 통과, Q4_white는 floor 0.61로 여전히 불통과(원인 미확인).
+- 한계: RRT 20건이 재검사에서 걸린 것은 benchmark 재구성(하강 시작 추정·floor 계산) 차이로 추정, 미확인.
