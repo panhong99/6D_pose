@@ -5,6 +5,7 @@
 #   bash calibration/run.sh viz [--plan P]     read-only RViz: real robot, FoundationPose plate, plan preview (UDP 5011)
 #   bash calibration/run.sh pipeline [args]    terminal 2: cube pipeline in conda foundationpose (see pipeline.py)
 #   bash calibration/run.sh demo4 [--execute]  meeting demo: Q4, Q3, Q1, Q2 one --auto --sim_q run each; DEMO_PINS="Q3:9 Q3:4:white" picks pins/colour
+#   bash calibration/run.sh look4 [--execute]  plate-free wrist photo per quadrant (look pose -> photo -> home); LOOK_QUADRANTS="Q1 Q3"
 #   bash calibration/run.sh sim [args]         Isaac Sim digital twin of the cell (see sim_scene.py)
 #   bash calibration/run.sh mover --plan P --leg L [--execute]   one plan leg, Human-run
 #   bash calibration/run.sh wrist_look         read-only: wrist photo at the current pose + model pins (starts its own stream)
@@ -72,6 +73,35 @@ print(" ".join(next(s[k]) for k in q))' $pins_in)
         [ "$left" = y ] && placed="$placed $q:$pin"
       fi
     done ;;
+  look4)      # (10/19 보스) plate-free wrist photo of each quadrant (Codex tine labels): per quadrant the basket is measured
+              # from the markers, a look pose is planned, then look leg -> photo -> home leg.  Human: empty gripper, no plate
+              # in the basket view; types the opening statement once and `go` per leg.  --execute to really move (else checks only).
+              # Quadrants: LOOK_QUADRANTS="Q1 Q2 Q3 Q4".  Speed: mover default (slowest).
+    cd "$DIR/.."
+    exe=0; for a in "$@"; do [ "$a" = --execute ] && exe=1; done
+    open=()
+    if [ $exe = 1 ]; then
+      read -r -p 'Type exactly "area clear, e-stop in hand" to continue: ' ans
+      [ "$ans" = "area clear, e-stop in hand" ] || { echo "중단"; exit 1; }
+      open=(--opening_done)
+    fi
+    mover() { ( ros /usr/bin/python3 -u "$DIR/ros2_nodes.py" mover "$@" ); }
+    for qd in ${LOOK_QUADRANTS:-Q1 Q2 Q3 Q4}; do
+      echo; echo "=== ${qd}: 손목 사진. 그리퍼 빈손, 바구니에 접시 없는지 확인 후 Enter (건너뛰기: s, 끝내기: q) ==="
+      read -r ans; [ "$ans" = q ] && break; [ "$ans" = s ] && continue
+      log="$DIR/data/basket/wrist_look/look4_$(date +%Y%m%d_%H%M%S)_${qd}.log"
+      conda run --no-capture-output -n foundationpose python -u "$DIR/plate_plans.py" look_plans --measure --quadrants "$qd" 2>&1 | tee "$log" || true
+      plan=$(sed -n 's/^plan: //p' "$log" | tail -1) || true
+      req=$(grep -o "[^ ]*_${qd}\.req\.json" "$log" | tail -1) || true
+      if [ -z "$plan" ] || [ -z "$req" ]; then echo "!!! ${qd}: 계획 없음 (위 로그) - 다음 분면"; continue; fi
+      mover --plan "$plan" --leg "${qd}_look" --smooth --go_per leg "${open[@]}" "$@" || { echo "!!! ${qd}: 이동 안 함/실패 - 다음 분면"; continue; }
+      if [ $exe = 1 ]; then
+        conda run --no-capture-output -n foundationpose python -u "$DIR/camera_tools.py" pre_photo --req "$req" \
+          || echo "!!! ${qd}: 사진 실패 (로봇은 홈으로 돌아갑니다)"
+      fi
+      mover --plan "$plan" --leg "${qd}_home" --smooth --go_per leg "${open[@]}" "$@" || { echo "!!! ${qd}: 홈 복귀 실패 - 멈춤"; break; }
+      echo "--- ${qd} 완료: ${req%.req.json}.raw.png / .json"
+    done ;;
   sim)
     unset CONDA_PREFIX CONDA_DEFAULT_ENV PYTHONPATH LD_LIBRARY_PATH
     cd "$DIR" && exec "$ISAAC_ROOT/python.sh" -u "$DIR/sim_scene.py" "$@" ;;
@@ -85,5 +115,5 @@ print(" ".join(next(s[k]) for k in q))' $pins_in)
   tests)
     cd "$DIR" && exec conda run --no-capture-output -n foundationpose python -m unittest tests "$@" ;;
   *)
-    sed -n '2,11p' "$0"; exit 2 ;;
+    sed -n '2,12p' "$0"; exit 2 ;;
 esac
