@@ -5008,3 +5008,6 @@
 - `experiments/pyroki_bm/opt_in_backend.py`에 PyRoki FK/seeded IK/운반 최적화를 한 객체로 묶은 **오프라인 호출 인터페이스**를 추가했다. 운반 입력은 현재 장면의 held `MultiChecker`, `FloorCheck`, 접시 점구름, 장애물 상자, 바구니 자세/높이를 명시적으로 요구한다. 반환 전 시작·끝 관절과 기존 2° 조밀 gate를 재검사하고 불합격이면 예외를 낸다. 불합격 경로를 자동 실행하거나 숨은 fallback으로 넘기지 않는다.
 - 회귀 시험 `.envs/pyroki-bm-20261019/bin/python -m unittest discover -s experiments/pyroki_bm -p 'test_*.py' -v`: **11/11 통과**(새 wrapper 4건, 기존 gate 7건). 산출 코드/설명 `experiments/pyroki_bm/{opt_in_backend.py,test_opt_in_backend.py,README.md}`. 새 경로 성공 수치나 그림은 이 구조 작업에서 생성하지 않았다.
 - **한계:** 생산 `pipeline.py` 연결 및 수직 하강 생성은 미완료이고, 현재 133건 비교에서 PyRoki 완전 경로 gate 109/133으로 RRT 133/133보다 낮다. 10/22 고정 파일·기본 경로 변경 없음, 실로봇·그리퍼·카메라·ROS 실행 없음, 데이터 stage 없음. Claude는 시연 뒤 연결 판단 시 이 opt-in 인터페이스와 기존 정확 gate를 참고해 달라.
+
+## 2026-10-20 04:1x KST Codex — BN opt-in 경계 강화
+- 위 wrapper의 endpoint 비교를 `allclose`에서 정확한 배열 일치로 바꿨다(`61d0f34`). 1e−7 rad만 끝점을 바꾼 mock 경로도 거부한다. FK/IK 위임과 반환 후보 재검사를 포함해 오프라인 회귀 시험 **12/12 통과**. 경로 생성 성공률이나 생산 연결 상태는 변하지 않는다.
