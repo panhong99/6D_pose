@@ -72,7 +72,7 @@
 | BB | 월요일 접시 없는 분면별 손목 사진 절차 | 새 일 BB; look_plans/mover/pre_photo 코드를 읽고 보스 실행 명령 순서와 저장값·한계 정리 | 완료(1e50d92): `collab/MONDAY_WRIST_PHOTOS_20261019.md`; 2°/s 저속·분면별 새 계획·원본/메타 확인, 10/16 바구니 위치 변경과 계획 FK 한계 명시. 실제 로봇·카메라 실행은 보스 몫(LOG 15:1x) |
 | BC | seed15 재학습 데이터·평가 원시 감사 | 새 일 BC; train/val/x90 배치 교집합, 11개 eval JSON/NPZ와 짝 변화, x90 비교·선택 편향 검증 | 완료(84600cd): train 성공 plan 799/800(1건 CRC 실패), train/val/x90 exact scene 교집합 0; eval 2,640행·x90 비교 422행 불일치 0. 최고 it25 147/240, x90 pin10 63→67/100·두 번째 칸 변화 0, gx30_seen 유지 판단과 일치(LOG 09:13) |
 | BD | Q3 두 번째 칸 pin7/pin8 같은 배치 비교 | x90 저장 계획·replay에서 실제 목표 번호와 공통 배치의 계획/앉음 결과 재집계 | 완료(2907451): pin7 계획 11/47·sim 0/11, pin8 계획 47/47·sim 32/47; 공통 11개 배치에서 pin8 8/11. `second` Q3는 pin7이라 월요일 pin8 성능으로 해석 금지(LOG 09:15) |
-| BE | `look4` 셸 흐름 검토·AZ 사진 수집 경로 | 아래 '새 일 BE'; mock으로 dry-run, 촬영, 계획/이동/사진/복귀 실패 흐름 확인; 기존 수동 절차에 한 번 실행 명령 추가 | 진행 중: mock 검토·오류 표시 수정·절차 갱신은 완료, 커밋 뒤 보스의 실제 look4 촬영 및 사진 전달 대기(LOG 09:53) |
+| BE | `look4` 셸 흐름 검토·AZ 사진 수집 경로 | 아래 '새 일 BE'; mock으로 dry-run, 촬영, 계획/이동/사진/복귀 실패 흐름 확인; 기존 수동 절차에 한 번 실행 명령 추가 | 완료(4da3a17: mock 검토·오류 표시 수정·절차 갱신; 실제 촬영 및 사진 전달은 보스 대기, LOG 09:53) |
 | BF | after-release 손목 사진의 관절 자세 freshness guard (Claude 보호 파일) | `look()`이 5초 내 새 `robot_state`를 못 받으면 오래된 `rec.last['posj']`로 `.req.json`/사진 메타데이터를 만들지 않도록 fail-closed 또는 명시적 invalid flag. fresh/stale/없음 회귀 확인. 코드 소유권 때문에 Claude가 반영 | 대기(Claude 수정 필요; after-release `.json`은 freshness guard 전까지 기하/라벨 입력으로 사용 보류, LOG 09:33 정적 리뷰) |
 | F | marker 5/2.5 cm 비교 | 보스가 작은 마커를 붙이면 `basket_stats`로 같은 조건 측정 | 대기(보스) |
 | AF | **실물 접시 앉음 높이·기울기 측정 절차** | 보스가 Q1~Q4에 손으로 놓고 기록할 1장 절차·표, 로봇 명령 없음 | 완료(dce780d; 38/38 시험, LOG 기록) |
