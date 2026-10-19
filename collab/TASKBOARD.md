@@ -79,6 +79,7 @@
 | BG | after-release 손목 사진의 관절 자세 freshness guard | `look()`이 5초 내 새 `robot_state`를 못 받으면 stale `posj`로 사진 메타데이터를 저장하지 않도록 fail-closed | 완료(2885eff: 5초 안 fresh joint state 없으면 사진 저장 skip; 회귀 결과는 별도 확인되지 않음) |
 | BI | 보스 지정점 부분 3D 변환 sanity check | 지정점 10개 표기 확인을 기록하고, 보이는 7점만 기존 ray/height-plane 수식으로 투영해 한계 확인 | 완료(dbf9a5e): visible 7점 투영, Q별 transverse mismatch/lean 표는 LOG 10/19 부분 확인; 큰 mismatch와 계획 FK 한계 때문에 3D fit/모델 갱신은 보류. AZ 전수 완료 아님 |
 | BK | 받침 위 접시 위치별 경로 가능 지도 (CPU dry-run) | 아래 '새 일 BK'; 접시 root 격자마다 Q3/Q4 front/back 계획 성공·실패 이유 표+그림 | 보스 우선순위 변경으로 중단(13:33): pilot 및 56/168 위치 계산만 보존; 지도 미완료. 재개 지시 전에는 실행하지 않음(LOG 2026-10-19 13:33). |
+| BL | v4 빗살 라벨 → 바구니 모델 실측 보정 (3D) | 아래 '새 일 BL'; 84개 root/tip 3D 변환, 분면별 pitch·clip 거리·기울기·줄 y 맞춤, 모델 대비 칸 중심 차이와 10/19 착지 2칸 차이 설명 | 대기(Codex, 최우선) |
 | F | marker 5/2.5 cm 비교 | 보스가 작은 마커를 붙이면 `basket_stats`로 같은 조건 측정 | 대기(보스) |
 | AF | **실물 접시 앉음 높이·기울기 측정 절차** | 보스가 Q1~Q4에 손으로 놓고 기록할 1장 절차·표, 로봇 명령 없음 | 완료(dce780d; 38/38 시험, LOG 기록) |
 | AG | **Q1 손 안 접시 퍼짐 원인 오프라인 분석** | `replay_q1nt_l05.json`의 들기 직후 `in_hand`와 운반·재겨냥 후 `pre`를 FK 기준으로 비교; regrip 비인과 한계 구분 | 완료(66b9681; Q1 pre y std 9.94 mm, 정확 시점·regrip 인과는 미확정) |
@@ -340,6 +341,13 @@
 - 완료 조건: 빨간 접시 자리(r≈0.97)에서 오늘 실기 결과(Q3 front 성공)와 일치하는지 먼저 확인한 뒤 지도 작성.
 
 - **BK 재작업 (10/19 13:1x Claude 검토):** v3 `/tmp/bk_feasibility_20261019.py`는 11:45 실기 grasp 경로를 J1으로만 돌려(`turn`) 모든 r에 썼다. 그래서 r을 바꿔도 잡는 자세가 r≈0.966 그대로이고(yaw 20°는 r와 무관하게 7/7, 10/30°는 0/7), 오늘 질문(흰 접시 r 1.276에서 왜 안 되나, 어디까지 되나)에 답하지 못한다. 다시: 격자 각 (r, az)마다 pipeline과 똑같이 `library_target`/`plan_from_library(r, az, q, Tbc, plate_z)`로 grasp·lift 경로를 새로 만들고(라이브러리 범위 `library_ok_radii` 밖이면 'library range'로 기록), 그 경로로 `quadrant_plan`. 기준점 r 0.966/az 21°에서 Q3 front 성공, 그리고 r 1.276/az 18°(11:30 흰 접시)에서 오늘처럼 전부 실패하는지 둘 다 먼저 재현. 칸 후보는 새 간격 규칙(`region_pins(..., spacing=config basket_region_min_spacing=4)`, 빨간 10 → 흰 ≤6)으로. 그림은 **격자선 없음, 위·오른쪽 테두리 없음, 제목 없음**(v3 LOG에 '격자선·위/오른쪽 테두리 표시'라 적힘 — 규칙 위반, 새 그림에서 고칠 것). v3 결과는 지우지 말고 '무효(r축)'로 LOG에 표시.
+
+### 새 일 BL: v4 빗살 라벨로 바구니 모델 실측 보정 (10/19 14:3x Claude, 보스 승인, CPU only)
+- 보스: v4 라벨(`calibration/data/basket/wrist_look/az_retrace_20261019_v4/Q{1..4}.json`) 매우 잘 됨 → 이걸 기준으로 쓴다. 번호는 줄마다 로봇에서 먼 쪽 = 1(우리 pin 번호와 같음, pin N = 빗살 N과 N+1 사이).
+- 보스 실측 고정값(10/19): 바구니 전체 높이 **17.5 cm**, 빗살 길이 **레일에서 6 cm**. 모델: 바닥 = 바구니 프레임 z −0.144, 레일 = 바닥 + 0.049(10/12 Human) → root 높이 −0.095, tip 높이 ≈ −0.035(레일 + 6 cm, 수직 높이로 가정; 가정이 맞는지 L/R 두 줄 일관성으로 확인). 실기 계획의 바구니 높이는 이제 0.144 고정(2e5ec95).
+- 사진 자세: 각 `wrist_look/20261019_*_Q?.json`의 `T_base_flange`는 look 계획 마지막 waypoint의 FK다. 실기 mover가 도착 후 실제 관절과 비교해 `max_reach_error_deg`를 넘으면 멈추므로(보통 0.01°) 계획 FK ≈ 실측으로 써도 된다. 남는 오차는 손목 카메라 보정(`T_flange_cam`)과 마커 바구니 자세(`T_base_basket`). 이 한계는 LOG에 명시.
+- 할 일: (1) root/tip 픽셀 → ray-plane(위 높이)으로 바구니 프레임 3D. (2) 분면·줄마다 빗살 x 위치에 직선 맞춤 → pitch, 클립에서 첫 빗살까지(clip_first_m), 줄 y, 기울기(root→tip). (3) `rl/basket.yaml` full의 tine_pitch / clip_first_m / clip_x / tine_lean_deg / 줄 y와 표로 비교, pin(칸) 중심 x 차이를 pin 1..N 전부. (4) 오늘 Q3 "pin 10 겨냥 → 약 8번 착지"(겨냥 shift −3.84 cm 포함)와 10/16 "6 → 3.5"가 모델 차이로 몇 cm·몇 칸 설명되는지.
+- 산출: 새 폴더 JSON/CSV + 그림(격자선·위/오른쪽 테두리·제목 없음). 제안 값은 LOG에만 — `basket.yaml`/`config.yaml`/코드 수정 금지(보스·Claude 결정, 학습 환경 영향). 로봇·카메라·ROS·Isaac 금지.
 
 ## Codex 상태
 - **현재 우선순위(10/19 13:33 보스):** AZ 바구니 슬롯/빗살의 번호와 관측 root→tip 선 작업. Q1–Q4 v3 검증 그림·JSON은 생성 완료; 가림 좌표를 추정하지 않고 별도 기록한다. BK 위치 지도 계산은 보스가 우선순위를 바꿔 중단했다.
