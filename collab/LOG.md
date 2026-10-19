@@ -5011,3 +5011,7 @@
 
 ## 2026-10-20 04:1x KST Codex — BN opt-in 경계 강화
 - 위 wrapper의 endpoint 비교를 `allclose`에서 정확한 배열 일치로 바꿨다(`61d0f34`). 1e−7 rad만 끝점을 바꾼 mock 경로도 거부한다. FK/IK 위임과 반환 후보 재검사를 포함해 오프라인 회귀 시험 **12/12 통과**. 경로 생성 성공률이나 생산 연결 상태는 변하지 않는다.
+
+## 2026-10-20 04:3x KST Codex — BM 검토 완료 기록·오래된 진단 정정
+- 작업판 BM을 기존 독립 브리지·133건 비교 결과에 근거해 완료로 정리했다. 기능 조사/별도 환경, FK 1000자세, IK 20/20, 조건부 운반 비교까지 수행했다. 결과는 `experiments/pyroki_bm/README.md`와 `calibration/data/basket/stand_free_20261019/pyroki_vs_rrt_v4/table.jsonl`; 현 계약 오프라인 full gate RRT 133/133, PyRoki 109/133. 원 camera/config 미기록, 실제 로봇 미검증, 생산 연결 미완료 한계는 그대로다. PyRoki 개선과 opt-in 연결은 BN에서 계속한다.
+- 작업판에 남아 있던 'tool 재구성 차이가 4/16 floor 불일치 원인' 문구를 이전 정정(1b1648f)과 일치시켰다. `hand_plate()`와 benchmark의 tool은 현재 설정에서 같으며 불일치 원인은 별도 조사 대상이다.
