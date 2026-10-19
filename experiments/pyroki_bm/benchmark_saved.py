@@ -38,15 +38,31 @@ def metrics(path, held, floor, start):
                 points=len(path))
 
 
+def resample(path, n=101):
+    path = np.asarray(path, float)
+    distance = np.r_[0.0, np.cumsum(np.linalg.norm(np.diff(path, axis=0), axis=1))]
+    keep = np.r_[True, np.diff(distance) > 1e-12]
+    if distance[-1] <= 1e-12:
+        return np.repeat(path[:1], n, axis=0)
+    return np.stack([np.interp(np.linspace(0, distance[-1], n), distance[keep], path[keep, i])
+                     for i in range(path.shape[1])], axis=1)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("plan", type=Path)
     parser.add_argument("--n", type=int, default=20)
     parser.add_argument("--maxiter", type=int, default=120)
+    parser.add_argument("--repeat", type=int, default=1,
+                        help="Repeat identical solve in this process to measure warm solve and path variation")
+    parser.add_argument("--library", type=Path,
+                        help="Saved carry-library JSON with source plan and exact drop_start")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--standing", action="append", default=[], metavar="Q:PIN",
                         help="Existing upright plate, e.g. Q4:11; may be repeated")
     a = parser.parse_args()
+    if a.repeat < 1:
+        parser.error("--repeat must be >= 1")
     source = json.loads(a.plan.read_text())
     if not source["quadrant_plan"]["carry"].startswith(("rrt-floor", "prior")):
         raise ValueError("Saved plan is not an RRT/prior carry")
@@ -77,8 +93,21 @@ def main():
         z_floor += (q.get("basket_carry_rrt_extra_m", {}) or {}).get(model_quadrant, 0.0)
     floor = FloorCheck(Kinematics(), cloud, basket, z_floor)
     saved = np.radians(np.asarray(source["legs"]["to_above"]["waypoints_deg"], float))
-    floor_ok = [floor.clearance(x) >= 1 for x in saved]
-    k = max(i for i, valid in enumerate(floor_ok) if valid)
+    if a.library is not None:
+        library = json.loads(a.library.read_text())
+        if Path(library["source"]).resolve() != a.plan.resolve():
+            parser.error("--library source does not match plan")
+        if not np.array_equal(np.asarray(library["waypoints_deg"], float),
+                              np.asarray(source["legs"]["to_above"]["waypoints_deg"], float)):
+            parser.error("--library waypoints do not match plan")
+        k = int(library["drop_start"])
+        if not 0 < k < len(saved):
+            parser.error("--library drop_start is outside the carry path")
+    else:
+        floor_ok = [floor.clearance(x) >= 1 for x in saved]
+        if not any(floor_ok):
+            parser.error("no floor-valid saved waypoint under reconstructed conditions")
+        k = max(i for i, valid in enumerate(floor_ok) if valid)
     old = saved[:k + 1]
     world_boxes = [b for ch in held.checkers for b in ch.boxes]
     world_boxes = [(n, c, s, np.eye(3) if len(b) == 3 else b[3])
@@ -88,23 +117,36 @@ def main():
     collision = pk.collision.RobotCollision.from_urdf(urdf)
     import basket_env as be
     half = np.asarray(be.B["full"]["size_xy"], float) / 2 + 0.08
-    start = time.perf_counter()
-    try:
-        path, attempts = optimize(robot, collision, old[0], old[-1], held, floor,
-                                  cloud, world_boxes, basket, half, z_floor,
-                                  n=a.n, maxiter=a.maxiter)
-        candidate = metrics(path, held, floor, old[0])
-    except CandidateRejected as exc:
-        attempts, candidate = exc.attempts, {"valid": False, "failure": str(exc)}
+    repeats = []
+    accepted_paths = []
+    for _ in range(a.repeat):
+        start = time.perf_counter()
+        try:
+            path, attempts = optimize(robot, collision, old[0], old[-1], held, floor,
+                                      cloud, world_boxes, basket, half, z_floor,
+                                      n=a.n, maxiter=a.maxiter)
+            candidate = metrics(path, held, floor, old[0])
+            accepted_paths.append(path)
+        except CandidateRejected as exc:
+            attempts, candidate = exc.attempts, {"valid": False, "failure": str(exc)}
+        repeats.append({"wall_s": time.perf_counter() - start, "pyroki": candidate,
+                        "attempts": attempts})
+    variation = None
+    if len(accepted_paths) > 1:
+        reference = resample(accepted_paths[0])
+        variation = [float(np.degrees(np.max(np.abs(resample(p) - reference))))
+                     for p in accepted_paths[1:]]
     report = {
         "plan": str(a.plan), "source_carry": source["quadrant_plan"]["carry"],
-        "camera_calibration_used": str(Tbc_path), "drop_start_inferred": k,
+        "camera_calibration_used": str(Tbc_path), "drop_start_index": k,
+        "drop_start_source": str(a.library) if a.library else "last_floor_valid_inferred",
         "world_boxes": len(world_boxes), "plate_cloud_points": len(cloud),
         "standing_plates": a.standing, "model_quadrant": model_quadrant,
         "floor_z_m": float(z_floor), "legacy": metrics(old, held, floor, old[0]),
-        "pyroki": candidate, "attempts": attempts,
-        "pyroki_wall_s": time.perf_counter() - start,
-        "limitations": "Historical camera calibration and drop-start index absent from plan; latest camera and inferred floor-valid prefix used. Current config may differ. No robot execution.",
+        "pyroki": repeats[0]["pyroki"], "attempts": repeats[0]["attempts"],
+        "pyroki_wall_s": repeats[0]["wall_s"],
+        "repeats": repeats, "accepted_path_variation_max_joint_deg": variation,
+        "limitations": "Historical camera calibration absent from plan; latest camera used. Current config may differ. Standing plates are operator-specified. No robot execution.",
     }
     a.output.parent.mkdir(parents=True, exist_ok=True)
     a.output.write_text(json.dumps(report, indent=2) + "\n")

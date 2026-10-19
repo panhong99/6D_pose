@@ -106,3 +106,30 @@ The saved `plan.json` does not record which plates were present, so this input
 must be supplied from an independently documented run; guessing it would not
 create an equivalent historical comparison. Rejected seeds now retain their
 individual exact-gate checks in the result JSON.
+
+The four carry-library files also store an exact `drop_start` index and their
+source `plan.json`. Pass `--library calibration/data/carry_library/Q3_red.json`
+with that source plan to avoid inferring the carry prefix; the benchmark checks
+that both waypoint arrays match. It still cannot restore historical camera
+calibration or configuration. `--repeat 2` reruns the same input in one process
+and records warm solve time and maximum accepted-path joint variation.
+
+Current-config, latest-camera reconstruction using the four library paths
+(20 knots, 120 L-BFGS iterations, three deterministic seeds per path):
+
+| Library | Legacy prefix gate | PyRoki seed passes | PyRoki optimization time | Notes |
+|---|---|---:|---:|---|
+| Q3 red | pass | 0/3 | 3.54 s | Stored prefix is 155.8° joint travel. |
+| Q3 white, `Q3:12` standing | fail (held 0) | 1/3 | 4.77 s | Candidate 265.9° vs saved 174.4°; saved path was valid under its original conditions, which are not fully recorded here. |
+| Q4 red | pass | 0/3 | 4.47 s | Stored prefix is 143.7° joint travel. |
+| Q4 white, `Q4:6` standing | fail (floor 0.612) | 0/3 | 4.89 s | Current Q4 standing-plate floor is 0.345 m. |
+
+Local JSON: `bench_q3_red_library.json`, `bench_q3_white_library_standing.json`,
+`bench_q4_red_library.json`, and `bench_q4_white_library_standing.json`. These
+are conditional reconstructions. A legacy prefix failing the current gate
+prevents a direct performance comparison; the PyRoki Q3 white candidate is
+not evidence of improvement over the historical RRT. Q4 `183143_663` repeated
+twice with identical input: 4.38/3.86 s optimization time, max joint path
+variation 0°, but its candidate still travelled 243.2° vs legacy 167.0° and
+had larger sampled acceleration and jerk. First-run Python/import/checker
+setup is excluded from those optimization times.
