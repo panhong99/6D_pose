@@ -136,9 +136,10 @@ setup is excluded from those optimization times.
 
 An optional `--seed-from-legacy` experiment adds the saved RRT carry prefix
 as a fourth initialization. It is a hybrid RRT postprocessor, not a PyRoki
-replacement. On Q3 red, 20-knot/120-iteration optimization failed the exact
-gate for all four seeds, including the RRT-derived seed (held ratio 0.566),
-although the original 47-point RRT prefix itself passed. Resampling and
-local optimization did not preserve that narrow corridor. Result:
-`bench_q3_red_legacyseed.json`. The backend discards this failed candidate;
+replacement. On Q3 red, a 20-knot resampling of the valid 47-point RRT
+prefix itself passed the exact gate (held ratio 1.414, floor 1.273), but the
+unconstrained local solve moved away and failed (held ratio 0.566). A trial
+joint-space trust penalty of 100 also failed (held ratio 0.283, floor 0.220),
+so it was not retained. Results: `bench_q3_red_legacyseed_v2.json` and
+`bench_q3_red_legacyseed_trust100.json`. The backend discards a failed candidate;
 it does not silently return the original path as a PyRoki result.

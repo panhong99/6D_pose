@@ -111,6 +111,7 @@ def main():
             parser.error("no floor-valid saved waypoint under reconstructed conditions")
         k = max(i for i, valid in enumerate(floor_ok) if valid)
     old = saved[:k + 1]
+    legacy_seed_metric = metrics(resample(old, a.n), held, floor, old[0]) if a.seed_from_legacy else None
     world_boxes = [b for ch in held.checkers for b in ch.boxes]
     world_boxes = [(n, c, s, np.eye(3) if len(b) == 3 else b[3])
                    for b in world_boxes for n, c, s in [b[:3]]]
@@ -146,6 +147,7 @@ def main():
         "world_boxes": len(world_boxes), "plate_cloud_points": len(cloud),
         "standing_plates": a.standing, "model_quadrant": model_quadrant,
         "seed_from_legacy": a.seed_from_legacy,
+        "legacy_resampled_seed": legacy_seed_metric,
         "floor_z_m": float(z_floor), "legacy": metrics(old, held, floor, old[0]),
         "pyroki": repeats[0]["pyroki"], "attempts": repeats[0]["attempts"],
         "pyroki_wall_s": repeats[0]["wall_s"],
