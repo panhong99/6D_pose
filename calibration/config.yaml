@@ -124,7 +124,7 @@ plate_rl:                          # pipeline.py --task plate: FoundationPose pl
   start_tolerance_deg: 3.0           # robot must be this close to the home joints
   keep_perception: true              # FoundationPose window keeps tracking during the motion (pose logged with the joints)
   export_envs: 8                     # sim rollouts per plan (GPU shared with FoundationPose)
-  vel_deg_s: 45.0                    # (10/19 보스: 30 -> +15; 10/13 보스: 40 -> a bit slower) every leg except the plate's way down (grasp, lift, carry, ascend, home, aborts); mover has no upper limit
+  vel_deg_s: 60.0                    # (10/19 18:3x 보스 '조금 더 빠르게' 45 -> 60; acc = vel in pipeline.py; 10/19 보스: 30 -> +15; 10/13 보스: 40 -> a bit slower) every leg except the plate's way down (grasp, lift, carry, ascend, home, aborts); mover has no upper limit
   auto_merged_legs: true             # (10/13 보스) --auto --insert policy: 4 splines (to_grasp | lift+to_above | policy start+insert | ascend+home), stops only for the gripper
   transport_step_deg: 20.0           # (10/13) waypoint spacing of those legs, like the grasp leg (2-deg steps ran ~2x slower)
   hold_s: 3.0                        # pause with the plate lifted
@@ -168,7 +168,7 @@ plate_ik_bc:                       # --plate_policy ik_bc (overrides plate_rl ke
   basket_policy_rl: ../rl/logs/basket/rl_20261013_003636/best.pt   # residual RL on it: sim 0.913 vs BC 0.786 (1,024 ep)
   basket_policy_range: {x: [1.02, 1.22], y: [-0.39, -0.19], y_sim_checked: [-0.39, 0.20], yaw_deg: [-14, 16]}   # RL start states (10/13); y up to +0.20 only sim-checked
   basket_policy_vel_deg_s: 5.0         # policy start + insert (merged spline) (10/13 보스: 7.0 -> a bit slower)
-  basket_quadrant_vel_deg_s: 7.0       # --insert quadrant: straight-down insert (10/19 보스: 3.5 -> 7; 10/13 19:5x 보스: 5.0 -> a bit slower)
+  basket_quadrant_vel_deg_s: 10.0      # --insert quadrant: straight-down insert (10/19 18:3x 보스 7 -> 10; 10/19 보스: 3.5 -> 7; 10/13 19:5x 보스: 5.0 -> a bit slower)
   basket_quadrant_sim_real_dh_m: 0.020   # (10/19 14:xx 보스 "지금도 조금 깊어" +1 cm, with the basket height fixed at 0.144; 10/15 17:1x 보스 실기 "1 cm 덜 깊게" 0.010) --sim_q: real-robot release height = sim centre_h + this
   basket_quadrant_model_dx_m: {Q4: -0.017}   # (10/19 17:5x 보스 Q4 6 '-X로 20 mm' at +3; 17:1x '조금 -X' at +7 (ray/plane basket); 17:0x +15 too far +x; 16:4x 보스: Q4 pin 6 went in L3/R2 at 0) --sim_q: model gap x -> measured, from the v4 tine labels
                                        # (Codex BL bl_model_fit_20261019_v3/pin_centres.csv: Q4 model - measured -13..-22 mm, pin 6 -15.1 mm; Q3 within 2 mm)
