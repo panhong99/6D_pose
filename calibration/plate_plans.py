@@ -987,6 +987,16 @@ def quadrant_checkers(Tbc, q, Tbb, H, tool, plates=()):
     basket = basket_checker(plates)
     plate = plate_cloud(H, tool)
 
+    def plates_checker(pl, margin):                          # standing plates only, robot + gripper cylinder (no held plate)
+        boxes = [b for b in basket_boxes(Tbb, plates=pl) if b[0].startswith('plate_')]
+        key = ('plates', repr(boxes), margin, q.get('tool_length_m', 0.165), q.get('tool_radius_m', 0.06))
+        if key not in _BASKET_CHECKERS:
+            ch = CollisionChecker(Kinematics(), boxes, resolution=0.005, margin=margin,
+                                  bounds=((c[0] - 0.5, c[0] + 0.5), (c[1] - 0.5, c[1] + 0.5), (-0.05, 0.6)))
+            ch.set_tool(q.get('tool_length_m', 0.165), q.get('tool_radius_m', 0.06))
+            _BASKET_CHECKERS[key] = ch
+        return _BASKET_CHECKERS[key]
+
     def with_plate(ch):
         ch2 = copy.copy(ch)
         ch2.tool = np.vstack([ch.tool, plate]) if ch.tool is not None else plate
@@ -994,9 +1004,13 @@ def quadrant_checkers(Tbc, q, Tbb, H, tool, plates=()):
     held = [with_plate(lib['frame'][0]), with_plate(lib['table'][0]), with_plate(basket)]
     insert = held                                            # (10/14 실기) the plate rim vs the walls too (pins are not boxes)
     m_ins = q.get('basket_insert_wall_margin_m')             # (10/19 보스: Q3 plate a little more to the left = toward the +y wall)
-    if plates or m_ins is not None:                          # (10/18) the straight-down insert passes a standing plate two gaps
-        insert = held[:2] + [with_plate(basket_checker((), q.get('basket_wall_margin_m', 0.01) if m_ins is None else m_ins)
-                                        if plates else basket_checker(plates, m_ins))]   # away by design (3.5 cm, dish 2.5 cm deep): walls/markers only
+    m_ins = q.get('basket_wall_margin_m', 0.01) if m_ins is None else m_ins
+    if plates:                                               # (10/18) the plate in the hand goes down past a standing plate by
+        insert = held[:2] + [with_plate(basket_checker((), m_ins))]   # design (dish 2.5 cm deep): walls/markers only for it, but
+        if q.get('basket_insert_gripper_vs_plates', True):   # (10/19 보스: the gripper touched the red plate at Q4:11 while the
+            insert.append(plates_checker(plates, m_ins))     # white went into pin 7) the arm + gripper keep off standing plates
+    else:
+        insert = held[:2] + [with_plate(basket_checker((), m_ins))]
     free = [lib['frame'][0], lib['table'][0], basket]
     return MultiChecker(held), MultiChecker(insert), MultiChecker(free)
 

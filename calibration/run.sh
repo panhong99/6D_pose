@@ -44,12 +44,11 @@ case "$mode" in
     # order stays), and every plate put earlier in this demo (all quadrants) is passed on (--basket_plates Q:pin) so the
     # carry goes over it.  After a failed run Human says whether a plate stayed in the basket.
     pins_in="${DEMO_PINS:-Q4:6 Q3:6 Q1:6 Q2:5}"
-    # (10/19 보스) the pin may be front / back instead of a number: the first pin of that half with a plan (front first)
-    pins_run=$(python3 -c 'import sys; e = sys.argv[1:]; q = [x.split(":")[0] for x in e]
-o = lambda p: {"front": 1000, "back": -1}.get(p) if p in ("front", "back") else int(p)
-s = {k: iter(sorted((x for x in e if x.split(":")[0] == k), key=lambda x: -o(x.split(":")[1]))) for k in set(q)}
-print(" ".join(next(s[k]) for k in q))' $pins_in)
-    [ "$pins_run" != "$(echo $pins_in)" ] && echo "### 같은 칸은 큰 번호부터: $pins_in -> $pins_run"
+    # (10/19 보스) the pin may be front / back instead of a number: the first pin of that half with a plan.
+    # (10/19 15:1x 보스 A) the order typed: the gripper is on the robot side of the plate in Q4 (back pin first there: white
+    # into 7 touched the red at 11) but on the far side in Q3 (front first).  The planner also checks the gripper on standing plates.
+    pins_run="$(echo $pins_in)"
+    echo "### 순서 그대로: $pins_run (Q3는 front 먼저, Q4는 back 먼저 - 그리퍼 쪽)"
     placed="${DEMO_BASKET_PLATES:-}"   # plates already in the basket before this demo, e.g. DEMO_BASKET_PLATES="Q3:10 Q4:10"
     for qp in $pins_run; do
       IFS=: read -r q pin color landed <<< "$qp"; color=${color:-red}
