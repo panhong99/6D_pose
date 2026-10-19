@@ -78,7 +78,7 @@
 | BJ | v2 확대 재검토: 가림 표시·Q4 #13 root 교정 + 전체 conditional 3D 진단 | v2 보존, 새 v3 JSON/PNG, 84개 번호·79쌍 검사, 결과·한계 LOG | 완료(0282993): Q4 row1 #12/#13 root 간격 4.83 px(주변 pitch≈20 px)라 #13 root를 null 처리하고 이전값 보존; 79쌍 3D는 진단 전용, LOG 경로 참조 |
 | BG | after-release 손목 사진의 관절 자세 freshness guard | `look()`이 5초 내 새 `robot_state`를 못 받으면 stale `posj`로 사진 메타데이터를 저장하지 않도록 fail-closed | 완료(2885eff: 5초 안 fresh joint state 없으면 사진 저장 skip; 회귀 결과는 별도 확인되지 않음) |
 | BI | 보스 지정점 부분 3D 변환 sanity check | 지정점 10개 표기 확인을 기록하고, 보이는 7점만 기존 ray/height-plane 수식으로 투영해 한계 확인 | 완료(dbf9a5e): visible 7점 투영, Q별 transverse mismatch/lean 표는 LOG 10/19 부분 확인; 큰 mismatch와 계획 FK 한계 때문에 3D fit/모델 갱신은 보류. AZ 전수 완료 아님 |
-| BK | 받침 위 접시 위치별 경로 가능 지도 (CPU dry-run) | 아래 '새 일 BK'; 접시 root 격자마다 Q3/Q4 front/back 계획 성공·실패 이유 표+그림 | 대기(Codex) |
+| BK | 받침 위 접시 위치별 경로 가능 지도 (CPU dry-run) | 아래 '새 일 BK'; 접시 root 격자마다 Q3/Q4 front/back 계획 성공·실패 이유 표+그림 | 부분 완료(2026-10-19 13:05 KST): 축소 격자 168/168 조건 완료, 56 plan accepted·112 no-plan. 10/20/30° 세 yaw만 조사해 전체 r=0.80–1.30 m·yaw=0–40° 지도는 미완료. CSV/JSON/PNG·분석은 LOG 13:05. 축소표본을 시연 안전 보증으로 해석하지 말 것 |
 | F | marker 5/2.5 cm 비교 | 보스가 작은 마커를 붙이면 `basket_stats`로 같은 조건 측정 | 대기(보스) |
 | AF | **실물 접시 앉음 높이·기울기 측정 절차** | 보스가 Q1~Q4에 손으로 놓고 기록할 1장 절차·표, 로봇 명령 없음 | 완료(dce780d; 38/38 시험, LOG 기록) |
 | AG | **Q1 손 안 접시 퍼짐 원인 오프라인 분석** | `replay_q1nt_l05.json`의 들기 직후 `in_hand`와 운반·재겨냥 후 `pre`를 FK 기준으로 비교; regrip 비인과 한계 구분 | 완료(66b9681; Q1 pre y std 9.94 mm, 정확 시점·regrip 인과는 미확정) |
