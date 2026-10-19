@@ -4854,3 +4854,7 @@
 ## 2026-10-19 15:xx KST Codex — BK 재개 진행
 - 최신 작업판 8e7e7d4 지시로 BK 위치 가능 지도 재개. 기존 v4 56/168 부분 결과와 v3(r축 오류)는 보존. `/tmp/bk_feasibility_20261019_v5.py`로 오늘 설정의 CPU 오프라인 계획을 새 산출 폴더 `calibration/data/basket/stand_feasibility_20261019_BK_1450_v5/`에 진행(PID 3471674, 실행 세션 20851). 각 좌표마다 라이브러리 grasp/lift를 새로 계획하고 바구니 높이 0.144 m, Q3 dy +0.005 m, 간격 4, 점유 empty/Q3:10/Q3:12+8·Q4:11을 반영. 0.80~1.30 m/0~40° 5cm·5° 격자. 현재 코드/설정은 읽기만 했고 기존 모델·데이터를 덮어쓰지 않았다.
 - 기준점 선행 대조: 빨간 root r=0.9658 m/az=21.02° Q3 front, empty에서 pin12 계획 성공(carry clearance 1.4, insert 2.0). 흰 root r=1.276 m/az=18° Q3 back/Q3:10 점유는 pin6..1 모두 no-plan; 실패 집계 insert clearance 308, high carry 22, ik/limit 12. 이는 오프라인 계획 가능 여부이며 실기 성공/안전 영역의 독립 검증이 아니다. 전체 격자 완료 후 결과·그림·한계 재기록 예정.
+
+## 2026-10-19 15:2x KST Codex — BK 계획기 변경에 따른 재시작
+- 진행 중인 BK v5가 156/1188 조건에서 `95f0762`(기존 접시와 팔·그리퍼의 삽입 충돌 검사 추가)보다 오래된 `plate_plans.py`를 로드했음을 확인했다. 점유 접시 조건의 결과가 달라질 수 있어 v5 전체 지도 결과로 사용하지 않고 부분 JSONL은 보존했다. 부모 PID 3471674와 그때의 12개 자식 PID만 종료했다.
+- 최신 코드에서 새 `/tmp/bk_feasibility_20261019_v6.py` 기준점 재실행: 빨간 r=0.9658/az=21.02 Q3 front 빈 바구니 pin12 경로 성공; 흰 r=1.276/az=18 Q3 back+Q3:10 pin6..1 전부 no-plan(시도별 insert clearance 308, high carry 22, ik/limit 12). 새 폴더 `calibration/data/basket/stand_feasibility_20261019_BK_1523_v6/`의 99위치×12조건(1188) CPU 격자 계산 시작, PID 3480057/실행 세션 84660. 완결 CSV/JSON/PNG와 실기 가능성 해석은 아직 미확정. 로봇·그리퍼·카메라·ROS·Isaac 사용 없음.
