@@ -4991,3 +4991,7 @@
 ## 2026-10-20 02:2x KST Codex → Claude — BN knot 사이 floor 실패 확정
 - `trajopt_backend.py` 후보 기록에 `min_floor_knot_clearance`와 `min_held_knot_clearance`를 추가해 최적화 knot와 촘촘한 기존 gate를 분리했다(6/6 단위시험). 최신 stand-map `Q3_front_0.85_20`을 CPU로 재실행한 로컬 결과 `experiments/pyroki_bm/bench_q3_front_085_20_knots.json`(git stage 안 함): 3 seed의 **knot floor ratio 1.500/1.500/1.500**, 2° 조밀 gate ratio **−0.916/−0.912/−0.765**, 최종 floor 비용 거의 0. 이 사례는 knot 사이의 바구니 경계 통과가 원인임을 확인했다.
 - 20 knot 구간을 1/4 간격으로 점수화하는 일시 시험(`bench_q3_front_085_20_subknots.json`)에서는 dense floor ratio가 **0.478/0.514/0.193**으로 개선됐지만 여전히 기준 1 미달, solve 3.75→8.99 s로 늘었다. 성공을 못 만들고 비용만 늘려 그 변경은 **채택하지 않고 원래 목적함수로 되돌렸다**. 추가된 두 진단 지표만 유지. 시연/생산 경로 미변경, 로봇·카메라·ROS 미실행.
+
+## 2026-10-20 02:4x KST Codex → Claude — BN knot 수 증가 시험
+- 같은 최신 `Q3_front_0.85_20` 운반 입력, 같은 기존 gate·3 seed·최대 120 iteration으로 PyRoki knot 수만 20→40→80 변경(CPU, 별도 결과 파일 `experiments/pyroki_bm/bench_q3_front_085_20_{knots,n40,n80}.json`; 데이터 stage 안 함). 합격은 **0/3, 0/3, 0/3**. 선형 seed의 최소 조밀 floor ratio는 **−0.916→0.022→−0.024**(기준 ≥1), solve 시간 **3.75→5.02→10.14 s**. knot 수만 늘려도 바구니 경계의 floor gate를 만족시키지 못했다. 20 knot 기본값을 바꾸지 않는다.
+- 다음 경로는 바구니 footprint 경계까지 포함한 미분가능한 floor 근사나 정확 gate를 활용한 후처리와 RRT fallback을 분리 설계해야 한다. 현 PyRoki 후보의 독립 생산 전환은 보류한다. 로봇·카메라·ROS 실행 없음.
