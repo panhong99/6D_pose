@@ -716,7 +716,7 @@ def run_plate(args):
             x, y = p[0] + q['offset_m'][0], p[1] + q['offset_m'][1]
             print(f'[3/5] BC+RL 정책 rollout (sim) at ({x:.4f}, {y:.4f}) yaw {yaw:.1f}: 1~2 분', flush=True)
             plan = export_plan(x, y, yaw, out / 'export.log', q)
-        early, shown, policy_job = None, plan, None
+        early, shown, policy_job, rep = None, plan, None, None
         if args.place == 'basket' and args.insert == 'quadrant':   # (10/13) any basket pose, IK carry + insert, no teaching
             legs0 = json.loads(Path(plan).read_text())['legs']
             from plate_plans import hand_plate, pin_gap, quadrant_plan, robot_quadrants
@@ -746,6 +746,8 @@ def run_plate(args):
                 kw.update(sim_kw)
                 if qs.get('faces'):                         # (10/19) region mode: keep the face the pin was chosen with
                     kw['faces'] = qs['faces']
+                if qs.get('phi_first') is not None:         # (10/19 보스) the replan after the lift: the chosen phi first
+                    kw['phi_first'] = qs['phi_first']
                 return quadrant_plan(basket_T, mq, pin_gap(basket_T, mq, args.pin), qs['H'], qs['tool'], start_deg, Tbc, q,
                                      yaw_trim_deg=qs['yaw'], y_shift_m=args.y_shift, grasp_deg=legs0['to_grasp']['waypoints_deg'][-1],
                                      plates=plates, grasp_low_z=float(p[2]), **kw)   # (10/19) 15 cm from the plate on the stand
@@ -914,7 +916,12 @@ def run_plate(args):
                       flush=True)
                 H_old = qs['H'], qs['tool']
                 qs['H'], qs['tool'] = H2, tool2
+                if early is not None and rep:               # (10/19 보스 A) same face and phi first: ~1 s instead of ~6 s
+                    qs['faces'] = tuple(dict.fromkeys([float(rep['face']), *(qs.get('faces') or sim_kw.get('faces', (1.0, -1.0)))]))
+                    qs['phi_first'] = rep['phi_deg']
+                t_re = time.monotonic()
                 again, rep2 = qplan(rec.last['posj'])
+                print(f'   다시 계산 {time.monotonic() - t_re:.1f} s', flush=True)
                 if again is None:
                     qs['H'], qs['tool'] = H_old
                     if insert_policy_expert is not None:

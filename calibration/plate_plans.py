@@ -964,6 +964,9 @@ def plate_cloud(H, tool):
     return (np.c_[pts, np.ones(len(pts))] @ (tool @ H).T)[:, :3]
 
 
+_BASKET_CHECKERS = {}
+
+
 def quadrant_checkers(Tbc, q, Tbb, H, tool, plates=()):
     """Collision checkers for the quadrant plan: (with the plate in the hand, after the release)."""
     import copy
@@ -972,10 +975,15 @@ def quadrant_checkers(Tbc, q, Tbb, H, tool, plates=()):
     c = np.asarray(Tbb)[:3, 3]
 
     def basket_checker(pl, margin=q.get('basket_wall_margin_m', 0.01)):
-        ch = CollisionChecker(Kinematics(), basket_boxes(Tbb, plates=pl), resolution=0.005, margin=margin,
-                              bounds=((c[0] - 0.5, c[0] + 0.5), (c[1] - 0.5, c[1] + 0.5), (-0.05, 0.6)))
-        ch.set_tool(q.get('tool_length_m', 0.165), q.get('tool_radius_m', 0.06))
-        return ch
+        boxes = basket_boxes(Tbb, plates=pl)
+        key = (repr(boxes), margin, q.get('tool_length_m', 0.165), q.get('tool_radius_m', 0.06))
+        if key not in _BASKET_CHECKERS:                      # (10/19 보스: shorter stop after the lift) the distance field
+            ch = CollisionChecker(Kinematics(), boxes, resolution=0.005, margin=margin,   # (~1 s each) is built once per basket
+                                  bounds=((c[0] - 0.5, c[0] + 0.5), (c[1] - 0.5, c[1] + 0.5), (-0.05, 0.6)))
+            ch.set_tool(q.get('tool_length_m', 0.165), q.get('tool_radius_m', 0.06))
+            _BASKET_CHECKERS.clear() if len(_BASKET_CHECKERS) > 8 else None
+            _BASKET_CHECKERS[key] = ch
+        return _BASKET_CHECKERS[key]
     basket = basket_checker(plates)
     plate = plate_cloud(H, tool)
 
@@ -1124,7 +1132,7 @@ def high_carry(kin, start, goal, cloud, z_low, ok_lim, step_m=0.02):
 
 def quadrant_plan(Tbb, quadrant, gap, H, tool, start_deg, Tbc, q, grasp_legs=None, tilt_deg=0.0, centre_h=0.18, above_m=0.11,
                   phi_step=10, seeds=None, yaw_trim_deg=0.0, y_shift_m=None, x_shift_m=None, faces=(1.0, -1.0), y_extra_m=0.0,
-                  grasp_deg=None, plates=(), grasp_low_z=None):
+                  grasp_deg=None, plates=(), grasp_low_z=None, phi_first=None):
     """Plan.json for one quadrant gap from the plate in the hand: to_above (carry, straight or RRT; with config
     basket_carry_rise_m: high carry, see high_carry), descend (straight down, plate upright, +basket_policy_extra_down_m),
     ascend (straight up), to_home, abort_home.  `plates`: gaps already holding a plate (index in this quadrant, or
@@ -1181,7 +1189,9 @@ def quadrant_plan(Tbb, quadrant, gap, H, tool, start_deg, Tbc, q, grasp_legs=Non
     tried = []
     # (10/14 18:xx) the plate is the same both ways: facing -x lets the far quadrants (Q1/Q2) solve with the wrist flipped
     # (J4 ~ -155, as 보스 taught them); +x alone gave 'ik/limit' there at every basket x 0.90-0.99
-    for side, phi in [(sd_, p_) for sd_ in faces for p_ in sorted(range(-90, 91, phi_step), key=abs)]:
+    p0 = 0 if phi_first is None else phi_first              # (10/19 보스: shorter stop after the lift) the replan tries the
+    for side, phi in [(sd_, p_) for sd_ in faces             # phi of the plan before the lift first, then the nearest ones
+                      for p_ in sorted(range(-90, 91, phi_step), key=lambda a: (abs(a - p0), abs(a)))]:
         ph = np.radians(phi)
         zt = side * (n * np.cos(t) + np.array([0, 0, 1.0]) * np.sin(t))
         x = v * np.cos(ph) + np.cross(zt, v) * np.sin(ph)
