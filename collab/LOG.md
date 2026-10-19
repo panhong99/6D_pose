@@ -4923,6 +4923,10 @@
 - 현재 설정·최신 camera의 기존 checker 기준: Q3 red 저장 RRT pass(held 1.414, floor 1.163, 이동 155.8°) / PyRoki **0/3**, 최적화 3.54 s. Q4 red 저장 RRT pass(1.020/1.187, 143.7°) / PyRoki **0/3**, 4.47 s. Q3 white 저장 prefix는 held 0으로 현행 gate 실패; PyRoki 1/3 후보는 pass(1.166/1.287)지만 265.9°로 저장 174.4°보다 길다. Q4 white 저장 prefix는 현행 standing floor 0.345 m에서 floor ratio 0.612로 실패, PyRoki 0/3. White의 저장 경로가 현재 재구성 검사기에 실패하므로 해당 PyRoki 결과를 역사적 RRT 개선으로 해석하지 않는다.
 - 다른 Q4 `183143_663` 동일 입력 2회: 후보 2/2 동일(관절별 최대 변동 0°), 최적화 4.38/3.86 s, 기존 저장 167.0° 대비 후보 243.2°, 101점 가속 L2 0.00430→0.05809, jerk L2 0.00519→0.06906. 이는 한 입력·한 프로세스 CPU 반복이며 폭넓은 반복성/실기 성능 추정 아님. 최초 Python/import/checker 생성 시간은 최적화 시간에서 제외. `test_trajopt_gate.py` 5/5, 구문 검사 통과. 현행 시연 경로 전환 보류.
 
+## 2026-10-19 21:0x KST Codex — BN RRT seed hybrid 진단
+- `c6ea9b1`, `f5afa0a`: 저장된 RRT prefix를 PyRoki 최적화의 추가 seed로 받는 **오프라인 hybrid 시험 옵션** `--seed-from-legacy`를 만들었다. 이는 RRT 자체의 대체가 아니다. Q3 red의 원 RRT 47점 및 20점 재표본은 모두 현행 정확 검사 통과(재표본 held 1.414/floor 1.273, 이동 155.73°). 그러나 120 iteration 최적화 후 4개 seed 모두 실패하고, RRT 유래 seed의 held ratio는 0.566으로 떨어졌다. Q4 red도 원 경로 통과, 4개 seed 전부 실패(RRT 유래 held 0.825). 산출 `experiments/pyroki_bm/bench_q3_red_legacyseed_v2.json`, `bench_q4_red_legacyseed.json` (local, git stage 없음).
+- Q3 red에서 joint-space trust penalty 100을 일시 시험했으나 RRT 유래 후보의 held 0.283/floor 0.220으로 더 나빠 **코드에 채택하지 않았다**(`bench_q3_red_legacyseed_trust100.json`). 경로 재표본 자체는 안전 검사 통과했으므로 문제는 이 사례에서 PyRoki 근사 충돌비용 아래 최적화가 안전한 복도를 벗어난 데 있다. 원인별 비용 분석·더 나은 제약 구현 전까지 생산 전환 금지. 6/6 gate·재표본 시험 통과, 시연 파일과 로봇·카메라·ROS 미변경.
+
 
 ## 2026-10-19 21:xx KST Claude — 받침 위치 의존성 결과 (오프라인, 18:21 실기 바구니 자세)
 - 실제로 놓을 수 있는 띠: 방향 약 18–24°(작으면 바구니 벽·마커 4번, 크면 프레임 기둥 `upright_01`과 겹침). 촘촘 지도 r 0.85–1.25 × 방향 16–26°(2°), 놓을 수 있는 41곳 기준 4단계 성공:
