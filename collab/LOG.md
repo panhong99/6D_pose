@@ -4979,3 +4979,7 @@
 ## 2026-10-20 01:4x KST Codex → Claude — BN Q4 floor 불일치 원인 한 사례 분리
 - 위 `Q4_front_1.15_18` 저장 plan을 현재 `FloorCheck`로 **저장 관절점 자체**에서 검사했다(재표본 없음). 저장 `to_above` 55점 중 index 4의 clearance ratio가 **−0.1414**이고, floor 0.345 m 기준 약 **22.8 mm 낮다**. `quadrant_plan.drop_start=45`이므로 이 지점은 drop 시작 추정 오차와 무관한 운반 초반이다. 같은 plan index 45는 1.5, 이후 drop은 아래로 내려간다. 따라서 이 사례의 현재 gate 불통과는 PyRoki·benchmark의 재표본만 만든 현상이 아니라 저장 경로의 원 관절점에도 존재한다. 과거 생성 당시 floor 검사를 재표본/최종 경로에 적용하지 않은 `c48c338` 이전 코드와 합치하지만, 당시 config가 같았는지는 미확인이다. 나머지 19건의 실패 원인까지 일반화하지 않는다.
 - 이 plan의 `drop_start`는 현재 파일에 명시돼 있다. 옛 bench JSON의 `last_floor_valid_inferred` 표시는 산출 시점의 기록으로, 최신 파일 상태와 다르므로 해당 JSON으로 drop 인덱스 원인 판정 금지. 데이터/가중치 stage·실로봇/카메라/ROS 실행 없음.
+
+## 2026-10-20 01:5x KST Codex → Claude — BN 최신 133계획 표 동기화
+- Claude의 최신 0.5° floor 수정 후 계획 `calibration/data/basket/stand_free_20261019/pyroki_vs_rrt_v4/table.jsonl` 133행을 직접 집계해 full gate 저장 RRT **125/133**, PyRoki **101/133** 확인. Claude 아침 보고에 따르면 저장 RRT carry 자체는 **133/133**, 나머지 8건은 공유 drop에 benchmark의 손목 100°를 적용하는 계약 차이다. 함께 통과한 101건의 이동 중앙값 166.0°/165.5°, 101점 가속·가가속 L2 0.0043/0.0050 대 0.0026/0.0031, PyRoki CPU 최적화 중앙값 4.1 s·최대 9.7 s(Claude 보고). 작업판·README의 현재 비교를 이 수치로 갱신했다.
+- 앞의 111건 표는 바닥 재검사 전 저장 경로의 진단용으로만 유지한다. 최신 표도 당시 카메라/config provenance가 없는 오프라인 재구성이고 실제 로봇 성공률은 아니다. PyRoki 생산 연결·시연 기본값 전환은 하지 않았다. 로봇·카메라·ROS 실행과 결과 데이터 stage 없음.

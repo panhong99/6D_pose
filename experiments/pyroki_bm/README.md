@@ -77,6 +77,21 @@ https://chungmin99.github.io/pyroki/examples/07_trajopt/ .
 
 ## Stand-map comparison and its provenance limit
 
+**Newer sweep after the dense floor fix:** Claude regenerated 133 plans after
+commit `2163d36` (0.5° final carry floor check) and compared the same saved
+endpoints in `calibration/data/basket/stand_free_20261019/pyroki_vs_rrt_v4/table.jsonl`.
+The current reconstructed full-path gate accepted 125/133 saved RRT paths and
+101/133 PyRoki paths. All 133 saved **carry portions** passed; the other eight
+RRT full-path failures come from applying the benchmark's 100° wrist limit to
+the shared saved drop, which the planner does not constrain that way. In the
+101 cases where both full paths passed, median travel was 166.0° versus
+165.5°, and 101-point acceleration/jerk L2 norms were 0.0043/0.0050 versus
+0.0026/0.0031. PyRoki solve time median was 4.1 s, maximum 9.7 s (CPU).
+These remain offline reconstructed results, without historical camera/config
+provenance or robot execution. They supersede the older 111-plan performance
+table for current-code comparison; retain that older table as a diagnostic of
+the earlier floor-check gap.
+
 Claude's offline `bench_sweep.py` ran the same saved carry endpoints across
 111 stand-map plans. Under the reconstructed current checker, 91/111 saved
 RRT carries and 89/111 PyRoki carries passed. Among cases where both passed,
