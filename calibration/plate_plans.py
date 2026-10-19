@@ -903,6 +903,7 @@ def _reach_figure(xs, ys, grid, all4, path):
 PLATE_R = 0.134                                            # plate mesh 26.7 cm across, 2.5 cm thick
 
 
+CARRY_MAX_WAYPOINTS = 60                                   # high carry leg, thinned (mover movesj limit 100, merged with the lift)
 STANDING_PLATE = dict(low_m=0.027, thick_m=0.02)           # a plate already in a gap: lowest rim ~27 mm above the floor
 
 
@@ -1170,6 +1171,16 @@ def quadrant_plan(Tbb, quadrant, gap, H, tool, start_deg, Tbc, q, grasp_legs=Non
                             inserting.path_clearance(pp(np.array(carry[k:]), 0.5)))
                 if c_car < 1.0:
                     raise RuntimeError(f'high carry clearance {c_car:.2f}')
+                if len(carry) > CARRY_MAX_WAYPOINTS:         # (10/19 실기) movesj takes <= 100 points; 30 cm rise made 107
+                    n_ = len(carry) - 1
+                    keep = np.unique(np.r_[np.linspace(0, k, max(2, CARRY_MAX_WAYPOINTS * k // n_)).round(),
+                                           np.linspace(k, n_, max(2, CARRY_MAX_WAYPOINTS * (n_ - k) // n_)).round()]).astype(int)
+                    carry = [carry[i] for i in keep]
+                    k = int(np.searchsorted(keep, k))
+                    c_car = min(held.path_clearance(pp(np.array(carry[:k + 1]), 0.5)),
+                                inserting.path_clearance(pp(np.array(carry[k:]), 0.5)))
+                    if c_car < 1.0:
+                        raise RuntimeError(f'high carry (thinned) clearance {c_car:.2f}')
             home, how_h = free.plan(down[0], np.radians(HOME_JOINTS_DEG))
         except RuntimeError as e:
             tried.append(((int(side), phi), str(e)))
