@@ -1866,7 +1866,23 @@ def plate_angle(req, out, radius_m=0.134):
     return result
 
 
-def basket_consistency(P, layout, tol=0.010, pair_tol=0.004):
+def markers_on_planes(P, layout, T_base_cam, basket_z):
+    """(10/19 17:3x, 보스: the blocks had not moved) marker centres moved along the camera ray onto their known heights
+    (fixed basket z + layout z).  A small oblique 5 cm marker's single-camera depth was off by up to 6 cm (marker 2:
+    -54 mm y, -47 mm z) and every fit failed; the ray direction is good: ray/plane fits the layout to 0.8 mm."""
+    o = np.asarray(T_base_cam, float)[:3, 3]
+    out = {}
+    for i, p in P.items():
+        if str(i) not in layout:
+            out[i] = p
+            continue
+        z = basket_z + float(layout[str(i)][2])
+        d = np.asarray(p, float) - o
+        out[i] = o + d * (z - o[2]) / d[2] if abs(d[2]) > 1e-6 else np.asarray(p, float)
+    return out
+
+
+def basket_consistency(P, layout, tol=0.010, pair_tol=0.006):
     """(10/19 보스: generalise the moved-marker-block fix) which basket marker blocks still match the stored layout.
     Pairs whose xy distance matches the layout within pair_tol are consistent; the largest consistent group (>= 2
     markers, never all from one fit) is taken as unmoved and the others as moved.  Returns a dict: verdict ok /
@@ -1874,7 +1890,9 @@ def basket_consistency(P, layout, tol=0.010, pair_tol=0.004):
     import itertools
     ids = sorted(i for i in P if str(i) in layout)
     xy = lambda v: np.asarray(v, float)[:2]                                          # noqa: E731
-    pairs = [(a, b, float(np.linalg.norm(xy(P[a]) - xy(P[b]))), float(np.linalg.norm(xy(layout[str(a)]) - xy(layout[str(b)]))))
+    v3 = lambda v: np.asarray(v, float)[:3]                                          # noqa: E731
+    # (10/19 17:2x) 3-D pair distances: a knocked-over block moved 47 mm down, its xy distance to one marker barely changed
+    pairs = [(a, b, float(np.linalg.norm(v3(P[a]) - v3(P[b]))), float(np.linalg.norm(v3(layout[str(a)]) - v3(layout[str(b)]))))
              for a, b in itertools.combinations(ids, 2)]
     ok_pair = {(a, b) for a, b, dm, dl in pairs if abs(dm - dl) <= pair_tol}
     T, _, _ = basket_fit(P, layout)
@@ -1904,8 +1922,10 @@ def basket_check(cfg, relayout=False):
     import json as _json
     from calib_core import cpath
     b = cfg['basket']
-    P = basket_measure(cfg)
+    from calib_core import latest_t_base_cam, load_json
     layout = _json.loads(cpath(b['layout']).read_text())
+    Tbc = np.array(load_json(latest_t_base_cam())['T_base_cam'])
+    P = markers_on_planes(basket_measure(cfg), layout, Tbc, b.get('fixed_z_m', 0.144))
     names = {v: k for k, v in b['marker_ids'].items()}
     tol = b.get('max_fit_residual_m', 0.010)
     if len([i for i in P if str(i) in layout]) < 2:
@@ -1973,6 +1993,10 @@ def markers_live(cfg):
     det = cv2.aruco.ArucoDetector(d, prm)
     s = b['marker_size_m'] / 2
     obj = np.array([[-s, s, 0], [s, s, 0], [s, -s, 0], [-s, -s, 0]], np.float32)
+    import json as _json
+    from calib_core import cpath
+    layout = _json.loads(cpath(b['layout']).read_text())
+    hist = {}                                               # (10/19 보스) last 2 s of positions per marker: layout check
     cam = ColorCam(cfg['cameras']['fixed_serial'])
     win = 'basket markers (fixed cam) - q quits'
     cv2.namedWindow(win, cv2.WINDOW_NORMAL)
@@ -1995,15 +2019,27 @@ def markers_live(cfg):
                     if ok:
                         pb = (Tbc @ np.r_[tv.ravel(), 1.0])[:3]
                         seen.add(i)
+                        hist.setdefault(i, []).append((time.time(), pb))
                         txt += f' ({pb[0]:.3f},{pb[1]:+.3f})'
                 cv2.putText(bgr, txt, tuple(c[0].astype(int) + [0, -8]), cv2.FONT_HERSHEY_SIMPLEX, 0.6, col, 2)
             status = '  '.join(f'{i}:{names[i]} {"OK" if i in seen else "--"}' for i in sorted(names))
+            now = time.time()
+            P = {i: np.mean([p_ for t_, p_ in v if now - t_ < 2.0], axis=0) for i, v in hist.items()
+                 if any(now - t_ < 2.0 for t_, _ in v)}
+            hist = {i: [(t_, p_) for t_, p_ in v if now - t_ < 2.0] for i, v in hist.items()}
+            if len(seen) < len(names):
+                verdict, col = '   MISSING', (0, 0, 255)
+            else:                                           # seen is not enough: the 4 must also match the stored layout
+                r = basket_consistency(markers_on_planes(P, layout, Tbc, b.get('fixed_z_m', 0.144)), layout,
+                                       b.get('max_fit_residual_m', 0.010))
+                verdict, col = (('   ALL 4 OK, LAYOUT OK', (0, 200, 0)) if r['verdict'] == 'ok' else
+                                (f'   LAYOUT NG {r["full_xy_res"] * 1000:.0f} mm, moved {r["moved"]} (empty basket -> basket_relayout)',
+                                 (0, 0, 255)))
             cv2.rectangle(bgr, (0, 0), (bgr.shape[1], 40), (0, 0, 0), -1)
-            cv2.putText(bgr, status + ('   ALL 4 OK' if len(seen) == len(names) else '   MISSING'), (10, 28),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+            cv2.putText(bgr, status + verdict, (10, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.6, col, 2)
             cv2.imshow(win, bgr)
             if time.time() - t0 > 2:
-                print('markers seen', sorted(seen), '' if len(seen) == len(names) else f'MISSING {sorted(set(names) - seen)}', flush=True)
+                print('markers seen', sorted(seen), verdict.strip(), flush=True)
                 t0 = time.time()
             if cv2.waitKey(1) & 0xff in (ord('q'), 27):
                 break

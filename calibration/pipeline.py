@@ -692,10 +692,13 @@ def run_plate(args):
             raise SystemExit('--insert quadrant needs --place basket (measured markers) and --quadrant Q1..Q4')
         if args.place in ('basket', 'teach'):                # markers first: the fixed D455 is FoundationPose's afterwards
             # (10/14 보스) teach: the basket pose is saved with every demonstration (BC per quadrant)
-            from camera_tools import basket_fit_robust, basket_measure
+            from camera_tools import basket_fit_robust, basket_measure, markers_on_planes
             slot1 = json.loads((DATA / 'basket' / 'slot_01_in_basket.json').read_text())
             layout = json.loads(cpath(C['basket']['layout']).read_text())
-            Tb, res, seen = basket_fit_robust(basket_measure(C), layout, C['basket'].get('max_fit_residual_m', 0.008))
+            Pm = basket_measure(C)
+            if C['basket'].get('fixed_z_m') is not None:   # (10/19) known marker heights: camera depth not used
+                Pm = markers_on_planes(Pm, layout, Tbc, C['basket']['fixed_z_m'])
+            Tb, res, seen = basket_fit_robust(Pm, layout, C['basket'].get('max_fit_residual_m', 0.008))
             good = res <= C['basket'].get('max_fit_residual_m', 0.008) and len(seen) >= 3
             reuse = None if good or not args.basket_plates else basket_last_good(C['basket'])
             if reuse is not None:                           # (10/19 보스: '3 markers' on every 2nd plate) a plate standing in

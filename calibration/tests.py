@@ -483,7 +483,7 @@ class Pipeline(unittest.TestCase):
                 patch.object(pipeline, 'load_basket_insert_policy', return_value=MagicMock()),
                 patch.object(pipeline, 'export_plan', return_value=plan_path),
                 patch.object(pipeline, 'wait_choice', return_value=True),
-                patch.object(camera_tools, 'basket_measure', return_value=[]),
+                patch.object(camera_tools, 'basket_measure', return_value={}),
                 patch.object(camera_tools, 'basket_fit_robust', return_value=(fit_T, 0.0, [1, 2, 3])),
                 patch.object(sensors, 'FpStream', return_value=StablePose()),
                 patch.object(pipeline.time, 'sleep', side_effect=lambda _seconds: real_sleep(0.51)),
