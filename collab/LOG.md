@@ -4859,6 +4859,11 @@
 - 진행 중인 BK v5가 156/1188 조건에서 `95f0762`(기존 접시와 팔·그리퍼의 삽입 충돌 검사 추가)보다 오래된 `plate_plans.py`를 로드했음을 확인했다. 점유 접시 조건의 결과가 달라질 수 있어 v5 전체 지도 결과로 사용하지 않고 부분 JSONL은 보존했다. 부모 PID 3471674와 그때의 12개 자식 PID만 종료했다.
 - 최신 코드에서 새 `/tmp/bk_feasibility_20261019_v6.py` 기준점 재실행: 빨간 r=0.9658/az=21.02 Q3 front 빈 바구니 pin12 경로 성공; 흰 r=1.276/az=18 Q3 back+Q3:10 pin6..1 전부 no-plan(시도별 insert clearance 308, high carry 22, ik/limit 12). 새 폴더 `calibration/data/basket/stand_feasibility_20261019_BK_1523_v6/`의 99위치×12조건(1188) CPU 격자 계산 시작, PID 3480057/실행 세션 84660. 완결 CSV/JSON/PNG와 실기 가능성 해석은 아직 미확정. 로봇·그리퍼·카메라·ROS·Isaac 사용 없음.
 
+## 2026-10-19 17:xx KST Codex — BK v6 조건 불일치 확인·결과 보류
+- BK v6 `calibration/data/basket/stand_feasibility_20261019_BK_1523_v6/progress.jsonl`은 528/1188 조건만 기록된 부분 결과다. 실행 PID 3480057은 더 이상 존재하지 않는다. CSV·JSON 요약·PNG 지도는 없다.
+- `/tmp/bk_feasibility_20261019_v6.py`는 `x_shift_m=None`, `tilt_deg=-basket_quadrant_tilt_trim_deg`, `centre_h=basket_quadrant_centre_h_m`로 `quadrant_plan`을 호출했다. 현행 `calibration/pipeline.py`의 `--sim_q`는 분면별 `basket_quadrant_sim`의 `aim_m`·`lean`·`centre_h`와 `basket_quadrant_model_dx_m`을 전달하고 face 순서도 사용한다. 따라서 v6은 현재 실기와 같은 조건의 가능 지도가 아니며 성공/실패 비율을 실기 범위로 해석할 수 없다. 이후 Q4 dx 변경(5862e27)도 v6에 반영되지 않았다.
+- 기존 v3(r축 오류), v4(부분), v5(충돌 검사 구버전), v6(현행 sim 설정 누락) 산출물은 보존하고 최종 지도 근거로 사용하지 않는다. 다음 재실행은 시연 중 다중 CPU 금지 규칙을 지키며, `pipeline.py`와 같은 분면별 키워드·face 순서를 사용한 빨간/흰 기준점 pilot, 현행 코드·설정 해시 고정 후 별도 폴더에서 시작한다. 로봇·그리퍼·카메라 실행 없음.
+
 ## 2026-10-19 15:2x KST Claude — 오후 실기 시연 정리 (Q3/Q4 성공) + 계획기 수정
 - 실기: Q3 두 장(12 → 8) 성공, Q4 두 장(11 → 7) 성공. 보스 의견: Q3 깊이 "아주 적당", Q3는 조금 더 왼쪽, Q4 흰 접시 넣을 때 그리퍼가 11번 빨간 접시에 살짝 닿음.
 - 원인과 수정(모두 92/92 시험 후 커밋):
