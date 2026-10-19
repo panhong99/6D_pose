@@ -4762,3 +4762,11 @@
 - 시작 확인은 셸에 한 번 있고 각 이동 leg의 `go` 확인은 `mover --go_per leg` 및 `--opening_done` 인자에 따른다. mock은 ROS의 go prompt를 실행하지 않았으며 실제 이동·시야·사진 생성은 미확인이다. 보스가 빈 바구니/빈 그리퍼/홈 자세에서 직접 실행해야 하고, 출력 `.raw.png`와 `.json`을 확인해 제공해야 AZ를 재개할 수 있다.
 - 별도 BF: 기존 after-release `look()` stale `posj` freshness 문제는 Claude 보호 파일 수정 대기이며 이 작업에서 변경하지 않았다.
 - 작성자: Codex
+
+## 2026-10-19 10:08 KST Codex — BF look4 사진 입력 검증
+- 작업판 BF에 따라 `20261019_094749_Q1`, `20261019_095110_Q2`, `20261019_095350_Q3`, `20261019_095544_Q4`를 각각 원본 RGB와 기존 model overlay로 열어 확인했다. 각 raw/overlay/JSON/req 파일이 존재하고 비어 있지 않으며 raw는 모두 **1280×720**. 네 JSON은 각각 `K` 3×3, `T_base_flange`/`T_flange_cam`/`T_base_basket` 4×4 유한값이고 basket rotation determinant 검사 통과; req의 `quadrant`와 `model_quadrant`도 파일 분면과 일치 **4/4**.
+- 실촬영 로그의 marker-fit 잔차 Q1/Q2/Q3/Q4는 **6.6/7.9/7.9/6.8 mm**. 이는 기록된 8 mm 계획 gate 아래지만 Q2/Q3는 경계에 가깝다. 저장 `T_base_basket` 중심 x 범위 **0.888564–0.888803 m**, y **−0.191361–−0.189053 m**, z **0.136963–0.139754 m**; yaw **+0.270–+0.475°**. 네 사진은 같은 새 배치에 대한 일관된 입력으로 보인다. 이 변환 일관성은 물리 위치의 독립 GT가 아니다.
+- RGB 육안으로 바구니 내부에 접시가 없고 빗살 선은 선명하다. Q1/Q2는 위쪽 가운데 마커판이 첫 빗살 근처, Q3/Q4는 가까운 흰 마커 블록이 마지막 1–2개 근처라 번호/끝점 검증 때 확대 확인한다. 네 `.png`는 pre-photo의 model overlay이며 수작업 라벨/정답이 아니다. 이 턴은 root/tip 좌표를 만들거나 사진·메타데이터를 수정하지 않았다.
+- 역할 분담: N/BF 기준 Claude가 네 분면 전체 초안 JSON+그림을 만들고 Codex가 확대 검증·틀린 점만 수정한다. 현재 새 사진을 가리키는 `labels_full_*` 초안 파일은 아직 작업공간에 없다. 사진 수신/파일 유효성만으로 AZ 전수 라벨 완료로 간주하지 않는다. 새 draft가 나오면 Codex 검증으로 이어간다.
+- 3D 후속 한계: `.json`의 `T_base_flange`는 계획 도착 FK로 저장된 값이며 실제 사진 순간 관절 측정이 아니다(월요일 절차 BB). 픽셀 라벨 검증 뒤 3D root/tip 잔차에 이 행렬을 적용할 때 이 한계를 유지한다. `calibration/pipeline.py` freshness guard는 별도 `2885eff`에서 처리됐고 이 턴에는 수정하지 않았다.
+- 작성자: Codex
