@@ -4779,3 +4779,10 @@
 - v2 산출물(원본 draft/raw/JSON 및 v1을 덮지 않음): `calibration/data/basket/wrist_look/labels_full_newlayout_Q{1,2,3,4}_codex_verified_20261019_v2.{json,png}`. CPU 구조검사에서 네 JSON 각각 2 rows, 예상 개수, 연속 번호, 가림의 null tip, finite visible coords, 연결 PNG 크기 assert 통과. 사진별 확인판은 위의 네 PNG다.
 - 검토 범위는 픽셀 상의 보이는 빗살·번호와 draft 중복/가림 처리다. 저대비/가려진 끝은 정답으로 추정하지 않았고, 시각 보정값은 독립 3D ground truth가 아니다. 메타데이터 `T_base_flange`는 촬영 순간 관절 측정치가 아닌 계획 FK다. 보스의 v2 육안 OK 뒤에만 `pin_layout_measure` 3D 확인과 모델 갱신 여부를 판단한다. 이 작업은 raw/draft/config/model/checkpoint/source를 수정하지 않았고 테스트 실행도 필요하지 않았다.
 - 작성자: Codex
+
+## 2026-10-19 10:53 KST Codex — BI: 보스 지정점 확인 및 부분 3D 투영 sanity check
+- 보스가 확인한 표기 규칙: L/R은 해당 PNG에서 화면 왼쪽/오른쪽 빗살 줄, `-1`은 그 줄의 마지막 번호. 지정점 10개는 Q1(L2,R4,L-1,R-1), Q2(L-1), Q3(L2,L4,R2), Q4(L2,R1). v2와 대조 시 7점은 가시(초록), 3점(Q1 L-1/R-1, Q2 L-1)은 가림(주황)으로 일치한다. 원본 v2 라벨은 변경하지 않았다.
+- 가시 7점에만 `camera_tools.py`의 기존 ray/height-plane 산식을 적용한 부분 표를 새 ignored 경로 `calibration/data/basket/wrist_look/labels_full_newlayout_human_checked_20261019_partial/partial_pin_layout_measured.json`에 저장했다. 가정 plane은 `rl/basket.yaml`에서 floor −144 mm, rail root −95 mm, tine top 약 −28.6 mm (basket frame). Q1 L2/R4 lean −29.0/−24.8°, 횡방향 root-tip 불일치 21.9/31.1 mm; Q3 L2/L4/R2 lean +18.3/+9.8/+16.4°, 불일치 14.6/42.4/13.0 mm; Q4 L2/R1 lean +19.0/+17.3°, 불일치 19.2/15.4 mm. Q1/Q3/Q4의 일부 큰 횡방향 차이는 이상 징후다. 점 표본이 적어 row pitch·간격·클립 거리를 fit하지 않았고 이 값을 물리 형상/정확도로 해석하지 않는다.
+- 주된 한계: 사진 JSON의 `T_base_flange`는 캡처 시 실제 관절 측정이 아니라 look 목표의 계획 FK다. 따라서 이 부분 3D 투영은 절대 검증값이 아니며, 화면 좌표/가림 확인과 분리해 취급한다. 이는 Python CPU offline 계산이고 로봇·카메라·ROS·Isaac은 사용하지 않았다. `calibration/config.yaml`에 이미 있던 사용자 수정과 여러 기존 untracked 경로는 건드리거나 stage하지 않았다.
+- 다음: 전체 4개 v2 sheet의 보스 OK 전에는 남은 픽셀 라벨을 승인하거나 전수 3D/layout/model 갱신으로 진행하지 않는다. 계획 FK 때문에 큰 transverse mismatch를 해석하려면 캡처 시 실제 flange pose metadata가 필요하거나 보스가 추가 촬영/대체 검증 경로를 지정해야 한다.
+- 작성자: Codex

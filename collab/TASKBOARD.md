@@ -74,8 +74,9 @@
 | BD | Q3 두 번째 칸 pin7/pin8 같은 배치 비교 | x90 저장 계획·replay에서 실제 목표 번호와 공통 배치의 계획/앉음 결과 재집계 | 완료(2907451): pin7 계획 11/47·sim 0/11, pin8 계획 47/47·sim 32/47; 공통 11개 배치에서 pin8 8/11. `second` Q3는 pin7이라 월요일 pin8 성능으로 해석 금지(LOG 09:15) |
 | BE | `look4` 셸 흐름 검토·AZ 사진 수집 경로 | 아래 '새 일 BE'; mock으로 dry-run, 촬영, 계획/이동/사진/복귀 실패 흐름 확인; 기존 수동 절차에 한 번 실행 명령 추가 | 완료(4da3a17: mock 검토·오류 표시 수정·절차 갱신; 실제 촬영 4/4 도착, AZ 후속은 BF, LOG 09:53/10:08) |
 | BF | 새 look4 사진으로 AZ 네 분면 초안 라벨 검증 | 새 일 BF; 10/19 접시 없는 Q1–Q4 사진에서 초안 번호/root/tip 전부 확대 검증·필요한 점만 수정 | 완료(후속 BH): 촬영·메타데이터 확인은 4/4 완료, draft 도착 뒤 검증 결과는 BH와 LOG 10:38에 기록. 별도 BG freshness guard 완료(2885eff) |
-| BH | 새 배치 Q1–Q4 tine draft 확대 검증·오류 수정 | 옆 분면 사진의 번호/root/tip를 대조하고 중복·가림을 표시; v2 JSON+PNG별 수·검증 조건 LOG | 완료(29b1efe): v2 출력은 Q1 14, Q2 18, Q3/Q4 각 26개; 동일 row alias 42개 제거, 보이는 인접번호 중복 4곳 수정, 끝점 가림 5개 명시. Boss 시각 OK와 3D 변환은 AZ 후속 대기(LOG 10:38) |
+| BH | 새 배치 Q1–Q4 tine draft 확대 검증·오류 수정 | 옆 분면 사진의 번호/root/tip를 대조하고 중복·가림을 표시; v2 JSON+PNG별 수·검증 조건 LOG | 완료(29b1efe): v2 출력은 Q1 14, Q2 18, Q3/Q4 각 26개; 동일 row alias 42개 제거, 보이는 인접번호 중복 4곳 수정, 끝점 가림 5개 명시. 보스가 10/19 지정점 10개에서 L/R=화면 좌/우 줄, -1=마지막 번호 해석을 확인함; 전체 시트 OK와 3D 변환은 AZ 후속 대기(LOG 10:38, 10/19 부분 확인) |
 | BG | after-release 손목 사진의 관절 자세 freshness guard | `look()`이 5초 내 새 `robot_state`를 못 받으면 stale `posj`로 사진 메타데이터를 저장하지 않도록 fail-closed | 완료(2885eff: 5초 안 fresh joint state 없으면 사진 저장 skip; 회귀 결과는 별도 확인되지 않음) |
+| BI | 보스 지정점 부분 3D 변환 sanity check | 지정점 10개 표기 확인을 기록하고, 보이는 7점만 기존 ray/height-plane 수식으로 투영해 한계 확인 | 완료(이 커밋): visible 7점 투영, Q별 transverse mismatch/lean 표는 LOG 10/19 부분 확인; 큰 mismatch와 계획 FK 한계 때문에 3D fit/모델 갱신은 보류. AZ 전수 완료 아님 |
 | F | marker 5/2.5 cm 비교 | 보스가 작은 마커를 붙이면 `basket_stats`로 같은 조건 측정 | 대기(보스) |
 | AF | **실물 접시 앉음 높이·기울기 측정 절차** | 보스가 Q1~Q4에 손으로 놓고 기록할 1장 절차·표, 로봇 명령 없음 | 완료(dce780d; 38/38 시험, LOG 기록) |
 | AG | **Q1 손 안 접시 퍼짐 원인 오프라인 분석** | `replay_q1nt_l05.json`의 들기 직후 `in_hand`와 운반·재겨냥 후 `pre`를 FK 기준으로 비교; regrip 비인과 한계 구분 | 완료(66b9681; Q1 pre y std 9.94 mm, 정확 시점·regrip 인과는 미확정) |
