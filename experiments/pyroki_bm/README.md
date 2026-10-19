@@ -11,6 +11,7 @@ candidate unless the legacy dense gate passes and endpoints remain fixed.
 The vertical drop is a separate existing-planner step; this wrapper does not
 generate it, command a robot, or alter the demo default. The benchmark below
 is the only evaluated use so far; no live pipeline integration is claimed.
+For the post-demo call-site and safety-gate handoff, see [INTEGRATION.md](INTEGRATION.md).
 
 ## Environment and tested commands
 
