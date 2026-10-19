@@ -406,6 +406,19 @@ class Pipeline(unittest.TestCase):
         far = np.eye(4); far[:3, 3] = [T[0, 3] + 2.0, T[1, 3], 0.144]
         self.assertEqual(pp.FloorCheck(kin, cloud, far, z_floor=5.0).clearance(q0), 10.0)   # not over the basket
 
+    def test_carry_prior_saved_once_with_drop_start(self):
+        # (10/19 보스) the carry that worked is kept per quadrant + colour and reused first
+        with tempfile.TemporaryDirectory() as tmp, contextlib.redirect_stdout(io.StringIO()):
+            plan = Path(tmp) / 'plan.json'
+            plan.write_text(json.dumps(dict(legs=dict(to_above=dict(waypoints_deg=[[0] * 6, [1] * 6, [2] * 6])),
+                                            quadrant_plan=dict(drop_start=1, gap=3, face=1, phi_deg=0, carry='rrt-floor'),
+                                            basket_T=np.eye(4).tolist())))
+            out = pipeline.save_carry_prior(Path(tmp) / 'lib' / 'Q4_white.json', plan, 10)
+            d = json.loads(out.read_text())
+            self.assertEqual((d['drop_start'], d['pin'], len(d['waypoints_deg'])), (1, 10, 3))
+            plan.write_text(json.dumps(dict(legs=dict(to_above=dict(waypoints_deg=[[0] * 6])), quadrant_plan={})))
+            self.assertIsNone(pipeline.save_carry_prior(Path(tmp) / 'lib' / 'x.json', plan, 1))   # no drop start: not saved
+
     def test_photo_after_release_is_opt_in(self):
         self.assertFalse(pipeline.parse_args([]).photo_after_release)
         self.assertEqual(pipeline.parse_args(['--plate_color', 'auto']).plate_color, 'auto')   # (10/19) the plate on the stand
