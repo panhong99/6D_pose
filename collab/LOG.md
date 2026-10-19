@@ -5018,3 +5018,8 @@
 
 ## 2026-10-20 04:5x KST Codex — BN 독립 backend 실제 호출 smoke
 - `OfflinePyrokiBackend`를 M1013 URDF로 생성해 CPU PyRoki trajopt를 직접 호출했다. 로봇·카메라·ROS 연결 없이, 6관절 0→각 0.05 rad, 멀리 떨어진 상자 하나, 합성 clearance 1.5, 20 knot·3 seed·최대 10 iteration 조건에서 **3/3 후보 gate 통과**, 반환 배열 20×6, 시작·끝 관절 exact 일치. 실행 2.23 s(프로세스 전체 벽시각). 이는 인터페이스 연결 검증용 **장애물 없는 합성 장면**이며 실제 바구니 충돌 성능을 입증하지 않는다. 실장면 133건의 PyRoki 109/133 결과와 생산 경로 미연결 상태는 유지.
+
+## 2026-10-20 05:1x KST Codex — BK 현행 `--sim_q` 계약 pilot
+- BN은 별도 opt-in 코드와 133계획 비교까지 했지만 PyRoki 109/133이고 시연 고정 파일 연결은 금지라, 업무 규칙의 장기 작업 분리 원칙에 따라 BK의 독립 재작업을 시작했다. 새 `experiments/bk_feasibility_v7.py`는 v6을 보존하고 현 `pipeline.py --sim_q`의 분면별 lean/aim/centre_h/face, `basket_quadrant_model_dx_m`, `sim_real_dh/dy`, carry prior 경로를 오프라인 `quadrant_plan`에 전달한다. grid 결과는 새 폴더 `calibration/data/basket/stand_feasibility_20261020_BK_v7/`만 사용하도록 했다.
+- 첫 CPU pilot(로봇·그리퍼·카메라·ROS 명령 없음, `run.sh` 부재 확인): 저장 빨간 접시 root **r=0.9658 m, az=21.02°**에서 Q3 front 빈 바구니 **pin12 성공**(carry prior, clearance carry 1.4/insert 2.24/after 6.2). 작업판 흰 기준 **r=1.276 m, az=18°**에서 Q3 back+Q3:10 점유는 **pin6..1 전부 no-plan**(실패 기록 carry/path 22, insert clearance 312, IK/limit 8). 이 기준점 일치는 필요 조건일 뿐 전체 지도 정확도나 실기 안전을 증명하지 않는다.
+- 스크립트는 `python3` 시스템 환경에 numpy가 없어 실패했고(수정 없음), 기존 `/home/pan/miniconda3/envs/foundationpose/bin/python`에서 pilot을 재실행해 정상 완료했다. 실제 데이터/config/model은 덮어쓰지 않았고 v3~v6 결과는 보존했다. 다음은 v7 새 폴더에서 소규모 경계 격자 확인 후 전체 지도이며, 실행 전 `run.sh`를 다시 확인한다.
