@@ -1866,10 +1866,67 @@ def plate_angle(req, out, radius_m=0.134):
     return result
 
 
+def markers_live(cfg):
+    """(10/19 보스, pre-demo check) live fixed-camera view of the 4 basket markers with the basket_measure detector:
+    each marker green with its base x/y, the top bar OK/-- per marker.  Read-only; q / ESC quits (frees the camera)."""
+    import time
+    from calib_core import latest_t_base_cam, load_json
+    from sensors import ColorCam
+    b = cfg['basket']
+    names = {v: k for k, v in b['marker_ids'].items()}
+    Tbc = np.array(load_json(latest_t_base_cam())['T_base_cam'])
+    d = cv2.aruco.getPredefinedDictionary(getattr(cv2.aruco, cfg['marker']['dictionary']))
+    prm = cv2.aruco.DetectorParameters()
+    prm.perspectiveRemovePixelPerCell = cfg['marker']['pixels_per_cell']
+    up = int(b.get('detect_upsample', 1))
+    if up > 1:
+        prm.cornerRefinementMethod, prm.minMarkerPerimeterRate = cv2.aruco.CORNER_REFINE_SUBPIX, 0.01
+    det = cv2.aruco.ArucoDetector(d, prm)
+    s = b['marker_size_m'] / 2
+    obj = np.array([[-s, s, 0], [s, s, 0], [s, -s, 0], [-s, -s, 0]], np.float32)
+    cam = ColorCam(cfg['cameras']['fixed_serial'])
+    win = 'basket markers (fixed cam) - q quits'
+    cv2.namedWindow(win, cv2.WINDOW_NORMAL)
+    cv2.resizeWindow(win, 1280, 720)
+    t0 = time.time()
+    try:
+        while True:
+            fr = cam.read()
+            bgr = cv2.cvtColor(fr.rgb, cv2.COLOR_RGB2BGR)
+            g = cv2.cvtColor(fr.rgb, cv2.COLOR_RGB2GRAY)
+            corners, ids, _ = det.detectMarkers(cv2.resize(g, None, fx=up, fy=up, interpolation=cv2.INTER_CUBIC) if up > 1 else g)
+            seen = set()
+            for c, i in zip(corners, [] if ids is None else ids.ravel()):
+                c, i = (c.reshape(4, 2) / up).astype(np.float32), int(i)
+                col = (0, 255, 0) if i in names else (0, 165, 255)
+                cv2.polylines(bgr, [c.astype(np.int32)], True, col, 2)
+                txt = f'{i} {names.get(i, "other")}'
+                if i in names:
+                    ok, _, tv = cv2.solvePnP(obj, c, fr.K, None, flags=cv2.SOLVEPNP_IPPE_SQUARE)
+                    if ok:
+                        pb = (Tbc @ np.r_[tv.ravel(), 1.0])[:3]
+                        seen.add(i)
+                        txt += f' ({pb[0]:.3f},{pb[1]:+.3f})'
+                cv2.putText(bgr, txt, tuple(c[0].astype(int) + [0, -8]), cv2.FONT_HERSHEY_SIMPLEX, 0.6, col, 2)
+            status = '  '.join(f'{i}:{names[i]} {"OK" if i in seen else "--"}' for i in sorted(names))
+            cv2.rectangle(bgr, (0, 0), (bgr.shape[1], 40), (0, 0, 0), -1)
+            cv2.putText(bgr, status + ('   ALL 4 OK' if len(seen) == len(names) else '   MISSING'), (10, 28),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+            cv2.imshow(win, bgr)
+            if time.time() - t0 > 2:
+                print('markers seen', sorted(seen), '' if len(seen) == len(names) else f'MISSING {sorted(set(names) - seen)}', flush=True)
+                t0 = time.time()
+            if cv2.waitKey(1) & 0xff in (ord('q'), 27):
+                break
+    finally:
+        cam.close()
+        cv2.destroyAllWindows()
+
+
 if __name__ == '__main__':
     cfg = load_config()
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument('mode', choices=('preview', 'marker', 'probe', 'locate', 'basket', 'wrist_look', 'pre_photo', 'pins', 'basket_stats', 'pin_layout', 'plate_angle', 'plate_plane', 'model_overlay', 'slot_targets', 'gap_error'))
+    p.add_argument('mode', choices=('preview', 'marker', 'markers_live', 'probe', 'locate', 'basket', 'wrist_look', 'pre_photo', 'pins', 'basket_stats', 'pin_layout', 'plate_angle', 'plate_plane', 'model_overlay', 'slot_targets', 'gap_error'))
     p.add_argument('--define', action='store_true', help='basket: define the basket frame / marker layout now')
     p.add_argument('--define_current', action='store_true', help='basket: marker layout in today\'s known basket frame (10/12)')
     p.add_argument('--golden', default=None, help='basket --define: also store this full teaching\'s slot in the basket frame')
@@ -1908,6 +1965,8 @@ if __name__ == '__main__':
         preview(a)
     elif a.mode == 'marker':
         marker(a, cfg)
+    elif a.mode == 'markers_live':
+        markers_live(cfg)
     elif a.mode == 'locate':
         locate(a, cfg)
     elif a.mode == 'basket':

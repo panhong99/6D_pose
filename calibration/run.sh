@@ -5,6 +5,8 @@
 #   bash calibration/run.sh viz [--plan P]     read-only RViz: real robot, FoundationPose plate, plan preview (UDP 5011)
 #   bash calibration/run.sh pipeline [args]    terminal 2: cube pipeline in conda foundationpose (see pipeline.py)
 #   bash calibration/run.sh demo4 [--execute]  meeting demo: Q4, Q3, Q1, Q2 one --auto --sim_q run each; DEMO_PINS="Q3:front Q3:back:white" picks pins/colour
+#   bash calibration/run.sh demo1022 Q3|Q4 [--execute]   10/22 demo: two plates in that quadrant, fixed order (collab/DEMO_20261022.md)
+#   bash calibration/run.sh markers            read-only: live fixed-camera view of the 4 basket markers (q quits)
 #   bash calibration/run.sh look4 [--execute]  plate-free wrist photo per quadrant (look pose -> photo -> home); LOOK_QUADRANTS="Q1 Q3"
 #   bash calibration/run.sh sim [args]         Isaac Sim digital twin of the cell (see sim_scene.py)
 #   bash calibration/run.sh mover --plan P --leg L [--execute]   one plan leg, Human-run
@@ -35,6 +37,16 @@ case "$mode" in
                  rviz2 -d "$0/viz.rviz"' "$DIR" "$@" ;;
   pipeline)
     cd "$DIR/.." && exec conda run --no-capture-output -n foundationpose python -u "$DIR/pipeline.py" "$@" ;;
+  demo1022)   # (10/19 보스) the 10/22 demo, one word per quadrant: two plates, the order the gripper side needs
+    qd="${1:-}"; shift || true
+    case "$qd" in
+      Q3) pins="Q3:front:red Q3:back:white" ;;      # Q3: gripper on the far side of the plate -> front first
+      Q4) pins="Q4:back:white Q4:front:red" ;;      # Q4: gripper on the robot side -> back first
+      *) echo "usage: bash calibration/run.sh demo1022 Q3|Q4 [--execute]   (collab/DEMO_20261022.md)"; exit 2 ;;
+    esac
+    DEMO_PINS="$pins" DEMO_BASKET_PLATES="" exec bash "$DIR/run.sh" demo4 "$@" ;;
+  markers)    # (10/19) pre-demo check: all 4 basket markers seen by the fixed camera (close with q before the demo)
+    cd "$DIR/.." && exec conda run --no-capture-output -n foundationpose python -u "$DIR/camera_tools.py" markers_live "$@" ;;
   demo4)      # (10/15 보스) meeting demo: Q4 -> Q3 -> Q1 -> Q2, each one --auto run (--sim_q settings); Human puts the plate
               # back on the stand between runs.  Extra args go to every run (e.g. --execute).  Pins: DEMO_PINS="Q4:6 Q3:6 Q1:6 Q2:5"
     cd "$DIR/.."
