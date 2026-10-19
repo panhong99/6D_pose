@@ -318,6 +318,12 @@
 - Codex 입력 확인(10/19 10:08): 네 raw는 1280×720, 네 JSON 모두 K(3×3) 및 세 변환(4×4) 유한값, req quadrant/model_quadrant 일치. 로그 marker fit 6.6/7.9/7.9/6.8 mm; 네 T_base_basket의 최대 pairwise XY 변동은 2.32 mm, yaw 범위는 0.21° 이내. `.png`는 model overlay이며 라벨 정답이 아니다. RGB 육안상 접시 없는 바구니와 빗살은 선명하나 Q1/Q2 위쪽 마커판과 Q3/Q4 가까운 흰 블록은 root/tip 혼동 가능 구간이라 확대 확인 대상으로 남긴다. `T_base_flange`는 계획 FK이므로 3D 잔차 해석 때 실제 캡처 순간 자세와 같다고 가정하지 않는다.
 - 다음: 현재 N의 분담대로 Claude가 이 네 새 사진의 전수 번호/root/tip 초안(JSON+겹침 PNG)을 작성하면 Codex가 확대 검증·오류 수정한다. 현재 새 사진용 라벨 JSON은 아직 없어, 사진 수신을 라벨 완료로 표시하지 않는다.
 
+### 새 일 BH: Claude 새 배치 빗살 초안 v1 도착 → Codex 확대 검증 (10/19 10:3x Claude)
+- 초안: `calibration/data/basket/wrist_look/labels_full_newlayout_Q{1,2,3,4}_claude_draft_20261019_v1.{json,png}`. 핀마다 `row`, `num`(줄마다 1 = 로봇에서 가장 먼 쪽), `root_uv`, `tip_uv`, `model_*_uv`, `fit`(refined / low_contrast / out_of_view), `contrast`, `shift_px`.
+- **중요(시점):** 바로 위에서 찍으면 그 분면의 빗살은 사진 가운데서 카메라 쪽을 향해 짧게 보인다. 그래서 각 분면은 **옆 분면 사진**에서 라벨링했다: Q1←Q2 사진, Q2←Q1, Q3←Q4, Q4←Q3(`photo_of` 필드). 자기 사진 초안(v0)은 `newlayout_draft_v0_selfview_20261019/`(쓰지 말 것).
+- 방법: 모델 투영 → 선분을 ±14 px 이동·±10° 회전해 가장 어두운 선에 맞춤 → tip = 어두운 구간 끝. refined Q1 16/21, Q2 25/27, Q3 39/39, Q4 39/39 (Q1·Q2는 모델 핀 수가 Q3·Q4보다 적음 — 맞는지 확인). tip 이동 중앙값 10–15 px, 최대 48 px.
+- Codex: 번호(1번 끝)·root/tip 확대 검증, 틀린 점만 수정해 `_codex_verified_20261019` 저장. low_contrast와 이동 30 px 이상 우선 확인.
+
 ## Codex 상태
 - 10/18 R1 최종 비교 CPU 사전 대조 **완료(c546d1c)**: `plans.jsonl`–기준 E3 JSON/NPZ의 415개 순서·이름·분면·목표 gap·exact 판정이 각 415/415 일치; Q별 표본 Q1–Q4 **114/100/110/91**, 기준 E3 exact **281/415**. R1 설정/명령도 full-DR·FP noise·noseen·canon으로 일치하고 `best.pt` 텐서가 `policy_0030.pt`와 동일(최고 eval 0.687; 55회차 동률은 best 갱신 안 함). 최종 `fulldr_r1_unseated025_it30.{json,npz,log}`는 아직 없어 R1 비교 자체는 계속 대기. 세부 경로·한계는 LOG 2026-10-18 Codex 항목.
 - 10/16 23:27 R1 unseated penalty CPU 실패분해 **완료(c3cae21)**: 같은 선택평가 598개에서 eval30→60은 **411→409 exact**, paired **21 gain/23 loss/554 ties (p=.880)**로 동률 범위. Q1은 **98→99/156**이고 pin5 outside-quadrant **4→8**, exact **13→12/26**; penalty 효과로 단정할 수 없음. seed15014 기준선(e3 281/415=67.7%)과 비교할 R1 best 최종 replay 대기. Claude GPU 실행 명령 및 새 `fulldr_r1_unseated025_it30.{json,npz,log}` 경로는 LOG 23:27; 기존 파일을 덮지 않는다.
