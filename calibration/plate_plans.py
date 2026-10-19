@@ -904,6 +904,23 @@ PLATE_R = 0.134                                            # plate mesh 26.7 cm 
 
 
 CARRY_MAX_WAYPOINTS = 60                                   # high carry leg, thinned (mover movesj limit 100, merged with the lift)
+CARRY_STEP_DEG = 3.0                                       # (10/19 보스: smoother after the grasp) even joint step of the carry
+
+
+def even_carry(path, k, step_deg=CARRY_STEP_DEG, n_max=CARRY_MAX_WAYPOINTS):
+    """(10/19 보스) the carry resampled at one joint step (largest joint change per point), the drop start `k` kept as a point.
+    movesj passes its points at about equal time, so uneven steps (1-6 deg from the rise/across/drop chains) made the speed
+    jump; even steps give one smooth motion.  Returns (path, new k); at most n_max points."""
+    w = np.asarray(path, float)
+    seg = np.abs(np.diff(w, axis=0)).max(axis=1)
+    s = np.r_[0.0, np.cumsum(seg)]
+    if s[-1] <= 0:
+        return [w[0], w[-1]], 1
+    n = int(min(n_max - 1, max(2, np.ceil(np.degrees(s[-1]) / step_deg))))
+    n_a = int(np.clip(round(n * s[k] / s[-1]), 1 if k > 0 else 0, n - 1 if k < len(w) - 1 else n))
+    t = np.r_[np.linspace(0, s[k], n_a + 1), np.linspace(s[k], s[-1], n - n_a + 1)[1:]]
+    out = np.stack([np.interp(t, s, w[:, j]) for j in range(w.shape[1])], axis=1)
+    return list(out), n_a
 STANDING_PLATE = dict(low_m=0.027, thick_m=0.02)           # a plate already in a gap: lowest rim ~27 mm above the floor
 
 
@@ -1206,16 +1223,11 @@ def quadrant_plan(Tbb, quadrant, gap, H, tool, start_deg, Tbc, q, grasp_legs=Non
                             inserting.path_clearance(pp(np.array(carry[k:]), 0.5)))
                 if c_car < 1.0:
                     raise RuntimeError(f'high carry clearance {c_car:.2f}')
-                if len(carry) > CARRY_MAX_WAYPOINTS:         # (10/19 실기) movesj takes <= 100 points; 30 cm rise made 107
-                    n_ = len(carry) - 1
-                    keep = np.unique(np.r_[np.linspace(0, k, max(2, CARRY_MAX_WAYPOINTS * k // n_)).round(),
-                                           np.linspace(k, n_, max(2, CARRY_MAX_WAYPOINTS * (n_ - k) // n_)).round()]).astype(int)
-                    carry = [carry[i] for i in keep]
-                    k = int(np.searchsorted(keep, k))
-                    c_car = min(held.path_clearance(pp(np.array(carry[:k + 1]), 0.5)),
-                                inserting.path_clearance(pp(np.array(carry[k:]), 0.5)))
-                    if c_car < 1.0:
-                        raise RuntimeError(f'high carry (thinned) clearance {c_car:.2f}')
+                carry, k = even_carry(carry, k)               # (10/19 보스) evenly spaced, <= 60 points (movesj limit 100)
+                c_car = min(held.path_clearance(pp(np.array(carry[:k + 1]), 0.5)),
+                            inserting.path_clearance(pp(np.array(carry[k:]), 0.5)))
+                if c_car < 1.0:
+                    raise RuntimeError(f'high carry (even) clearance {c_car:.2f}')
             home, how_h = free.plan(down[0], np.radians(HOME_JOINTS_DEG))
         except RuntimeError as e:
             tried.append(((int(side), phi), str(e)))

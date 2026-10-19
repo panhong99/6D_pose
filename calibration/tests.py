@@ -345,6 +345,22 @@ class Pipeline(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 pipeline.fixed_basket_z(T, {'fixed_z_m': 0.144, 'fixed_z_tol_m': 0.03})
 
+    def test_even_carry_keeps_ends_and_drop_start_with_even_steps(self):
+        # (10/19 보스) smoother carry after the grasp: one joint step everywhere, the drop start kept
+        import plate_plans as pp
+        w = np.radians(np.array([[0, 0, 0, 0, 0, 0], [1, 0, 0, 0, 0, 0], [5, 0, 0, 0, 0, 0], [6, 0, 0, 0, 0, 0],
+                                 [6, 4, 0, 0, 0, 0], [6, 30, 0, 0, 0, 0], [6, 30, 3, 0, 0, 0]], float))
+        out, k = pp.even_carry(list(w), 4, step_deg=2.0)
+        out = np.degrees(np.array(out))
+        np.testing.assert_allclose(out[0], np.degrees(w[0]), atol=1e-9)
+        np.testing.assert_allclose(out[-1], np.degrees(w[-1]), atol=1e-9)
+        np.testing.assert_allclose(out[k], np.degrees(w[4]), atol=1e-9)
+        steps = np.abs(np.diff(out, axis=0)).max(axis=1)
+        self.assertLessEqual(steps.max(), 2.0 + 1e-9)
+        self.assertGreater(steps.min(), 1.0)
+        self.assertLessEqual(len(pp.even_carry(list(np.radians(np.c_[np.arange(400.0), np.zeros((400, 5))])), 200)[0]),
+                             pp.CARRY_MAX_WAYPOINTS)
+
     def test_photo_after_release_is_opt_in(self):
         self.assertFalse(pipeline.parse_args([]).photo_after_release)
         self.assertTrue(pipeline.parse_args(['--photo_after_release']).photo_after_release)
