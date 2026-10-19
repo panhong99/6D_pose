@@ -6,6 +6,7 @@ from unittest.mock import Mock, patch
 import numpy as np
 
 from opt_in_backend import OfflinePyrokiBackend
+from trajopt_backend import CandidateRejected
 
 
 class Checker:
@@ -39,8 +40,9 @@ class BackendTests(unittest.TestCase):
         path = np.linspace(self.start, self.goal, 20)
         path[-1, 0] += 1e-7
         with patch('opt_in_backend.optimize', return_value=(path, [])):
-            with self.assertRaisesRegex(RuntimeError, 'endpoints'):
+            with self.assertRaises(CandidateRejected) as rejected:
                 self.backend.carry(self.start, self.goal, **self.kw)
+        self.assertEqual(rejected.exception.attempts[0]['reason'], 'endpoints_or_shape')
 
     def test_missing_checker_rejected(self):
         self.kw['floor'] = None
@@ -51,8 +53,9 @@ class BackendTests(unittest.TestCase):
         self.kw['floor'] = Checker(.5)
         path = np.linspace(self.start, self.goal, 20)
         with patch('opt_in_backend.optimize', return_value=(path, [])):
-            with self.assertRaisesRegex(RuntimeError, 'final exact gate'):
+            with self.assertRaises(CandidateRejected) as rejected:
                 self.backend.carry(self.start, self.goal, **self.kw)
+        self.assertEqual(rejected.exception.attempts[0]['reason'], 'final_exact_gate')
 
     def test_fk_ik_delegate_to_pyroki_bridge(self):
         self.backend.kinematics.fk = Mock(return_value=np.eye(4))

@@ -5031,3 +5031,7 @@
 ## 2026-10-20 05:4x KST Codex → Claude — BN 시연 뒤 연결 설계 전달
 - `experiments/pyroki_bm/INTEGRATION.md`에 현재 `quadrant_plan()`의 운반 경로 삽입 위치, `OfflinePyrokiBackend.carry()` 인자, FK/IK 교체 범위, 정확한 재검사와 명시적 fallback 계약을 기록했다. 기존 `fl_ok`가 `rrt`/`prior` 문자열에만 적용되므로 `pyroki` opt-in 통합 때 그 조건까지 확장해야 한다. 10/22 시연 파일과 기본 경로는 수정하지 않았다.
 - 근거 수치는 기존 조건부 오프라인 133계획에서 저장 RRT 133/133, PyRoki 109/133이며 새 성공률 실험은 없다. 원 camera/config와 서 있는 접시 상태의 역사적 재현이 불완전하고 실제 로봇 연결·안전 검증은 하지 않았다. 구현 판단용 문서이며 생산 전환 완료 표시는 아니다.
+
+## 2026-10-20 06:2x KST Codex — BN opt-in 실패 계약 정리
+- 독립 `OfflinePyrokiBackend.carry()`의 반환 후 endpoint/shape 또는 최종 정확 gate 실패를 `CandidateRejected`로 통일하고, 실패 이유를 `attempts`에 남긴다. 최적화 중 모든 후보 실패와 같은 호출 계약이므로 나중에 명시적 fallback을 붙일 때 구별할 수 있다. `.envs/pyroki-bm-20261019/bin/python -m unittest discover -s experiments/pyroki_bm -p 'test_*.py' -q` **12/12 통과**.
+- 새 경로 성능 결과는 없고 기존 조건부 133계획 RRT 133/133·PyRoki 109/133 상태다. 시연 고정 파일과 실로봇·그리퍼·카메라·ROS 경로는 건드리지 않았다.

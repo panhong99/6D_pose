@@ -9,7 +9,7 @@ from pathlib import Path
 import numpy as np
 
 from bridge import PyrokiKinematics
-from trajopt_backend import optimize, validate
+from trajopt_backend import CandidateRejected, optimize, validate
 
 
 class OfflinePyrokiBackend:
@@ -48,10 +48,10 @@ class OfflinePyrokiBackend:
         # changes. Endpoint preservation matters for the saved drop segment.
         path = np.asarray(path, dtype=float)
         if path.shape != (n, 6) or not np.array_equal(path[0], start) or not np.array_equal(path[-1], goal):
-            raise RuntimeError("PyRoki carry endpoints or shape changed")
+            raise CandidateRejected([{"reason": "endpoints_or_shape", "expected_n": n}])
         limits = (np.asarray(self.kinematics.robot.joints.lower_limits),
                   np.asarray(self.kinematics.robot.joints.upper_limits))
         good, check = validate(path, held, floor, start, max_wrist_deg, limits=limits)
         if not good:
-            raise RuntimeError(f"PyRoki carry failed final exact gate: {check}")
+            raise CandidateRejected([{"reason": "final_exact_gate", **check}])
         return path, attempts
