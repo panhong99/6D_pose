@@ -60,7 +60,8 @@ def plan_step(job):
         Tb[:3, :3] = Rz @ Tb[:3, :3]
         Tb[:2, 3] += [bdx, bdy]
     p = np.array([r * np.cos(np.radians(az_deg)), r * np.sin(np.radians(az_deg)), 0.068])
-    pp.DATA = Path(out) / 'scratch'
+    import os
+    pp.DATA = Path(out) / 'scratch' / str(os.getpid())   # one folder per worker: plan dirs are named by the ms
     pp.DATA.mkdir(parents=True, exist_ok=True)
     t0 = time.monotonic()
     res = dict(quadrant=qd, region=region, colour=colour, r=r, az=az_deg, ok=False, why='', pin=None, grasps_tried=0,

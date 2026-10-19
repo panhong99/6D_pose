@@ -1421,7 +1421,9 @@ def quadrant_plan(Tbb, quadrant, gap, H, tool, start_deg, Tbc, q, grasp_legs=Non
                     c_car = clear_of(carry, k)
                     if c_car < 1.0:
                         raise RuntimeError(f'high carry (thinned) clearance {c_car:.2f}')
-            home, how_h = free.plan(down[0], np.radians(HOME_JOINTS_DEG))
+                if not fl_ok(carry, k):                       # (10/20 night) the RRT checks the floor every 2 deg; entering
+                    raise RuntimeError('rrt carry: under the floor between samples')   # the basket between two samples
+            home, how_h = free.plan(down[0], np.radians(HOME_JOINTS_DEG))          # could dip 7 mm: 0.5 deg check
         except RuntimeError as e:
             tried.append(((int(side), phi), str(e)))
             continue
