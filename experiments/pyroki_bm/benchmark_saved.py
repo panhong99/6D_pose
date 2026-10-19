@@ -19,11 +19,11 @@ sys.path[:0] = [str(ROOT / "calibration"), str(Path(__file__).parent)]
 from calib_core import latest_t_base_cam, load_json  # noqa: E402
 from plate_plans import C, FloorCheck, basket_boxes, plate_cloud, quadrant_checkers  # noqa: E402
 from robot_model import DEFAULT_URDF, Kinematics  # noqa: E402
-from trajopt_backend import CandidateRejected, optimize, validate  # noqa: E402
+from trajopt_backend import CandidateRejected, _densify, optimize, validate  # noqa: E402
 
 
-def metrics(path, held, floor, start):
-    good, checks = validate(path, held, floor, start)
+def metrics(path, held, floor, start, limits):
+    good, checks = validate(path, held, floor, start, limits=limits)
     diff = np.diff(path, axis=0)
     s = np.r_[0.0, np.cumsum(np.linalg.norm(diff, axis=1))]
     keep = np.r_[True, np.diff(s) > 1e-12]
@@ -46,6 +46,20 @@ def resample(path, n=101):
         return np.repeat(path[:1], n, axis=0)
     return np.stack([np.interp(np.linspace(0, distance[-1], n), distance[keep], path[keep, i])
                      for i in range(path.shape[1])], axis=1)
+
+
+def insertion_gate(path, checker, limits, start):
+    dense = _densify(np.asarray(path, float), step_deg=2.0)
+    lo, hi = limits
+    clearance = min(float(checker.clearance(q)) for q in dense)
+    finite = bool(np.isfinite(dense).all())
+    within_limits = bool(np.all(dense >= lo) and np.all(dense <= hi))
+    wrist = float(np.max(np.degrees(np.abs(dense[:, [3, 5]] - np.asarray(start)[[3, 5]]))))
+    return dict(valid=bool(finite and within_limits and wrist <= 100 and
+                           np.isfinite(clearance) and clearance >= 1),
+                finite=finite, within_limits=within_limits,
+                max_wrist_deg=wrist, min_insert_clearance=clearance,
+                checked_points=len(dense))
 
 
 def main():
@@ -86,7 +100,7 @@ def main():
     tool[2, 3] = q.get("tool_length_m", 0.165)
     Tbc_path = latest_t_base_cam()
     Tbc = np.asarray(load_json(Tbc_path)["T_base_cam"], float)
-    held, _, _ = quadrant_checkers(Tbc, q, basket, H, tool, plates=plates)
+    held, inserting, _ = quadrant_checkers(Tbc, q, basket, H, tool, plates=plates)
     cloud = plate_cloud(H, tool)
     boxes_basket = basket_boxes(basket, plates=plates)
     markers = [c[2] + s[2] / 2 for name, c, s, _ in boxes_basket if name.startswith("marker_")]
@@ -115,13 +129,16 @@ def main():
             parser.error("no floor-valid saved waypoint under reconstructed conditions")
         k = max(i for i, valid in enumerate(floor_ok) if valid)
     old = saved[:k + 1]
-    legacy_seed_metric = metrics(resample(old, a.n), held, floor, old[0]) if a.seed_from_legacy else None
+    downstream = saved[k:]
     world_boxes = [b for ch in held.checkers for b in ch.boxes]
     world_boxes = [(n, c, s, np.eye(3) if len(b) == 3 else b[3])
                    for b in world_boxes for n, c, s in [b[:3]]]
     urdf = yourdfpy.URDF.load(str(DEFAULT_URDF), load_collision_meshes=True)
     robot = pk.Robot.from_urdf(urdf)
     collision = pk.collision.RobotCollision.from_urdf(urdf)
+    limits = (np.asarray(robot.joints.lower_limits), np.asarray(robot.joints.upper_limits))
+    legacy_seed_metric = metrics(resample(old, a.n), held, floor, old[0], limits) if a.seed_from_legacy else None
+    drop_gate = insertion_gate(downstream, inserting, limits, old[0])
     import basket_env as be
     half = np.asarray(be.B["full"]["size_xy"], float) / 2 + 0.08
     repeats = []
@@ -134,7 +151,7 @@ def main():
                                       n=a.n, maxiter=a.maxiter,
                                       seed_paths=(old,) if a.seed_from_legacy else (),
                                       robot_penalty_weight=a.robot_penalty_weight)
-            candidate = metrics(path, held, floor, old[0])
+            candidate = metrics(path, held, floor, old[0], limits)
             accepted_paths.append(path)
         except CandidateRejected as exc:
             attempts, candidate = exc.attempts, {"valid": False, "failure": str(exc)}
@@ -154,12 +171,15 @@ def main():
         "seed_from_legacy": a.seed_from_legacy,
         "robot_penalty_weight": a.robot_penalty_weight,
         "legacy_resampled_seed": legacy_seed_metric,
-        "floor_z_m": float(z_floor), "legacy": metrics(old, held, floor, old[0]),
+        "floor_z_m": float(z_floor), "legacy": metrics(old, held, floor, old[0], limits),
+        "shared_vertical_drop": drop_gate,
         "pyroki": repeats[0]["pyroki"], "attempts": repeats[0]["attempts"],
         "pyroki_wall_s": repeats[0]["wall_s"],
         "repeats": repeats, "accepted_path_variation_max_joint_deg": variation,
         "limitations": "Historical camera calibration absent from plan; latest camera used. Current config may differ. Standing plates are operator-specified. No robot execution.",
     }
+    report["legacy_full_path_valid"] = report["legacy"]["valid"] and drop_gate["valid"]
+    report["pyroki_full_path_valid"] = report["pyroki"]["valid"] and drop_gate["valid"]
     a.output.parent.mkdir(parents=True, exist_ok=True)
     a.output.write_text(json.dumps(report, indent=2) + "\n")
     print(json.dumps(report, indent=2))
