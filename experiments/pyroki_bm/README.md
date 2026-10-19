@@ -3,6 +3,15 @@
 The boss asked for PyRoki to replace current FK/IK/RRT. This directory is an
 **opt-in offline prototype**; the 10/22 demo path has not been changed.
 
+`opt_in_backend.OfflinePyrokiBackend` is the single offline entry point for
+PyRoki FK, seeded IK, and checked carry optimization. The caller supplies
+the current scene's held `MultiChecker`, `FloorCheck`, attached plate cloud,
+obstacle boxes, basket transform, and floor height. `carry()` rejects a
+candidate unless the legacy dense gate passes and endpoints remain fixed.
+The vertical drop is a separate existing-planner step; this wrapper does not
+generate it, command a robot, or alter the demo default. The benchmark below
+is the only evaluated use so far; no live pipeline integration is claimed.
+
 ## Environment and tested commands
 
 - PyRoki source: `https://github.com/chungmin99/pyroki` at `388e43e1fc0d0ee382968d3dd72970fd62a0450c`.
@@ -222,7 +231,8 @@ checker setup. Local results: `bench_q3_red_norobotproxy.json`,
 
 The carry-library `drop_start` also identifies the downstream vertical drop.
 `benchmark_saved.py` now checks this shared saved drop with the current
-insertion checker, joint limits, and J4/J6 bound at <=2° interpolation. In
+insertion checker and joint limits at <=2° interpolation. The 100° J4/J6
+excursion limit applies to the carry candidate only. In
 the four reconstructed examples the drop gate passed, with minimum insertion
 clearance ratios Q3 red/white 6.013/6.579 and Q4 red/white 2.400/2.530.
 Combining that shared drop with the accepted PyRoki carry produced 4/4
