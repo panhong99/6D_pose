@@ -471,39 +471,45 @@ def load_basket_insert_policy(path):
     return expert
 
 
-def plate_color_auto(C, Tbc, centre=(0.90, 0.35, 0.068), radius=0.09, cam=None):
-    """(10/19 보스: "굳이 순서 (red, white) 신경써야 하나, 걍 잡게 해") the colour of the plate on the stand from one
-    fixed-camera frame: HSV of the disc around the usual plate spot.  Returns ('red' | 'white', red share, white share)."""
+def plate_color_auto(C, Tbc, centre=(0.90, 0.35, 0.068), radius=0.09, cam=None, wait_s=20.0):
+    """(10/19 보스: "color dependency 없애라고") the colour of the plate on the stand, never a stop: frames are looked at
+    for up to wait_s (the plate may still be on its way to the spot); still unclear -> 'red' with a warning.
+    HSV of the disc around the usual plate spot.  Returns ('red' | 'white', red share, white share)."""
     import cv2
     from sensors import ColorCam
     own = cam is None
     cam = cam or ColorCam(C['cameras']['fixed_serial'])
-    try:
-        for _ in range(45):                                 # auto exposure settles (10/19: 10 frames read white as grey)
-            fr = cam.read()
-    finally:
-        if own:
-            cam.close()
     a = np.linspace(0, 2 * np.pi, 48, endpoint=False)
     rr = np.linspace(0.0, radius, 8)
     pts = np.array([[centre[0] + r * np.cos(t), centre[1] + r * np.sin(t), centre[2]] for r in rr for t in a])
     Tcb = np.linalg.inv(np.asarray(Tbc, float))
     xyz = pts @ Tcb[:3, :3].T + Tcb[:3, 3]
-    uv = (xyz @ np.asarray(fr.K).T)[:, :2] / xyz[:, 2:3]
-    h, w = fr.rgb.shape[:2]
-    uv = uv[(uv[:, 0] >= 0) & (uv[:, 0] < w) & (uv[:, 1] >= 0) & (uv[:, 1] < h)].astype(int)
-    if len(uv) < 50:
-        raise RuntimeError('plate colour: the stand spot is outside the fixed camera image')
-    hsv = cv2.cvtColor(fr.rgb, cv2.COLOR_RGB2HSV)[uv[:, 1], uv[:, 0]].astype(int)
-    hue, sat, val = hsv[:, 0], hsv[:, 1], hsv[:, 2]
-    red = float(np.mean(((hue <= 10) | (hue >= 170)) & (sat >= 90) & (val >= 40)))
-    white = float(np.mean((sat <= 60) & (val >= 120)))
-    if red >= 0.25 and red > white:
-        return 'red', red, white
-    if white >= 0.35:
-        return 'white', red, white
-    raise RuntimeError(f'plate colour unclear on the stand (red {red:.2f}, white {white:.2f}): '
-                       'put the plate on the marked spot or pass --plate_color red|white')
+    red = white = 0.0
+    try:
+        for _ in range(45):                                 # auto exposure settles (10/19: 10 frames read white as grey)
+            fr = cam.read()
+        uv = (xyz @ np.asarray(fr.K).T)[:, :2] / xyz[:, 2:3]
+        h, w = fr.rgb.shape[:2]
+        uv = uv[(uv[:, 0] >= 0) & (uv[:, 0] < w) & (uv[:, 1] >= 0) & (uv[:, 1] < h)].astype(int)
+        t_end = time.monotonic() + wait_s
+        while len(uv) >= 50:
+            hsv = cv2.cvtColor(fr.rgb, cv2.COLOR_RGB2HSV)[uv[:, 1], uv[:, 0]].astype(int)
+            hue, sat, val = hsv[:, 0], hsv[:, 1], hsv[:, 2]
+            red = float(np.mean(((hue <= 10) | (hue >= 170)) & (sat >= 90) & (val >= 40)))
+            white = float(np.mean((sat <= 60) & (val >= 120)))
+            if red >= 0.25 and red > white:
+                return 'red', red, white
+            if white >= 0.35:
+                return 'white', red, white
+            if time.monotonic() > t_end:
+                break
+            for _ in range(10):
+                fr = cam.read()
+    finally:
+        if own:
+            cam.close()
+    print(f'[plate] 색 판별 안 됨 (red {red:.2f}, white {white:.2f}) -> 빨강으로 진행', flush=True)
+    return 'red', red, white
 
 
 def _last_good_path():
