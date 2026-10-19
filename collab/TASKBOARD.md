@@ -311,6 +311,11 @@
 - 보스 지시: 분면별 사진만 찍는 데모. `bash calibration/run.sh look4 [--execute]` (bc65472): 분면마다 마커로 바구니 재측정 → look 자세 계획 → 이동 → `pre_photo`(원본 `.raw.png` + K·자세 `.json`) → 홈. 로그 `calibration/data/basket/wrist_look/look4_*_<Q>.log`, 사진은 로그에 찍힌 `<stamp>_<Q>.req.json` 옆. 바구니 x 0.90이면 4분면 모두 자세 있음(x 1.01이면 Q1 없음).
 - (1) 지금: look4 셸 흐름을 AY처럼 mock으로 검토(--execute 없이/있을 때, 계획 실패·이동 실패·사진 실패 분기, opening 한 번). (2) 보스가 look4를 돌리면 새 사진으로 AZ(네 분면 번호 + root/tip 선) 재개. `MONDAY_WRIST_PHOTOS_20261019.md`에 look4가 같은 일을 한 줄로 한다고 갱신.
 
+### 새 일 BF: look4 사진 도착 → AZ 재개 (10/19 10:0x Claude, 보스 촬영 완료)
+- 보스가 `run.sh look4 --execute`로 접시 없는 4분면 사진 촬영 완료(09:47–09:56): `calibration/data/basket/wrist_look/20261019_{094749_Q1,095110_Q2,095350_Q3,095544_Q4}.{raw.png,png,json,req.json}` (로그 `look4_20261019_*_Q?.log`, 분면마다 마커로 바구니 재측정).
+- Claude 육안: 위에서 수직, 선명, 흰 배경, 바구니 안 접시 없음. 각 사진에서 해당 분면 두 줄이 클립~가장자리 전부 보임. 주의: Q1·Q2는 위쪽 가운데 마커 판이 첫 빗살 근처에 걸칠 수 있음, Q3 맨 끝 1–2개는 아래 흰 마커 블록 근처. 그리퍼 손가락은 다른 분면 영역만 가림.
+- 할 일: 이 사진으로 AZ(네 분면 번호 + root/tip 선, 이전 승인본 형식) 재개. 마지막 줄의 `syntax error`는 보스 실행 중(09:56) run.sh가 커밋되어 bash가 바뀐 파일을 읽은 것 — **실행 중인 스크립트 파일은 수정하지 말 것**.
+
 ## Codex 상태
 - 10/18 R1 최종 비교 CPU 사전 대조 **완료(c546d1c)**: `plans.jsonl`–기준 E3 JSON/NPZ의 415개 순서·이름·분면·목표 gap·exact 판정이 각 415/415 일치; Q별 표본 Q1–Q4 **114/100/110/91**, 기준 E3 exact **281/415**. R1 설정/명령도 full-DR·FP noise·noseen·canon으로 일치하고 `best.pt` 텐서가 `policy_0030.pt`와 동일(최고 eval 0.687; 55회차 동률은 best 갱신 안 함). 최종 `fulldr_r1_unseated025_it30.{json,npz,log}`는 아직 없어 R1 비교 자체는 계속 대기. 세부 경로·한계는 LOG 2026-10-18 Codex 항목.
 - 10/16 23:27 R1 unseated penalty CPU 실패분해 **완료(c3cae21)**: 같은 선택평가 598개에서 eval30→60은 **411→409 exact**, paired **21 gain/23 loss/554 ties (p=.880)**로 동률 범위. Q1은 **98→99/156**이고 pin5 outside-quadrant **4→8**, exact **13→12/26**; penalty 효과로 단정할 수 없음. seed15014 기준선(e3 281/415=67.7%)과 비교할 R1 best 최종 replay 대기. Claude GPU 실행 명령 및 새 `fulldr_r1_unseated025_it30.{json,npz,log}` 경로는 LOG 23:27; 기존 파일을 덮지 않는다.
