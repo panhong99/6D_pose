@@ -80,13 +80,16 @@ https://chungmin99.github.io/pyroki/examples/07_trajopt/ .
 **Newer sweep after the dense floor fix:** Claude regenerated 133 plans after
 commit `2163d36` (0.5° final carry floor check) and compared the same saved
 endpoints in `calibration/data/basket/stand_free_20261019/pyroki_vs_rrt_v4/table.jsonl`.
-The current reconstructed full-path gate accepted 125/133 saved RRT paths and
-101/133 PyRoki paths. All 133 saved **carry portions** passed; the other eight
-RRT full-path failures come from applying the benchmark's 100° wrist limit to
-the shared saved drop, which the planner does not constrain that way. In the
-101 cases where both full paths passed, median travel was 166.0° versus
-165.5°, and 101-point acceleration/jerk L2 norms were 0.0043/0.0050 versus
-0.0026/0.0031. PyRoki solve time median was 4.1 s, maximum 9.7 s (CPU).
+The first benchmark report accepted 125/133 saved RRT paths and 101/133
+PyRoki paths because it applied the carry-only 100° wrist limit to the shared
+vertical drop. The planner does not apply that limit there. After correcting
+the benchmark's drop gate, the same saved paths yield **133/133 RRT** and
+**109/133 PyRoki** full-path passes. All 133 shared drops pass insertion
+clearance and joint limits. In the corrected 109-case shared pass set,
+median travel was 164.2° versus 164.7°, and 101-point acceleration/jerk L2
+norms were 0.00428/0.00499 versus 0.00249/0.00302. Median exact held/floor
+clearance ratios were 1.61/1.24 versus 1.80/1.47. PyRoki solve time median
+was 4.1 s, maximum 9.7 s across all 133 cases (CPU).
 These remain offline reconstructed results, without historical camera/config
 provenance or robot execution. They supersede the older 111-plan performance
 table for current-code comparison; retain that older table as a diagnostic of

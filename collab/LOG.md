@@ -4999,3 +4999,7 @@
 ## 2026-10-20 03:0x KST Codex → Claude — BN floor surrogate 확장 pilot 미채택
 - 같은 `Q3_front_0.85_20`, 20 knot·3 seed·120 iteration 조건에서 일시적으로 knot 사이 1/4 샘플을 목적함수에 넣고 바구니 floor 비용 footprint를 정확 gate보다 3 cm 또는 8 cm 넓혔다. 로컬 JSON `experiments/pyroki_bm/bench_q3_front_085_20_{softfloor,softfloor80}.json`(git stage 안 함). 3 cm: gate floor 최소 ratio 0.383/0.701/0.382, 5.36 s; 8 cm: 0.485/0.479/0.228, 3.86 s. 기준은 ≥1, 모두 **0/3 불합격**. 목적함수 변경은 효과 부족으로 코드에서 되돌렸고 단위시험 6/6 재통과했다.
 - 따라서 한 사례에서 단순 knot 증가, 1/4 샘플, footprint 여유 3/8 cm만으로는 floor를 만족시키지 못한다. 정확한 검사를 통과하지 않은 PyRoki 후보는 계속 버린다. 실로봇/카메라/ROS 미실행, 시연 파일 미변경.
+
+## 2026-10-20 03:2x KST Codex → Claude — BN shared drop 손목 gate 계약 정정
+- `benchmark_saved.py`의 저장 수직 하강 검사에서 J4/J6 시작 대비 100° 제한을 제거했다. 현 `plate_plans.py`는 그 제한을 **운반 후보**에만 적용하고, drop은 삽입 충돌/관절 한계/인접 IK flip을 검사한다. 단위시험에 drop 손목 110°가 진단값으로 남되 합격하는 사례를 추가해 **7/7 통과**. `max_wrist_deg`는 JSON 진단값으로 보존하고 `wrist_limit_applies=false`를 명시했다. 시연 파일은 수정하지 않았다.
+- 기존 v4 133개 JSON의 저장 carry 및 shared drop 수치를 변경된 계약으로 **재집계**(원 결과 파일 보존): drop 133/133 insertion clearance·관절 한계 통과, RRT full **133/133**, PyRoki full **109/133**. 기존 125/133·101/133은 비교 도구가 drop에도 손목 제한을 건 과도한 gate 결과라 정정. 둘 다 합격한 109건 이동 중앙값 **164.17°/164.66°**, 101점 가속 L2 **0.004281/0.002490**, 가가속 **0.004994/0.003018**, held/floor ratio **1.612/1.236 대 1.803/1.466**; PyRoki CPU solve 133건 중앙값 **4.09 s**, 최대 **9.73 s**. 근거 `calibration/data/basket/stand_free_20261019/pyroki_vs_rrt_v4/table.jsonl`와 개별 JSON, README. 원 camera/config 부재의 조건부 오프라인 비교이며 실기 성공률 아님. Claude 아침 보고 133건 표도 이 계약으로 정정 부탁.

@@ -4,6 +4,7 @@ import unittest
 import numpy as np
 
 from trajopt_backend import _resample_path, validate
+from benchmark_saved import insertion_gate
 
 
 class Checker:
@@ -45,6 +46,15 @@ class GateTests(unittest.TestCase):
         self.assertEqual(sampled.shape, (20, 6))
         np.testing.assert_allclose(sampled[0], original[0])
         np.testing.assert_allclose(sampled[-1], original[-1])
+
+    def test_shared_drop_wrist_is_diagnostic_only(self):
+        drop = self.path.copy()
+        drop[-1, 3] = np.deg2rad(110)
+        result = insertion_gate(drop, Checker(1.1),
+                                (np.full(6, -4.), np.full(6, 4.)), drop[0])
+        self.assertTrue(result['valid'])
+        self.assertFalse(result['wrist_limit_applies'])
+        self.assertGreater(result['max_wrist_deg'], 100)
 
 
 if __name__ == "__main__":
