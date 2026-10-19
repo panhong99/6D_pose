@@ -1038,7 +1038,7 @@ class FloorCheck:
         return 1.0 + (float(P[over, 2].min()) - self.z_floor) / self.scale
 
 
-def rrt_carry(held, floor, start, goal, seeds=range(4), max_wrist_deg=100.0):
+def rrt_carry(held, floor, start, goal, seeds=range(2), max_wrist_deg=100.0, max_nodes=1500):
     """(10/19 보스) bidirectional RRT for the carry with the floor over the basket; a path that turns J4 or J6 more than
     max_wrist_deg away from the start (wrist spin, 보스 10/19) is refused and the next seed tried."""
     from robot_model import MultiChecker
@@ -1049,7 +1049,7 @@ def rrt_carry(held, floor, start, goal, seeds=range(4), max_wrist_deg=100.0):
     errs = []
     for sd in seeds:
         try:
-            path, how = mc.plan(start, goal, seed=sd)
+            path, how = mc.plan(start, goal, seed=sd, max_nodes=max_nodes)   # (10/19) a dead candidate costs seconds, not minutes
         except RuntimeError as e:
             errs.append(str(e))
             continue
@@ -1308,6 +1308,9 @@ def quadrant_plan(Tbb, quadrant, gap, H, tool, start_deg, Tbc, q, grasp_legs=Non
                     if not (q.get('basket_carry_rrt_fallback', False) or q.get('basket_carry_mode') == 'rrt'):
                         raise
                     z_mk = max([t + clear['marker'] for k_, t in tops if k_ == 'marker'] or [0.0])
+                    if quadrant in q.get('basket_carry_rrt_over_plates', ()):   # (10/19 보스: Q4 2nd plate hit the standing
+                        z_mk = max([z_mk] + [t + clear['plate'] for k_, t in tops if k_ == 'plate'])   # one before the descent:
+                    z_mk += (q.get('basket_carry_rrt_extra_m', {}) or {}).get(quadrant, 0.0) if stand else 0.0   # over its top
                     try:
                         fl = FloorCheck(kin, cloud, Tbb, z_mk)
                         Tg = kin.fk(down[0])                 # straight up over the slot until the floor (+1 cm), like the
