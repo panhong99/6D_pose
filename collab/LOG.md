@@ -4918,3 +4918,8 @@
 - `765d51a`: 별도 오프라인 `benchmark_saved.py`에 `--standing Q:PIN`을 추가해 이미 선 접시의 7-slice 형상을 기존 held checker와 PyRoki 상자 양쪽에 넣었다. Q4처럼 `basket_carry_rrt_over_plates`에 든 분면은 현재 설정과 동일하게 선 접시 꼭대기 + `basket_carry_plate_clear_m`(+ RRT extra)의 floor를 쓴다. 실패한 3개 seed의 개별 exact-gate 결과도 JSON에 보존하도록 했다. `test_trajopt_gate.py` 5/5, 구문 검사·CLI 확인 완료.
 - 이 변경은 계산 결과나 실기 성공이 아니다. 저장 `plan.json`에는 당시 선 접시 목록·카메라 보정·RRT drop-start가 없어, 두 번째 접시 비교에는 별도 기록으로 `--standing`을 정하고 기존 경로가 재구성 검사기를 통과하는지 먼저 확인해야 한다. 시연 파일·실로봇·그리퍼·카메라·ROS 변경/실행 없음.
 
+## 2026-10-19 20:4x KST Codex — BN carry-library 정확 prefix·반복 비교
+- `5eb22ff`: 4개 `calibration/data/carry_library/{Q3,Q4}_{red,white}.json`이 source plan과 완전히 같은 관절 배열 및 정확한 `drop_start` 인덱스를 갖는 것을 확인하고, `benchmark_saved.py --library`가 source/배열 일치를 강제하도록 했다. 역사적 drop-start **추정 문제는 제거**됐지만 과거 T_base_cam/config는 plan에 없어 조건부 재구성이다. 두 번째 접시에는 `--standing Q3:12` 또는 `Q4:6`을 입력했다. 각 20 knots/120회 최대 최적화/3 seed, local JSON 4개는 README에 나열; git stage 안 함.
+- 현재 설정·최신 camera의 기존 checker 기준: Q3 red 저장 RRT pass(held 1.414, floor 1.163, 이동 155.8°) / PyRoki **0/3**, 최적화 3.54 s. Q4 red 저장 RRT pass(1.020/1.187, 143.7°) / PyRoki **0/3**, 4.47 s. Q3 white 저장 prefix는 held 0으로 현행 gate 실패; PyRoki 1/3 후보는 pass(1.166/1.287)지만 265.9°로 저장 174.4°보다 길다. Q4 white 저장 prefix는 현행 standing floor 0.345 m에서 floor ratio 0.612로 실패, PyRoki 0/3. White의 저장 경로가 현재 재구성 검사기에 실패하므로 해당 PyRoki 결과를 역사적 RRT 개선으로 해석하지 않는다.
+- 다른 Q4 `183143_663` 동일 입력 2회: 후보 2/2 동일(관절별 최대 변동 0°), 최적화 4.38/3.86 s, 기존 저장 167.0° 대비 후보 243.2°, 101점 가속 L2 0.00430→0.05809, jerk L2 0.00519→0.06906. 이는 한 입력·한 프로세스 CPU 반복이며 폭넓은 반복성/실기 성능 추정 아님. 최초 Python/import/checker 생성 시간은 최적화 시간에서 제외. `test_trajopt_gate.py` 5/5, 구문 검사 통과. 현행 시연 경로 전환 보류.
+
