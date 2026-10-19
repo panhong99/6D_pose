@@ -42,8 +42,8 @@ case "$mode" in
   demo1022)   # (10/19 보스) the 10/22 demo, one word per quadrant: two plates, the order the gripper side needs
     qd="${1:-}"; shift || true
     case "$qd" in
-      Q3) pins="Q3:front:auto Q3:back:auto" ;;      # Q3: gripper on the far side of the plate -> front first
-      Q4) pins="Q4:back:auto Q4:front:auto" ;;      # Q4: gripper on the robot side -> back first; colour: the plate on the stand
+      Q3) pins="Q3:front:red Q3:back:white" ;;      # (10/19 보스) always red first, then white; Q3: front first (gripper on the far side)
+      Q4) pins="Q4:back:red Q4:front:white" ;;      # (10/19 보스) always red first, then white; Q4: back first (gripper on the robot side)
       *) echo "usage: bash calibration/run.sh demo1022 Q3|Q4 [--execute]   (collab/DEMO_20261022.md)"; exit 2 ;;
     esac
     ( cd "$DIR/.." && conda run --no-capture-output -n foundationpose python -u "$DIR/camera_tools.py" basket_check ) || {
