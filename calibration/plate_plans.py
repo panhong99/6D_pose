@@ -1060,6 +1060,9 @@ class FloorCheck:
             return 10.0
         return 1.0 + (float(P[over, 2].min()) - self.z_floor) / self.scale
 
+    def path_clearance(self, path):
+        return min(self.clearance(q) for q in path)
+
 
 def rrt_carry(held, floor, start, goal, seeds=(0, 1), max_wrist_deg=100.0, max_nodes=1500, step_deg=2.0, span_deg=90.0):
     """(10/19 보스) bidirectional RRT for the carry with the floor over the basket; a path that turns J4 or J6 more than
@@ -1403,8 +1406,10 @@ def quadrant_plan(Tbb, quadrant, gap, H, tool, start_deg, Tbc, q, grasp_legs=Non
                             inserting.path_clearance(pp(np.array(carry[k:]), 0.5)))
                 if c_car < 1.0:
                     raise RuntimeError(f'high carry clearance {c_car:.2f}')
+                fl_ok = (lambda c, k_: fl.path_clearance(pp(np.array(c[:k_ + 1]), 0.5)) >= 1.0) if how.startswith(('rrt', 'prior')) \
+                    else (lambda c, k_: True)                 # (10/19 night) the even resample may cut a corner under the floor
                 clear_of = lambda c, k_: min(held.path_clearance(pp(np.array(c[:k_ + 1]), 0.5)) / thr,   # noqa: E731
-                                             inserting.path_clearance(pp(np.array(c[k_:]), 0.5)))
+                                             inserting.path_clearance(pp(np.array(c[k_:]), 0.5))) if fl_ok(c, k_) else 0.0
                 ev, k_ev = even_carry(carry, k)               # (10/19 보스) evenly spaced, <= 60 points (movesj limit 100)
                 if clear_of(ev, k_ev) >= 1.0:
                     carry, k = ev, k_ev

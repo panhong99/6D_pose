@@ -125,6 +125,8 @@ def main():
         k = int(library["drop_start"])
         if not 0 < k < len(saved):
             parser.error("--library drop_start is outside the carry path")
+    elif source.get("quadrant_plan", {}).get("drop_start") is not None:   # (10/19 Claude) plans record it since 67a63c4
+        k = int(source["quadrant_plan"]["drop_start"])
     else:
         floor_ok = [floor.clearance(x) >= 1 for x in saved]
         if not any(floor_ok):
@@ -167,7 +169,7 @@ def main():
     report = {
         "plan": str(a.plan), "source_carry": source["quadrant_plan"]["carry"],
         "camera_calibration_used": str(Tbc_path), "drop_start_index": k,
-        "drop_start_source": str(a.library) if a.library else "last_floor_valid_inferred",
+        "drop_start_source": str(a.library) if a.library else ("plan" if source.get("quadrant_plan", {}).get("drop_start") is not None else "last_floor_valid_inferred"),
         "world_boxes": len(world_boxes), "plate_cloud_points": len(cloud),
         "standing_plates": a.standing, "model_quadrant": model_quadrant,
         "seed_from_legacy": a.seed_from_legacy,
