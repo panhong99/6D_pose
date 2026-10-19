@@ -954,8 +954,8 @@ def quadrant_checkers(Tbc, q, Tbb, H, tool, plates=()):
     lib = library_checkers(Tbc, q)
     c = np.asarray(Tbb)[:3, 3]
 
-    def basket_checker(pl):
-        ch = CollisionChecker(Kinematics(), basket_boxes(Tbb, plates=pl), resolution=0.005, margin=q.get('basket_wall_margin_m', 0.01),
+    def basket_checker(pl, margin=q.get('basket_wall_margin_m', 0.01)):
+        ch = CollisionChecker(Kinematics(), basket_boxes(Tbb, plates=pl), resolution=0.005, margin=margin,
                               bounds=((c[0] - 0.5, c[0] + 0.5), (c[1] - 0.5, c[1] + 0.5), (-0.05, 0.6)))
         ch.set_tool(q.get('tool_length_m', 0.165), q.get('tool_radius_m', 0.06))
         return ch
@@ -968,8 +968,10 @@ def quadrant_checkers(Tbc, q, Tbb, H, tool, plates=()):
         return ch2
     held = [with_plate(lib['frame'][0]), with_plate(lib['table'][0]), with_plate(basket)]
     insert = held                                            # (10/14 실기) the plate rim vs the walls too (pins are not boxes)
-    if plates:                                               # (10/18) the straight-down insert passes a standing plate two gaps
-        insert = held[:2] + [with_plate(basket_checker(()))]   # away by design (3.5 cm, dish 2.5 cm deep): walls/markers only
+    m_ins = q.get('basket_insert_wall_margin_m')             # (10/19 보스: Q3 plate a little more to the left = toward the +y wall)
+    if plates or m_ins is not None:                          # (10/18) the straight-down insert passes a standing plate two gaps
+        insert = held[:2] + [with_plate(basket_checker((), q.get('basket_wall_margin_m', 0.01) if m_ins is None else m_ins)
+                                        if plates else basket_checker(plates, m_ins))]   # away by design (3.5 cm, dish 2.5 cm deep): walls/markers only
     free = [lib['frame'][0], lib['table'][0], basket]
     return MultiChecker(held), MultiChecker(insert), MultiChecker(free)
 
