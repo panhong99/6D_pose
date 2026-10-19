@@ -306,6 +306,10 @@
 - `rl/logs/basket/insert_rl_20261018_highcarry_second_seed15/` (log `.log`): init gx30_seen_best, train 800 = `random_20261018_142554`(pin 10) + `second_w10_train_20261018`(Q3 8 / Q4 4, pin 10 접시 서 있음), val 240 = `random_20261018_145816` + `second_w10_val_20261018`. 50 it, eval 5마다, ~17:45 종료 예정.
 - 확인: (1) train/val/test(x90 세트 `insert_final_eval_highcarry_20261018/x90/plans_{p10,second,q3p8}`)가 seed·배치로 겹치지 않는지, (2) eval마다 원시 JSON/NPZ 재집계 + pin 10 / 두 번째 칸 / 분면별 분해 + eval0 대비 짝 비교, (3) 선택 편향 경고(같은 val로 best 선택). 결과 LOG에 30분마다. 학습·Isaac 실행 금지.
 
+### 새 일 BE: look4 사진 → AZ 재개 + look4 검토 (10/19 09:4x Claude)
+- 보스 지시: 분면별 사진만 찍는 데모. `bash calibration/run.sh look4 [--execute]` (bc65472): 분면마다 마커로 바구니 재측정 → look 자세 계획 → 이동 → `pre_photo`(원본 `.raw.png` + K·자세 `.json`) → 홈. 로그 `calibration/data/basket/wrist_look/look4_*_<Q>.log`, 사진은 로그에 찍힌 `<stamp>_<Q>.req.json` 옆. 바구니 x 0.90이면 4분면 모두 자세 있음(x 1.01이면 Q1 없음).
+- (1) 지금: look4 셸 흐름을 AY처럼 mock으로 검토(--execute 없이/있을 때, 계획 실패·이동 실패·사진 실패 분기, opening 한 번). (2) 보스가 look4를 돌리면 새 사진으로 AZ(네 분면 번호 + root/tip 선) 재개. `MONDAY_WRIST_PHOTOS_20261019.md`에 look4가 같은 일을 한 줄로 한다고 갱신.
+
 ## Codex 상태
 - 10/18 R1 최종 비교 CPU 사전 대조 **완료(c546d1c)**: `plans.jsonl`–기준 E3 JSON/NPZ의 415개 순서·이름·분면·목표 gap·exact 판정이 각 415/415 일치; Q별 표본 Q1–Q4 **114/100/110/91**, 기준 E3 exact **281/415**. R1 설정/명령도 full-DR·FP noise·noseen·canon으로 일치하고 `best.pt` 텐서가 `policy_0030.pt`와 동일(최고 eval 0.687; 55회차 동률은 best 갱신 안 함). 최종 `fulldr_r1_unseated025_it30.{json,npz,log}`는 아직 없어 R1 비교 자체는 계속 대기. 세부 경로·한계는 LOG 2026-10-18 Codex 항목.
 - 10/16 23:27 R1 unseated penalty CPU 실패분해 **완료(c3cae21)**: 같은 선택평가 598개에서 eval30→60은 **411→409 exact**, paired **21 gain/23 loss/554 ties (p=.880)**로 동률 범위. Q1은 **98→99/156**이고 pin5 outside-quadrant **4→8**, exact **13→12/26**; penalty 효과로 단정할 수 없음. seed15014 기준선(e3 281/415=67.7%)과 비교할 R1 best 최종 replay 대기. Claude GPU 실행 명령 및 새 `fulldr_r1_unseated025_it30.{json,npz,log}` 경로는 LOG 23:27; 기존 파일을 덮지 않는다.
