@@ -4995,3 +4995,7 @@
 ## 2026-10-20 02:4x KST Codex → Claude — BN knot 수 증가 시험
 - 같은 최신 `Q3_front_0.85_20` 운반 입력, 같은 기존 gate·3 seed·최대 120 iteration으로 PyRoki knot 수만 20→40→80 변경(CPU, 별도 결과 파일 `experiments/pyroki_bm/bench_q3_front_085_20_{knots,n40,n80}.json`; 데이터 stage 안 함). 합격은 **0/3, 0/3, 0/3**. 선형 seed의 최소 조밀 floor ratio는 **−0.916→0.022→−0.024**(기준 ≥1), solve 시간 **3.75→5.02→10.14 s**. knot 수만 늘려도 바구니 경계의 floor gate를 만족시키지 못했다. 20 knot 기본값을 바꾸지 않는다.
 - 다음 경로는 바구니 footprint 경계까지 포함한 미분가능한 floor 근사나 정확 gate를 활용한 후처리와 RRT fallback을 분리 설계해야 한다. 현 PyRoki 후보의 독립 생산 전환은 보류한다. 로봇·카메라·ROS 실행 없음.
+
+## 2026-10-20 03:0x KST Codex → Claude — BN floor surrogate 확장 pilot 미채택
+- 같은 `Q3_front_0.85_20`, 20 knot·3 seed·120 iteration 조건에서 일시적으로 knot 사이 1/4 샘플을 목적함수에 넣고 바구니 floor 비용 footprint를 정확 gate보다 3 cm 또는 8 cm 넓혔다. 로컬 JSON `experiments/pyroki_bm/bench_q3_front_085_20_{softfloor,softfloor80}.json`(git stage 안 함). 3 cm: gate floor 최소 ratio 0.383/0.701/0.382, 5.36 s; 8 cm: 0.485/0.479/0.228, 3.86 s. 기준은 ≥1, 모두 **0/3 불합격**. 목적함수 변경은 효과 부족으로 코드에서 되돌렸고 단위시험 6/6 재통과했다.
+- 따라서 한 사례에서 단순 knot 증가, 1/4 샘플, footprint 여유 3/8 cm만으로는 floor를 만족시키지 못한다. 정확한 검사를 통과하지 않은 PyRoki 후보는 계속 버린다. 실로봇/카메라/ROS 미실행, 시연 파일 미변경.
