@@ -143,7 +143,7 @@ plate_ik_bc:                       # --plate_policy ik_bc (overrides plate_rl ke
   basket_tilt_x_comp_m: 0.04           # with the tilt: +x along the pin rows (it landed 2 pins short)
   basket_transit_lift_m: [0.13, 0.10, 0.07]   # above higher than taught: the highest the arm reaches
   basket_carry_lift_m: 0.15            # carry (flat plate over the wall) higher than taught
-  basket_carry_rise_m: 0.15            # (10/18 보스: plates hit the marker plates on the low RRT carry) quadrant insert: straight up until the
+  basket_carry_rise_m: 0.45            # (10/19 보스: 15 -> 45 cm; 10/18: plates hit the marker plates on the low RRT carry) quadrant insert: straight up until the
                                        # plate is >= 15 cm above its grasp height, across at that height, straight down onto the above pose
                                        # (null = old straight/RRT carry)
   basket_carry_clear_m: 0.05           # and >= 5 cm over the marker blocks
