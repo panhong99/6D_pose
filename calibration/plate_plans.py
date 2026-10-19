@@ -1071,11 +1071,12 @@ def high_carry(kin, start, goal, cloud, z_low, ok_lim, step_m=0.02):
 
 def quadrant_plan(Tbb, quadrant, gap, H, tool, start_deg, Tbc, q, grasp_legs=None, tilt_deg=0.0, centre_h=0.18, above_m=0.11,
                   phi_step=10, seeds=None, yaw_trim_deg=0.0, y_shift_m=None, x_shift_m=None, faces=(1.0, -1.0), y_extra_m=0.0,
-                  grasp_deg=None, plates=()):
+                  grasp_deg=None, plates=(), grasp_low_z=None):
     """Plan.json for one quadrant gap from the plate in the hand: to_above (carry, straight or RRT; with config
     basket_carry_rise_m: high carry, see high_carry), descend (straight down, plate upright, +basket_policy_extra_down_m),
     ascend (straight up), to_home, abort_home.  `plates`: gaps already holding a plate (index in this quadrant, or
-    (model quadrant, index)).
+    (model quadrant, index)).  `grasp_low_z`: the plate's lowest point on the stand (base z) for the rise rule (else
+    the in-hand plate model at the grasp joints, which sits ~3 cm low once the plate has tilted in the hand).
     -> (path, report)."""
     import ros2_nodes
     from robot_model import polyline_path as pp
@@ -1091,7 +1092,8 @@ def quadrant_plan(Tbb, quadrant, gap, H, tool, start_deg, Tbc, q, grasp_legs=Non
             grasp_deg = grasp_legs['to_grasp'][-1]
         clear = dict(marker=q.get('basket_carry_clear_m', 0.05), plate=q.get('basket_carry_plate_clear_m', 0.05))
         tops = [(n_.split('_')[0], c[2] + sz[2] / 2) for n_, c, sz, _ in basket_boxes(Tbb, plates=plates) if n_.startswith(('marker', 'plate'))]
-        z_base = max([low_at(grasp_deg if grasp_deg is not None else start_deg) + float(rise)]
+        g_low = float(grasp_low_z) if grasp_low_z is not None else low_at(grasp_deg if grasp_deg is not None else start_deg)
+        z_base = max([g_low + float(rise)]                   # (10/19 보스) grasp_low_z: the plate's bottom on the stand (FP)
                      + [t + clear[k] for k, t in tops if k == 'marker'])
         stand = [(np.asarray(c), np.asarray(sz) / 2, R_) for n_, c, sz, R_ in basket_boxes(Tbb, plates=plates) if n_.startswith('plate')]
 

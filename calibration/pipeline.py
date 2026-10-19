@@ -711,7 +711,7 @@ def run_plate(args):
                 kw.update(sim_kw)
                 return quadrant_plan(basket_T, mq, pin_gap(basket_T, mq, args.pin), qs['H'], qs['tool'], start_deg, Tbc, q,
                                      yaw_trim_deg=qs['yaw'], y_shift_m=args.y_shift, grasp_deg=legs0['to_grasp']['waypoints_deg'][-1],
-                                     plates=plates, **kw)
+                                     plates=plates, grasp_low_z=float(p[2]), **kw)   # (10/19) 15 cm from the plate on the stand
             early, rep = qplan(legs0['lift']['waypoints_deg'][-1])
             if early is None:
                 raise RuntimeError(f'{args.quadrant} pin {args.pin}: no insert plan from this grasp ({rep["tried"][:4]})')
