@@ -80,7 +80,7 @@
 | BI | 보스 지정점 부분 3D 변환 sanity check | 지정점 10개 표기 확인을 기록하고, 보이는 7점만 기존 ray/height-plane 수식으로 투영해 한계 확인 | 완료(dbf9a5e): visible 7점 투영, Q별 transverse mismatch/lean 표는 LOG 10/19 부분 확인; 큰 mismatch와 계획 FK 한계 때문에 3D fit/모델 갱신은 보류. AZ 전수 완료 아님 |
 | BK | 받침 위 접시 위치별 경로 가능 지도 (CPU dry-run) | 아래 '새 일 BK'; 접시 root 격자마다 Q3/Q4 front/back 계획 성공·실패 이유 표+그림 | 재작업 필요: v6 528/1188 조건에서 중단·보존. v6은 현행 `pipeline.py --sim_q`의 분면별 aim/lean/centre_h/face를 전달하지 않아 현재 실기 설정 지도 근거로 무효. 10/22 시연 중 CPU 다중 작업 금지; 설정·코드 고정 후 새 폴더에서 pilot부터 재검증(LOG 2026-10-19 17:xx). |
 | BL | v4 빗살 라벨 → 바구니 모델 실측 보정 (3D) | 아래 '새 일 BL'; 84개 root/tip 3D 변환, 분면별 pitch·clip 거리·기울기·줄 y 맞춤, 모델 대비 칸 중심 차이와 10/19 착지 2칸 차이 설명 | 완료(05b0d22): 조건부 84 tip·83 root·38 pin 중심 변환, Q1/Q4 모델 x 차이와 Q1 높이 모순 기록. `bl_model_fit_20261019_v3/` JSON/CSV/PNG, LOG 14:1x. 실제 모델 수정 없음. |
-| BM | PyRoki 검토: IK·경로 생성에 쓸 수 있는지 | 아래 '새 일 BM'; 언어/의존성 사실 확인, 별도 환경 설치, M1013 URDF로 IK·궤적 시험, 오늘 RRT와 비교표 | 진행 중(10/19 17:4x): 공식 저장소·문서에서 Python/JAX·CPU 가능·MIT·궤적 최적화·샘플링 RRT 미포함 확인. 실로봇 `run.sh demo4 --execute` 가동 중이어서 설치·비교 계산은 보류(LOG 17:4x). |
+| BM | PyRoki 검토: IK·경로 생성에 쓸 수 있는지 | 아래 '새 일 BM'; 언어/의존성 사실 확인, 별도 환경 설치, M1013 URDF로 IK·궤적 시험, 오늘 RRT와 비교표 | 진행 중(10/19 19:2x): 별도 환경 설치, M1013 FK 1000자세 수치 일치, IK 20/20 및 독립 FK/IK 브리지 구현(README·LOG 참조). RRT 동등 장애물/쥔 접시/바닥 조건을 PyRoki trajopt에 아직 재현하지 못해 시연 경로 전환은 보류. Claude에게 공유. |
 | F | marker 5/2.5 cm 비교 | 보스가 작은 마커를 붙이면 `basket_stats`로 같은 조건 측정 | 대기(보스) |
 | AF | **실물 접시 앉음 높이·기울기 측정 절차** | 보스가 Q1~Q4에 손으로 놓고 기록할 1장 절차·표, 로봇 명령 없음 | 완료(dce780d; 38/38 시험, LOG 기록) |
 | AG | **Q1 손 안 접시 퍼짐 원인 오프라인 분석** | `replay_q1nt_l05.json`의 들기 직후 `in_hand`와 운반·재겨냥 후 `pre`를 FK 기준으로 비교; regrip 비인과 한계 구분 | 완료(66b9681; Q1 pre y std 9.94 mm, 정확 시점·regrip 인과는 미확정) |

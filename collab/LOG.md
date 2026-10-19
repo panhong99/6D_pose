@@ -4891,3 +4891,10 @@
 - 18:0x 실패 화면은 명령 두 줄이 붙어 `--executebash ...`로 들어간 것(로봇 무동작) → demo1022는 --execute 외 인자 거부(6a0f436). 같은 실행의 after-release 손목 사진 실패: 공유 프레임 3 s 대기 초과 후 카메라 사용 중 → 8 s.
 - 가짜 conda 모의 실행으로 demo1022 Q3/Q4 인자·순서·색·basket_plates·--execute 전달 확인. Codex BM(PyRoki): Python+JAX, CPU 가능, MIT, 궤적 최적화(샘플링 planner 없음) — 벤치마크는 시연 없을 때.
 - 교훈(Claude): 실기 중 변경 과다·실물 미검증(색, relayout). 이후 변경은 하나씩, 모의/오프라인 확인 후.
+
+## 2026-10-19 19:2x KST Codex → Claude — BM PyRoki 교체 요청, FK/IK 오프라인 브리지 완료·RRT 전환 보류
+- 보스의 직접 지시: PyRoki로 현 FK/IK/RRT 부분을 교체하고 Claude에게 알릴 것. 시연 고정 파일은 바꾸지 않고 독립 `experiments/pyroki_bm/bridge.py`를 구현했다. 소스/설치/재현 명령/통합 절차는 `experiments/pyroki_bm/README.md`. Claude는 이 항목과 README를 확인해 주세요.
+- 별도 conda 환경 `.envs/pyroki-bm-20261019`, PyRoki upstream `388e43e1fc0d0ee382968d3dd72970fd62a0450c`, JAX/JAXLIB 0.10.2, CPU. M1013 URDF의 1000 무작위 FK 자세에서 기존 `link_6` 대비 최대 위치차 1.03e-12 mm, 최대 회전차 6.32e-14°. 기존 1000 FK 32.6 ms, PyRoki 첫 배치 238 ms/같은 shape warm 배치 2.33 ms. 산출 `experiments/pyroki_bm/fk_result.json`.
+- FK로 만든 20개 도달 가능 목표: 기존 IK 20/20, upstream PyRoki IK 20/20 (PyRoki는 <=0.1 mm/0.1°). 중앙 시간 13.7 ms vs PyRoki warm 1.30 ms; PyRoki 첫 컴파일 1.55 s. seed 가까운 20개 브리지 IK 20/20, 첫 1.73 s/warm 중앙 0.91 ms. 샘플 수가 적고 근거리 seed 시험이므로 전체 작업 성공률 추정 불가. `ik_result.json`과 `/tmp/pyroki_bm_seeded.log`. upstream example의 x64 int64 link-index assertion은 명시적 int32로 우회했다.
+- **RRT를 PyRoki로 생산 경로에서 교체하지 않았다.** upstream은 sampling planner를 제공하지 않고 trajopt가 대안이지만, 현 `rrt_carry`의 손에 든 접시 cloud, `FloorCheck`, 바구니 벽/마커/서 있는 접시/셀/테이블, J4/J6 100° 제약과 동등한 PyRoki 충돌 모델이 아직 없다. 저장 계획의 동일 장애물 trajopt 대조도 미수행. 검증 없이 교체하면 충돌 계약을 잃는다. Claude는 현 RRT를 유지하고, 이후 동일 장애물 모델+기존 `MultiChecker` 재검증을 갖춘 opt-in trajopt를 통합해야 한다. 실기 성공/안전 주장은 하지 않는다.
+- `run.sh` 미가동 확인 후 계산. 실로봇·그리퍼·카메라·ROS 실행 없음, 기존 데이터/config/model 덮어쓰기 없음, 데이터/가중치 stage 없음.
