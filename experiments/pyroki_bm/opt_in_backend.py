@@ -48,10 +48,10 @@ class OfflinePyrokiBackend:
         # changes. Endpoint preservation matters for the saved drop segment.
         path = np.asarray(path, dtype=float)
         if path.shape != (n, 6) or not np.array_equal(path[0], start) or not np.array_equal(path[-1], goal):
-            raise CandidateRejected([{"reason": "endpoints_or_shape", "expected_n": n}])
+            raise CandidateRejected([*attempts, {"reason": "endpoints_or_shape", "expected_n": n}])
         limits = (np.asarray(self.kinematics.robot.joints.lower_limits),
                   np.asarray(self.kinematics.robot.joints.upper_limits))
         good, check = validate(path, held, floor, start, max_wrist_deg, limits=limits)
         if not good:
-            raise CandidateRejected([{"reason": "final_exact_gate", **check}])
+            raise CandidateRejected([*attempts, {"reason": "final_exact_gate", **check}])
         return path, attempts

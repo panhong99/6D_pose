@@ -39,10 +39,11 @@ class BackendTests(unittest.TestCase):
     def test_endpoint_mutation_rejected(self):
         path = np.linspace(self.start, self.goal, 20)
         path[-1, 0] += 1e-7
-        with patch('opt_in_backend.optimize', return_value=(path, [])):
+        with patch('opt_in_backend.optimize', return_value=(path, [{'seed': 'straight'}])):
             with self.assertRaises(CandidateRejected) as rejected:
                 self.backend.carry(self.start, self.goal, **self.kw)
-        self.assertEqual(rejected.exception.attempts[0]['reason'], 'endpoints_or_shape')
+        self.assertEqual(rejected.exception.attempts[0]['seed'], 'straight')
+        self.assertEqual(rejected.exception.attempts[-1]['reason'], 'endpoints_or_shape')
 
     def test_missing_checker_rejected(self):
         self.kw['floor'] = None
@@ -52,10 +53,11 @@ class BackendTests(unittest.TestCase):
     def test_returned_candidate_is_rechecked(self):
         self.kw['floor'] = Checker(.5)
         path = np.linspace(self.start, self.goal, 20)
-        with patch('opt_in_backend.optimize', return_value=(path, [])):
+        with patch('opt_in_backend.optimize', return_value=(path, [{'seed': 'straight'}])):
             with self.assertRaises(CandidateRejected) as rejected:
                 self.backend.carry(self.start, self.goal, **self.kw)
-        self.assertEqual(rejected.exception.attempts[0]['reason'], 'final_exact_gate')
+        self.assertEqual(rejected.exception.attempts[0]['seed'], 'straight')
+        self.assertEqual(rejected.exception.attempts[-1]['reason'], 'final_exact_gate')
 
     def test_fk_ik_delegate_to_pyroki_bridge(self):
         self.backend.kinematics.fk = Mock(return_value=np.eye(4))

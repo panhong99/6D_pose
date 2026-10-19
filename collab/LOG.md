@@ -5039,3 +5039,7 @@
 ## 2026-10-20 07:0x KST Codex — BN 요약표 출처 표기 정정
 - `calibration/data/basket/stand_free_20261019/pyroki_vs_rrt_v4/table.jsonl`의 boolean은 **옛 drop 손목 gate** 결과로 실제 125/133·101/133이다. README와 이전 LOG에서 이 경로를 133/133·109/133의 직접 근거처럼 읽을 수 있어, README에 구분을 명시했다. 교정된 133/133·109/133은 동일 폴더의 **133개 개별 JSON을 현 drop 계약으로 재검사**한 수치다. 원 요약표·개별 데이터는 변경하지 않았다.
 - 이번에는 문서 출처만 정정했으며 새 최적화·로봇·카메라 실험은 없다. 역사적 camera/config 부재와 현재 장면 재구성 한계는 그대로다.
+
+## 2026-10-20 07:2x KST Codex — BN 후보 거부 진단 보존
+- `OfflinePyrokiBackend.carry()`가 endpoint/shape 또는 마지막 정확 gate에서 거부할 때 최적화 seed별 `attempts`를 버리지 않고 최종 실패 이유 뒤에 남기도록 했다. 호출자가 실제 실패 seed와 정확 gate 결과를 함께 기록할 수 있다. 오프라인 회귀 **12/12 통과** (`.envs/pyroki-bm-20261019/bin/python -m unittest discover -s experiments/pyroki_bm -p 'test_*.py' -q`).
+- 새 성공률/시간 실험은 없으며 10/22 시연 경로·로봇·그리퍼·카메라·ROS 경로를 실행하거나 수정하지 않았다.
