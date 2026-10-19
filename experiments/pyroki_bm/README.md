@@ -50,8 +50,11 @@ without the exact saved context would lose collision requirements. The offline
 candidate generator below now models the attached plate and reconstructed
 obstacles, then rejects any path failing the existing `MultiChecker` and
 `FloorCheck`. This is a conditional same-gate comparison: saved plans omit the
-original camera calibration and the grasp-derived plate/tool transform, and
-the current configuration may differ. Optimization does not guarantee the
+original camera calibration, and the current configuration may differ.
+`hand_plate()` returns the same identity-plus-z-length tool constructed by
+this benchmark under the current `plate_ik_bc` config; the saved
+`plate_in_tcp` already captures the grasp-derived plate transform. Missing
+grasp/tool fields alone do **not** explain a floor discrepancy. Optimization does not guarantee the
 globally shortest path and can fail from a straight-line initial trajectory.
 
 ## Suggested integration for Claude
@@ -65,8 +68,8 @@ globally shortest path and can fail from a straight-line initial trajectory.
    represent the gripper/tool, attached plate cloud, cell/table, basket walls,
    marker boxes, standing plates, and `FloorCheck` rule. Validate *every*
    optimized segment with current `MultiChecker` before accepting it.
-4. Record camera calibration, grasp-derived tool transform and standing-plate
-   state alongside future plans. Recheck both candidate and saved trajectories
+4. Record camera calibration and standing-plate state alongside future plans;
+   storing the tool and grasp would make provenance auditable. Recheck both candidate and saved trajectories
    under that exact state before considering an opt-in production alternative.
 
 Official sources: https://github.com/chungmin99/pyroki and
@@ -83,10 +86,13 @@ jerk L2 norms were 0.004/0.005 versus 0.003/0.003. PyRoki solve time had a
 `calibration/data/basket/stand_free_20261019/pyroki_vs_rrt/table.jsonl`.
 
 These are **not** 111 exact historical replays. The saved plan has
-`plate_in_tcp` but not the grasp-derived `tool` transform; the benchmark uses
-an identity tool with configured length. Claude found this changes the held
-plate cloud and explains at least 4 of 16 sampled floor disagreements. The
-saved plans also omit original camera calibration/config provenance. The
+`plate_in_tcp` but not a separate `tool` field. However `hand_plate()` returns
+exactly the same identity-plus-configured-z-length tool used by this benchmark,
+and the saved `plate_in_tcp` is the grasp-derived transform. Therefore the
+reported 4/16 floor discrepancies are real reconstruction discrepancies, but
+cannot be attributed to a missing tool field alone. Investigate floor height,
+standing plates, config and camera pose against the original sweep context.
+The saved plans also omit original camera calibration/config provenance. The
 91/111 and 89/111 figures describe this conditional reconstruction only;
 they should not be used to rank planner reliability or safety. The benchmark
 now reads a saved `drop_start` when present, and standing-plate pins use
