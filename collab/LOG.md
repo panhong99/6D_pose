@@ -4859,6 +4859,12 @@
 - 진행 중인 BK v5가 156/1188 조건에서 `95f0762`(기존 접시와 팔·그리퍼의 삽입 충돌 검사 추가)보다 오래된 `plate_plans.py`를 로드했음을 확인했다. 점유 접시 조건의 결과가 달라질 수 있어 v5 전체 지도 결과로 사용하지 않고 부분 JSONL은 보존했다. 부모 PID 3471674와 그때의 12개 자식 PID만 종료했다.
 - 최신 코드에서 새 `/tmp/bk_feasibility_20261019_v6.py` 기준점 재실행: 빨간 r=0.9658/az=21.02 Q3 front 빈 바구니 pin12 경로 성공; 흰 r=1.276/az=18 Q3 back+Q3:10 pin6..1 전부 no-plan(시도별 insert clearance 308, high carry 22, ik/limit 12). 새 폴더 `calibration/data/basket/stand_feasibility_20261019_BK_1523_v6/`의 99위치×12조건(1188) CPU 격자 계산 시작, PID 3480057/실행 세션 84660. 완결 CSV/JSON/PNG와 실기 가능성 해석은 아직 미확정. 로봇·그리퍼·카메라·ROS·Isaac 사용 없음.
 
+## 2026-10-19 17:4x KST Codex — BM PyRoki 공식 자료 1차 확인
+- 공식 저장소 `https://github.com/chungmin99/pyroki` README: Python 3.10+ 라이브러리, JAX를 통해 CPU/GPU/TPU 지원. `pyproject.toml` 필수 의존성에 `jax`, `jaxlib`, git URL의 `jaxls`가 있다. 라이선스는 MIT(`LICENSE`). 따라서 Python API이지만 JAX 의존성을 제거한 순수 Python/C++ 구현이라고 볼 근거는 없다.
+- 공식 README·예제 `https://chungmin99.github.io/pyroki/examples/04_ik_with_coll/`, `.../07_trajopt/`: URDF FK, 충돌 비용 포함 IK, 벽 상자를 피하는 다중 waypoint 궤적 최적화 사례는 있다. README는 샘플링 기반 planner(그래프/트리)는 **포함하지 않는다**고 명시한다. 따라서 현행 양방향 RRT의 직접 대체가 아니라 비교할 별도 궤적 최적화 후보이다. 예제는 `pyroki_snippets`의 solver wrapper를 사용한다.
+- README는 메시 충돌을 캡슐로 근사하고 정적 shape/JIT 첫 실행 비용을 한계로 명시한다. 같은 바구니·마커·쥔 접시 충돌 계약을 구성할 수 있는지는 아직 확인하지 않았다. 버전은 `pyproject.toml`에 0.0.0으로 적혀 있어 실제 설치 git commit을 고정해야 한다.
+- 점검 시 `bash .../calibration/run.sh demo4 --execute` PID 3517598이 가동 중이었다. 보스 실기 시연 중 CPU 다중 작업 금지 규칙에 따라 별도 환경 설치, M1013 1000자세 FK/IK, 궤적 비교는 시작하지 않았다. 숫자 벤치마크·실기 적합성 판단은 아직 없다.
+
 ## 2026-10-19 17:xx KST Codex — BK v6 조건 불일치 확인·결과 보류
 - BK v6 `calibration/data/basket/stand_feasibility_20261019_BK_1523_v6/progress.jsonl`은 528/1188 조건만 기록된 부분 결과다. 실행 PID 3480057은 더 이상 존재하지 않는다. CSV·JSON 요약·PNG 지도는 없다.
 - `/tmp/bk_feasibility_20261019_v6.py`는 `x_shift_m=None`, `tilt_deg=-basket_quadrant_tilt_trim_deg`, `centre_h=basket_quadrant_centre_h_m`로 `quadrant_plan`을 호출했다. 현행 `calibration/pipeline.py`의 `--sim_q`는 분면별 `basket_quadrant_sim`의 `aim_m`·`lean`·`centre_h`와 `basket_quadrant_model_dx_m`을 전달하고 face 순서도 사용한다. 따라서 v6은 현재 실기와 같은 조건의 가능 지도가 아니며 성공/실패 비율을 실기 범위로 해석할 수 없다. 이후 Q4 dx 변경(5862e27)도 v6에 반영되지 않았다.
