@@ -24,6 +24,16 @@ The boss asked for PyRoki to replace current FK/IK/RRT. This directory is an
 
 Machine-readable numbers: `fk_result.json`, `ik_result.json` in this directory (local artifacts; do not stage as datasets).
 
+Additional upstream trajopt smoke: using a saved taught `to_above` start/end
+link_6 pose (`20261019_185810_433_taught/plan.json`), M1013 collision meshes,
+20 waypoints, and **no world obstacles**, upstream `solve_trajopt` returned a
+20×6 trajectory in 14.14 s first call (`/tmp/pyroki_trajopt_smoke.log`). Its
+endpoint IK chose different joint branches: stored start J3/J5 were
+114.575°/−27.528°, optimized start J3/J5 were 104.333°/+21.756°.
+This confirms the example cannot directly preserve the already chosen carry
+start/end joint configurations. It is a functional smoke, not a collision
+comparison with RRT or an executable replacement.
+
 The official IK example's `_solve_ik_jax` wrapper passes an int64 link index when JAX x64 is enabled, while the analytic Jacobian asserts int32. `compare_ik.py` calls the same upstream JIT with an explicit int32 link index. `bridge.py` does the same. This was an integration detail, not an FK/IK accuracy failure.
 
 ## Why RRT has not been replaced
