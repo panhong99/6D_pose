@@ -5035,3 +5035,7 @@
 ## 2026-10-20 06:2x KST Codex — BN opt-in 실패 계약 정리
 - 독립 `OfflinePyrokiBackend.carry()`의 반환 후 endpoint/shape 또는 최종 정확 gate 실패를 `CandidateRejected`로 통일하고, 실패 이유를 `attempts`에 남긴다. 최적화 중 모든 후보 실패와 같은 호출 계약이므로 나중에 명시적 fallback을 붙일 때 구별할 수 있다. `.envs/pyroki-bm-20261019/bin/python -m unittest discover -s experiments/pyroki_bm -p 'test_*.py' -q` **12/12 통과**.
 - 새 경로 성능 결과는 없고 기존 조건부 133계획 RRT 133/133·PyRoki 109/133 상태다. 시연 고정 파일과 실로봇·그리퍼·카메라·ROS 경로는 건드리지 않았다.
+
+## 2026-10-20 07:0x KST Codex — BN 요약표 출처 표기 정정
+- `calibration/data/basket/stand_free_20261019/pyroki_vs_rrt_v4/table.jsonl`의 boolean은 **옛 drop 손목 gate** 결과로 실제 125/133·101/133이다. README와 이전 LOG에서 이 경로를 133/133·109/133의 직접 근거처럼 읽을 수 있어, README에 구분을 명시했다. 교정된 133/133·109/133은 동일 폴더의 **133개 개별 JSON을 현 drop 계약으로 재검사**한 수치다. 원 요약표·개별 데이터는 변경하지 않았다.
+- 이번에는 문서 출처만 정정했으며 새 최적화·로봇·카메라 실험은 없다. 역사적 camera/config 부재와 현재 장면 재구성 한계는 그대로다.

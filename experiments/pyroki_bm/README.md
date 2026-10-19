@@ -90,10 +90,14 @@ https://chungmin99.github.io/pyroki/examples/07_trajopt/ .
 **Newer sweep after the dense floor fix:** Claude regenerated 133 plans after
 commit `2163d36` (0.5° final carry floor check) and compared the same saved
 endpoints in `calibration/data/basket/stand_free_20261019/pyroki_vs_rrt_v4/table.jsonl`.
-The first benchmark report accepted 125/133 saved RRT paths and 101/133
+That `table.jsonl` is the **original, uncorrected** summary; it still records
+125/133 saved RRT and 101/133 PyRoki full-path passes. Do not read its
+`legacy_valid`/`pyroki_valid` columns as the corrected counts. The first
+benchmark report accepted 125/133 saved RRT paths and 101/133
 PyRoki paths because it applied the carry-only 100° wrist limit to the shared
 vertical drop. The planner does not apply that limit there. After correcting
-the benchmark's drop gate, the same saved paths yield **133/133 RRT** and
+the benchmark's drop gate and rechecking the 133 individual JSON outputs in
+that directory, the same saved paths yield **133/133 RRT** and
 **109/133 PyRoki** full-path passes. All 133 shared drops pass insertion
 clearance and joint limits. In the corrected 109-case shared pass set,
 median travel was 164.2° versus 164.7°, and 101-point acceleration/jerk L2
