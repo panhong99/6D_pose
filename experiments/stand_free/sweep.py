@@ -103,7 +103,7 @@ def plan_step(job):
                                               grasp_low_z=float(p[2]), **kw)
                 if e is not None:
                     res.update(ok=True, pin=pin, face=rep['face'], phi=rep['phi_deg'], carry=rep['carry'][:12],
-                               t=time.monotonic() - t0)
+                               t=time.monotonic() - t0, plan=str(e), standing=list(standing))
                     return res
                 kinds |= {w.split(':')[0] if ':' in w else w.split(' ')[0] for _, w in rep['tried']}
     res['why'] = ','.join(sorted(kinds))

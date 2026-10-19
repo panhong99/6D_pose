@@ -94,7 +94,9 @@ def main():
         pin = int(pin)
         if quadrant not in ("Q1", "Q2", "Q3", "Q4") or pin < 1:
             parser.error(f"invalid --standing {item!r}; expected Q1..Q4:PIN")
-        plates.append((quadrant, pin - 1))
+        plates.append((quadrant, pin))   # (10/19 Claude) pin -> gap index below with pin_gap, not pin - 1
+    from plate_plans import pin_gap
+    plates = [(qd_, pin_gap(basket, qd_, pin_)) for qd_, pin_ in plates]   # (10/19 Claude) pin 12 is gap 0 in Q3
     H = np.asarray(source["plate_in_tcp"], float)
     tool = np.eye(4)
     tool[2, 3] = q.get("tool_length_m", 0.165)
