@@ -5043,3 +5043,7 @@
 ## 2026-10-20 07:2x KST Codex — BN 후보 거부 진단 보존
 - `OfflinePyrokiBackend.carry()`가 endpoint/shape 또는 마지막 정확 gate에서 거부할 때 최적화 seed별 `attempts`를 버리지 않고 최종 실패 이유 뒤에 남기도록 했다. 호출자가 실제 실패 seed와 정확 gate 결과를 함께 기록할 수 있다. 오프라인 회귀 **12/12 통과** (`.envs/pyroki-bm-20261019/bin/python -m unittest discover -s experiments/pyroki_bm -p 'test_*.py' -q`).
 - 새 성공률/시간 실험은 없으며 10/22 시연 경로·로봇·그리퍼·카메라·ROS 경로를 실행하거나 수정하지 않았다.
+
+## 2026-10-20 08:2x KST Codex — BN 교정 집계 재현 도구
+- `experiments/pyroki_bm/recount_drop_gate.py`로 v4 폴더의 **133개 개별 JSON**을 읽어 공유 수직 하강의 현 계약(삽입 clearance ≥1, 유한 관절, joint limits; carry 전용 J4/J6 제한은 제외)을 재집계했다. 결과는 `drop_valid 133/133`, `legacy_full_valid 133/133`, `pyroki_full_valid 109/133`, `both_full_valid 109/133`로 기존 교정 수치와 일치한다. 실행: `python3 experiments/pyroki_bm/recount_drop_gate.py calibration/data/basket/stand_free_20261019/pyroki_vs_rrt_v4`. README에 재현 명령을 기록했다.
+- 원 JSON/요약표는 변경하지 않았다. 새 경로 생성이나 실기 시험이 아니며 원 camera/config 재구성 한계는 그대로다.

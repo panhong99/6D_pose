@@ -104,6 +104,10 @@ median travel was 164.2° versus 164.7°, and 101-point acceleration/jerk L2
 norms were 0.00428/0.00499 versus 0.00249/0.00302. Median exact held/floor
 clearance ratios were 1.61/1.24 versus 1.80/1.47. PyRoki solve time median
 was 4.1 s, maximum 9.7 s across all 133 cases (CPU).
+Reproduce these acceptance counts without rewriting the original summary:
+`python3 experiments/pyroki_bm/recount_drop_gate.py calibration/data/basket/stand_free_20261019/pyroki_vs_rrt_v4`.
+This recount reads each per-job JSON and applies the insertion checker and
+joint limits to the drop; it does not solve paths again.
 These remain offline reconstructed results, without historical camera/config
 provenance or robot execution. They supersede the older 111-plan performance
 table for current-code comparison; retain that older table as a diagnostic of
