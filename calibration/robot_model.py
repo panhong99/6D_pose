@@ -14,6 +14,7 @@ Kinematics checked on the real robot: q = 0 -> flange (0.14, 34.8, 1452.5) mm mo
 """
 import argparse
 import json
+import math
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -33,6 +34,8 @@ DEFAULT_URDF = M1013_SHARE / 'urdf' / 'm1013.urdf'
 
 # ================================================================ kinematics
 
+_I3 = np.eye(3)
+
 class Kinematics:
     def __init__(self, urdf=DEFAULT_URDF):
         self.joints = []
@@ -49,11 +52,19 @@ class Kinematics:
         assert len(self.joints) == 6
 
     def frames(self, q):
+        # (10/19 보스: faster planning) Rodrigues by hand: scipy Rotation per joint was ~half of all planning time
         t = np.eye(4)
         result = {'base_link': t.copy()}
-        for angle, (name, origin, axis, _, _) in zip(q, self.joints):
-            t = t @ origin @ make_T(Rotation.from_rotvec(axis * angle).as_matrix(), [0, 0, 0])
-            result[name] = t.copy()
+        if not hasattr(self, '_rod'):
+            self._rod = []
+            for _, _, axis, _, _ in self.joints:
+                k = axis / np.linalg.norm(axis)
+                K = np.array([[0.0, -k[2], k[1]], [k[2], 0.0, -k[0]], [-k[1], k[0], 0.0]])
+                self._rod.append((K, K @ K))
+        for angle, (name, origin, _, _, _), (K, K2) in zip(q, self.joints, self._rod):
+            t = t @ origin
+            t[:3, :3] = t[:3, :3] @ (_I3 + math.sin(angle) * K + (1.0 - math.cos(angle)) * K2)
+            result[name] = t
         return result
 
     def fk(self, q):
@@ -204,22 +215,38 @@ class CollisionChecker:
     """Distance-field check of M1013 collision-mesh samples (+ optional tool cylinder) against static boxes."""
 
     def __init__(self, kin, boxes, resolution=0.01, margin=None, points_per_link=600,
-                 bounds=((-0.6, 1.8), (-0.9, 0.9), (-0.15, 1.7)), seed=0):
+                 bounds=((-0.6, 1.8), (-0.9, 0.9), (-0.15, 1.7)), seed=0, disk_cache=False):
         margin = FRAME_CELL['collision_margin_m'] if margin is None else margin
         self.kin, self.margin, self.res = kin, margin, resolution
         self.plan_margin = margin * PLAN_MARGIN_FACTOR
         self.lo = np.array([b[0] for b in bounds], dtype=float)
         shape = np.ceil((np.array([b[1] for b in bounds]) - self.lo) / resolution).astype(int)
-        occ = np.zeros(shape, dtype=bool)
-        centres = self.lo + (np.indices(shape).transpose(1, 2, 3, 0) + 0.5) * resolution
-        for box in boxes:                               # (name, centre, size[, R]): R = 3x3 box axes in base (10/13 basket walls)
-            _, centre, size = box[:3]
-            d = centres - np.asarray(centre)
-            if len(box) > 3:
-                d = d @ np.asarray(box[3])
-            occ |= np.all(np.abs(d) <= np.asarray(size) / 2, axis=-1)
-        self.occupancy = occ
-        self.distance = ndimage.distance_transform_edt(~occ, sampling=resolution).astype(np.float32)   # m to nearest occupied
+        cache = None
+        if disk_cache:                                  # (10/19 보스: faster planning) the fixed cell (frame/table) field is
+            import hashlib                              # the same every run: ~2 s each to build, read back instead
+            key = json.dumps(dict(boxes=[[b[0], np.asarray(b[1]).tolist(), np.asarray(b[2]).tolist()] +
+                                         ([np.asarray(b[3]).tolist()] if len(b) > 3 else []) for b in boxes],
+                                  res=resolution, bounds=np.asarray(bounds).tolist()), sort_keys=True)
+            cache = DATA / 'collision_cache' / f'edt_{hashlib.sha256(key.encode()).hexdigest()[:20]}.npz'
+        if cache is not None and cache.is_file():
+            with np.load(cache) as z:
+                self.occupancy, self.distance = z['occupancy'], z['distance']
+        else:
+            occ = np.zeros(shape, dtype=bool)
+            centres = self.lo + (np.indices(shape).transpose(1, 2, 3, 0) + 0.5) * resolution
+            for box in boxes:                           # (name, centre, size[, R]): R = 3x3 box axes in base (10/13 basket walls)
+                _, centre, size = box[:3]
+                d = centres - np.asarray(centre)
+                if len(box) > 3:
+                    d = d @ np.asarray(box[3])
+                occ |= np.all(np.abs(d) <= np.asarray(size) / 2, axis=-1)
+            self.occupancy = occ
+            self.distance = ndimage.distance_transform_edt(~occ, sampling=resolution).astype(np.float32)   # m to nearest occupied
+            if cache is not None:                       # written once, never replaced
+                cache.parent.mkdir(parents=True, exist_ok=True)
+                tmp = cache.with_suffix('.tmp.npz')
+                np.savez(tmp, occupancy=occ, distance=self.distance)
+                tmp.replace(cache)
         self.boxes = boxes
         self.link_points = {k: v for k, v in load_link_points(points_per_link, seed).items() if k not in STATIC_LINKS}
         self.tool = None

@@ -62,7 +62,7 @@ def library_checkers(Tbc, q):
         frame = [b for b in boxes if b[0] != 'table'] + [('d455_body', np.asarray(Tbc)[:3, 3].tolist(), list(D455_BOX))]
         out = {}
         for name, bx, m in (('frame', frame, sh['frame_margin']), ('table', [b for b in boxes if b[0] == 'table'], sh['table_margin'])):
-            c = CollisionChecker(kin, bx, margin=m)
+            c = CollisionChecker(kin, bx, margin=m, disk_cache=True)   # (10/19) fixed cell: field read from disk
             c.set_tool(q.get('tool_length_m', 0.165), q.get('tool_radius_m', 0.06))
             if q.get('tool_model')=='sim_open_gripper':
                 import sys
