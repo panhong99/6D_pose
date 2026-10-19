@@ -285,15 +285,16 @@ class CollisionChecker:
     def path_clearance(self, path):
         return min(self.clearance(q) for q in path)
 
-    def plan(self, start, goal, step_deg=2.0, max_nodes=4000, seed=0):
-        """Straight joint line if collision-free, else bidirectional RRT + shortcut + tidy."""
+    def plan(self, start, goal, step_deg=2.0, max_nodes=4000, seed=0, span_deg=90.0):
+        """Straight joint line if collision-free, else bidirectional RRT + shortcut + tidy.  Same inputs + seed -> same path;
+        span_deg: samples within the start/goal joint box widened by this."""
         if self._edge_free(start, goal, step_deg):
             return [start, goal], 'straight'
         rng = np.random.default_rng(seed)
         lower = np.array([j[3] for j in self.kin.joints])
         upper = np.array([j[4] for j in self.kin.joints])
-        span_lo = np.maximum(lower, np.minimum(start, goal) - np.radians(90))   # sample near the start/goal box
-        span_hi = np.minimum(upper, np.maximum(start, goal) + np.radians(90))
+        span_lo = np.maximum(lower, np.minimum(start, goal) - np.radians(span_deg))   # sample near the start/goal box
+        span_hi = np.minimum(upper, np.maximum(start, goal) + np.radians(span_deg))
         trees, parents = [[start], [goal]], [[-1], [-1]]
         for _ in range(max_nodes):
             sample = rng.uniform(span_lo, span_hi)

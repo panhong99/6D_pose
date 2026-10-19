@@ -1038,7 +1038,7 @@ class FloorCheck:
         return 1.0 + (float(P[over, 2].min()) - self.z_floor) / self.scale
 
 
-def rrt_carry(held, floor, start, goal, seeds=range(2), max_wrist_deg=100.0, max_nodes=1500):
+def rrt_carry(held, floor, start, goal, seeds=(0, 1), max_wrist_deg=100.0, max_nodes=1500, step_deg=2.0, span_deg=90.0):
     """(10/19 보스) bidirectional RRT for the carry with the floor over the basket; a path that turns J4 or J6 more than
     max_wrist_deg away from the start (wrist spin, 보스 10/19) is refused and the next seed tried."""
     from robot_model import MultiChecker
@@ -1049,7 +1049,7 @@ def rrt_carry(held, floor, start, goal, seeds=range(2), max_wrist_deg=100.0, max
     errs = []
     for sd in seeds:
         try:
-            path, how = mc.plan(start, goal, seed=sd, max_nodes=max_nodes)   # (10/19) a dead candidate costs seconds, not minutes
+            path, how = mc.plan(start, goal, seed=sd, max_nodes=max_nodes, step_deg=step_deg, span_deg=span_deg)   # (10/19) seconds, not minutes
         except RuntimeError as e:
             errs.append(str(e))
             continue
@@ -1324,7 +1324,24 @@ def quadrant_plan(Tbb, quadrant, gap, H, tool, start_deg, Tbc, q, grasp_legs=Non
                                 raise RuntimeError('rrt carry: drop limit/flip')
                             drop.append(sol)
                             prev = sol
-                        top, how = rrt_carry(held, fl, np.radians(start_deg), drop[-1])
+                        from robot_model import MultiChecker
+                        rr = q.get('basket_rrt', {}) or {}  # (10/19 보스) RRT knobs in config, like the grasp library's
+                        mc_ = MultiChecker(held.checkers + [fl])
+                        top = None
+                        prior = q.get('_carry_prior')      # (10/19 보스) the carry that worked here before, reused first
+                        if prior:
+                            pw = np.radians(np.asarray(prior['waypoints_deg'], float))
+                            cand = [np.radians(start_deg)] + list(pw[1:int(prior['drop_start'])]) + [drop[-1]]
+                            wr = np.degrees(np.abs(np.array(cand)[:, [3, 5]] - np.radians(start_deg)[[3, 5]])).max()
+                            c_pr = mc_.path_clearance(pp(np.array(cand), 0.5))
+                            if c_pr >= 1.0 and wr <= rr.get('max_wrist_deg', 100.0):
+                                top, how = cand, f'prior {prior.get("source", "")[-40:]}'
+                            elif os.environ.get('PRIOR_DEBUG'):
+                                print(f'   prior refused: clearance {c_pr:.2f}, wrist {wr:.0f}', flush=True)
+                        if top is None:
+                            top, how = rrt_carry(held, fl, np.radians(start_deg), drop[-1], seeds=tuple(rr.get('seeds', (0, 1))),
+                                                 max_wrist_deg=rr.get('max_wrist_deg', 100.0), max_nodes=rr.get('max_nodes', 1500),
+                                                 step_deg=rr.get('step_deg', 2.0), span_deg=rr.get('span_deg', 90.0))
                     except RuntimeError as e_rrt:
                         raise RuntimeError(f'{e_rule}; {e_rrt}') from None
                     carry = [np.asarray(c_) for c_ in top] + [np.asarray(c_) for c_ in drop[::-1][1:]]
@@ -1357,7 +1374,7 @@ def quadrant_plan(Tbb, quadrant, gap, H, tool, start_deg, Tbc, q, grasp_legs=Non
             legs = dict(grasp_legs, **legs)
         path = taught_plan(legs, Tbc, q, f'quadrant {quadrant} gap {gap + 1}')
         plan = json.loads(Path(path).read_text())
-        rep = dict(quadrant=quadrant, gap=gap + 1, phi_deg=phi, face=int(side), y_shift_m=round(y_shift_m, 4), x_shift_m=round(x_shift_m, 4), carry=how, home=how_h, tried=tried, accepted=plan['accepted'],
+        rep = dict(quadrant=quadrant, gap=gap + 1, phi_deg=phi, face=int(side), drop_start=None if rise is None else int(k), y_shift_m=round(y_shift_m, 4), x_shift_m=round(x_shift_m, 4), carry=how, home=how_h, tried=tried, accepted=plan['accepted'],
                    clearance_ratio=dict(carry=round(held.path_clearance(pp(np.array(carry), 0.5)) if rise is None else c_car, 2), insert=round(c_ins, 2),
                                         after=round(free.path_clearance(pp(np.array(home), 0.5)), 2)))
         plan.update(basket_T=np.asarray(Tbb).tolist(), plate_in_tcp=np.asarray(H).tolist(), quadrant_plan=rep)

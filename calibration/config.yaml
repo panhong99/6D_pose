@@ -157,6 +157,10 @@ plate_ik_bc:                       # --plate_policy ik_bc (overrides plate_rl ke
   basket_carry_rrt_over_plates: [Q4]   # (10/19 18:4x 보스: Q4 2nd plate hit the standing plate before the descent) RRT floor over the basket also >= standing plate tops + 5 cm (~30 cm higher); Q3 unchanged
   basket_carry_rrt_extra_m: {}         # extra floor height per quadrant with a plate standing (Q4 +30 on top of the plate tops was out of reach)
                                        # = max(marker tops, standing plate tops) + 5 cm + this; the vertical drop starts there
+  basket_carry_library: data/carry_library   # (10/19 보스) <quadrant>_<colour>.json: a carry that worked, tried first (start/end re-joined,
+                                       # same clearance/floor/wrist checks); the first finished run of a key writes it, never overwritten
+  basket_rrt: {seeds: [0, 1], max_nodes: 1500, step_deg: 2.0, span_deg: 90, max_wrist_deg: 100}   # (10/19 보스) RRT knobs: same
+                                       # inputs + seeds -> same path; more seeds/nodes = more chances, slower; span = sampling box (deg)
   basket_carry_rrt_fallback: true     # (10/19 17:4x 보스 'RRT로') when the rise/across/drop rule fails: RRT to the point over the slot with the
                                        # plate's lowest point >= marker tops + basket_carry_clear_m over the basket, J4/J6 turn <= 100 deg, then the same drop
   basket_carry_plate_clear_m: 0.05     # and >= 5 cm over a plate already standing in the basket (its top ~15 cm over the rim). Pin 8 after

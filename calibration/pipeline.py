@@ -512,6 +512,22 @@ def plate_color_auto(C, Tbc, centre=(0.90, 0.35, 0.068), radius=0.09, cam=None, 
     return 'red', red, white
 
 
+def save_carry_prior(path, plan_path, pin):
+    """(10/19 보스) the carry of a finished run as the reuse-first path for its quadrant + plate colour."""
+    P = json.loads(Path(plan_path).read_text())
+    qp = P.get('quadrant_plan', {})
+    if qp.get('drop_start') is None:
+        return None
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(dict(waypoints_deg=P['legs']['to_above']['waypoints_deg'], drop_start=int(qp['drop_start']),
+                                    pin=pin, gap=qp.get('gap'), face=qp.get('face'), phi_deg=qp.get('phi_deg'),
+                                    carry=qp.get('carry'), basket_T=P.get('basket_T'), source=str(plan_path),
+                                    saved=time.strftime('%Y-%m-%d %H:%M:%S')), indent=1))
+    print(f'   운반 경로 라이브러리에 저장: {path}', flush=True)
+    return path
+
+
 def _last_good_path():
     return DATA / 'basket' / 'last_good_basket.json'
 
@@ -811,6 +827,11 @@ def run_plate(args):
                       tilt=args.tilt_trim if args.tilt_trim is not None else q.get('basket_quadrant_tilt_trim_deg', 0.0))
 
             sim_kw = {}
+            lib_dir = cpath(q['basket_carry_library']) if q.get('basket_carry_library') else None
+            lib_key = f'{args.quadrant}_{args.plate_color}'
+            if lib_dir is not None and (lib_dir / f'{lib_key}.json').is_file():   # (10/19 보스) the carry that worked before first
+                q['_carry_prior'] = json.loads((lib_dir / f'{lib_key}.json').read_text())
+                print(f'   운반 경로 라이브러리: {lib_dir / f"{lib_key}.json"} 먼저 시도', flush=True)
             if args.sim_q:                                  # (10/15 보스 시연) Isaac per-quadrant lean / aim / wrist flip
                 sys.path.insert(0, str(ROOT / 'rl'))
                 import basket_env as be
@@ -1157,6 +1178,8 @@ def run_plate(args):
                     else:
                         mleg([(splan, 'ascend'), (splan, 'to_home')], 'retreat', vel)
                     rec.event('done', place=args.place, quadrant=args.quadrant, pin=args.pin, insert='quadrant', merged=merge)
+                    if lib_dir is not None and not (lib_dir / f'{lib_key}.json').exists():   # first good run of this key: kept
+                        save_carry_prior(lib_dir / f'{lib_key}.json', cur['plan'], args.pin)
                     print(f'[5/5] {args.quadrant} 핀 {args.pin} 넣기 완료.', flush=True)
                     return
                 if policy_job is not None:
