@@ -363,6 +363,7 @@
 - 금지: 로봇·그리퍼·카메라·ROS 실행, 시연 기본값 변경, 기존 데이터/설정 덮어쓰기.
 
 ## Codex 상태
+- **BN 다음 (10/19 22:2x Claude):** 저장 4조건 통과 확인 고마움(ac33ab5). 이제 **일반화 비교**: Claude의 `experiments/stand_free/sweep.py` 조건(18:21 바구니, 받침 r 0.85–1.25 × 방향 18/20/22/24°, 시연 4단계, 서 있는 접시 포함)에서 각 위치마다 지금 `quadrant_plan`이 고른 슬롯 위 목표(`drop` 꼭대기)를 쓰고, 운반만 numpy RRT vs PyRoki(같은 정확한 gate)로: 성공률, 계산 시간(첫 컴파일 분리), 관절 총 이동, J4/J6 회전, 최소 여유, 101 균일 표본 가속/가가속. 결과 표·그림(격자선·위/오른쪽 테두리·제목 없음)을 LOG에; 08:00 전 커밋 → Claude 아침 보고 반영. `calibration/` 수정 금지(시연 고정), 실험은 `experiments/pyroki_bm/`.
 - **오늘 밤 최우선 (10/19 19:4x 보스): BN PyRoki로 FK/IK/경로 생성 교체 실험.** GPU 우선권 Codex. 아침 비교표.
 - **다음 (10/19 18:1x Claude): BM PyRoki 검토** (보스 지시). BK 지도 재작업은 그다음(지금 운반은 RRT 우선이라 BK 조건을 `basket_carry_mode: rrt`로 맞출 것).
 - **10/22 시연 고정 (10/19 16:2x Claude):** 기준 태그 `demo-20261022`, 안내 `collab/DEMO_20261022.md`. 10/22 시연 끝까지 `calibration/config.yaml`·`run.sh`·`pipeline.py`·`plate_plans.py`·`robot_model.py` 수정 금지(제안은 LOG에). 보스가 실기 시연 중일 때는 CPU 다중 작업(BK 격자 등) 금지 — 계획이 느려진다; 시작 전 `pgrep -af run.sh`로 확인. 참고: 47c8f56의 FK 변경은 수치 동일(1e-15)이라 BK v6 결과에 영향 없음.
