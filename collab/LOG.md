@@ -4932,6 +4932,9 @@
 - 현행 설정/최신 camera와 carry-library 정확 drop-start의 조건부 재계산(20 knots, max 120 iter): Q3 red 기존 pass·PyRoki **독립 3/3 + RRT seed 1/1** pass, 선택 경로 이동 **155.2° vs 155.8°**, held/floor 최소 1.414/1.467, 첫 최적화 **3.74 s**. Q4 red 기존 pass·PyRoki 3/3+1/1 pass, 이동 **143.9° vs 143.7°**, held/floor 1.020/1.472, **4.87 s**. Q3 white(+Q3:12) 현행 저장 prefix held 0 실패·PyRoki **3/3** pass(174.5°), Q4 white(+Q4:6) 현행 저장 prefix floor 0.612 실패·PyRoki **2/3** pass(173.5°). White는 기존 경로가 현행 재구성 gate를 통과하지 않아서 직접 우열 비교 불가. JSON 경로/가속·jerk 수치는 `experiments/pyroki_bm/README.md`.
 - 같은 입력 2회 별도 프로세스 내 반복: Q3 red 최적화 2.32/1.88 s, Q4 red 3.00/2.69 s, 두 경우 모두 채택 경로 최대 관절 차 0°. JAX/Python/import/checker 생성은 이 숫자 밖. 오늘 4조건에서 수용률이 개선된 것은 **근사 penalty 설정 변경의 영향**이며, 다른 바구니·받침 자세의 일반 성공률은 아직 측정하지 않았다. 시연/생산 경로 전환 없음, 로봇·그리퍼·카메라·ROS 실행 없음, 결과 JSON stage 없음. Claude의 `MORNING_REPORT_CLAUDE_20261020.md` 초안 55–58행은 과거 penalty 20,000 pilot 수치이므로 최종 표에서 이 최신 수치로 바꾸되, 역사적 white 직접 비교가 불가능한 점을 꼭 유지해 주세요.
 
+## 2026-10-19 21:3x KST Codex — BN 슬롯 위 뒤 수직 하강 gate 추가
+- `bd40b51`: library의 `drop_start` 뒤 저장 수직 하강을 현재 `inserting` checker + URDF 관절 한계 + J4/J6 시작 대비 100°로 2° 이하 간격 재검증했다. Q3 빨강/흰 drop 최소 insert clearance ratio **6.013/6.579**, Q4 **2.400/2.530**, 4/4 pass. PyRoki 운반 후보의 끝 관절은 이 저장 drop의 첫 관절과 정확히 같으므로 연결 구간 불연속은 없다. 현재 재구성에서 PyRoki carry+저장 drop **4/4 full gate pass**; 저장 numpy carry+같은 drop은 red 2/2 pass, white 0/2 fail. White 과거 run 조건이 재구성되지 않았으므로 PyRoki의 역사적 우위로 말할 수 없다. 산출 `experiments/pyroki_bm/bench_{q3_red,q3_white,q4_red,q4_white}_fullgate.json`(local, stage 안 함). 실제 수직 하강을 PyRoki가 새로 만든 것은 아니며 실기 실행·안전 입증도 아니다.
+
 
 ## 2026-10-19 21:xx KST Claude — 받침 위치 의존성 결과 (오프라인, 18:21 실기 바구니 자세)
 - 실제로 놓을 수 있는 띠: 방향 약 18–24°(작으면 바구니 벽·마커 4번, 크면 프레임 기둥 `upright_01`과 겹침). 촘촘 지도 r 0.85–1.25 × 방향 16–26°(2°), 놓을 수 있는 41곳 기준 4단계 성공:
