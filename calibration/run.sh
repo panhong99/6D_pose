@@ -4,7 +4,7 @@
 #   bash calibration/run.sh stream             read-only flange pose stream -> UDP 5006 (needed by calibrate.py)
 #   bash calibration/run.sh viz [--plan P]     read-only RViz: real robot, FoundationPose plate, plan preview (UDP 5011)
 #   bash calibration/run.sh pipeline [args]    terminal 2: cube pipeline in conda foundationpose (see pipeline.py)
-#   bash calibration/run.sh demo4 [--execute]  meeting demo: Q4, Q3, Q1, Q2 one --auto --sim_q run each; DEMO_PINS="Q3:9 Q3:4:white" picks pins/colour
+#   bash calibration/run.sh demo4 [--execute]  meeting demo: Q4, Q3, Q1, Q2 one --auto --sim_q run each; DEMO_PINS="Q3:front Q3:back:white" picks pins/colour
 #   bash calibration/run.sh look4 [--execute]  plate-free wrist photo per quadrant (look pose -> photo -> home); LOOK_QUADRANTS="Q1 Q3"
 #   bash calibration/run.sh sim [args]         Isaac Sim digital twin of the cell (see sim_scene.py)
 #   bash calibration/run.sh mover --plan P --leg L [--execute]   one plan leg, Human-run
@@ -44,8 +44,10 @@ case "$mode" in
     # order stays), and every plate put earlier in this demo (all quadrants) is passed on (--basket_plates Q:pin) so the
     # carry goes over it.  After a failed run Human says whether a plate stayed in the basket.
     pins_in="${DEMO_PINS:-Q4:6 Q3:6 Q1:6 Q2:5}"
+    # (10/19 보스) the pin may be front / back instead of a number: the first pin of that half with a plan (front first)
     pins_run=$(python3 -c 'import sys; e = sys.argv[1:]; q = [x.split(":")[0] for x in e]
-s = {k: iter(sorted((x for x in e if x.split(":")[0] == k), key=lambda x: -int(x.split(":")[1]))) for k in set(q)}
+o = lambda p: {"front": 1000, "back": -1}.get(p) if p in ("front", "back") else int(p)
+s = {k: iter(sorted((x for x in e if x.split(":")[0] == k), key=lambda x: -o(x.split(":")[1]))) for k in set(q)}
 print(" ".join(next(s[k]) for k in q))' $pins_in)
     [ "$pins_run" != "$(echo $pins_in)" ] && echo "### 같은 칸은 큰 번호부터: $pins_in -> $pins_run"
     placed="${DEMO_BASKET_PLATES:-}"   # plates already in the basket before this demo, e.g. DEMO_BASKET_PLATES="Q3:10 Q4:10"
@@ -64,14 +66,21 @@ print(" ".join(next(s[k]) for k in q))' $pins_in)
       read -r ans
       [ "$ans" = q ] && break
       [ "$ans" = s ] && continue
+      chosen="$(mktemp)"; rm -f "$chosen"
+      if [ "$pin" = front ] || [ "$pin" = back ]; then where=(--region "$pin" --chosen_pin_out "$chosen"); else where=(--pin "$pin"); fi
       if conda run --no-capture-output -n foundationpose python -u "$DIR/pipeline.py" --task plate --plate_policy ik_bc \
-        --place basket --insert quadrant --quadrant "$q" --pin "$pin" --plate_color "$color" --sim_q --auto "${pol[@]}" "$@"; then
-        placed="$placed $q:$pin"
+        --place basket --insert quadrant --quadrant "$q" "${where[@]}" --plate_color "$color" --sim_q --auto "${pol[@]}" "$@"; then
+        [ -s "$chosen" ] && got=$(cat "$chosen") || got="$q:$pin"
+        placed="$placed $got"; echo "--- ${got} 에 넣음"
       else
-        echo "!!! ${q} 핀 ${pin} 실패 - 로그 확인. 이 접시가 바구니에 꽂혀 남았으면 y, 아니면 Enter"
+        [ -s "$chosen" ] && got=$(cat "$chosen") || got="$q:$pin"
+        echo "!!! ${q} ${pin} 실패 - 로그 확인. 이 접시가 바구니(${got})에 꽂혀 남았으면 y, 아니면 Enter"
         read -r left
-        [ "$left" = y ] && placed="$placed $q:$pin"
+        if [ "$left" = y ]; then
+          case "$got" in *:front|*:back) echo "!!! 고른 핀을 모름: 다음 실행 전에 DEMO_BASKET_PLATES로 알려 주세요";; *) placed="$placed $got";; esac
+        fi
       fi
+      rm -f "$chosen"
     done ;;
   look4)      # (10/19 보스) plate-free wrist photo of each quadrant (Codex tine labels): per quadrant the basket is measured
               # from the markers, a look pose is planned, then look leg -> photo -> home leg.  Human: empty gripper, no plate

@@ -471,6 +471,22 @@ def load_basket_insert_policy(path):
     return expert
 
 
+def region_pins(n, region, occupied=()):
+    """(10/19 보스) candidate pins for "a plate in the front / back of the quadrant", in the order to try; pin 1 = farthest
+    from the robot, n = nearest.  front: the robot half, nearest first (leaves room behind it).  back: farther than every
+    plate already in this quadrant (one empty gap between plates), nearest first; with none there, the far half.
+    Pins next to a plate already there are never candidates (two plates one gap apart touch)."""
+    occupied = [int(o) for o in occupied]
+    if region == 'front':
+        cand = list(range(n, n // 2, -1))
+    elif region == 'back':
+        top = min(occupied) - 2 if occupied else n // 2
+        cand = list(range(top, 0, -1))
+    else:
+        raise ValueError(f'region {region!r}: front or back')
+    return [c for c in cand if all(abs(c - o) >= 2 for o in occupied)]
+
+
 def landed_gap_error(Tbb, quadrant, pin, landed_pins):
     """(10/16) Gap error [x, y] in the basket frame (the sim's 'seen' gap error) from where earlier real inserts aimed
     at `pin` landed: mean landed gap centre - target gap centre (pin N = between tines N and N+1, fractions interpolate)."""
@@ -712,7 +728,25 @@ def run_plate(args):
                 return quadrant_plan(basket_T, mq, pin_gap(basket_T, mq, args.pin), qs['H'], qs['tool'], start_deg, Tbc, q,
                                      yaw_trim_deg=qs['yaw'], y_shift_m=args.y_shift, grasp_deg=legs0['to_grasp']['waypoints_deg'][-1],
                                      plates=plates, grasp_low_z=float(p[2]), **kw)   # (10/19) 15 cm from the plate on the stand
-            early, rep = qplan(legs0['lift']['waypoints_deg'][-1])
+            if args.region:                                 # (10/19 보스) any pin of the front / back half that has a plan
+                from plate_plans import basket_gaps
+                same_q = [int(v.split(':')[-1]) for v in (args.basket_plates or []) if ':' not in v or v.split(':')[0] == args.quadrant]
+                cands = region_pins(len(basket_gaps()[mq]), args.region, same_q)
+                print(f'   {args.quadrant} {args.region}: 후보 핀 {cands} (이미 있는 접시 {same_q})', flush=True)
+                early, rep, why = None, None, {}
+                for pin_ in cands:
+                    args.pin = pin_
+                    early, rep = qplan(legs0['lift']['waypoints_deg'][-1])
+                    if early is not None:
+                        break
+                    why[pin_] = sorted({w.split(':')[0] if ':' in w else w.split(' ')[0] for _, w in rep['tried']})
+                    print(f'   핀 {pin_}: 경로 없음 {why[pin_]}', flush=True)
+                if early is None:
+                    raise RuntimeError(f'{args.quadrant} {args.region}: no pin with an insert plan ({why})')
+                if args.chosen_pin_out:
+                    Path(args.chosen_pin_out).write_text(f'{args.quadrant}:{args.pin}\n')
+            else:
+                early, rep = qplan(legs0['lift']['waypoints_deg'][-1])
             if early is None:
                 raise RuntimeError(f'{args.quadrant} pin {args.pin}: no insert plan from this grasp ({rep["tried"][:4]})')
             print(f'   {args.quadrant} (바구니 모델 {mq}) 핀 {args.pin}: 넣기 계획 OK, 운반 {rep["carry"]}, '
@@ -1204,6 +1238,10 @@ def parse_args(argv=None):
                         'aimed at this --pin landed (e.g. 3.5 = between 3 and 4); their mean error is the policy\'s gap input')
     p.add_argument('--insert_policy', '--insert-policy', type=Path, default=None,
                    help='OPT-IN: apply the deterministic mean of a basket insert PPO checkpoint after lift, using canonical hand pose and unseen gap error; requires --task plate --place basket --insert quadrant --sim_q --execute')
+    p.add_argument('--region', choices=('front', 'back'), default=None,
+                   help='(10/19 보스) --insert quadrant: instead of --pin, the first pin of this half of the quadrant that has a plan '
+                        '(front = robot half, back = behind the plates already there); see region_pins')
+    p.add_argument('--chosen_pin_out', type=Path, default=None, help='with --region: write the chosen "Q:pin" here (demo4)')
     p.add_argument('--pin', type=int, default=5, help='--insert quadrant: pin-pair number in the quadrant, 1 = farthest from '
                    'the robot (wrist image top -> bottom); the plate goes into the gap just robot-side of that pair')
     p.add_argument('--insert-force-limit-n', type=float, default=None,
@@ -1251,8 +1289,10 @@ def parse_args(argv=None):
         q_, _, pin_ = v.rpartition(':')
         if not pin_.isdigit() or int(pin_) < 1 or q_ not in ('', 'Q1', 'Q2', 'Q3', 'Q4'):
             p.error(f'--basket_plates {v}: PIN >= 1 or Q1..Q4:PIN')
-        if int(pin_) == a.pin and q_ in ('', a.quadrant):
+        if not a.region and int(pin_) == a.pin and q_ in ('', a.quadrant):
             p.error('--basket_plates: the target --pin already holds a plate')
+    if a.region and a.insert_landed_pins:
+        p.error('--insert_landed_pins is for a fixed --pin, not --region')
     if a.insert_landed_pins and a.insert_policy is None:
         p.error('--insert_landed_pins needs --insert_policy (a policy trained seeing the gap error)')
     if a.insert_policy is not None:

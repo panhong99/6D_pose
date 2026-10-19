@@ -1006,10 +1006,43 @@ def high_carry(kin, start, goal, cloud, z_low, ok_lim, step_m=0.02):
             out.append(sol)
             prev = sol
         return out
+    def arm_vertical(q0, up, what):                          # (10/19 실기) straight up by J2/J3/J5 only: J1, J4, J6 stay (no wrist
+        from scipy.optimize import least_squares             # flip near J5 = 0); J5 keeps the tool axis (the plate stays level)
+        T0_ = kin.fk(q0)
+        p0, z0 = T0_[:3, 3], T0_[:3, 2]
+        idx = [1, 2, 4]
+        out, prev = [], q0
+        for d in np.linspace(0.0, up, max(2, int(np.ceil(up / 0.01)) + 1))[1:]:
+            def res(x):
+                q_ = q0.copy()
+                q_[idx] = x
+                T_ = kin.fk(q_)
+                return np.r_[(T_[:3, 3] - p0 - [0, 0, d]) * 10, (T_[:3, 2] - z0) * 0.5]
+            fit = least_squares(res, prev[idx], max_nfev=300)
+            if np.abs(res(fit.x)[:3]).max() > 1e-3:
+                raise RuntimeError(f'high carry: {what} arm reach')
+            sol = q0.copy()
+            sol[idx] = fit.x
+            if not ok_lim(sol) or np.degrees(np.abs(sol - prev)).max() > 8:
+                raise RuntimeError(f'high carry: {what} arm limit')
+            out.append(sol)
+            prev = sol
+        return out
+
+    def straight_up(T, q0, up, what):
+        if up <= 0:
+            return []
+        try:
+            return chain(vertical(T, 0.0, up), q0, what)
+        except RuntimeError as e:
+            try:
+                return arm_vertical(q0, up, what)
+            except RuntimeError as e2:
+                raise RuntimeError(f'{e}; {e2}') from None
     start, goal = np.asarray(start, float), np.asarray(goal, float)
-    rise = chain(vertical(T0, 0.0, up0), start, 'rise') if up0 > 0 else []
+    rise = straight_up(T0, start, up0, 'rise')
     q_up0 = rise[-1] if rise else start
-    drop_up = chain(vertical(T1, 0.0, up1), goal, 'drop') if up1 > 0 else []   # built upward from the goal, used reversed
+    drop_up = straight_up(T1, goal, up1, 'drop')             # built upward from the goal, used reversed
     q_up1 = drop_up[-1] if drop_up else goal
     def lift_by_arm(qi, seed):
         """qi with J2/J3 changed so the plate's lowest point is at z_low and the flange keeps its distance from the base
