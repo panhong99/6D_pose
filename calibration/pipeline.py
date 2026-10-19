@@ -471,6 +471,23 @@ def load_basket_insert_policy(path):
     return expert
 
 
+def fixed_basket_z(Tb, cb):
+    """(10/19 보스) the basket stands on the table and its height never changes (17.5 cm overall, tines 6 cm), but the
+    marker fit put the frame at z 0.125-0.143 m run to run, and the insert went that much deeper.  With `fixed_z_m` the
+    frame height is that value; a fit farther off than `fixed_z_tol_m` is refused (wrong markers, not noise)."""
+    fz = cb.get('fixed_z_m')
+    if fz is None:
+        return Tb
+    dz = float(Tb[2, 3]) - fz
+    print(f'[basket] marker z {Tb[2, 3]:.4f} m -> fixed {fz:.4f} m ({dz * 1000:+.1f} mm)', flush=True)
+    if abs(dz) > cb.get('fixed_z_tol_m', 0.03):
+        raise RuntimeError(f'basket marker fit z {Tb[2, 3]:.3f} m is {dz * 1000:+.0f} mm from the fixed {fz:.3f} m: '
+                           'markers misread? check the marker GUI')
+    Tb = np.array(Tb, float)
+    Tb[2, 3] = fz
+    return Tb
+
+
 def region_pins(n, region, occupied=(), spacing=4):
     """(10/19 보스) candidate pins for "a plate in the front / back of the quadrant", in the order to try; pin 1 = farthest
     from the robot, n = nearest.  front: the robot half, nearest first (leaves room behind it).  back: farther than every
@@ -617,6 +634,7 @@ def run_plate(args):
             slot1 = json.loads((DATA / 'basket' / 'slot_01_in_basket.json').read_text())
             layout = json.loads(cpath(C['basket']['layout']).read_text())
             Tb, res, seen = basket_fit_robust(basket_measure(C), layout, C['basket'].get('max_fit_residual_m', 0.008))
+            Tb = fixed_basket_z(Tb, C['basket'])
             T0 = np.array(slot1['T_base_basket_at_teach'])
             basket_delta = Tb @ np.linalg.inv(T0)
             basket_T = Tb

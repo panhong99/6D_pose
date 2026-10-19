@@ -49,6 +49,9 @@ basket:                            # dish basket pose from 4 ArUco markers on it
   n_frames: 20
   layout: data/basket/basket_layout_5cm_20261016_140249.json   # (10/16 14:02 보스) markers re-mounted on flat plates + basket moved: frame from wrist tine fit, fixed calib 20261016_134701_fromwrist_drop3
   # was: layout: data/basket/basket_layout_5cm_20261014_160915.json   # (10/14 16:09) 5 cm markers ID 2-5 in the basket frame of 14:45 (basket not moved): 3 runs fit 0.1-0.3 mm, pose repeat 0.1 mm / 0.02 deg (was basket_layout_20261012_133410.json, 9.8 cm markers, fit 7-8 mm)
+  fixed_z_m: 0.144                  # (10/19 보스: basket 17.5 cm overall, tines 6 cm, fixed on the table) basket frame height used for every run
+                                    # instead of the marker fit (10/19 fits 0.125 / 0.131 / 0.143 -> the insert went up to 1.9 cm deeper); 10/8 measured 0.1442, teach 0.1442
+  fixed_z_tol_m: 0.03               # a marker fit farther than this from fixed_z_m stops the run before motion
   marker_blocks: {size_m: 0.14, height_m: 0.10, above_m: 0.01}   # (10/16 보스: Q4 pin 4 hit a marker plate) each marker block + its bolts (they reach into the basket) as a collision box: 14 cm square around the marker centre, 1 cm above it down 10 cm. With it Q3 pins 4-5 have no insert plan and Q3 7 fails 83 % with sim sag (marker 4); targets Q3/Q4 8 and 11
 
 capture:                           # one sample = n_frames marker poses averaged while the robot is still

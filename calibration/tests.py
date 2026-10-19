@@ -332,6 +332,19 @@ class Pipeline(unittest.TestCase):
         with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
             pipeline.parse_args(['--region', 'front', '--insert_landed_pins', '3', '--insert_policy', 'x.pt'])
 
+    def test_fixed_basket_z_replaces_the_marker_height(self):
+        # (10/19 보스) the basket height is fixed; the marker fit z varied 0.125-0.143 m and the insert went deeper
+        T = np.eye(4); T[:3, 3] = [0.97, -0.22, 0.125]
+        with contextlib.redirect_stdout(io.StringIO()):
+            out = pipeline.fixed_basket_z(T, {'fixed_z_m': 0.144})
+            self.assertAlmostEqual(out[2, 3], 0.144)
+            self.assertEqual(out[:2, 3].tolist(), [0.97, -0.22])
+            self.assertEqual(T[2, 3], 0.125)                                       # input untouched
+            self.assertIs(pipeline.fixed_basket_z(T, {}), T)                        # off without the key
+            T[2, 3] = 0.10
+            with self.assertRaises(RuntimeError):
+                pipeline.fixed_basket_z(T, {'fixed_z_m': 0.144, 'fixed_z_tol_m': 0.03})
+
     def test_photo_after_release_is_opt_in(self):
         self.assertFalse(pipeline.parse_args([]).photo_after_release)
         self.assertTrue(pipeline.parse_args(['--photo_after_release']).photo_after_release)
@@ -394,6 +407,8 @@ class Pipeline(unittest.TestCase):
             def stable(self):
                 return np.eye(4)
 
+        fit_T = np.eye(4)
+        fit_T[2, 3] = pipeline.C['basket'].get('fixed_z_m', 0.0)   # (10/19) a fit at the fixed basket height
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / 'real_pipeline').mkdir()
@@ -421,7 +436,7 @@ class Pipeline(unittest.TestCase):
                 patch.object(pipeline, 'export_plan', return_value=plan_path),
                 patch.object(pipeline, 'wait_choice', return_value=True),
                 patch.object(camera_tools, 'basket_measure', return_value=[]),
-                patch.object(camera_tools, 'basket_fit_robust', return_value=(np.eye(4), 0.0, [1, 2, 3])),
+                patch.object(camera_tools, 'basket_fit_robust', return_value=(fit_T, 0.0, [1, 2, 3])),
                 patch.object(sensors, 'FpStream', return_value=StablePose()),
                 patch.object(pipeline.time, 'sleep', side_effect=lambda _seconds: real_sleep(0.51)),
                 patch('plate_plans.robot_quadrants', return_value={'Q1': 'Q1'}),
