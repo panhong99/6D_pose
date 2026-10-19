@@ -315,6 +315,10 @@ class Pipeline(unittest.TestCase):
         for k in range(7):
             np.testing.assert_allclose(boxes[f'plate_Q3_3_{k}'][0][0], g[0], atol=1e-9)
 
+    def test_photo_after_release_is_opt_in(self):
+        self.assertFalse(pipeline.parse_args([]).photo_after_release)
+        self.assertTrue(pipeline.parse_args(['--photo_after_release']).photo_after_release)
+
     def test_high_carry_rises_first_and_never_goes_under_the_floor(self):
         # (10/18 보스) straight up from the start, across at the floor height, straight down onto the goal
         import plate_plans as pp

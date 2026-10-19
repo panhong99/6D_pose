@@ -999,7 +999,12 @@ def run_plate(args):
                     mleg([(splan, 'descend')], 'insert', q.get('basket_quadrant_vel_deg_s', q.get('basket_policy_vel_deg_s', 1.0)),
                          tool_force_limit_n=args.insert_force_limit_n)
                     choose_gripper(f'slot{k}_release')
-                    mleg([(splan, 'ascend'), (splan, 'to_home')], 'retreat', vel)
+                    if args.photo_after_release:            # (10/19 보스) opt-in: empty hand back at the above pose -> wrist photo of
+                        mleg([(splan, 'ascend')], 'retreat_up', vel)   # the target quadrant without the held plate (where it landed)
+                        look('after_release')
+                        mleg([(splan, 'to_home')], 'retreat_home', vel)
+                    else:
+                        mleg([(splan, 'ascend'), (splan, 'to_home')], 'retreat', vel)
                     rec.event('done', place=args.place, quadrant=args.quadrant, pin=args.pin, insert='quadrant', merged=merge)
                     print(f'[5/5] {args.quadrant} 핀 {args.pin} 넣기 완료.', flush=True)
                     return
@@ -1186,6 +1191,9 @@ def parse_args(argv=None):
                    'from the robot) [m]; default config basket_quadrant_x_trim_m')
     p.add_argument('--sim_q', action='store_true', help='--insert quadrant: use config basket_quadrant_sim (Isaac per-quadrant '
                    'lean, aim, wrist flip; 10/15) instead of the real trims; --x_shift still overrides the aim')
+    p.add_argument('--photo_after_release', action='store_true',
+                   help='(10/19 보스) --insert quadrant: after the release, stop at the above pose with the empty hand and take a '
+                        'wrist photo (wrist_after_release.*: target quadrant + the plate just inserted, live joints), then go home')
     p.add_argument('--basket_plates', nargs='+', default=None, metavar='[Q:]PIN',
                    help='(10/18 보스) --insert quadrant: plates already in the basket, PIN (this --quadrant) or Q4:10 (any quadrant); '
                         'the carry passes over them (collision boxes), the straight-down insert beside them')

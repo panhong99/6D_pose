@@ -51,6 +51,7 @@ print(" ".join(next(s[k]) for k in q))' $pins_in)
     for qp in $pins_run; do
       IFS=: read -r q pin color landed <<< "$qp"; color=${color:-red}
       pol=()
+      [ "${DEMO_PHOTOS:-1}" = 1 ] && pol+=(--photo_after_release)   # (10/19 보스) wrist photo after each release, DEMO_PHOTOS=0 = off
       [ -n "${placed// /}" ] && pol+=(--basket_plates $placed)
       if [ -n "${DEMO_INSERT_POLICY:-}" ]; then
         pol+=(--insert_policy "$DEMO_INSERT_POLICY")
