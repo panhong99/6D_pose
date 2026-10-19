@@ -479,7 +479,7 @@ def plate_color_auto(C, Tbc, centre=(0.90, 0.35, 0.068), radius=0.09, cam=None):
     own = cam is None
     cam = cam or ColorCam(C['cameras']['fixed_serial'])
     try:
-        for _ in range(10):                                 # auto exposure settles
+        for _ in range(45):                                 # auto exposure settles (10/19: 10 frames read white as grey)
             fr = cam.read()
     finally:
         if own:
@@ -497,7 +497,7 @@ def plate_color_auto(C, Tbc, centre=(0.90, 0.35, 0.068), radius=0.09, cam=None):
     hsv = cv2.cvtColor(fr.rgb, cv2.COLOR_RGB2HSV)[uv[:, 1], uv[:, 0]].astype(int)
     hue, sat, val = hsv[:, 0], hsv[:, 1], hsv[:, 2]
     red = float(np.mean(((hue <= 10) | (hue >= 170)) & (sat >= 90) & (val >= 40)))
-    white = float(np.mean((sat <= 45) & (val >= 150)))
+    white = float(np.mean((sat <= 60) & (val >= 120)))
     if red >= 0.25 and red > white:
         return 'red', red, white
     if white >= 0.35:

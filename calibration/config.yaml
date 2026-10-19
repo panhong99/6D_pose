@@ -166,7 +166,7 @@ plate_ik_bc:                       # --plate_policy ik_bc (overrides plate_rl ke
   basket_policy_vel_deg_s: 5.0         # policy start + insert (merged spline) (10/13 보스: 7.0 -> a bit slower)
   basket_quadrant_vel_deg_s: 7.0       # --insert quadrant: straight-down insert (10/19 보스: 3.5 -> 7; 10/13 19:5x 보스: 5.0 -> a bit slower)
   basket_quadrant_sim_real_dh_m: 0.020   # (10/19 14:xx 보스 "지금도 조금 깊어" +1 cm, with the basket height fixed at 0.144; 10/15 17:1x 보스 실기 "1 cm 덜 깊게" 0.010) --sim_q: real-robot release height = sim centre_h + this
-  basket_quadrant_model_dx_m: {Q4: 0.007}   # (10/19 17:0x 보스: +15 mm went too far +x -> half; 16:4x 보스: Q4 pin 6 went in L3/R2 at 0) --sim_q: model gap x -> measured, from the v4 tine labels
+  basket_quadrant_model_dx_m: {Q4: 0.003}   # (10/19 17:1x 보스 Q4 6 '조금 -X' at +7 (ray/plane basket); 17:0x +15 too far +x; 16:4x 보스: Q4 pin 6 went in L3/R2 at 0) --sim_q: model gap x -> measured, from the v4 tine labels
                                        # (Codex BL bl_model_fit_20261019_v3/pin_centres.csv: Q4 model - measured -13..-22 mm, pin 6 -15.1 mm; Q3 within 2 mm)
   basket_insert_wall_margin_m: 0.005   # (10/19) wall/marker margin for the straight-down insert only (carry keeps basket_wall_margin_m 1 cm): with Q3 +0.5 cm the rim is ~10 mm from the wall and a 3-marker fit refused every pin at 9.9 mm
   basket_quadrant_sim_real_dy_m: {Q3: 0.005}   # (10/19 14:xx 보스 "조금 더 왼쪽" -> back to +0.5 cm; at 0 for one run. +0.5 leaves the rim ~10 mm from the +y wall, so the insert wall margin is 5 mm below) (10/15 18:3x: +1.5 cm hit the wall check (clearance 0.5); 17:2x 보스 asked +1.5) --sim_q: extra basket-y (+ = left) on top of the automatic wall shift (Q3 -3.0 cm)
