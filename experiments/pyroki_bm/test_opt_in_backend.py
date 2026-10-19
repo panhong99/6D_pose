@@ -1,7 +1,7 @@
 """Contract checks for the offline opt-in wrapper."""
 import unittest
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import numpy as np
 
@@ -37,7 +37,7 @@ class BackendTests(unittest.TestCase):
 
     def test_endpoint_mutation_rejected(self):
         path = np.linspace(self.start, self.goal, 20)
-        path[-1, 0] += .1
+        path[-1, 0] += 1e-7
         with patch('opt_in_backend.optimize', return_value=(path, [])):
             with self.assertRaisesRegex(RuntimeError, 'endpoints'):
                 self.backend.carry(self.start, self.goal, **self.kw)
@@ -53,6 +53,14 @@ class BackendTests(unittest.TestCase):
         with patch('opt_in_backend.optimize', return_value=(path, [])):
             with self.assertRaisesRegex(RuntimeError, 'final exact gate'):
                 self.backend.carry(self.start, self.goal, **self.kw)
+
+    def test_fk_ik_delegate_to_pyroki_bridge(self):
+        self.backend.kinematics.fk = Mock(return_value=np.eye(4))
+        self.backend.kinematics.ik = Mock(return_value=self.goal)
+        np.testing.assert_array_equal(self.backend.fk(self.start), np.eye(4))
+        np.testing.assert_array_equal(self.backend.ik(np.eye(4), self.start), self.goal)
+        self.backend.kinematics.fk.assert_called_once_with(self.start)
+        self.backend.kinematics.ik.assert_called_once()
 
 
 if __name__ == '__main__':

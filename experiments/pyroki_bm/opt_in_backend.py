@@ -46,7 +46,8 @@ class OfflinePyrokiBackend:
         )
         # Keep the wrapper fail-closed if the optimizer's return contract
         # changes. Endpoint preservation matters for the saved drop segment.
-        if path.shape != (n, 6) or not np.allclose(path[0], start) or not np.allclose(path[-1], goal):
+        path = np.asarray(path, dtype=float)
+        if path.shape != (n, 6) or not np.array_equal(path[0], start) or not np.array_equal(path[-1], goal):
             raise RuntimeError("PyRoki carry endpoints or shape changed")
         limits = (np.asarray(self.kinematics.robot.joints.lower_limits),
                   np.asarray(self.kinematics.robot.joints.upper_limits))
