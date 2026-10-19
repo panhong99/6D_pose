@@ -158,6 +158,29 @@ def _library_plan_candidate(lib,i,r,az,q,checks,plate_z):
     return plan
 
 
+def library_plans(r, az, q, Tbc, plate_z=None):
+    """(10/19 night, opt-in) every accepted library grasp at (r, az), best clearance first (plan_from_library keeps only
+    the first).  For choosing the grasp together with the insert: a far plate's best-clearance grasp can leave no insert."""
+    import contextlib
+    import io
+    q = height_library_config(q, plate_z)
+    lib = np.load(cpath(q['library']), allow_pickle=False)
+    cands = nearest_direction_candidates(lib, r, q.get('library_tol_m', .004))
+    if not len(cands):
+        raise RuntimeError(f'radius {r:.3f} m has no successful library path within tolerance')
+    checks = library_checkers(Tbc, q)
+    with contextlib.redirect_stdout(io.StringIO()):
+        plans = [_library_plan_candidate(lib, int(i), r, az, q, checks, plate_z) for i in cands]
+    lo, hi = np.array(__import__('ros2_nodes').joint_limits_deg()).T
+    ok = [p for p in plans if p['accepted'] and all(((np.array(leg['waypoints_deg']) > lo + 3) &
+                                                     (np.array(leg['waypoints_deg']) < hi - 3)).all() for leg in p['legs'].values())]
+    ok.sort(key=lambda p: (min(leg['min_clearance_straight_m'] for leg in p['legs'].values()),
+                           -abs(p['approach_phi_deg']), -abs(p['approach_pitch_deg'])), reverse=True)
+    if not ok:
+        raise RuntimeError('no library grasp clear of the cell')
+    return ok
+
+
 def plan_from_library(r,az,q,Tbc,plate_z=None):
     """Nearest validated radius/height; choose the surviving phi/pitch with most cell clearance.
     One legacy radius path remains supported. No hardware commands."""
