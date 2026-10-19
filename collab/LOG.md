@@ -4899,3 +4899,13 @@
 - **RRT를 PyRoki로 생산 경로에서 교체하지 않았다.** upstream은 sampling planner를 제공하지 않고 trajopt가 대안이지만, 현 `rrt_carry`의 손에 든 접시 cloud, `FloorCheck`, 바구니 벽/마커/서 있는 접시/셀/테이블, J4/J6 100° 제약과 동등한 PyRoki 충돌 모델이 아직 없다. 저장 계획의 동일 장애물 trajopt 대조도 미수행. 검증 없이 교체하면 충돌 계약을 잃는다. Claude는 현 RRT를 유지하고, 이후 동일 장애물 모델+기존 `MultiChecker` 재검증을 갖춘 opt-in trajopt를 통합해야 한다. 실기 성공/안전 주장은 하지 않는다.
 - `run.sh` 미가동 확인 후 계산. 실로봇·그리퍼·카메라·ROS 실행 없음, 기존 데이터/config/model 덮어쓰기 없음, 데이터/가중치 stage 없음.
 - 추가 PyRoki trajopt smoke: 저장 `20261019_185810_433_taught/plan.json`의 `to_above` 양 끝 link_6 pose, M1013 collision mesh, 20 waypoint, **world 장애물 없음** 조건에서 upstream `solve_trajopt`가 20×6 trajectory를 첫 실행 14.14 s에 반환(`/tmp/pyroki_trajopt_smoke.log`). 그러나 endpoint IK가 원 관절 branch를 바꿨다: 시작 J3/J5 저장 114.575°/−27.528° → PyRoki 104.333°/+21.756°. 이는 기능 smoke일 뿐 현 carry RRT와 충돌·branch 동등 비교가 아니며 즉시 교체 불가 근거를 더한다.
+
+## 2026-10-19 20:xx KST Claude — 밤 작업 시작: 받침 위 접시 위치 의존성 (보스 퇴근 전 지시)
+- 오늘 시연 고정: 태그 `demo-20261022`(67a63c4 이후 시연 경로 기본값 변경 없음). 밤 작업은 opt-in/오프라인만.
+- `experiments/stand_free/sweep.py`: 받침 위 접시 자리(r, 방향) × 시연 4단계(Q3 빨강 앞, Q3 흰 뒤+Q3:12, Q4 빨강 뒤, Q4 흰 앞+Q4:6)를 pipeline `--sim_q --region`과 같은 계획으로 오프라인 계산. 18:21 실기 바구니 자세. 평소 자리(0.97 m, 21°)에서 실기와 같은 12→8, 6→10 재현.
+- 기본 지도(r 0.85–1.25 × 방향 10/20/30/40, `calibration/data/basket/stand_free_20261019/base/`): 방향 20°는 9개 거리 모두 4단계 성공(0.95 m 두 곳은 잡기 경로가 프레임 50 mm 기준에 걸림), 10/30/40°는 대부분 실패. 원인 확인: 30°/40°는 접시가 프레임 기둥 `upright_01`(x 0.85, y 0.56)과 겹치는 자리, 10–14°는 바구니 벽·마커 4번과 겹치는 자리 → 실제로 놓을 수 없는 자리. sweep에 물리 겹침 필터 추가(`physical: <box>`). 실제 놓을 수 있는 띠는 방향 약 18–24°.
+- 진행 중: 받침 주변 촘촘한 지도(방향 16–26°, 2°), 잡기 후보 전부 시도(`library_plans`, `--grasp_all`) 지도. Codex BN(PyRoki) 진행 중, GPU 우선권 Codex.
+
+## 2026-10-19 19:4x KST Codex — BN 새 우선순위 시작
+- 최신 보스/Claude 작업판 f860d05에서 BN이 밤샘 최우선으로 추가됨. BM 브리지 기반 `experiments/pyroki_bm/trajopt_backend.py`에 PyRoki FK + URDF collision capsule, 쥔 접시 점구름 대 상자, 바구니 위 최저 높이, J4/J6 변위 penalty를 넣은 오프라인 후보 생성기와 기존 `held`/`FloorCheck`의 2° 촘촘한 최종 검증 gate를 작성했다. 시작/끝 관절은 정확히 고정한다.
+- 단순 8-waypoint smoke(저장 18:58 `to_above` 관절 양 끝, 멀리 떨어진 가짜 상자, 항상 자유인 가짜 검사기)는 2.73 s 첫 solve, 71점 검사, wrist 최대 20.75°로 코드 실행만 확인했다(`/tmp/pyroki_bn_solver_smoke.log`). **실제 장애물·쥔 접시·기존 checker 통과나 RRT 대비 성능은 아직 검증되지 않았다.** 이 단순 smoke를 사용 가능 경로로 취급하지 않는다. 다음은 실제 저장 경로에서 정확한 검사기·박스·접시 cloud 재구성 후 비교. 시연 파일 수정/실로봇 실행 없음.

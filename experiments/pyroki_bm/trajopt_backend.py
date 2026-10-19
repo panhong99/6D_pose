@@ -1,0 +1,119 @@
+"""Opt-in PyRoki FK based carry optimizer with a mandatory legacy safety gate.
+
+This offline candidate generator never commands a robot. All accepted segments
+must pass the current held-plate and floor checkers before they are returned.
+"""
+import time
+
+import jax
+import jax.numpy as jnp
+import jaxlie
+import numpy as np
+from scipy.optimize import minimize
+
+
+def _point_box_distance(points, centres, rotations, half):
+    # points [time, point, xyz], boxes [box, xyz]
+    local = jnp.einsum("tpbi,bij->tpbj", points[:, :, None, :] - centres[None, None], rotations)
+    delta = jnp.abs(local) - half[None, None]
+    return jnp.linalg.norm(jnp.maximum(delta, 0), axis=-1) + jnp.minimum(jnp.max(delta, axis=-1), 0)
+
+
+def _densify(path, step_deg=2.0):
+    out = [path[0]]
+    for a, b in zip(path[:-1], path[1:]):
+        n = max(1, int(np.ceil(np.degrees(np.max(np.abs(b - a))) / step_deg)))
+        out.extend(a + (b - a) * (i / n) for i in range(1, n + 1))
+    return np.asarray(out)
+
+
+def validate(path, held, floor, start, max_wrist_deg=100.0, step_deg=2.0):
+    """Exact existing checkers are authoritative, including held plate and floor."""
+    dense = _densify(np.asarray(path, float), step_deg)
+    wrist = np.max(np.degrees(np.abs(dense[:, [3, 5]] - np.asarray(start)[[3, 5]])))
+    if wrist > max_wrist_deg:
+        return False, {"reason": "wrist", "max_wrist_deg": float(wrist)}
+    low_held = min(float(held.clearance(q)) for q in dense)
+    low_floor = min(float(floor.clearance(q)) for q in dense)
+    return low_held >= 1 and low_floor >= 1, {
+        "min_held_clearance": low_held, "min_floor_clearance": low_floor,
+        "max_wrist_deg": float(wrist), "checked_points": len(dense),
+    }
+
+
+def optimize(robot, robot_collision, start, goal, held, floor, attached_cloud,
+             boxes, basket_T, basket_half_xy, floor_z, n=20,
+             max_wrist_deg=100.0, maxiter=120):
+    """Return a checked path or raise RuntimeError.
+
+    `boxes` has the exact `plate_plans.basket_boxes` tuple format. This optimizer
+    adds differentiable robot-capsule and held-cloud penalties, then delegates
+    final acceptance to the existing collision/floor contract. It never treats
+    the differentiable approximation as proof of clearance.
+    """
+    start, goal = np.asarray(start, float), np.asarray(goal, float)
+    cloud = jnp.asarray(attached_cloud, dtype=jnp.float32)
+    centres = jnp.asarray([b[1] for b in boxes], dtype=jnp.float32)
+    rotations = jnp.asarray([b[3] for b in boxes], dtype=jnp.float32)
+    half = jnp.asarray([b[2] for b in boxes], dtype=jnp.float32) / 2
+    box_wxyz = np.stack([np.r_[1.0, 0.0, 0.0, 0.0] for _ in boxes])
+    # Box orientation is converted from the supplied rotation matrices.
+    from scipy.spatial.transform import Rotation
+    box_wxyz = Rotation.from_matrix(np.asarray(rotations)).as_quat()[:, [3, 0, 1, 2]]
+    from pyroki import collision as coll
+    world = coll.Box.from_extent(np.asarray(half) * 2, np.asarray(centres), box_wxyz)
+    inv = np.linalg.inv(np.asarray(basket_T))
+    basket_R = jnp.asarray(inv[:3, :3], dtype=jnp.float32)
+    basket_p = jnp.asarray(inv[:3, 3], dtype=jnp.float32)
+    basket_half = jnp.asarray(basket_half_xy, dtype=jnp.float32)
+    start_j, goal_j = jnp.asarray(start), jnp.asarray(goal)
+    limit_lo = jnp.asarray(robot.joints.lower_limits)
+    limit_hi = jnp.asarray(robot.joints.upper_limits)
+    link = robot.links.names.index("link_6")
+
+    @jax.jit
+    def value(flat):
+        path = jnp.concatenate([start_j[None], flat.reshape((n - 2, 6)), goal_j[None]], axis=0)
+        pose = robot.forward_kinematics(path)[:, link]
+        R = jaxlie.SO3(pose[:, :4]).as_matrix()
+        points = jnp.einsum("tij,pj->tpi", R, cloud) + pose[:, None, 4:]
+        box_dist = _point_box_distance(points, centres, rotations, half)
+        plate_pen = jnp.sum(jnp.square(jnp.maximum(0.015 - box_dist, 0)))
+        caps = robot_collision.at_config(robot, path)
+        cap_dist = coll.collide(caps.reshape((n, robot_collision.num_links, 1)),
+                                 world.reshape((1, 1, len(boxes))))
+        robot_pen = jnp.sum(jnp.square(jnp.maximum(0.015 - cap_dist, 0)))
+        local = jnp.einsum("tpi,ij->tpj", points, basket_R.T) + basket_p
+        over = jnp.all(jnp.abs(local[:, :, :2]) <= basket_half, axis=-1)
+        floor_pen = jnp.sum(jnp.square(jnp.maximum(floor_z - points[:, :, 2], 0)) * over)
+        step = jnp.diff(path, axis=0)
+        accel = jnp.diff(path, n=2, axis=0)
+        wrist = jnp.maximum(jnp.abs(path[:, jnp.array([3, 5])] - start_j[jnp.array([3, 5])]) - jnp.deg2rad(max_wrist_deg), 0)
+        limits = jnp.maximum(limit_lo - path, 0) + jnp.maximum(path - limit_hi, 0)
+        return (0.05 * jnp.sum(step * step) + 1.0 * jnp.sum(accel * accel) +
+                2e4 * (plate_pen + robot_pen + floor_pen) +
+                1e4 * jnp.sum(wrist * wrist) + 1e4 * jnp.sum(limits * limits))
+
+    fg = jax.jit(jax.value_and_grad(value))
+    seeds = [np.linspace(start, goal, n)]
+    # Retain the exact chosen joint endpoints. Two deterministic elbow detours
+    # help the optimizer avoid a straight-line local minimum.
+    for sign in (-1, 1):
+        path = np.linspace(start, goal, n)
+        path[:, 1] += sign * np.sin(np.linspace(0, np.pi, n)) * np.deg2rad(15)
+        seeds.append(path)
+    attempts = []
+    for seed in seeds:
+        tic = time.perf_counter()
+        def fun(flat):
+            v, g = fg(jnp.asarray(flat, dtype=jnp.float32))
+            return float(v), np.asarray(g, dtype=float)
+        fit = minimize(fun, seed[1:-1].ravel(), jac=True, method="L-BFGS-B",
+                       options={"maxiter": maxiter, "ftol": 1e-8})
+        candidate = np.vstack([start, fit.x.reshape((n - 2, 6)), goal])
+        good, check = validate(candidate, held, floor, start, max_wrist_deg)
+        attempts.append({"time_s": time.perf_counter() - tic, "objective": float(fit.fun),
+                         "optimizer_success": bool(fit.success), "valid": good, **check})
+        if good:
+            return candidate, attempts
+    raise RuntimeError(f"PyRoki candidate failed legacy clearance gate: {attempts}")
