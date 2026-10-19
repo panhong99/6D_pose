@@ -1015,6 +1015,52 @@ def quadrant_checkers(Tbc, q, Tbb, H, tool, plates=()):
     return MultiChecker(held), MultiChecker(insert), MultiChecker(free)
 
 
+class FloorCheck:
+    """(10/19 보스: RRT when the rule carry fails) a 'checker' for MultiChecker: over the basket (its footprint + `pad`)
+    the plate's lowest point stays >= z_floor (marker blocks + clearance).  clearance/margin = 1 at the floor, +1 per
+    `scale` m above, so the RRT's planning margin keeps it a little higher.  Away from the basket: no limit."""
+
+    def __init__(self, kin, cloud, Tbb, z_floor, pad=0.08, scale=0.02):
+        import sys
+        sys.path.insert(0, str(ROOT / 'rl'))
+        import basket_env as be
+        self.kin, self.cloud, self.Tbi = kin, np.asarray(cloud, float), np.linalg.inv(np.asarray(Tbb, float))
+        self.half = np.asarray(be.B['full']['size_xy'], float) / 2 + pad
+        self.z_floor, self.scale, self.margin = float(z_floor), float(scale), 1.0
+
+    def clearance(self, q):
+        T = self.kin.fk(q)
+        P = self.cloud @ T[:3, :3].T + T[:3, 3]
+        loc = P @ self.Tbi[:3, :3].T + self.Tbi[:3, 3]
+        over = np.all(np.abs(loc[:, :2]) <= self.half, axis=1)
+        if not over.any():
+            return 10.0
+        return 1.0 + (float(P[over, 2].min()) - self.z_floor) / self.scale
+
+
+def rrt_carry(held, floor, start, goal, seeds=range(4), max_wrist_deg=100.0):
+    """(10/19 보스) bidirectional RRT for the carry with the floor over the basket; a path that turns J4 or J6 more than
+    max_wrist_deg away from the start (wrist spin, 보스 10/19) is refused and the next seed tried."""
+    from robot_model import MultiChecker
+    mc = MultiChecker(held.checkers + [floor])
+    ends = {n: (round(floor.clearance(x), 2), round(held.clearance(x), 2)) for n, x in (('start', start), ('goal', goal))}
+    if min(min(v) for v in ends.values()) < 1.0:
+        raise RuntimeError(f'rrt carry: an end is not free (floor, held) {ends}')
+    errs = []
+    for sd in seeds:
+        try:
+            path, how = mc.plan(start, goal, seed=sd)
+        except RuntimeError as e:
+            errs.append(str(e))
+            continue
+        w = np.degrees(np.abs(np.array(path)[:, [3, 5]] - np.asarray(start)[[3, 5]])).max()
+        if w > max_wrist_deg:
+            errs.append(f'wrist {w:.0f} deg')
+            continue
+        return path, f'rrt-floor {how}'
+    raise RuntimeError(f'rrt carry {ends}: ' + '; '.join(errs[-2:]))
+
+
 def high_carry(kin, start, goal, cloud, z_low, ok_lim, step_m=0.02):
     """(10/18 보스: the plate hit the marker plates on a low carry) carry with the plate's lowest point never under `z_low`
     (base z, or a function of the plate points in base -> the floor there): straight up from `start`, across at that height, then straight down onto `goal` (the above pose, plate
@@ -1153,6 +1199,18 @@ def quadrant_plan(Tbb, quadrant, gap, H, tool, start_deg, Tbc, q, grasp_legs=Non
     (model quadrant, index)).  `grasp_low_z`: the plate's lowest point on the stand (base z) for the rise rule (else
     the in-hand plate model at the grasp joints, which sits ~3 cm low once the plate has tilted in the hand).
     -> (path, report)."""
+    if q.get('basket_carry_rrt_fallback') and not q.get('_rrt_pass'):   # (10/19) every face/phi with the rule first; the
+        args_ = dict(Tbb=Tbb, quadrant=quadrant, gap=gap, H=H, tool=tool, start_deg=start_deg, Tbc=Tbc, grasp_legs=grasp_legs,
+                     tilt_deg=tilt_deg, centre_h=centre_h, above_m=above_m, phi_step=phi_step, seeds=seeds,
+                     yaw_trim_deg=yaw_trim_deg, y_shift_m=y_shift_m, x_shift_m=x_shift_m, faces=faces, y_extra_m=y_extra_m,
+                     grasp_deg=grasp_deg, plates=plates, grasp_low_z=grasp_low_z, phi_first=phi_first)
+        path, rep = quadrant_plan(q={**q, 'basket_carry_rrt_fallback': False}, **args_)   # RRT carry only when none has
+        if path is not None:                                                            # a rule carry
+            return path, rep
+        path2, rep2 = quadrant_plan(q={**q, '_rrt_pass': True}, **args_)
+        if path2 is None:
+            rep2['tried'] = rep['tried'] + rep2['tried']
+        return path2, rep2
     import ros2_nodes
     from robot_model import polyline_path as pp
     kin = Kinematics()
@@ -1241,8 +1299,31 @@ def quadrant_plan(Tbb, quadrant, gap, H, tool, start_deg, Tbc, q, grasp_legs=Non
             if rise is None:
                 carry, how = held.plan(np.radians(start_deg), down[0])
             else:
-                carry, k = high_carry(kin, np.radians(start_deg), down[0], cloud, z_low, ok_lim)
-                how = f'high {z_base:.3f}' + (f'/{z_top:.3f}' if stand else '')                    # straight down at the end: the insert check (standing plates beside)
+                try:
+                    carry, k = high_carry(kin, np.radians(start_deg), down[0], cloud, z_low, ok_lim)
+                    how = f'high {z_base:.3f}' + (f'/{z_top:.3f}' if stand else '')                    # straight down at the end: the insert check (standing plates beside)
+                except RuntimeError as e_rule:              # (10/19 보스) the rule failed: RRT with the floor over the basket
+                    if not q.get('basket_carry_rrt_fallback', False):
+                        raise
+                    z_mk = max([t + clear['marker'] for k_, t in tops if k_ == 'marker'] or [0.0])
+                    try:
+                        fl = FloorCheck(kin, cloud, Tbb, z_mk)
+                        Tg = kin.fk(down[0])                 # straight up over the slot until the floor (+1 cm), like the
+                        up = max(0.0, z_mk + 0.01 - float((cloud @ Tg[:3, :3].T + Tg[:3, 3])[:, 2].min()))   # rule's drop
+                        drop, prev = [down[0]], down[0]
+                        for d in np.linspace(0.0, up, max(2, int(np.ceil(up / 0.01)) + 1))[1:]:
+                            T_ = Tg.copy()
+                            T_[2, 3] += d
+                            sol = kin.ik(T_, prev)
+                            if not ok_lim(sol) or np.degrees(np.abs(sol - prev)).max() > 8:
+                                raise RuntimeError('rrt carry: drop limit/flip')
+                            drop.append(sol)
+                            prev = sol
+                        top, how = rrt_carry(held, fl, np.radians(start_deg), drop[-1])
+                    except RuntimeError as e_rrt:
+                        raise RuntimeError(f'{e_rule}; {e_rrt}') from None
+                    carry = [np.asarray(c_) for c_ in top] + [np.asarray(c_) for c_ in drop[::-1][1:]]
+                    k = len(top) - 1
                 c_car = min(held.path_clearance(pp(np.array(carry[:k + 1]), 0.5)),
                             inserting.path_clearance(pp(np.array(carry[k:]), 0.5)))
                 if c_car < 1.0:

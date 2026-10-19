@@ -392,6 +392,20 @@ class Pipeline(unittest.TestCase):
             self.assertIsNone(pipeline.basket_last_good(cb, now=1000.0 + 31 * 60))
             self.assertIsNone(pipeline.basket_last_good({'layout': 'b.json'}, now=1001.0))
 
+    def test_floor_check_limits_the_plate_only_over_the_basket(self):
+        # (10/19 보스) RRT carry fallback: the plate's lowest point stays over the marker blocks only above the basket
+        import plate_plans as pp
+        from robot_model import Kinematics
+        kin = Kinematics()
+        cloud = np.array([[0.0, 0.0, 0.0]])
+        q0 = np.radians([0, 0, 90, 0, 90, 0])
+        T = kin.fk(q0)
+        Tbb = np.eye(4); Tbb[:3, 3] = [T[0, 3], T[1, 3], 0.144]
+        f = pp.FloorCheck(kin, cloud, Tbb, z_floor=T[2, 3] - 0.02)
+        self.assertAlmostEqual(f.clearance(q0), 2.0, places=6)          # 2 cm over the floor = 1 + 0.02 / 0.02
+        far = np.eye(4); far[:3, 3] = [T[0, 3] + 2.0, T[1, 3], 0.144]
+        self.assertEqual(pp.FloorCheck(kin, cloud, far, z_floor=5.0).clearance(q0), 10.0)   # not over the basket
+
     def test_photo_after_release_is_opt_in(self):
         self.assertFalse(pipeline.parse_args([]).photo_after_release)
         self.assertEqual(pipeline.parse_args(['--plate_color', 'auto']).plate_color, 'auto')   # (10/19) the plate on the stand
