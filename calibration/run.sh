@@ -94,13 +94,24 @@ print(" ".join(next(s[k]) for k in q))' $pins_in)
       plan=$(sed -n 's/^plan: //p' "$log" | tail -1) || true
       req=$(grep -o "[^ ]*_${qd}\.req\.json" "$log" | tail -1) || true
       if [ -z "$plan" ] || [ -z "$req" ]; then echo "!!! ${qd}: 계획 없음 (위 로그) - 다음 분면"; continue; fi
-      mover --plan "$plan" --leg "${qd}_look" --smooth --go_per leg "${open[@]}" "$@" || { echo "!!! ${qd}: 이동 안 함/실패 - 다음 분면"; continue; }
+      mover --plan "$plan" --leg "${qd}_look" --smooth --go_per leg "${open[@]}" "$@" || { echo "!!! ${qd}: 이동 안 함/실패 - 상태 확인 전 정지"; break; }
+      photo_status=not_requested
       if [ $exe = 1 ]; then
-        conda run --no-capture-output -n foundationpose python -u "$DIR/camera_tools.py" pre_photo --req "$req" \
-          || echo "!!! ${qd}: 사진 실패 (로봇은 홈으로 돌아갑니다)"
+        if conda run --no-capture-output -n foundationpose python -u "$DIR/camera_tools.py" pre_photo --req "$req"; then
+          photo_status=ok
+        else
+          echo "!!! ${qd}: 사진 실패 (로봇은 홈으로 돌아갑니다)"
+          photo_status=failed
+        fi
       fi
       mover --plan "$plan" --leg "${qd}_home" --smooth --go_per leg "${open[@]}" "$@" || { echo "!!! ${qd}: 홈 복귀 실패 - 멈춤"; break; }
-      echo "--- ${qd} 완료: ${req%.req.json}.raw.png / .json"
+      if [ $photo_status = ok ]; then
+        echo "--- ${qd} 이동/촬영 완료: ${req%.req.json}.raw.png / .json"
+      elif [ $photo_status = failed ]; then
+        echo "--- ${qd} 이동 완료, 사진 저장 실패: AZ 입력 미완료"
+      else
+        echo "--- ${qd} 계획/이동 검사 완료 (--execute 없음; 사진은 저장되지 않음)"
+      fi
     done ;;
   sim)
     unset CONDA_PREFIX CONDA_DEFAULT_ENV PYTHONPATH LD_LIBRARY_PATH

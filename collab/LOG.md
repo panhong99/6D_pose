@@ -4755,3 +4755,10 @@
 - 이 자동 촬영은 방금 놓은 접시가 포함된 **목표 분면의 삽입 후 기록**이다. 매 실행 전분면의 빈 바구니 두 줄 전체를 촬영하는 기능은 아니므로, AZ가 요구하는 새 배치 전수 빗살 번호/root/tip 입력을 대체하지 않는다. demo4 순서 중 이미 놓인 접시와 목표 분면 접시가 빗살을 가릴 수도 있다. 따라서 AZ는 여전히 접시 없는 분면별 근접 calibrated 손목 사진 대기다. 기존 촬영 절차 문서는 AZ 입력 요청으로 유지한다.
 - 추가 리뷰: `look()`은 최신 관절 packet을 최대 5초 기다리지만 timeout 이후에도 packet timestamp를 재확인하지 않고 `rec.last['posj']`로 flange 자세를 기록한다. 따라서 오래된 마지막 관절 packet이 남아 있으면 fresh camera frame과 stale `T_base_flange`가 한 JSON에 섞일 수 있다. after-release 메타데이터를 기하/라벨에 쓰기 전 timeout 시 캡처 실패 처리 또는 freshness flag가 필요하다. 이는 기존 look 동작에도 있던 약점이며 새 옵션의 저장 자세가 반드시 live임을 보장하지 않는다.
 - 코드와 데이터는 수정하지 않았고 CLI, 카메라, ROS, 로봇/그리퍼, Isaac/GPU를 실행하지 않았다. `look()` 경로는 저장된 marker-fit `basket_T`를 넘긴다; marker fit 실패 시 quadrant 경로는 앞서 예외 처리되므로 taught-pose fallback을 쓰지 않는 구조다. 이 정적 확인은 사진 화질·가림·실기 캡처 성공을 입증하지 않는다.
+
+## 2026-10-19 09:53 KST Codex — BE `look4` mock 흐름 검토
+- `calibration/run.sh look4`를 임시 디렉터리의 가짜 `conda`/`env` 실행기로 격리해 점검했다. 실제 ROS, 카메라, 로봇, Isaac/GPU는 호출하지 않았다. `/tmp/look4_mock_review.6Wnkcz` 결과: dry-run은 계획 2·이동 검사 4·사진 0; 성공은 계획 2·이동 4·사진 2; plan-fail은 계획 2·이동 2·사진 1; look-move-fail은 계획 1·이동 1·사진 0; photo-fail은 계획 2·이동 4·사진 2(실패 경고와 AZ 입력 미완료 표시); home-fail은 계획 1·이동 2·사진 1; 잘못된 시작 확인은 exit 1·계획/이동/사진 0이었다.
+- 테스트에서 dry-run의 “사진 완료”와 촬영 실패 뒤 무조건 완료처럼 보이는 메시지, 그리고 look 이동 실패 후 다음 분면을 계속 계획하던 흐름을 확인했다. `calibration/run.sh`만 수정해 dry-run과 촬영 결과를 구분하고, 사진 실패를 AZ 미완료로 표시하며, 이동/복귀 실패 후 상태 확인 전 중단하게 했다. `collab/MONDAY_WRIST_PHOTOS_20261019.md`에 `bash calibration/run.sh look4 --execute`와 선택 분면 예시를 추가했다. `bash -n calibration/run.sh`, `git diff --check` 통과.
+- 시작 확인은 셸에 한 번 있고 각 이동 leg의 `go` 확인은 `mover --go_per leg` 및 `--opening_done` 인자에 따른다. mock은 ROS의 go prompt를 실행하지 않았으며 실제 이동·시야·사진 생성은 미확인이다. 보스가 빈 바구니/빈 그리퍼/홈 자세에서 직접 실행해야 하고, 출력 `.raw.png`와 `.json`을 확인해 제공해야 AZ를 재개할 수 있다.
+- 별도 BF: 기존 after-release `look()` stale `posj` freshness 문제는 Claude 보호 파일 수정 대기이며 이 작업에서 변경하지 않았다.
+- 작성자: Codex
