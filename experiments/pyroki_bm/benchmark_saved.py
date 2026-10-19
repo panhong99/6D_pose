@@ -57,6 +57,8 @@ def main():
                         help="Repeat identical solve in this process to measure warm solve and path variation")
     parser.add_argument("--library", type=Path,
                         help="Saved carry-library JSON with source plan and exact drop_start")
+    parser.add_argument("--seed-from-legacy", action="store_true",
+                        help="Also optimize a saved RRT seed (hybrid postprocessing, not an RRT replacement)")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--standing", action="append", default=[], metavar="Q:PIN",
                         help="Existing upright plate, e.g. Q4:11; may be repeated")
@@ -124,7 +126,8 @@ def main():
         try:
             path, attempts = optimize(robot, collision, old[0], old[-1], held, floor,
                                       cloud, world_boxes, basket, half, z_floor,
-                                      n=a.n, maxiter=a.maxiter)
+                                      n=a.n, maxiter=a.maxiter,
+                                      seed_paths=(old,) if a.seed_from_legacy else ())
             candidate = metrics(path, held, floor, old[0])
             accepted_paths.append(path)
         except CandidateRejected as exc:
@@ -142,6 +145,7 @@ def main():
         "drop_start_source": str(a.library) if a.library else "last_floor_valid_inferred",
         "world_boxes": len(world_boxes), "plate_cloud_points": len(cloud),
         "standing_plates": a.standing, "model_quadrant": model_quadrant,
+        "seed_from_legacy": a.seed_from_legacy,
         "floor_z_m": float(z_floor), "legacy": metrics(old, held, floor, old[0]),
         "pyroki": repeats[0]["pyroki"], "attempts": repeats[0]["attempts"],
         "pyroki_wall_s": repeats[0]["wall_s"],

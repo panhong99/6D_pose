@@ -34,6 +34,16 @@ def _densify(path, step_deg=2.0):
     return np.asarray(out)
 
 
+def _resample_path(path, n):
+    path = np.asarray(path, float)
+    distance = np.r_[0.0, np.cumsum(np.linalg.norm(np.diff(path, axis=0), axis=1))]
+    keep = np.r_[True, np.diff(distance) > 1e-12]
+    if distance[-1] <= 1e-12:
+        return np.repeat(path[:1], n, axis=0)
+    return np.stack([np.interp(np.linspace(0, distance[-1], n), distance[keep], path[keep, i])
+                     for i in range(path.shape[1])], axis=1)
+
+
 def validate(path, held, floor, start, max_wrist_deg=100.0, step_deg=2.0, limits=None):
     """Exact existing checkers are authoritative, including held plate and floor."""
     dense = _densify(np.asarray(path, float), step_deg)
@@ -56,7 +66,7 @@ def validate(path, held, floor, start, max_wrist_deg=100.0, step_deg=2.0, limits
 
 def optimize(robot, robot_collision, start, goal, held, floor, attached_cloud,
              boxes, basket_T, basket_half_xy, floor_z, n=20,
-             max_wrist_deg=100.0, maxiter=120):
+             max_wrist_deg=100.0, maxiter=120, seed_paths=()):
     """Return a checked path or raise RuntimeError.
 
     `boxes` has the exact `plate_plans.basket_boxes` tuple format. This optimizer
@@ -117,9 +127,18 @@ def optimize(robot, robot_collision, start, goal, held, floor, attached_cloud,
         path = np.linspace(start, goal, n)
         path[:, 1] += sign * np.sin(np.linspace(0, np.pi, n)) * np.deg2rad(15)
         seeds.append(path)
+    seed_names = ["linear", "elbow_minus", "elbow_plus"]
+    for i, path in enumerate(seed_paths):
+        path = np.asarray(path, float)
+        if path.ndim != 2 or path.shape[1] != 6 or len(path) < 2:
+            raise ValueError("seed_path must be an N x 6 joint path")
+        if not np.allclose(path[0], start) or not np.allclose(path[-1], goal):
+            raise ValueError("seed_path endpoints must match start and goal")
+        seeds.append(_resample_path(path, n))
+        seed_names.append(f"external_{i}")
     attempts = []
     best = None
-    for seed in seeds:
+    for seed_name, seed in zip(seed_names, seeds):
         tic = time.perf_counter()
         def fun(flat):
             v, g = fg(jnp.asarray(flat, dtype=jnp.float32))
@@ -134,7 +153,8 @@ def optimize(robot, robot_collision, start, goal, held, floor, attached_cloud,
         candidate = np.vstack([start, fit.x.reshape((n - 2, 6)), goal])
         good, check = validate(candidate, held, floor, start, max_wrist_deg,
                                limits=(np.asarray(limit_lo), np.asarray(limit_hi)))
-        attempts.append({"time_s": time.perf_counter() - tic, "objective": float(fit.fun),
+        attempts.append({"seed": seed_name, "time_s": time.perf_counter() - tic,
+                         "objective": float(fit.fun),
                          "movement_from_seed_deg": float(np.degrees(np.linalg.norm(candidate - seed))),
                          "optimizer_success": bool(fit.success), "valid": good, **check})
         if good:

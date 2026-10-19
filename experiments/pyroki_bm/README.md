@@ -133,3 +133,12 @@ twice with identical input: 4.38/3.86 s optimization time, max joint path
 variation 0°, but its candidate still travelled 243.2° vs legacy 167.0° and
 had larger sampled acceleration and jerk. First-run Python/import/checker
 setup is excluded from those optimization times.
+
+An optional `--seed-from-legacy` experiment adds the saved RRT carry prefix
+as a fourth initialization. It is a hybrid RRT postprocessor, not a PyRoki
+replacement. On Q3 red, 20-knot/120-iteration optimization failed the exact
+gate for all four seeds, including the RRT-derived seed (held ratio 0.566),
+although the original 47-point RRT prefix itself passed. Resampling and
+local optimization did not preserve that narrow corridor. Result:
+`bench_q3_red_legacyseed.json`. The backend discards this failed candidate;
+it does not silently return the original path as a PyRoki result.

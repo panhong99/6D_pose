@@ -3,7 +3,7 @@ import unittest
 
 import numpy as np
 
-from trajopt_backend import validate
+from trajopt_backend import _resample_path, validate
 
 
 class Checker:
@@ -36,6 +36,15 @@ class GateTests(unittest.TestCase):
     def test_limits_rejected(self):
         self.assertEqual(validate(self.path, Checker(1.1), Checker(1.1), self.path[0],
                                   limits=(np.full(6, -.05), np.full(6, .05)))[1]["reason"], "joint_limits")
+
+    def test_external_seed_resampling_preserves_joint_endpoints(self):
+        original = np.array([[0., 0., 0., 0., 0., 0.],
+                             [.1, .2, 0., 0., 0., 0.],
+                             [.3, .2, 0., 0., 0., 0.]])
+        sampled = _resample_path(original, 20)
+        self.assertEqual(sampled.shape, (20, 6))
+        np.testing.assert_allclose(sampled[0], original[0])
+        np.testing.assert_allclose(sampled[-1], original[-1])
 
 
 if __name__ == "__main__":
