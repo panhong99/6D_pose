@@ -12,6 +12,12 @@ import numpy as np
 from scipy.optimize import minimize
 
 
+class CandidateRejected(RuntimeError):
+    def __init__(self, attempts):
+        self.attempts = attempts
+        super().__init__("PyRoki candidates failed the legacy clearance gate")
+
+
 def _point_box_distance(points, centres, rotations, half):
     # points [time, point, xyz], boxes [box, xyz]
     local = jnp.einsum("tpbi,bij->tpbj", points[:, :, None, :] - centres[None, None], rotations)
@@ -137,4 +143,4 @@ def optimize(robot, robot_collision, start, goal, held, floor, attached_cloud,
                 best = (travel, candidate)
     if best is not None:
         return best[1], attempts
-    raise RuntimeError(f"PyRoki candidate failed legacy clearance gate: {attempts}")
+    raise CandidateRejected(attempts)

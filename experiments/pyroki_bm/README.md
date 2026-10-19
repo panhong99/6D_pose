@@ -96,3 +96,13 @@ stored file omits the original camera calibration path and drop-start index,
 and the current configuration can differ. The accepted Q4 candidate is longer
 and has a larger resampled acceleration/jerk norm; it does not justify a
 production switch. JSON pilots are local result data and are not staged.
+
+For a second-plate offline reconstruction, pass each already standing plate
+as a one-based pin, for example `--standing Q4:11`. This adds its seven-slice
+geometry to the existing checker and PyRoki world boxes. In quadrants listed
+by `basket_carry_rrt_over_plates`, the floor also rises above the standing
+plate top by `basket_carry_plate_clear_m`, plus any configured RRT extra height.
+The saved `plan.json` does not record which plates were present, so this input
+must be supplied from an independently documented run; guessing it would not
+create an equivalent historical comparison. Rejected seeds now retain their
+individual exact-gate checks in the result JSON.

@@ -19,7 +19,7 @@ sys.path[:0] = [str(ROOT / "calibration"), str(Path(__file__).parent)]
 from calib_core import latest_t_base_cam, load_json  # noqa: E402
 from plate_plans import C, FloorCheck, basket_boxes, plate_cloud, quadrant_checkers  # noqa: E402
 from robot_model import DEFAULT_URDF, Kinematics  # noqa: E402
-from trajopt_backend import optimize, validate  # noqa: E402
+from trajopt_backend import CandidateRejected, optimize, validate  # noqa: E402
 
 
 def metrics(path, held, floor, start):
@@ -44,22 +44,37 @@ def main():
     parser.add_argument("--n", type=int, default=20)
     parser.add_argument("--maxiter", type=int, default=120)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--standing", action="append", default=[], metavar="Q:PIN",
+                        help="Existing upright plate, e.g. Q4:11; may be repeated")
     a = parser.parse_args()
     source = json.loads(a.plan.read_text())
     if not source["quadrant_plan"]["carry"].startswith(("rrt-floor", "prior")):
         raise ValueError("Saved plan is not an RRT/prior carry")
     q = {**C["plate_rl"], **C["plate_ik_bc"]}
     basket = np.asarray(source["basket_T"], float)
+    plates = []
+    for item in a.standing:
+        quadrant, pin = item.split(":", 1)
+        pin = int(pin)
+        if quadrant not in ("Q1", "Q2", "Q3", "Q4") or pin < 1:
+            parser.error(f"invalid --standing {item!r}; expected Q1..Q4:PIN")
+        plates.append((quadrant, pin - 1))
     H = np.asarray(source["plate_in_tcp"], float)
     tool = np.eye(4)
     tool[2, 3] = q.get("tool_length_m", 0.165)
     Tbc_path = latest_t_base_cam()
     Tbc = np.asarray(load_json(Tbc_path)["T_base_cam"], float)
-    held, _, _ = quadrant_checkers(Tbc, q, basket, H, tool, plates=())
+    held, _, _ = quadrant_checkers(Tbc, q, basket, H, tool, plates=plates)
     cloud = plate_cloud(H, tool)
-    boxes_basket = basket_boxes(basket)
+    boxes_basket = basket_boxes(basket, plates=plates)
     markers = [c[2] + s[2] / 2 for name, c, s, _ in boxes_basket if name.startswith("marker_")]
     z_floor = max(markers) + q.get("basket_carry_clear_m", 0.05)
+    model_quadrant = source.get("quadrant") or source.get("quadrant_plan", {}).get("quadrant")
+    if plates and model_quadrant in q.get("basket_carry_rrt_over_plates", ()):
+        standing_tops = [c[2] + s[2] / 2 for name, c, s, _ in boxes_basket if name.startswith("plate_")]
+        z_floor = max(z_floor, max(standing_tops) + q.get("basket_carry_plate_clear_m", 0.05))
+    if plates:
+        z_floor += (q.get("basket_carry_rrt_extra_m", {}) or {}).get(model_quadrant, 0.0)
     floor = FloorCheck(Kinematics(), cloud, basket, z_floor)
     saved = np.radians(np.asarray(source["legs"]["to_above"]["waypoints_deg"], float))
     floor_ok = [floor.clearance(x) >= 1 for x in saved]
@@ -79,12 +94,13 @@ def main():
                                   cloud, world_boxes, basket, half, z_floor,
                                   n=a.n, maxiter=a.maxiter)
         candidate = metrics(path, held, floor, old[0])
-    except RuntimeError as exc:
-        attempts, candidate = [], {"valid": False, "failure": str(exc)[:2000]}
+    except CandidateRejected as exc:
+        attempts, candidate = exc.attempts, {"valid": False, "failure": str(exc)}
     report = {
         "plan": str(a.plan), "source_carry": source["quadrant_plan"]["carry"],
         "camera_calibration_used": str(Tbc_path), "drop_start_inferred": k,
         "world_boxes": len(world_boxes), "plate_cloud_points": len(cloud),
+        "standing_plates": a.standing, "model_quadrant": model_quadrant,
         "floor_z_m": float(z_floor), "legacy": metrics(old, held, floor, old[0]),
         "pyroki": candidate, "attempts": attempts,
         "pyroki_wall_s": time.perf_counter() - start,
