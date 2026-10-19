@@ -920,6 +920,8 @@ def run_plate(args):
                         t_ask = time.time()                         # joints are not streamed during a move: wait for a fresh one
                         while (rec.last or {}).get('t', 0) < t_ask and time.time() - t_ask < 5:
                             time.sleep(0.05)
+                        if (rec.last or {}).get('t', 0) < t_ask:    # (10/19 Codex) no fresh joints: no photo with a stale pose
+                            raise RuntimeError('no fresh joint state within 5 s')
                         Tbb = basket_T if basket_T is not None else np.array(json.loads(
                             (DATA / 'basket' / 'slot_01_in_basket.json').read_text())['T_base_basket_at_teach'])
                         Tbb = Tbb.copy()
