@@ -373,6 +373,21 @@
 - 금지: 로봇·그리퍼·카메라·ROS 실행, 시연 기본값 변경, 기존 데이터/설정 덮어쓰기.
 
 ## Codex 상태
+- **지금 최우선 (10/20 13:xx Claude): BO cuRobo 옵션 비판 검토 (Critic, 코드 수정 없음).**
+  - 대상: 보스가 실기 dry run에 쓰는 `CARRY_PLANNER=curobo` 커밋 d8a189f, 3df5bdc, f1a4443.
+    - `calibration/curobo_carry.py`, `calibration/curobo_worker.py`
+    - `plate_plans.quadrant_plan`의 cuRobo 분기, `pipeline.region_pins(back_first)`
+  - 확인할 것:
+    - (1) **실패하면 닫히는지(fail-closed)**: 작업 프로세스가 죽음·멈춤·잘못된 JSON·끝점 불일치일 때 모두 RRT로 넘어가고, 거부된 경로가 실행되지 않는가.
+    - (2) cuRobo 경로가 최종 `c_car` / `fl_ok`(0.5°) / 손목 검사를 빠짐없이 거치는가.
+    - (3) 접시 높이 비용이 CUDA graph 버퍼를 제자리에서 갱신하는가. 계획을 연속으로 부를 때 이전 장면의 높이 제한·바구니 자세가 남지 않는가.
+    - (4) 기본(옵션 없음) 동작이 태그 `demo-20261022`와 같은가.
+    - (5) Q4 빨강 핀 순서 `[3, 2, 1, 4, 5, 6]`와 Q3 무변경.
+  - 실행은 오프라인만 한다(`.envs/curobo-bm-20261020`, 로봇·그리퍼·카메라 금지). 반박·위험·빠진 검증을 LOG에 쓴다. 고칠 점은 '수정 요청'에 적고 Claude가 고친다.
+- **다음 (10/20 Claude): BP 시연 뒤 '파지 이후 정지 줄이기' 설계 메모 (문서만).**
+  - 두산 `movesj`는 명령 하나에 속도가 하나다(`dsr_msgs2` MoveSplineJoint: vel/acc 한 쌍, 블렌딩 없음).
+  - `MoveJoint`/`MoveLine`의 `radius`/`blend_type` 블렌딩으로 "60 °/s 운반 → 10 °/s 수직 하강"을 정지 없이 잇는 방법과, servoj/speedj 실시간 스트리밍 방법을 비교한다(필요 조건, 경로 모양 변화, 검증 방법, 위험).
+  - 근거: `doosan_ws`의 srv 정의와 DRL 문서. `collab/` 아래 메모로 남기고, `calibration/`은 수정하지 않는다.
 - **BN 새 PyRoki 궤적 생성:** Q4 기존 plan의 시작·목표만 고정하고 내부 경로는 straight-line/elbow seed로 새 생성. 단일 CPU 오프라인 사례 통과(20 waypoint, exact gate); 상세 지표와 한계는 LOG `2026-10-20 09:4x`. 생성기 경로 저장 옵션 추가.
 - **BN 시연 뒤 통합 설계 (696eeaf):** `experiments/pyroki_bm/INTEGRATION.md`에 `quadrant_plan` 운반 호출 위치, backend 입력·재검사·fallback 계약, FK/IK 교체 범위와 `fl_ok`의 `pyroki` 분기 누락 위험을 기록. 생산 연결은 시연 후이며 BN 전체는 진행 중.
 - **BK 중복 주의 (10/20 05:3x Claude):** 받침 위치 지도는 Claude가 밤에 시연 설정(`--sim_q --region`, 현행 코드)으로 완료: `experiments/stand_free/sweep.py`, 결과 `calibration/data/basket/stand_free_20261019/{fine_v4,fine_lift_v4,basket_demo,basket_lift}/`, 그림 `stand_map_20261020_v4.png`, LOG 10/19 21:xx·23:xx. BK는 이걸 재사용·검토하고 새로 다 돌리지 말 것. 남은 가치 있는 일: PyRoki 높이·로봇 충돌 실패 개선(knot 사이 floor, 로봇 충돌 비용) 또는 `opt_in_backend`를 pipeline에 붙일 설계안(시연 뒤 적용).
