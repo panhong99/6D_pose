@@ -125,7 +125,12 @@ def main():
     show(g.wait())
 
 
+SYSTEM_PY = '/usr/bin/python3'
+
 if __name__ == '__main__':
+    if sys.executable != SYSTEM_PY and Path(SYSTEM_PY).is_file():   # (10/20 보스) conda python has a different 'serial'
+        import os                                                    # package (no serial.Serial): rerun in system Python
+        os.execv(SYSTEM_PY, [SYSTEM_PY, str(Path(__file__).resolve()), *sys.argv[1:]])
     try:
         main()
     except (IOError, TimeoutError) as e:
