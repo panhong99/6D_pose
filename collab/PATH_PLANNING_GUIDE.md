@@ -107,3 +107,17 @@ for seed in (0, 0, 1):
   ~/miniconda3/envs/foundationpose/bin/python experiments/pyroki_bm/bench_sweep.py <sweep 폴더> <새 폴더>   # 받침 지도 전체
   ```
 - **아직 안 된 것**: pipeline 연결(옵션). 시연 뒤에 "PyRoki 먼저, 실패하면 RRT" 또는 "RRT 경로를 PyRoki로 다듬기" 중 하나를 옵션으로 붙이는 것이 다음 단계다.
+
+## 8. cuRobo 먼저, RRT 다음 (10/20, 옵션)
+
+- **켜기**: 명령 앞에 `CARRY_PLANNER=curobo`를 붙인다. 빼면 지금과 똑같이 RRT다. config 키 `basket_carry_planner: curobo`로도 켤 수 있다.
+- **순서**: cuRobo → 경로 라이브러리 → RRT. cuRobo가 낸 경로도 RRT 경로와 똑같은 검사를 통과해야 쓴다: 충돌 여유, 바구니 위 높이 제한(0.5°마다), 손목. 못 통과하면 RRT로 넘어간다.
+- **화면**: `carry curobo 0.54s`는 cuRobo 경로를 썼다는 뜻이다. `curobo ... -> RRT`는 RRT로 넘어갔다는 뜻이다.
+- **속도**: 경로 모양만 cuRobo가 만든다. 이동 속도는 config 그대로다(60 / 10 °/s).
+- **구조**:
+  - cuRobo는 별도 환경(`.envs/curobo-bm-20261020`)의 작업 프로세스로 돈다(`calibration/curobo_worker.py`).
+  - 첫 운반 계획 때 한 번 켜지고 약 5–10초 걸린다. 그 뒤로는 경로 하나에 0.2–0.5초다. 로그는 `calibration/data/curobo_worker.log`에 남는다.
+- **높이 제한**: 손에 든 접시 구에만 거는 비용이다. 바구니 둘레 8 cm 안에서 접시 맨 아래가 제한보다 낮으면 벌점을 준다. 우리 FloorCheck와 같은 규칙이다.
+- **sim 시험 결과** (10/20, 시연 받침 근처 r 0.95–1.05 m × 20–24°, 시연 4단계, 36건):
+  - 계획이 나온 곳은 RRT 모드와 같은 20곳이다. 그중 17곳은 cuRobo 경로, 3곳은 RRT로 넘어갔다.
+  - 실패 16곳은 두 모드가 같다. 넣기 자세의 관절 한계, 그리고 접시가 기둥과 겹치는 경우다.

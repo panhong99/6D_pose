@@ -1354,8 +1354,21 @@ def quadrant_plan(Tbb, quadrant, gap, H, tool, start_deg, Tbc, q, grasp_legs=Non
                         rr = q.get('basket_rrt', {}) or {}  # (10/19 보스) RRT knobs in config, like the grasp library's
                         mc_ = MultiChecker(held.checkers + [fl])
                         top = None
+                        import curobo_carry                # (10/20 보스, opt-in CARRY_PLANNER=curobo) cuRobo first, RRT second
+                        if curobo_carry.enabled(q):
+                            try:
+                                s_ = np.radians(start_deg)
+                                cp, cs = curobo_carry.carry(q, held, H, tool, Tbb, z_mk, fl.half, s_, drop[-1])
+                                wr = np.degrees(np.abs(np.array(cp)[:, [3, 5]] - s_[[3, 5]])).max()
+                                c_cu = mc_.path_clearance(pp(np.array(cp), 0.5))
+                                if c_cu >= 1.0 and wr <= rr.get('max_wrist_deg', 100.0):
+                                    top, how = cp, f'curobo {cs:.2f}s'
+                                else:
+                                    print(f'   curobo path refused: clearance {c_cu:.2f}, wrist {wr:.0f} -> RRT', flush=True)
+                            except RuntimeError as e_cu:
+                                print(f'   {e_cu} -> RRT', flush=True)
                         prior = q.get('_carry_prior')      # (10/19 보스) the carry that worked here before, reused first
-                        if prior:
+                        if prior and top is None:
                             pw = np.radians(np.asarray(prior['waypoints_deg'], float))
                             cand = [np.radians(start_deg)] + list(pw[1:int(prior['drop_start'])]) + [drop[-1]]
                             wr = np.degrees(np.abs(np.array(cand)[:, [3, 5]] - np.radians(start_deg)[[3, 5]])).max()
@@ -1406,7 +1419,7 @@ def quadrant_plan(Tbb, quadrant, gap, H, tool, start_deg, Tbc, q, grasp_legs=Non
                             inserting.path_clearance(pp(np.array(carry[k:]), 0.5)))
                 if c_car < 1.0:
                     raise RuntimeError(f'high carry clearance {c_car:.2f}')
-                fl_ok = (lambda c, k_: fl.path_clearance(pp(np.array(c[:k_ + 1]), 0.5)) >= 1.0) if how.startswith(('rrt', 'prior')) \
+                fl_ok = (lambda c, k_: fl.path_clearance(pp(np.array(c[:k_ + 1]), 0.5)) >= 1.0) if how.startswith(('rrt', 'prior', 'curobo')) \
                     else (lambda c, k_: True)                 # (10/19 night) the even resample may cut a corner under the floor
                 clear_of = lambda c, k_: min(held.path_clearance(pp(np.array(c[:k_ + 1]), 0.5)) / thr,   # noqa: E731
                                              inserting.path_clearance(pp(np.array(c[k_:]), 0.5))) if fl_ok(c, k_) else 0.0
