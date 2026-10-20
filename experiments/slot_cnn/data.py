@@ -305,7 +305,7 @@ def sample_camera(rng, poses):
     """A real wrist view (T_basket_cam) moved by a few cm and degrees."""
     from scipy.spatial.transform import Rotation
     looks = [i for i, (n, _) in enumerate(poses) if n.startswith('wrist_look')]
-    i = rng.choice(looks) if looks and rng.random() < 0.4 else rng.integers(len(poses))   # straight-down looks 40 %
+    i = rng.choice(looks) if looks and rng.random() < 0.6 else rng.integers(len(poses))   # straight-down looks (v3: 60 %, v1-v2: 40 %)
     T = poses[i][1].copy()
     T[:3, 3] += rng.normal(0, [0.04, 0.04, 0.04])
     yaw = Rotation.from_euler('z', rng.uniform(-30, 30), degrees=True).as_matrix()   # basket placed at another yaw
