@@ -24,12 +24,22 @@ from train import KEYS, STRIDE, TineNet, to_tensor  # noqa: E402
 SCALE = D.OW / D.W                                   # 0.75
 
 
+TTA = False                                          # --tta: also the mirrored photo, heatmaps averaged
+
+
 def predict(net, bgr, th=0.3):
     """Original-pixel keypoints per kind: {key: (n, 3) [u, v, score]}."""
     x = cv2.resize(bgr, (D.OW, D.OH - 4), interpolation=cv2.INTER_AREA)
     x = np.r_[x, np.zeros((4, D.OW, 3), np.uint8)]
+    nets = net if isinstance(net, (list, tuple)) else [net]
     with torch.no_grad():
-        o = net(to_tensor(x)[None].cuda()).float()[0]
+        outs = [n_(to_tensor(x)[None].cuda()).float()[0] for n_ in nets]   # several models: heatmaps averaged
+        o = outs[0].clone()
+        o[:2] = torch.logit(torch.stack([torch.sigmoid(q[:2]) for q in outs]).mean(0), eps=1e-6)
+        net = nets[0]
+        if TTA:                                      # mirrored input: heatmaps flipped back and averaged (logits),
+            of = net(to_tensor(np.ascontiguousarray(x[:, ::-1]))[None].cuda()).float()[0].flip(-1)   # offsets kept
+            o[:2] = torch.logit((torch.sigmoid(o[:2]) + torch.sigmoid(of[:2])) / 2, eps=1e-6)
     out = {}
     for c, k in enumerate(KEYS):
         h = torch.sigmoid(o[c])
@@ -107,11 +117,18 @@ def main():
     a.add_argument('--out')
     a.add_argument('--th', type=float, default=0.3)
     a.add_argument('--tol', type=float, default=8.0)
+    a.add_argument('--tta', action='store_true')
     a = a.parse_args()
-    out = Path(a.out or Path(a.ckpt).parent / f'eval_{Path(a.ckpt).stem}')
+    global TTA
+    TTA = a.tta
+    out = Path(a.out or Path(a.ckpt.split(',')[0]).parent / f'eval_{Path(a.ckpt.split(",")[0]).stem}{"_tta" if a.tta else ""}')
     out.mkdir(parents=True, exist_ok=True)
-    net = TineNet(pretrained=False).cuda().eval()
-    net.load_state_dict(torch.load(a.ckpt, map_location='cuda'))
+    net = []
+    for c in a.ckpt.split(','):                      # comma-separated: an ensemble (heatmaps averaged)
+        n_ = TineNet(pretrained=False).cuda().eval()
+        n_.load_state_dict(torch.load(c, map_location='cuda'))
+        net.append(n_)
+    a.ckpt = a.ckpt.split(',')[0] if a.out is None and ',' not in a.ckpt else a.ckpt
     sweep = {}
     for th in (0.1, 0.2, 0.3, 0.4, 0.5):
         _, tot = evaluate(net, out, th, a.tol)

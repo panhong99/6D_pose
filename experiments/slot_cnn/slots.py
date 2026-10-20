@@ -110,10 +110,15 @@ def number_rows(P, facts, quadrant, away=True, row_tol=0.025):
         # +-5 mm off a regular pitch: an anchor from the model is a guess, so only a row seen end to end is trusted
         ok = whole and not ambiguous and (k >= 1).all() and (k <= R['n']).all()
         clip_is_far = (not R['far']) == away                               # near quadrants: the clip is the robot-far end
-        num = k if clip_is_far else R['n'] + 1 - k
-        out[row] = sorted(zip(num.tolist(), sel.tolist()))
+        out[row] = (k, sel, d, clip_is_far, R['n'])
         info[row] = dict(pitch_mm=pitch * 1000, first_mm=off * 1000, confident=bool(ok), whole_row=bool(whole), found=len(sel),
-                         of=R['n'])
+                         of=R['n'], ambiguous=bool(ambiguous))
+    # (10/21 night, tried) letting a whole row number a partial row: 69-115 wrong on Q4 (a whole row framed one tine off
+    # hands its error on and the two-row check can no longer see it) -> not used
+    for row in list(out):
+        k, sel, d, clip_is_far, n = out[row]
+        num = k if clip_is_far else n + 1 - k
+        out[row] = sorted(zip(num.tolist(), sel.tolist()))
     # the two rows of a plate pair carry tine k at the same x (v4 labels: L1 and R1 both 4.6 mm from the clip): the same
     # numbering in both rows must put them there, else neither row is trusted
     if len(info) == 2:
@@ -184,3 +189,21 @@ def merge_root_tip(Pr, Pt, facts_r, facts_t, quadrant, dy_tol=0.008, dx_tol=0.01
     extra = np.array([[Pr[i, 0] + dx, Pr[i, 1], facts_t['rail_z']] for i in rest]).reshape(-1, 3)
     P = np.r_[Pt, extra]
     return (P, src_t + [('r', i) for i in rest]) if return_src else P
+
+
+def root_tip_offset(Pr, Pt, span=0.04, step=0.0005, tol=0.004, min_pairs=6):
+    """Root -> tip x offset (basket frame) seen in one photo: the shift that lays the most roots onto tips of the same
+    row (|dy| < 8 mm, |dx| < tol).  The real lean (~22 deg, ~24 mm) is longer than the pitch, so nearest-root pairing
+    picks the neighbour; a vote over shifts does not.  -> (dx, pairs) or (None, 0) if too few or not unique."""
+    if len(Pr) < min_pairs or len(Pt) < min_pairs:
+        return None, 0
+    best = []
+    for dx in np.arange(-span, span + 1e-9, step):
+        d = np.abs(Pt[None, :, 0] - (Pr[:, None, 0] + dx))
+        same_row = np.abs(Pt[None, :, 1] - Pr[:, None, 1]) < 0.008
+        best.append((int(((d < tol) & same_row).any(1).sum()), dx))
+    top = max(c for c, _ in best)
+    near = [dx for c, dx in best if c == top]
+    if top < min_pairs or max(near) - min(near) > 0.004:                 # two separate peaks (a pitch apart): unsure
+        return None, 0
+    return float(np.mean(near)), top
