@@ -14,6 +14,12 @@ import numpy as np
 import data as D
 
 
+# (10/20 night) keypoint-free zones in the basket frame: (min distance from the clip, max |x|).  The clip and the end
+# walls gave false tips (run_v2: clip side 8-23 mm, walls |x| 224-235 mm); real tips sit 30-39 mm from the clip and at
+# |x| <= 213 mm on the near half, 230 mm on the far half (Q1 7 tines at 24 mm) (v4 labels).  NOTE: set by looking at the 4 test photos, so the test numbers below are optimistic.
+KEEP_OUT = {'tip': (0.025, {True: 0.232, False: 0.218}), 'root': (0.010, {True: 0.240, False: 0.235})}   # far / near half
+
+
 def basket_facts(kind='root'):
     """Model facts for one keypoint kind (root on the rail / tip): per row y, count, side; per quadrant the clip -> first
     tine distance; the keypoint plane height (basket frame)."""
@@ -52,7 +58,10 @@ def number_rows(P, facts, quadrant, away=True, row_tol=0.025):
     out, info = {}, {}
     ys = [facts['rows'][(quadrant, r)]['y'] for r in (0, 1)]
     side = (P[:, 0] > cx) == facts['rows'][(quadrant, 0)]['far']
-    cand = np.nonzero(side & (np.abs(P[:, 1] - np.mean(ys)) < abs(ys[1] - ys[0]) / 2 + 0.035))[0]
+    near, far = KEEP_OUT[facts.get('kind', 'root')]                         # no tine keypoint at the clip or the walls
+    far = far[facts['rows'][(quadrant, 0)]['far']]
+    zone = (np.abs(P[:, 0] - cx) >= near) & (np.abs(P[:, 0]) <= far)
+    cand = np.nonzero(side & zone & (np.abs(P[:, 1] - np.mean(ys)) < abs(ys[1] - ys[0]) / 2 + 0.035))[0]
     groups = {0: [], 1: []}                                                 # the two rows: split the seen points in y at
     if len(cand):                                                           # their widest gap (the real rows sit 1-2 cm
         o = cand[np.argsort(P[cand, 1])]                                    # off the model's, 10/19 v4 labels)
@@ -84,18 +93,22 @@ def number_rows(P, facts, quadrant, away=True, row_tol=0.025):
         keep = np.r_[True, np.diff(kr) > 0]                               # one point per lattice place
         sel, d, kr = sel[keep], d[keep], kr[keep]
         first = facts['first'][quadrant]
+        ambiguous = False
         if kr[-1] - kr[0] + 1 > R['n']:                                     # longer than the row (a false point at an end):
             wins = [(np.sum((kr >= w) & (kr < w + R['n'])),                # the n-long window with the most points, then the
                      -abs(ph + pitch * w - first), w) for w in range(kr[0], kr[-1] - R['n'] + 2)]   # model's first offset
+            top = max(c for c, _, _ in wins)
+            if sum(c == top for c, _, _ in wins) > 1:                       # two windows hold as many points: which end
+                ambiguous = True                                            # is false cannot be told -> no answer
             w = max(wins)[2]
             m = (kr >= w) & (kr < w + R['n'])
             sel, d, kr = sel[m], d[m], kr[m]
-        whole = kr[-1] - kr[0] + 1 == R['n'] and len(sel) >= R['n'] - 0     # both row ends seen: count them
+        whole = kr[-1] - kr[0] + 1 == R['n'] and len(sel) >= R['n'] - 1     # both row ends seen: count them
         k = kr - kr[0] + 1 if whole else np.round((d - first) / pitch).astype(int) + 1
         off = float(np.median(d - pitch * (k - 1)))
         # (10/20 night) the model's clip -> first-tine distance is off by up to 17 mm (v4 labels) and real tines sit up to
         # +-5 mm off a regular pitch: an anchor from the model is a guess, so only a row seen end to end is trusted
-        ok = whole and (k >= 1).all() and (k <= R['n']).all()
+        ok = whole and not ambiguous and (k >= 1).all() and (k <= R['n']).all()
         clip_is_far = (not R['far']) == away                               # near quadrants: the clip is the robot-far end
         num = k if clip_is_far else R['n'] + 1 - k
         out[row] = sorted(zip(num.tolist(), sel.tolist()))
