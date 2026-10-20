@@ -19,7 +19,7 @@ sys.path.insert(0, str(ROOT / 'rl'))
 
 BASKET_PLAN = ROOT / 'calibration/data/rl_plans/20261019_182150_953_taught/plan.json'   # 18:21 real basket pose
 STEPS = (('Q3', 'front', 'red', ()), ('Q3', 'back', 'white', ('Q3:12',)),
-         ('Q4', 'back', 'red', ()), ('Q4', 'front', 'white', ('Q4:6',)))
+         ('Q4', 'back', 'red', ()), ('Q4', 'front', 'white', ('Q4:3',)))   # (10/20) red at 3
 
 
 def plate_blocked(p, Tb, rim=0.134, pad=0.01):
@@ -84,7 +84,8 @@ def plan_step(job):
     sq = pl.C['basket_quadrant_sim'][mq]
     plates = [(rq[v.split(':')[0]], pp.pin_gap(Tb, rq[v.split(':')[0]], int(v.split(':')[1]))) for v in standing]
     same = [int(v.split(':')[1]) for v in standing if v.startswith(qd)]
-    cands = pl.region_pins(len(pp.basket_gaps()[mq]), region, same, int(q.get('basket_region_min_spacing', 4)))
+    cands = pl.region_pins(len(pp.basket_gaps()[mq]), region, same, int(q.get('basket_region_min_spacing', 4)),
+                           (q.get('basket_region_back_first_pin') or {}).get(qd))
     order = (-1.0, 1.0) if sq['flip'] else (1.0, -1.0)
     kinds = set()
     for legs0 in grasps:

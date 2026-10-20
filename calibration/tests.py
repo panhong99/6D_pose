@@ -324,6 +324,8 @@ class Pipeline(unittest.TestCase):
         self.assertEqual(pipeline.region_pins(12, 'back', [10, 5]), [1])            # behind every plate there
         self.assertEqual(pipeline.region_pins(12, 'back', [10], spacing=2), [8, 7, 6, 5, 4, 3, 2, 1])
         self.assertEqual(pipeline.region_pins(12, 'front', [10], spacing=2), [12, 8, 7])
+        self.assertEqual(pipeline.region_pins(12, 'back', back_first=3), [3, 2, 1, 4, 5, 6])   # (10/20 보스) Q4 red farther
+        self.assertEqual(pipeline.region_pins(12, 'front', [4]), [12, 11, 10, 9, 8])
         with self.assertRaises(ValueError):
             pipeline.region_pins(12, 'middle')
         self.assertEqual(pipeline.parse_args(['--region', 'back']).region, 'back')
