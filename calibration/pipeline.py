@@ -829,9 +829,13 @@ def run_plate(args):
             sim_kw = {}
             lib_dir = cpath(q['basket_carry_library']) if q.get('basket_carry_library') else None
             lib_key = f'{args.quadrant}_{args.plate_color}'
+            import curobo_carry                         # (10/20 보스, opt-in) CARRY_PLANNER=curobo: cuRobo before the library
+            if curobo_carry.enabled(q):
+                print('   운반 순서: cuRobo -> 경로 라이브러리 -> RRT (CARRY_PLANNER=curobo)', flush=True)
             if lib_dir is not None and (lib_dir / f'{lib_key}.json').is_file():   # (10/19 보스) the carry that worked before first
                 q['_carry_prior'] = json.loads((lib_dir / f'{lib_key}.json').read_text())
-                print(f'   운반 경로 라이브러리: {lib_dir / f"{lib_key}.json"} 먼저 시도', flush=True)
+                order = 'cuRobo 다음에 시도' if curobo_carry.enabled(q) else '먼저 시도'
+                print(f'   운반 경로 라이브러리: {lib_dir / f"{lib_key}.json"} {order}', flush=True)
             if args.sim_q:                                  # (10/15 보스 시연) Isaac per-quadrant lean / aim / wrist flip
                 sys.path.insert(0, str(ROOT / 'rl'))
                 import basket_env as be

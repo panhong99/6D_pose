@@ -21,6 +21,8 @@ import torch
 JOINTS = [f'joint_{i}' for i in range(1, 7)]
 PLATE_SLOTS = 100
 FLOOR_WEIGHT = 1e5                                   # as trajopt's scene collision (lbfgs_bspline_trajopt.yml)
+FLOOR_EDGE_M = 0.02                                  # (10/20 실기 Q4 white) a rim point in the band's corner, the spheres
+                                                     # 0.2 mm outside: the floor area for the spheres is 2 cm wider
 F = {}                                               # floor tensors: made once, updated in place (CUDA graphs)
 
 
@@ -36,7 +38,8 @@ def patch_floor_cost():
         p = sp[..., F['idx'], :]                                           # held plate spheres, world frame
         loc = p[..., :3] @ F['R'].T + F['t']                               # basket frame
         r = p[..., 3]
-        over = (loc[..., 0].abs() <= F['half'][0] + r) & (loc[..., 1].abs() <= F['half'][1] + r) & (r > 0)
+        edge = r + FLOOR_EDGE_M                                            # the spheres stop short of the rim between
+        over = (loc[..., 0].abs() <= F['half'][0] + edge) & (loc[..., 1].abs() <= F['half'][1] + edge) & (r > 0)
         depth = torch.relu(F['z'] - (p[..., 2] - r)) * over
         cc.add(F['w'] * depth.sum(-1, keepdim=True), 'plate_floor')
         return cc
