@@ -246,7 +246,8 @@ def build_scene(rng, parts, B, tines):
     f = B['full']
     m = Mesh()
     wire = np.clip(np.array([0.16, 0.16, 0.17]) * rng.uniform(0.6, 1.8) + rng.normal(0, 0.02, 3), 0.03, 0.5)
-    r_rod, r_tine = rng.uniform(0.0015, 0.0024), rng.uniform(0.0014, 0.0021)
+    tine = np.clip(np.full(3, rng.uniform(0.1, 0.6)) + rng.normal(0, 0.03, 3), 0.03, 0.7)   # (v2) real tines: thin, often
+    r_rod, r_tine = rng.uniform(0.0015, 0.0024), rng.uniform(0.0011, 0.0019)               # lighter metal than the frame
     for p in parts:
         if p[0] == 'cyl':
             if abs(p[3] - f['pin_r']) < 1e-9:
@@ -259,7 +260,7 @@ def build_scene(rng, parts, B, tines):
             m.box(c, size, np.clip(col, 0, 1))
     ts = random_tines(tines, B, rng)
     for t in ts:
-        m.cyl(t['base'], t['top'], r_tine, wire * rng.uniform(0.9, 1.1))
+        m.cyl(t['base'], t['top'], r_tine, tine * rng.uniform(0.9, 1.1))
     z_t = f['floor_z'] - 0.006                                       # table under the basket floor
     S = 1.28                                                         # 1024 texels * 2.5 mm / 2
     v = np.array([[-S, -S, z_t], [S, -S, z_t], [S, S, z_t], [-S, S, z_t]])
@@ -346,7 +347,7 @@ class Renderer:
         L = torch.tensor(L / np.linalg.norm(L), dtype=torch.float32, device=dev)
         lam = (nrm @ -L).abs()
         amb = float(rng.uniform(0.35, 0.7))
-        spec = (lam ** float(rng.uniform(8, 40))) * float(rng.uniform(0.0, 0.5)) * (tfl[..., 0] < 0.5)
+        spec = (lam ** float(rng.uniform(8, 40))) * float(rng.uniform(0.0, 0.8)) * (tfl[..., 0] < 0.5)
         img = col * (amb + (1 - amb) * lam[..., None]) + spec[..., None]
         img = torch.where(hit[..., None], img, torch.full_like(img, float(rng.uniform(0.5, 0.9))))
         img = torch.nn.functional.avg_pool2d(img.permute(2, 0, 1)[None], self.ss)[0].permute(1, 2, 0)

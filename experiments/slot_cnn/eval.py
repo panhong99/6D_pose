@@ -120,6 +120,7 @@ def main():
     overlays(net, out, a.th)
     preds = {q: predict(net, cv2.imread(p), a.th) for p, _, _, q in D.real_tests()}
     numbers = {k: number_check({q: v[k] for q, v in preds.items()}, trials=100, kind=k) for k in KEYS}
+    numbers['both'] = number_check(preds, trials=100, kind='both')
     numbers = {k: {q: {kk: vv for kk, vv in v.items() if kk != 'info'} for q, v in r.items()} for k, r in numbers.items()}
     res = dict(ckpt=a.ckpt, th=a.th, tol_px=a.tol, total=tot, photos=rows, threshold_sweep=sweep, tine_numbers=numbers)
     (out / 'metrics.json').write_text(json.dumps(res, indent=1))
@@ -134,16 +135,19 @@ def number_check(pred_roots=None, trials=200, xy_mm=4.0, yaw_deg=1.0, seed=0, ki
     xy sd 4 mm capped 7.3, yaw sd 1 deg capped 2.1) vs the v4 numbers.  pred_roots None = the labelled roots (geometry
     alone); else {label quadrant: (n, 2) CNN roots}, each matched to a label first."""
     import slots as S
-    facts = S.basket_facts(kind)
+    facts = S.basket_facts('tip' if kind == 'both' else kind)
     rng = np.random.default_rng(seed)
     col = 1 if kind == 'root' else 2
+    uv = None
     res = {}
     for img_path, Tcb, pins, q in D.real_tests():
         meta = json.loads(Path(json.loads((D.V4 / f'{q}.json').read_text())['capture_metadata']).read_text())
         Tbc = np.asarray(meta['T_base_flange']) @ np.asarray(meta['T_flange_cam'])
         Tbb = np.asarray(meta['T_base_basket'])
         lab = [(int(p[0][1:]), np.array(p[col])) for p in pins if p[col]]
-        if pred_roots is None:
+        if kind == 'both':
+            pass
+        elif pred_roots is None:
             uv, truth = np.array([p for _, p in lab]), np.array([n for n, _ in lab])
         else:                                                # every detection is numbered; matched ones are scored
             uv = pred_roots[q][:, :2]
@@ -151,6 +155,17 @@ def number_check(pred_roots=None, trials=200, xy_mm=4.0, yaw_deg=1.0, seed=0, ki
             truth = np.full(len(uv), -1)
             for i, j in m:
                 truth[i] = lab[j][0]
+        if kind == 'both':                                   # tips + roots whose tip was missed (moved to the tip plane)
+            labs = {kk: [(int(p[0][1:]), np.array(p[c])) for p in pins if p[c]] for kk, c in (('root', 1), ('tip', 2))}
+            tr = {}
+            for kk in ('root', 'tip'):
+                uv_k = pred_roots[q][kk][:, :2]
+                m, _ = match(uv_k, np.array([p for _, p in labs[kk]]), 8.0)
+                t_ = np.full(len(uv_k), -1)
+                for i, j in m:
+                    t_[i] = labs[kk][j][0]
+                tr[kk] = (uv_k, t_)
+            fr, ft = S.basket_facts('root'), S.basket_facts('tip')
         right = wrong = refused = 0
         for _ in range(trials):
             e = np.clip(rng.normal(0, xy_mm / 1000, 2), -0.0073, 0.0073)
@@ -159,7 +174,13 @@ def number_check(pred_roots=None, trials=200, xy_mm=4.0, yaw_deg=1.0, seed=0, ki
             dT[:2, :2] = [[np.cos(a), -np.sin(a)], [np.sin(a), np.cos(a)]]
             dT[:2, 3] = e
             Tc = Tbb @ dT                                                   # coarse (vision) basket pose
-            P = S.to_rail_plane(uv, Tbc, Tc, facts['rail_z'])
+            if kind == 'both':
+                Pr = S.to_rail_plane(tr['root'][0], Tbc, Tc, fr['rail_z']) if len(tr['root'][0]) else np.zeros((0, 3))
+                Pt = S.to_rail_plane(tr['tip'][0], Tbc, Tc, ft['rail_z']) if len(tr['tip'][0]) else np.zeros((0, 3))
+                P, truth = S.merge_root_tip(Pr, Pt, fr, ft, q, return_src=True)
+                truth = np.array([tr['tip'][1][i] if src == 't' else tr['root'][1][i] for src, i in truth])
+            else:
+                P = S.to_rail_plane(uv, Tbc, Tc, facts['rail_z'])
             away = (Tc[:3, 0] @ np.r_[Tc[:2, 3], 0.0]) >= 0
             rows, info = S.number_rows(P, facts, q, away)
             for row, lst in rows.items():
@@ -171,7 +192,7 @@ def number_check(pred_roots=None, trials=200, xy_mm=4.0, yaw_deg=1.0, seed=0, ki
                         continue
                     right += int(num == truth[i])
                     wrong += int(num != truth[i])
-        res[q] = dict(roots=len(uv), right=right, wrong=wrong, refused=refused,
+        res[q] = dict(roots=len(uv) if uv is not None else -1, right=right, wrong=wrong, refused=refused,
                       acc_of_answered=right / max(1, right + wrong), info=info)
     return res
 

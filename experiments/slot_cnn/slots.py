@@ -74,7 +74,7 @@ def number_rows(P, facts, quadrant, away=True, row_tol=0.025):
             for ph in np.arange(0.0, pitch, 0.0005):
                 r = (d - ph) / pitch
                 res = np.abs(r - np.round(r)) * pitch
-                inl = res < 0.003
+                inl = res < 0.0045
                 sc = (inl.sum(), -res[inl].sum())
                 if best is None or sc > best[0]:
                     best = (sc, pitch, ph, inl)
@@ -90,15 +90,30 @@ def number_rows(P, facts, quadrant, away=True, row_tol=0.025):
             w = max(wins)[2]
             m = (kr >= w) & (kr < w + R['n'])
             sel, d, kr = sel[m], d[m], kr[m]
-        whole = kr[-1] - kr[0] + 1 == R['n'] and len(sel) >= R['n'] - 2     # both row ends seen: count them
+        whole = kr[-1] - kr[0] + 1 == R['n'] and len(sel) >= R['n'] - 0     # both row ends seen: count them
         k = kr - kr[0] + 1 if whole else np.round((d - first) / pitch).astype(int) + 1
         off = float(np.median(d - pitch * (k - 1)))
-        ok = (whole or abs(off - first) < pitch / 2 - 0.003) and (k >= 1).all() and (k <= R['n']).all() and len(sel) >= 3
+        # (10/20 night) the model's clip -> first-tine distance is off by up to 17 mm (v4 labels) and real tines sit up to
+        # +-5 mm off a regular pitch: an anchor from the model is a guess, so only a row seen end to end is trusted
+        ok = whole and (k >= 1).all() and (k <= R['n']).all()
         clip_is_far = (not R['far']) == away                               # near quadrants: the clip is the robot-far end
         num = k if clip_is_far else R['n'] + 1 - k
         out[row] = sorted(zip(num.tolist(), sel.tolist()))
         info[row] = dict(pitch_mm=pitch * 1000, first_mm=off * 1000, confident=bool(ok), whole_row=bool(whole), found=len(sel),
                          of=R['n'])
+    # the two rows of a plate pair carry tine k at the same x (v4 labels: L1 and R1 both 4.6 mm from the clip): the same
+    # numbering in both rows must put them there, else neither row is trusted
+    if len(info) == 2:
+        a, b = info[0], info[1]
+        same = abs(a['first_mm'] - b['first_mm']) < 6.0 and abs(a['pitch_mm'] - b['pitch_mm']) < 1.5
+        both = a['confident'] and b['confident']                            # both rows seen end to end, and agreeing
+        for r in (0, 1):
+            info[r]['rows_agree'] = bool(same)
+            info[r]['confident'] = bool(both and same)
+    else:
+        for r in info:
+            info[r]['rows_agree'] = False
+            info[r]['confident'] = False                                    # one row alone is not trusted
     return out, info
 
 
@@ -127,3 +142,32 @@ def slot_poses(P, rows, facts, quadrant, T_base_basket):
         db = T_base_basket[:3, :3] @ np.r_[dv, 0.0]
         out[p] = dict(xyz=pb[:3].tolist(), yaw_deg=float(np.degrees(np.arctan2(db[1], db[0]))))
     return out
+
+
+def merge_root_tip(Pr, Pt, facts_r, facts_t, quadrant, dy_tol=0.008, dx_tol=0.012, return_src=False):
+    """Tips (tip plane) + the roots whose tip was not found, moved by the root -> tip offset measured in this photo
+    (median of root/tip pairs; the model's lean is the first guess).  Basket frame points, tip plane.
+    (10/20 night: run_v1 ep08 numbers no better than tips alone, Q3 11 wrong: not used for the answer.)"""
+    exp = np.median([facts_t['first'][quadrant]]) - np.median([facts_r['first'][quadrant]])
+    sign = 1.0 if facts_t['rows'][(quadrant, 0)]['far'] else -1.0          # away from the clip on both halves
+    exp_dx = sign * exp
+    src_t = [('t', i) for i in range(len(Pt))]
+    if not len(Pr):
+        return (Pt, src_t) if return_src else Pt
+    if not len(Pt):
+        P = np.c_[Pr[:, 0] + exp_dx, Pr[:, 1], np.full(len(Pr), facts_t['rail_z'])]
+        return (P, [('r', i) for i in range(len(Pr))]) if return_src else P
+    pairs, used = [], np.zeros(len(Pt), bool)
+    for i, r in enumerate(Pr):
+        d = Pt[:, :2] - r[:2]
+        ok = (np.abs(d[:, 1]) < dy_tol) & (np.abs(d[:, 0] - exp_dx) < dx_tol)
+        if ok.any():
+            j = int(np.argmin(np.where(ok, np.abs(d[:, 0] - exp_dx), np.inf)))
+            pairs.append((i, j, d[j, 0]))
+            used[j] = True
+    dx = float(np.median([p[2] for p in pairs])) if len(pairs) >= 3 else exp_dx
+    paired = {p[0] for p in pairs}
+    rest = [i for i in range(len(Pr)) if i not in paired]
+    extra = np.array([[Pr[i, 0] + dx, Pr[i, 1], facts_t['rail_z']] for i in rest]).reshape(-1, 3)
+    P = np.r_[Pt, extra]
+    return (P, src_t + [('r', i) for i in rest]) if return_src else P
