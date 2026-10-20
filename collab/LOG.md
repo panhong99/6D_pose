@@ -5052,3 +5052,15 @@
 - 보스가 새 PyRoki 경로 생성을 요청해 Q4 plan `calibration/data/rl_plans/20261019_183143_663_taught/plan.json`의 **운반 시작·목표 관절값만** 입력으로 사용하고, 저장 RRT 경로점은 최적화 seed로 넣지 않은(`seed_from_legacy=false`) CPU PyRoki 최적화를 새로 실행했다. 20개 관절 경유점을 `/tmp/pyroki_fresh_20261020_path.json`에 생성하고 비교 지표를 `/tmp/pyroki_fresh_20261020.json`에 저장했다. 시작·끝점은 저장 endpoint와 degree 변환 정밀도 내 일치(최대 시작 차이 1.5e−14°, 목표 차이 0°).
 - 이번 출력의 새 PyRoki carry는 기존 held/floor exact gate 통과, 77개 조밀 검사점, 최소 held clearance 1.40·floor 1.47, J4/J6 최대 excursion 20.918°, 관절 총 이동 165.38°, acceleration/jerk L2 0.00231/0.00274, 최적화 2.83 s. 비교 대상 RRT carry는 47점·검사 93점·clearance 1.40/1.10·이동 166.95°·가속/가가속 0.00430/0.00519. 단일 오프라인 사례이며 우열을 일반화하지 않는다.
 - 생성기는 새 궤적 JSON을 선택 출력하는 `benchmark_saved.py --path-output`을 추가했다. 이 경로는 새 최적화 궤적이며 시작·목표만 보존한다. Q4의 grasp/들기·별도 수직 삽입·로봇 실행을 새로 계획한 것은 아니다. 저장 plan에 당시 카메라/calibration provenance가 없어서 최신 카메라를 재구성에 썼고, 실제 장면과 일치한다고 보장할 수 없다. 로봇·그리퍼·카메라·ROS 실행 및 시연 고정 파일 변경 없음.
+
+## 2026-10-20 10:3x KST Claude — cuRobo V2 환경과 133계획 비교 (보스: "curobo 환경 만들어서 해봐", 병렬 env 메모리 질문)
+- 환경: `.envs/curobo-bm-20261020`. torch 2.11+cu128, cuRobo V2(78fd485), **Apache 2.0**(앞서 말한 "상업 제한"은 v1 기준이라 틀림). 재현: `experiments/curobo_bm/setup_env.sh`. 시연 환경과 `calibration/`은 변경 없음.
+- 같은 133계획(fine_v4)에서 출발·도착 관절, 상자, 손에 든 접시를 같게 두고 최종 판정은 우리 정확 검사로 했다. 그 결과 **RRT 133 / PyRoki 109 / cuRobo 118**이었다.
+  - cuRobo 계획 시간: 중앙값 0.22 s, 최대 0.39 s(GPU). RRT는 3–16 s, PyRoki는 4.1 s.
+  - 둘 다 통과한 97건의 가가속도: PyRoki 0.58, cuRobo 0.61(RRT = 1). 경로 모양 가속도는 cuRobo가 1.95로 RRT보다 크다.
+- cuRobo 손잡이: 충돌 비용 시작 거리(5 mm → 5 cm)가 결정적이었다. 통과가 34건 → 114건으로 늘었다.
+- 한계: 높이 제한은 접시에만 걸리는데, cuRobo 장애물은 모든 링크에 걸린다. 그래서 바닥 상자 띠를 4 cm로 두고, 출발이 막힌 건은 띠 0 cm로 다시 풀었다. 남은 실패는 구 모델에서 출발이 막힌 9–15건(먼 받침 r ≥ 1.2 m)과 바닥 4건이다.
+- 병렬(env마다 다른 장면, 프로세스 하나):
+  - 전체 계획: 1/4/16/32/64 env에서 0.11/0.19/0.71/1.43/2.89 s, 메모리 0.18/0.23/1.16/1.82/3.64 GB. 128 env는 12 GB GPU에서 메모리 부족.
+  - IK(16시도): 1/64/256개에서 3.0/3.5/4.8 ms, 메모리 0.02/0.77/2.33 GB. 1024개(4시도)는 8.6 ms, 3.4 GB.
+- 데이터: `calibration/data/basket/stand_free_20261019/curobo_vs_rrt/{pad00,pad04}_{act30,act50}/`(git 제외). 표와 명령: `experiments/curobo_bm/README.md`.
