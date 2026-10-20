@@ -512,6 +512,62 @@ def plate_color_auto(C, Tbc, centre=(0.90, 0.35, 0.068), radius=0.09, cam=None, 
     return 'red', red, white
 
 
+def plate_color_from_image(rgb, det=None):
+    """(10/20 보스: 접시 위치 의존성 없애기) colour of the plate wherever it lies in a fixed-camera frame: YOLOE 'plate'
+    masks, the ones inside the rack ('dish drying rack' box: plates already put away) left out, the largest left is the
+    plate to pick.  -> ('red' | 'white' | None, red share, white share, mask or None)."""
+    import cv2
+    if det is None:
+        from ultralytics import YOLOE
+        det = YOLOE(str(ROOT / 'yoloe-v8l-seg.pt'))
+        names = ['plate', 'dish drying rack']
+        det.set_classes(names, det.get_text_pe(names))
+    r = det.predict(rgb[:, :, ::-1].copy(), conf=0.15, verbose=False, retina_masks=True)[0]
+    if r.masks is None:
+        return None, 0.0, 0.0, None
+    masks, boxes, cls = r.masks.data.cpu().numpy() > 0.5, r.boxes.xyxy.cpu().numpy(), r.boxes.cls.cpu().numpy().astype(int)
+    racks = [b for b, k in zip(boxes, cls) if k == 1]
+    best = None
+    for m, b, k in zip(masks, boxes, cls):
+        if k != 0:
+            continue
+        cx, cy = (b[0] + b[2]) / 2, (b[1] + b[3]) / 2
+        if any(rb[0] <= cx <= rb[2] and rb[1] <= cy <= rb[3] for rb in racks):
+            continue
+        if best is None or m.sum() > best.sum():
+            best = m
+    if best is None:
+        return None, 0.0, 0.0, None
+    core = cv2.erode(best.astype(np.uint8), np.ones((5, 5), np.uint8)).astype(bool)
+    hsv = cv2.cvtColor(rgb, cv2.COLOR_RGB2HSV)[core].astype(int)
+    if len(hsv) < 50:
+        return None, 0.0, 0.0, best
+    hue, sat, val = hsv[:, 0], hsv[:, 1], hsv[:, 2]
+    red = float(np.mean(((hue <= 10) | (hue >= 170)) & (sat >= 90) & (val >= 40)))
+    white = float(np.mean((sat <= 60) & (val >= 120)))
+    colour = 'red' if red >= 0.25 and red > white else 'white' if white >= 0.35 else None
+    return colour, red, white, best
+
+
+def plate_color_detect(C, wait_s=20.0):
+    """--plate_color detect: plate_color_from_image on fixed-camera frames for up to wait_s; unclear -> 'red' + warning."""
+    from sensors import ColorCam
+    cam = ColorCam(C['cameras']['fixed_serial'])
+    red = white = 0.0
+    try:
+        for _ in range(45):                                 # auto exposure settles
+            cam.read()
+        t_end = time.monotonic() + wait_s
+        while time.monotonic() < t_end:
+            colour, red, white, _ = plate_color_from_image(cam.read().rgb)
+            if colour:
+                return colour, red, white
+    finally:
+        cam.close()
+    print(f'[plate] 색 판별 안 됨 (red {red:.2f}, white {white:.2f}) -> 빨강으로 진행', flush=True)
+    return 'red', red, white
+
+
 def save_carry_prior(path, plan_path, pin):
     """(10/19 보스) the carry of a finished run as the reuse-first path for its quadrant + plate colour."""
     P = json.loads(Path(plan_path).read_text())
@@ -549,6 +605,39 @@ def basket_last_good(cb, now=None):
     if d.get('layout') != cb.get('layout') or not 0 <= age <= 60 * cb.get('reuse_last_good_min', 30):
         return None
     return np.array(d['T_base_basket'], float), age
+
+
+def basket_source(args):
+    """(10/20 보스) where the basket pose comes from: 'markers' (default, ArUco on the rim) or 'vision' (no markers)."""
+    return args.basket_source or C['basket'].get('source', 'markers')
+
+
+def basket_from_vision(Tbc, posj, out, children, n=5):
+    """(10/20 보스: 바구니에 아루코가 없다고 가정) basket pose from the fixed RGB-D the perception process shares
+    (calibration/basket_vision.py: YOLOE rack mask + depth + basket model fit, the arm cut out).  Refuses (RuntimeError)
+    when the frames disagree or the rack / its blue handle is not seen."""
+    share = Path('/dev/shm/fixed_latest.npz')
+    t0 = time.time()
+    while not (share.exists() and float(np.load(share)['t']) > t0):     # the perception process writes it every 0.5 s
+        children.check()
+        if time.time() - t0 > 60:
+            raise RuntimeError('basket vision: no fixed-camera frame from the perception process in 60 s')
+        time.sleep(0.2)
+    (out / 'basket_vision_T_base_cam.json').write_text(json.dumps(dict(T_base_cam=np.asarray(Tbc).tolist())))
+    res_path = out / 'basket_vision.json'
+    cmd = [sys.executable, str(HERE / 'basket_vision.py'), '--share', str(share), '--T_base_cam',
+           str(out / 'basket_vision_T_base_cam.json'), '--z_rim', str(C['basket']['fixed_z_m']), '--n', str(n),
+           '--out', str(res_path)] + (['--posj', *map(str, posj)] if posj is not None else
+                                      ['--posj', *map(str, HOME_JOINTS_DEG)])
+    subprocess.run(cmd, cwd=ROOT, check=True, timeout=180)
+    r = json.loads(res_path.read_text())
+    if not r.get('ok'):
+        raise RuntimeError(f'basket vision refused: {r.get("why")} (arm out of the view? basket in the camera view?)')
+    Tb = np.asarray(r['T'], float)
+    yaw = np.degrees(np.arctan2(Tb[1, 0], Tb[0, 0]))
+    print(f'[basket] 마커 없이: centre ({Tb[0, 3]:.3f}, {Tb[1, 3]:+.3f}) m, yaw {yaw:+.1f} deg, '
+          f'{r["frames"]} frames spread {r["spread_mm"]:.1f} mm / {r["spread_deg"]:.1f} deg', flush=True)
+    return Tb
 
 
 def fixed_basket_z(Tb, cb):
@@ -664,6 +753,9 @@ def run_plate(args):
     Legs: to_ready, grasp, [close + object check], lift, [Human: lower?], lower, [open], retreat, to_home."""
     q, udp = plate_cfg(args.plate_policy), C['udp']
     grip_force = None
+    if args.plate_color == 'detect':                        # (10/20 보스) wherever the plate lies (opt-in)
+        args.plate_color, red, white = plate_color_detect(C)
+        print(f'[plate] 접시 색 (위치 무관 검출): {args.plate_color} (red {red:.2f}, white {white:.2f})', flush=True)
     if args.plate_color == 'auto':                          # (10/19 보스) whichever plate is on the stand
         t_auto = (args.t_base_cam or latest_t_base_cam()).resolve()
         args.plate_color, red, white = plate_color_auto(C, check_T(load_json(t_auto)['T_base_cam'], f'T_base_cam {t_auto}'))
@@ -715,7 +807,10 @@ def run_plate(args):
         basket_delta, basket_T = None, None
         if args.insert == 'quadrant' and (args.place != 'basket' or not args.quadrant):
             raise SystemExit('--insert quadrant needs --place basket (measured markers) and --quadrant Q1..Q4')
-        if args.place in ('basket', 'teach'):                # markers first: the fixed D455 is FoundationPose's afterwards
+        basket_vision = args.place in ('basket', 'teach') and basket_source(args) == 'vision'
+        if basket_vision:                                    # (10/20 보스: 아루코 없다고 가정) after perception starts
+            print('[basket] 마커 없이 고정 카메라 RGB-D로 바구니 자세를 잽니다 (인식 시작 후)', flush=True)
+        elif args.place in ('basket', 'teach'):              # markers first: the fixed D455 is FoundationPose's afterwards
             # (10/14 보스) teach: the basket pose is saved with every demonstration (BC per quadrant)
             from camera_tools import basket_fit_robust, basket_measure, markers_on_planes
             slot1 = json.loads((DATA / 'basket' / 'slot_01_in_basket.json').read_text())
@@ -756,6 +851,10 @@ def run_plate(args):
                                                     '--serial', args.serial, '--prompt', prompt, '--conf', str(args.conf),
                                                     '--mesh_file', str(mesh),
                                                     '--wrist_serial', C['cameras']['wrist_serial']], vision_env)
+        if basket_vision:
+            Tb = basket_from_vision(Tbc, cur['posj'] if args.execute else None, out, children)
+            T0 = np.array(json.loads((DATA / 'basket' / 'slot_01_in_basket.json').read_text())['T_base_basket_at_teach'])
+            basket_delta, basket_T = Tb @ np.linalg.inv(T0), Tb
         if q.get('library'):
             rlo, rhi = library_ok_radii(q)
             rlo, rhi = rlo + 0.005, rhi - 0.005
@@ -1361,6 +1460,9 @@ def parse_args(argv=None):
     p.add_argument('--insert', choices=('taught', 'policy', 'quadrant'), default='taught', help='golden / basket: taught descent (default), the '
                    'learned policy (BC + residual RL, rl/basket) rolled out in sim on the measured basket / grasp, or quadrant = '
                    'IK carry + straight-down insert into --quadrant / --pin of the measured basket (10/13, no teaching)')
+    p.add_argument('--basket_source', choices=('markers', 'vision'), default=None,
+                   help='(10/20, opt-in) basket pose: markers = the 4 ArUco markers (default, config basket.source); vision = no '
+                        'markers, the fixed RGB-D + basket model (calibration/basket_vision.py)')
     p.add_argument('--quadrant', choices=('Q1', 'Q2', 'Q3', 'Q4'), default=None,
                    help='--insert quadrant: robot view, robot at the bottom: Q1 far-right, Q2 far-left, Q3 near-left, Q4 near-right')
     p.add_argument('--yaw_trim', type=float, default=None, help='--insert quadrant: turn the plate face about the vertical at '
@@ -1407,8 +1509,9 @@ def parse_args(argv=None):
     p.add_argument('--pregrasp_height_m', type=float, default=pl['pregrasp_height_m'])
     p.add_argument('--conf', type=float, default=pl['conf'])
     p.add_argument('--prompt', default=pl['prompt'])
-    p.add_argument('--plate_color', choices=('red', 'white', 'auto'), default='red',
-                   help='(10/16) plate: white = the white plate (YOLOE prompt + white-textured 029 mesh, same shape); default red')
+    p.add_argument('--plate_color', choices=('red', 'white', 'auto', 'detect'), default='red',
+                   help='(10/16) plate: white = the white plate (YOLOE prompt + white-textured 029 mesh, same shape); default red; '
+                        'auto = colour at the usual stand spot; detect (10/20, opt-in) = the plate wherever it lies on the table')
     p.add_argument('--timeout', type=float, default=pl['timeout_s'], help='seconds allowed to obtain a stable pose/plan')
     p.add_argument('--robot_id', default=rb['robot_id'])
     p.add_argument('--controller_ns', default=rb['controller_ns'])

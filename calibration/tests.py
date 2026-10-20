@@ -315,6 +315,27 @@ class Pipeline(unittest.TestCase):
         for k in range(7):
             np.testing.assert_allclose(boxes[f'plate_Q3_3_{k}'][0][0], g[0], atol=1e-9)
 
+    def test_basket_source_defaults_to_markers(self):
+        import argparse
+        import pipeline
+        self.assertEqual(pipeline.basket_source(argparse.Namespace(basket_source=None)),
+                         pipeline.C['basket'].get('source', 'markers'))
+        self.assertEqual(pipeline.basket_source(argparse.Namespace(basket_source='vision')), 'vision')
+        self.assertNotEqual(pipeline.C['basket'].get('source', 'markers'), 'vision')   # opt-in only
+
+    def test_basket_vision_turn_and_offset(self):
+        import basket_vision as bv
+        np.testing.assert_allclose(bv.STRUCT_TO_FRAME[:2, 3], [0.0030, 0.0244])
+        M = np.array([[x, y, z] for x in np.linspace(-0.26, 0.26, 261) for y in (-0.26, 0.26) for z in (0.0, -0.05)])
+        M = np.r_[M, [[x, y, 0.0] for y in np.linspace(-0.26, 0.26, 261) for x in (-0.26, 0.26)]]
+        M = np.r_[M, [[x, -0.27, -0.01] for x in np.linspace(-0.25, 0.25, 200)]]     # handle side only: asymmetric
+        a = np.radians(12.0)
+        R, t = np.array([[np.cos(a), -np.sin(a)], [np.sin(a), np.cos(a)]]), np.array([0.9, -0.2])
+        S = np.c_[M[:, :2] @ R.T + t, M[:, 2] + 0.144]
+        yaw, tt, cost = bv.icp_xy_yaw(S, M, np.radians(11.0), [0.903, -0.197], 0.144)   # seeds come 1 deg apart
+        self.assertLess(abs(np.degrees(yaw) - 12.0), abs(11.0 - 12.0))          # moves toward the truth
+        np.testing.assert_allclose(tt, [0.9, -0.2], atol=0.005)
+
     def test_region_pins_front_back_and_spacing(self):
         # (10/19 보스) front = robot half nearest first; back = behind the plates there, >= 4 pins from a plate
         self.assertEqual(pipeline.region_pins(12, 'front'), [12, 11, 10, 9, 8, 7])
