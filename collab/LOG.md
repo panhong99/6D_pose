@@ -5047,3 +5047,8 @@
 ## 2026-10-20 08:2x KST Codex — BN 교정 집계 재현 도구
 - `experiments/pyroki_bm/recount_drop_gate.py`로 v4 폴더의 **133개 개별 JSON**을 읽어 공유 수직 하강의 현 계약(삽입 clearance ≥1, 유한 관절, joint limits; carry 전용 J4/J6 제한은 제외)을 재집계했다. 결과는 `drop_valid 133/133`, `legacy_full_valid 133/133`, `pyroki_full_valid 109/133`, `both_full_valid 109/133`로 기존 교정 수치와 일치한다. 실행: `python3 experiments/pyroki_bm/recount_drop_gate.py calibration/data/basket/stand_free_20261019/pyroki_vs_rrt_v4`. README에 재현 명령을 기록했다.
 - 원 JSON/요약표는 변경하지 않았다. 새 경로 생성이나 실기 시험이 아니며 원 camera/config 재구성 한계는 그대로다.
+
+## 2026-10-20 09:4x KST Codex — Q4 운반 궤적 새로 생성
+- 보스가 새 PyRoki 경로 생성을 요청해 Q4 plan `calibration/data/rl_plans/20261019_183143_663_taught/plan.json`의 **운반 시작·목표 관절값만** 입력으로 사용하고, 저장 RRT 경로점은 최적화 seed로 넣지 않은(`seed_from_legacy=false`) CPU PyRoki 최적화를 새로 실행했다. 20개 관절 경유점을 `/tmp/pyroki_fresh_20261020_path.json`에 생성하고 비교 지표를 `/tmp/pyroki_fresh_20261020.json`에 저장했다. 시작·끝점은 저장 endpoint와 degree 변환 정밀도 내 일치(최대 시작 차이 1.5e−14°, 목표 차이 0°).
+- 이번 출력의 새 PyRoki carry는 기존 held/floor exact gate 통과, 77개 조밀 검사점, 최소 held clearance 1.40·floor 1.47, J4/J6 최대 excursion 20.918°, 관절 총 이동 165.38°, acceleration/jerk L2 0.00231/0.00274, 최적화 2.83 s. 비교 대상 RRT carry는 47점·검사 93점·clearance 1.40/1.10·이동 166.95°·가속/가가속 0.00430/0.00519. 단일 오프라인 사례이며 우열을 일반화하지 않는다.
+- 생성기는 새 궤적 JSON을 선택 출력하는 `benchmark_saved.py --path-output`을 추가했다. 이 경로는 새 최적화 궤적이며 시작·목표만 보존한다. Q4의 grasp/들기·별도 수직 삽입·로봇 실행을 새로 계획한 것은 아니다. 저장 plan에 당시 카메라/calibration provenance가 없어서 최신 카메라를 재구성에 썼고, 실제 장면과 일치한다고 보장할 수 없다. 로봇·그리퍼·카메라·ROS 실행 및 시연 고정 파일 변경 없음.

@@ -79,9 +79,13 @@ def main():
     parser.add_argument("--robot-penalty-weight", type=float, default=0.0,
                         help="Diagnostic weight for approximate capsule/box cost; exact legacy gate always applies")
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--path-output", type=Path,
+                        help="Optional JSON for the newly optimized PyRoki carry waypoints (degrees)")
     parser.add_argument("--standing", action="append", default=[], metavar="Q:PIN",
                         help="Existing upright plate, e.g. Q4:11; may be repeated")
     a = parser.parse_args()
+    if a.path_output is not None and a.path_output.exists():
+        parser.error(f"--path-output already exists: {a.path_output}")
     if a.repeat < 1:
         parser.error("--repeat must be >= 1")
     if a.robot_penalty_weight < 0:
@@ -187,6 +191,19 @@ def main():
     }
     report["legacy_full_path_valid"] = report["legacy"]["valid"] and drop_gate["valid"]
     report["pyroki_full_path_valid"] = report["pyroki"]["valid"] and drop_gate["valid"]
+    if a.path_output is not None and accepted_paths:
+        path_report = {
+            "source_plan": str(a.plan),
+            "planner": "PyRoki trajopt, initialized from straight-line/elbow seeds",
+            "joint_order": [f"J{i}" for i in range(1, 7)],
+            "units": "degrees",
+            "waypoints_deg": np.degrees(accepted_paths[0]).tolist(),
+            "validated_by_legacy_gate": bool(repeats[0]["pyroki"]["valid"]),
+            "robot_execution": False,
+        }
+        a.path_output.parent.mkdir(parents=True, exist_ok=True)
+        a.path_output.write_text(json.dumps(path_report, indent=2) + "\n")
+        report["path_output"] = str(a.path_output)
     a.output.parent.mkdir(parents=True, exist_ok=True)
     a.output.write_text(json.dumps(report, indent=2) + "\n")
     print(json.dumps(report, indent=2))

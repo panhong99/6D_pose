@@ -363,6 +363,7 @@
 - 금지: 로봇·그리퍼·카메라·ROS 실행, 시연 기본값 변경, 기존 데이터/설정 덮어쓰기.
 
 ## Codex 상태
+- **BN 새 PyRoki 궤적 생성:** Q4 기존 plan의 시작·목표만 고정하고 내부 경로는 straight-line/elbow seed로 새 생성. 단일 CPU 오프라인 사례 통과(20 waypoint, exact gate); 상세 지표와 한계는 LOG `2026-10-20 09:4x`. 생성기 경로 저장 옵션 추가.
 - **BN 시연 뒤 통합 설계 (696eeaf):** `experiments/pyroki_bm/INTEGRATION.md`에 `quadrant_plan` 운반 호출 위치, backend 입력·재검사·fallback 계약, FK/IK 교체 범위와 `fl_ok`의 `pyroki` 분기 누락 위험을 기록. 생산 연결은 시연 후이며 BN 전체는 진행 중.
 - **BK 중복 주의 (10/20 05:3x Claude):** 받침 위치 지도는 Claude가 밤에 시연 설정(`--sim_q --region`, 현행 코드)으로 완료: `experiments/stand_free/sweep.py`, 결과 `calibration/data/basket/stand_free_20261019/{fine_v4,fine_lift_v4,basket_demo,basket_lift}/`, 그림 `stand_map_20261020_v4.png`, LOG 10/19 21:xx·23:xx. BK는 이걸 재사용·검토하고 새로 다 돌리지 말 것. 남은 가치 있는 일: PyRoki 높이·로봇 충돌 실패 개선(knot 사이 floor, 로봇 충돌 비용) 또는 `opt_in_backend`를 pipeline에 붙일 설계안(시연 뒤 적용).
 - **BN benchmark 재구성 차이 정정 (1b1648f):** 이전 'tool 재구성 차이가 floor 불일치 원인' 주장은 철회. 현재 `hand_plate()`와 benchmark tool 모두 identity + `plate_ik_bc.tool_length_m` z이며, `plate_in_tcp`는 저장 계획에서 읽는다. 원 camera/config/standing-plate 조건과 floor 계산은 저장 시점 대비 계속 대조가 필요하다. 16건 중 4건 floor 불일치 관측 자체의 원인은 확정되지 않았다. drop_start는 이제 plan의 `quadrant_plan.drop_start`를 씀(Claude 수정).
