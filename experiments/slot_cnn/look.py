@@ -23,7 +23,7 @@ import eval as E  # noqa: E402
 import slots as S  # noqa: E402
 from train import TineNet  # noqa: E402
 
-CKPT = 'calibration/data/slot_cnn/run_v1/ep08.pt,calibration/data/slot_cnn/run_v2/last.pt'   # 10/21 best tips: ensemble
+CKPT = 'calibration/data/slot_cnn/run_v3/last.pt'   # 10/21 02:3x best tips (with --tta): v3
 
 
 def quadrant_in_view(P_all, facts, Tbb_c):
@@ -45,7 +45,9 @@ def main():
     a.add_argument('--basket', help='basket_vision.json (ok, T) instead of the pose in the photo json')
     a.add_argument('--th', type=float, default=0.3)
     a.add_argument('--out')
+    a.add_argument('--no_tta', action='store_true', help='no mirrored second pass')
     a = a.parse_args()
+    E.TTA = not a.no_tta
     root = Path(__file__).resolve().parents[2]
     photo = Path(a.photo)
     meta = json.loads(Path(str(photo).replace('.raw.png', '.json')).read_text())
