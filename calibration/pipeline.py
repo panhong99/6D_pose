@@ -473,6 +473,12 @@ def configure_carry_planner(q, name=None):
     return name
 
 
+def continuous_direct_requested(value=None):
+    """Whether the Human explicitly chose preplanned, no-post-lift-replan carry."""
+    value = os.environ.get('CARRY_CONTINUOUS', '') if value is None else value
+    return str(value).strip().lower() in ('1', 'true', 'yes', 'on')
+
+
 def load_basket_insert_policy(path):
     """Load the deterministic, CPU-only basket insertion policy for the opt-in real pipeline."""
     expert_dir = str(ROOT / 'rl' / 'basket')
@@ -929,6 +935,7 @@ def run_plate(args):
             print(f'[3/5] BC+RL 정책 rollout (sim) at ({x:.4f}, {y:.4f}) yaw {yaw:.1f}: 1~2 분', flush=True)
             plan = export_plan(x, y, yaw, out / 'export.log', q)
         early, shown, policy_job, rep = None, plan, None, None
+        continuous_direct = False
         if args.place == 'basket' and args.insert == 'quadrant':   # (10/13) any basket pose, IK carry + insert, no teaching
             legs0 = json.loads(Path(plan).read_text())['legs']
             from plate_plans import hand_plate, pin_gap, quadrant_plan, robot_quadrants
@@ -949,9 +956,17 @@ def run_plate(args):
             # has neither a saved carry prior nor an RRT fallback.  Failure is a refusal.
             carry_planner = configure_carry_planner(q)
             direct_carry = carry_planner == 'direct'
+            continuous_direct = continuous_direct_requested()
+            if continuous_direct and not direct_carry:
+                raise RuntimeError('CARRY_CONTINUOUS=1 requires CARRY_PLANNER=direct')
+            if continuous_direct and not args.auto:
+                raise RuntimeError('CARRY_CONTINUOUS=1 requires --auto')
             if direct_carry:
                 print('   운반 순서: 현재 관측값으로 rise -> across -> drop 즉석 계산 '
                       '(저장 경로 없음, RRT 없음, 충돌검사 유지)', flush=True)
+            if continuous_direct:
+                print('   연속 운반: 파지 전에 검증한 lift + carry를 한 spline으로 실행 '
+                      '(파지 후 3초 정지/FP 재측정/경로 재계산 없음)', flush=True)
             lib_dir = (cpath(q['basket_carry_library'])
                        if q.get('basket_carry_library') and not direct_carry else None)
             lib_key = f'{args.quadrant}_{args.plate_color}'
@@ -1111,13 +1126,16 @@ def run_plate(args):
             leg('from_grasp')
             raise RuntimeError('no grasp: measure how far the plate had to move and set plate_rl.offset_m')
         merge = args.auto and args.insert in ('policy', 'quadrant') and q.get('auto_merged_legs', False) and early is not None   # (10/13 보스)
-        lift_alone = not merge or args.insert == 'quadrant'     # quadrant: stop after the lift to see the plate in the hand
+        lift_alone = not merge or (args.insert == 'quadrant' and not continuous_direct)
+        # Normal quadrant insertion stops after lift and rebuilds the plan from the
+        # measured plate-in-hand pose.  The explicit continuous mode instead uses
+        # the already collision-checked pre-grasp hand model and joins lift+carry.
         if lift_alone:
             leg('lift')
             rec.event('lifted')
             time.sleep(q.get('hold_s', 3.0))
         lift_end = json.loads(Path(plan).read_text())['legs']['lift']['waypoints_deg'][-1]
-        if args.insert == 'quadrant':                       # (10/13 실기) the plate sags in the fingers: replan from the FP plate now
+        if args.insert == 'quadrant' and not continuous_direct:  # plate sag: default replan from post-lift FP
             fp.poll()
             if fp.hist and rec.last:
                 Tn = plate_upright(Tbc @ fp.hist[-1])

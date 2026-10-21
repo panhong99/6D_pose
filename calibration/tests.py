@@ -392,6 +392,12 @@ class Pipeline(unittest.TestCase):
         self.assertFalse(q['basket_carry_rrt_fallback'])
         self.assertNotIn('_carry_prior', q)
 
+    def test_continuous_direct_env_parser(self):
+        for value in ('1', 'true', 'YES', ' on '):
+            self.assertTrue(pipeline.continuous_direct_requested(value))
+        for value in ('', '0', 'false', 'off'):
+            self.assertFalse(pipeline.continuous_direct_requested(value))
+
     def test_basket_consistency_finds_moved_marker_blocks(self):
         # (10/19 보스) blocks 3 and 5 moved ~2 cm and every fit was > 10 mm: name the moved blocks, keep the frame
         import camera_tools as ct
