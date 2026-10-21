@@ -194,7 +194,9 @@ def merge_root_tip(Pr, Pt, facts_r, facts_t, quadrant, dy_tol=0.008, dx_tol=0.01
 def root_tip_offset(Pr, Pt, span=0.04, step=0.0005, tol=0.004, min_pairs=6):
     """Root -> tip x offset (basket frame) seen in one photo: the shift that lays the most roots onto tips of the same
     row (|dy| < 8 mm, |dx| < tol).  The real lean (~22 deg, ~24 mm) is longer than the pitch, so nearest-root pairing
-    picks the neighbour; a vote over shifts does not.  -> (dx, pairs) or (None, 0) if too few or not unique."""
+    picks the neighbour; a vote over shifts does not.  -> (dx, pairs) or (None, 0) if too few or not unique.
+    10/21: not used.  A shift one pitch (17.5 mm) away fits nearly as well, and on the 4 test photos it won (Q3 +6.5,
+    Q2 29.5 mm); roots and tips numbered alike give the model's 14.7 mm, which look.py now uses."""
     if len(Pr) < min_pairs or len(Pt) < min_pairs:
         return None, 0
     best = []

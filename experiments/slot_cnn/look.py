@@ -70,15 +70,11 @@ def main():
                                                                                else v) for k, v in i.items()}
                                                                     for r, i in info.items()})
     if ok:                                                               # slots sit at the roots: tips moved back by
-        fr = S.basket_facts('root')                                      # the root -> tip offset seen in this photo
-        rr = E.predict(nets, img, a.th)['root']
-        Pr = S.to_rail_plane(rr[:, :2], Tbc, Tbb, fr['rail_z']) if len(rr) else np.zeros((0, 3))
-        dx, n_pair = S.root_tip_offset(Pr, P)
-        if dx is None:
-            sign = 1.0 if facts['rows'][(q, 0)]['far'] else -1.0
-            dx = sign * (facts['first'][q] - fr['first'][q])
-        res['root_to_tip_dx_mm'] = round(dx * 1000, 1)
-        res['root_to_tip_from'] = f'{n_pair} root/tip pairs in this photo' if n_pair else 'basket model lean'
+        fr = S.basket_facts('root')                                      # the basket model's lean.  (10/21: the per-photo
+        sign = 1.0 if facts['rows'][(q, 0)]['far'] else -1.0             # shift vote, S.root_tip_offset, is a pitch off:
+        dx = sign * (facts['first'][q] - fr['first'][q])                 # any shift + 17.5 mm fits as well; roots and
+        res['root_to_tip_dx_mm'] = round(dx * 1000, 1)                   # tips numbered alike show the model's 14.7 mm)
+        res['root_to_tip_from'] = 'basket model lean'
         Pslot = P.copy()
         Pslot[:, 0] -= dx
         pins = S.slot_poses(Pslot, rows, facts, q, Tbb)
