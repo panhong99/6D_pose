@@ -99,7 +99,7 @@ Phase 2 작업판이다(10/20 보스 시작). Phase 1(10/22 시연까지)의 작
 
 | # | 일 | 자세한 내용 | 상태 |
 |---|---|---|---|
-| **BV** | **고정카메라 세운 접시 grasp-only 시험** | `--standing-grasp-check --execute`: FP tilt 65~115°, 홈→상단 10 cm→테두리 접근→닫기 후 종료. 충돌검사·RRT·인출·운반·복귀 없음. 속도는 기존 plate `vel_deg_s`. | 완료 (`193c6fe`, 속도 복귀 `bf23b17`), 보스 실증 대기 |
+| **BV** | **고정카메라 세운 접시 파지·홈 복귀** | `--standing-grasp-check --execute`: FP tilt 65~115°, 홈→상단 10 cm→테두리 접근→닫기→접근 역행→홈. 충돌검사·RRT 없음. 속도는 기존 plate `vel_deg_s`. | 완료 (`193c6fe`, 속도 `bf23b17`, 홈 복귀 `ea059a7`), 보스 실증 대기 |
 | **BU** | **세워진 접시 FP·무충돌 IK 확인** | 최신 Q3:12 실증의 삽입 후 FP pose(tilt 85.96°)로 노출된 상단 테두리 100 mm 직선 접근을 구성. 충돌검사/RRT 없이 Cartesian 21점 IK 검증. | 완료 (`c9a571f`) |
 | **BT** | **파지 후 무정지 direct 운반** | `CARRY_PLANNER=direct CARRY_CONTINUOUS=1`: 파지 전에 충돌검사까지 끝낸 lift+carry를 한 spline으로 실행. 파지 후 3초 hold·FP 재측정·재계산 제거. 기본 실증은 유지. | 완료 (`d0cfe4e`) |
 | **BS** | **관측 기반 direct 운반 모드** | `CARRY_PLANNER=direct`: 현재 바구니·접시 관측에서 rise→across→drop을 즉석 계산. 저장 운반 경로·cuRobo·RRT는 사용하지 않고 기존 충돌검사는 유지. 최신 Q3 gap 1 재계획 검증. | 완료 (`71e8004`) |
