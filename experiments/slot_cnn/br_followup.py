@@ -35,8 +35,10 @@ def main():
         if time.monotonic() > deadline:
             raise TimeoutError('Training did not exit within three hours; no process was terminated')
         time.sleep(15)
-    if not (Path(a.run) / 'last.pt').exists():
-        raise RuntimeError('Training exited without last.pt; inspect its terminal and train.jsonl')
+    run = Path(a.run)
+    completed = sorted(run.glob('ep[0-9][0-9].pt'))
+    if not completed:
+        raise RuntimeError('Training exited without any completed epoch; inspect its terminal and train.jsonl')
     # Never compete with an active hardware pipeline when the training finishes.
     commands = subprocess.check_output(['ps', '-eo', 'pid,args'], text=True).splitlines()
     active = [s for s in commands if ('calibration/run.sh' in s or 'calibration/pipeline.py' in s)
@@ -54,7 +56,12 @@ def main():
     E.TTA = True
     results = []
     paths = [Path('calibration/data/slot_cnn/run_v3/last.pt')]
-    paths += [Path(a.run) / f'ep{i:02d}.pt' for i in (2, 5, 8, 11)]
+    requested = [run / f'ep{i:02d}.pt' for i in (2, 5, 8, 11)]
+    paths += [p for p in requested if p.exists()]
+    if requested[-1] not in paths and completed[-1] not in paths:
+        paths.append(completed[-1])
+    state.write_text(json.dumps(dict(status='evaluating', checkpoints=[str(p) for p in paths],
+                                     training_complete=(run / 'last.pt').exists())))
     for ckpt in paths:
         dst = out / f'{ckpt.parent.name}_{ckpt.stem}'
         state.write_text(json.dumps(dict(status='evaluating', checkpoint=str(ckpt))))

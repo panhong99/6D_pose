@@ -5201,3 +5201,15 @@
 - `CARRY_PLANNER=direct`를 추가했다. 실행별 설정을 `basket_carry_mode=rule`, `basket_carry_rrt_fallback=false`로 바꾸고 `_carry_prior`와 carry library를 사용하지 않는다. 따라서 rise→across→drop 기하 경로가 실패하면 RRT로 넘어가지 않고 실행을 거부한다. 기본 모드는 변하지 않는다.
 - 최신 marker-free 관측(`real_pipeline/20261021_114353_plate_2l5wiv02`): basket x=0.9522 m, y=-0.1784 m, yaw=+0.66 deg, 5-frame spread 0.80 mm/0.35 deg, 12,761 points. 같은 grasp/T_base_basket으로 Q3 gap 1을 direct 재계획: 약 6 s, `carry=high 0.368`, phi=-20 deg, accepted=true, clearance ratio carry/insert/after=1.20/2.83/4.20. 산출물 `calibration/data/rl_plans/20261021_115510_317_taught/plan.json`(데이터라 git 제외).
 - 검증: direct 설정 unit test, high-carry 바닥 제약 test, even-carry test 3개 통과. 실로봇 실행은 하지 않았다. 슬롯 목표는 아직 CNN 출력이 아니라 marker-free basket pose에 바구니 모델 gap을 변환한 값이다.
+
+## 2026-10-21 12:25 KST Codex — BR run_v4 평가 완료, 기준 미달·GPU worker 종료 불가
+- run_v4는 v3 `last.pt`에서 sim_v3만으로 추가 학습했다. 학습 프로세스가 추가 epoch 11의 step 38,500에서 37분 이상 정지해 ep00~10까지만 완성됐다. 자동 평가기는 `last.pt`가 없어도 완성된 epoch를 평가하도록 복구했다(`br_followup.py`).
+- v3+TTA 기준: tip recall/precision **0.9524/0.9412**, Q1 **11/14**, 번호 오답 **0**. run_v4 후보:
+  - ep02: **0.9524/0.9195**, Q1 11/14, 오답 0
+  - ep05: **0.9167/0.9277**, Q1 10/14, 오답 0
+  - ep08: **0.8929/0.9494**, Q1 10/14, 오답 0
+  - ep10: **0.9286/0.9398**, Q1 10/14, 오답 0
+- 완료 기준(recall>=.97, precision>=.93, Q1>=13/14, 번호 오답0)을 통과한 후보는 없다. 단순 epoch 연장은 Q1과 전체 recall을 악화시켜 v3를 유지한다. 다음 방법은 Q1/Q4 상단 시점, 마커/볼트 가림, 얇고 반사하는 빗살을 늘린 **새 sim_v4** 보강이며 같은 방식의 연장 학습은 반복하지 않는다.
+- 평가: `calibration/data/slot_cnn/br_v4_followup_recovery/comparison.json`; CNN-only Q1~Q4 overlay는 그 아래 각 체크포인트 폴더. 요청한 그래프: `calibration/data/slot_cnn/br_v4_report_recovery/learning_curves.png`, `evaluation_curves.png`, 원수치 `metrics_summary.json`.
+- 한계: 실기 사진 4장을 반복 평가했으므로 독립 정확도가 아니다. precision은 라벨 영역 안에서만 계산됐다. GPU 추론시간/VRAM 실측은 활성 학습 worker 때문에 연기됐다.
+- 막힘: 원 학습 PID 219805와 평가/보고 PID는 시작시각·명령을 확인해 종료했으나 DataLoader worker **PID 220013**이 SIGTERM/SIGKILL pending 상태로 계속 R이며 상속 GPU context 약 3.1 GiB를 놓지 않는다. 커널/GPU worker 정지라 사용자 재부팅(또는 세션 재시작) 전에는 안전하게 새 GPU 학습을 시작하지 않는다. 재부팅 뒤 sim_v4 보강→새 run_v5 학습→동일 gate 평가를 재개한다.
