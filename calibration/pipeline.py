@@ -28,6 +28,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import traceback
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -875,7 +876,10 @@ def run_plate(args):
             Tb = basket_from_vision(Tbc, cur['posj'] if args.execute else None, out, children)
             T0 = np.array(json.loads((DATA / 'basket' / 'slot_01_in_basket.json').read_text())['T_base_basket_at_teach'])
             basket_delta, basket_T = Tb @ np.linalg.inv(T0), Tb
-        if q.get('library'):
+        if args.standing_grasp_check:
+            print('[2/5] 세워진 접시 인식 중. FP 기울기 65~115 deg가 4회 안정되면 상단 테두리 IK를 계산합니다.',
+                  flush=True)
+        elif q.get('library'):
             rlo, rhi = library_ok_radii(q)
             rlo, rhi = rlo + 0.005, rhi - 0.005
             print(f'[2/5] 접시 인식 중. 로봇에서 {rlo:.2f}~{rhi:.2f} m, 방향 +-{q["max_azimuth_deg"]:.0f} deg 안이면 '
@@ -908,16 +912,20 @@ def run_plate(args):
                     ok = ((d >= lo) & (d <= hi)).all() and tilt <= q['max_tilt_deg']
                 viz(plate=plate_upright(Tbc @ T).tolist(), ok=bool(ok), area=None if q.get('library') else area)
                 good = good + 1 if ok else 0
-                if not q.get('library') and not lo[0] <= d[0] <= hi[0]:
+                if not args.standing_grasp_check and not q.get('library') and not lo[0] <= d[0] <= hi[0]:
                     over = d[0] - hi[0] if d[0] > hi[0] else d[0] - lo[0]
                     hint.append(f'{"로봇 쪽으로" if over > 0 else "로봇에서 멀리"} {abs(over) / 10:.1f} cm')
-                if not q.get('library') and not lo[1] <= d[1] <= hi[1]:
+                if not args.standing_grasp_check and not q.get('library') and not lo[1] <= d[1] <= hi[1]:
                     over = d[1] - hi[1] if d[1] > hi[1] else d[1] - lo[1]
                     hint.append(f'{"오른쪽으로" if over > 0 else "왼쪽으로"} {abs(over) / 10:.1f} cm')
                 if not args.standing_grasp_check and tilt > q['max_tilt_deg']:
                     hint.append(f'기울기 {tilt:.1f} deg (평평하게)')
-                where = (f'r {r:.3f} m, 방향 {np.degrees(az):+.0f} deg' if q.get('library')
-                         else f'dx {d[0]:+.0f} dy {d[1]:+.0f} dz {d[2]:+.0f} mm')
+                if args.standing_grasp_check:
+                    where = f'base xyz {np.round(p, 3).tolist()}'
+                elif q.get('library'):
+                    where = f'r {r:.3f} m, 방향 {np.degrees(az):+.0f} deg'
+                else:
+                    where = f'dx {d[0]:+.0f} dy {d[1]:+.0f} dz {d[2]:+.0f} mm'
                 print(f'   plate root {np.round(p, 4).tolist()}  ' + ('OK' if ok else '옮기기: ' + ', '.join(hint)) +
                       f'   ({where}, tilt {tilt:.1f})', flush=True)
                 if good >= 4:
@@ -1627,6 +1635,14 @@ def main(argv=None):
         return 130
     except (RuntimeError, OSError, ValueError, subprocess.SubprocessError) as exc:
         print(f'\nSTOP: {exc}', file=sys.stderr, flush=True)
+        return 2
+    except Exception as exc:
+        if os.environ.get('PIPELINE_DEBUG') == '1':
+            raise
+        detail = Path('/tmp/6d_pose_pipeline_error.log')
+        detail.write_text(traceback.format_exc())
+        print(f'\nSTOP: 내부 오류 {type(exc).__name__}: {exc}', file=sys.stderr, flush=True)
+        print(f'상세 traceback: {detail}  (개발용 전체 출력: PIPELINE_DEBUG=1)', file=sys.stderr, flush=True)
         return 2
     return 0
 
