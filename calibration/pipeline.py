@@ -459,6 +459,20 @@ def plate_cfg(policy):
     return {**C['plate_rl'], **C['plate_ik_bc']} if policy == 'ik_bc' else dict(C['plate_rl'])
 
 
+def configure_carry_planner(q, name=None):
+    """Apply an opt-in carry backend to this run-local config.
+
+    ``direct`` means a fresh geometric rise/across/drop solve only: no saved
+    carry prior and no RRT fallback.  Collision checking remains mandatory.
+    """
+    name = (os.environ.get('CARRY_PLANNER', '') if name is None else name).strip().lower()
+    if name == 'direct':
+        q['basket_carry_mode'] = 'rule'
+        q['basket_carry_rrt_fallback'] = False
+        q.pop('_carry_prior', None)
+    return name
+
+
 def load_basket_insert_policy(path):
     """Load the deterministic, CPU-only basket insertion policy for the opt-in real pipeline."""
     expert_dir = str(ROOT / 'rl' / 'basket')
@@ -929,7 +943,17 @@ def run_plate(args):
                       tilt=args.tilt_trim if args.tilt_trim is not None else q.get('basket_quadrant_tilt_trim_deg', 0.0))
 
             sim_kw = {}
-            lib_dir = cpath(q['basket_carry_library']) if q.get('basket_carry_library') else None
+            # Opt-in fresh deterministic carry when the Human names the exact slot.  The
+            # route is solved from the current observations as rise -> across -> drop.  It
+            # keeps the normal held-plate / basket / cell collision checks, but deliberately
+            # has neither a saved carry prior nor an RRT fallback.  Failure is a refusal.
+            carry_planner = configure_carry_planner(q)
+            direct_carry = carry_planner == 'direct'
+            if direct_carry:
+                print('   운반 순서: 현재 관측값으로 rise -> across -> drop 즉석 계산 '
+                      '(저장 경로 없음, RRT 없음, 충돌검사 유지)', flush=True)
+            lib_dir = (cpath(q['basket_carry_library'])
+                       if q.get('basket_carry_library') and not direct_carry else None)
             lib_key = f'{args.quadrant}_{args.plate_color}'
             import curobo_carry                         # (10/20 보스, opt-in) CARRY_PLANNER=curobo: cuRobo before the library
             if curobo_carry.enabled(q):

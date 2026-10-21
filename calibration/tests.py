@@ -384,6 +384,14 @@ class Pipeline(unittest.TestCase):
         self.assertLessEqual(len(pp.even_carry(list(np.radians(np.c_[np.arange(400.0), np.zeros((400, 5))])), 200)[0]),
                              pp.CARRY_MAX_WAYPOINTS)
 
+    def test_direct_carry_disables_prior_and_rrt(self):
+        q = {'basket_carry_mode': 'rrt', 'basket_carry_rrt_fallback': True,
+             '_carry_prior': {'waypoints_deg': [[0] * 6]}}
+        self.assertEqual(pipeline.configure_carry_planner(q, 'direct'), 'direct')
+        self.assertEqual(q['basket_carry_mode'], 'rule')
+        self.assertFalse(q['basket_carry_rrt_fallback'])
+        self.assertNotIn('_carry_prior', q)
+
     def test_basket_consistency_finds_moved_marker_blocks(self):
         # (10/19 보스) blocks 3 and 5 moved ~2 cm and every fit was > 10 mm: name the moved blocks, keep the frame
         import camera_tools as ct
