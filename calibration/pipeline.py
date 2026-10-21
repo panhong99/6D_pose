@@ -938,7 +938,19 @@ def run_plate(args):
             path, check = plan_standing_grasp(Tbc @ T, plate_bounds(), out)
             good = sum(bool(c['accepted']) for c in check['candidates'])
             print(f'[standing] FP tilt {tilt:.2f} deg, top-rim IK candidates {good}/{len(check["candidates"])} OK', flush=True)
-            print(f'[standing] PLAN ONLY (충돌검사/RRT/실행 없음): {path}', flush=True)
+            if not args.execute:
+                print(f'[standing] PLAN ONLY (충돌검사/RRT/실행 없음): {path}', flush=True)
+                return
+            print(f'[standing] 파지 시험 (충돌검사/RRT 없음): {path}', flush=True)
+            while input(f'실제 로봇이 움직입니다. "{nodes.OPENING}" 를 정확히 입력: ').strip() != nodes.OPENING:
+                pass
+            if 'status   : activated' not in gripper(['status'], env, check=True):
+                gripper(['activate'], env)
+            gripper(['open', '--yes'], env)
+            children.run_mover(mover_command(args, path, 'to_pregrasp', 'leg', opening_done=True, vel=1.0), env)
+            children.run_mover(mover_command(args, path, 'approach', 'leg', opening_done=True, vel=0.5), env)
+            gripper(['close', '--yes', '--force', str(grip_force or C['gripper']['force'])], env)
+            print('[standing] 파지 완료. 이 위치에서 종료합니다 (인출/운반/복귀 없음).', flush=True)
             return
         if not q.get('keep_perception', True):
             children.items = [it for it in children.items if it[1] is not perception]
@@ -1584,8 +1596,8 @@ def parse_args(argv=None):
     a = p.parse_args(argv)
     if a.offline_test and a.execute:
         p.error('--offline-test cannot be combined with --execute')
-    if a.standing_grasp_check and (a.execute or a.task != 'plate'):
-        p.error('--standing-grasp-check requires --task plate and forbids --execute')
+    if a.standing_grasp_check and a.task != 'plate':
+        p.error('--standing-grasp-check requires --task plate')
     for name in ('timeout', 'pregrasp_height_m', 'tool_radius_m', 'conf'):
         if not np.isfinite(getattr(a, name)) or getattr(a, name) <= 0:
             p.error(f'--{name} must be positive and finite')

@@ -157,8 +157,9 @@ class Pipeline(unittest.TestCase):
             self.assertTrue(path.is_file())
             self.assertTrue(result['accepted'])
             self.assertFalse(result['collision_checked'])
+            self.assertTrue(result['execution_allowed'])
             self.assertGreaterEqual(sum(c['accepted'] for c in result['candidates']), 1)
-            self.assertEqual(len(result['legs']['retreat']['waypoints_deg']), 21)
+            self.assertEqual(len(result['legs']['approach']['waypoints_deg']), 21)
 
     def test_stability_rejects_stale_repeated_invalid_and_gapped_frames(self):
         stable = pipeline.StablePose(np.eye(4), pipeline.planner_params())

@@ -66,17 +66,19 @@ def plan_standing_grasp(T_base_plate, mesh_bounds, out_dir, approach_m=0.10,
     for k in range(n + 1):
         direct.append(np.degrees(q0 + (q1 - q0) * k / n).tolist())
     approach = best['joint_waypoints_deg']
-    result = dict(created=time.strftime('%Y-%m-%d %H:%M:%S'), accepted=True,
-                  mode='standing_grasp_check', execute_allowed=False,
+    result = dict(created=time.strftime('%Y-%m-%d %H:%M:%S'), accepted=True, dry_run=True, margin_m=0.0,
+                  mode='standing_grasp_check', execution_allowed=True,
                   collision_checked=False, rrt_used=False,
                   T_base_plate=T.tolist(), plate_center_m=centre.tolist(),
                   plate_normal=normal.tolist(), tcp_grasp_m=tcp_grasp.tolist(),
                   chosen=dict(face=best['face'], roll_deg=best['roll_deg']),
                   candidates=candidates,
-                  legs=dict(to_grasp=dict(planner='standing Cartesian IK, no collision check',
-                                           waypoints_deg=direct + approach[1:]),
+                  legs=dict(to_pregrasp=dict(planner='standing joint approach, no collision check',
+                                              min_clearance_straight_m=0.0, waypoints_deg=direct),
+                            approach=dict(planner='standing Cartesian IK, no collision check',
+                                          min_clearance_straight_m=0.0, waypoints_deg=approach),
                             retreat=dict(planner='reverse of standing approach',
-                                         waypoints_deg=list(reversed(approach)))))
+                                         min_clearance_straight_m=0.0, waypoints_deg=list(reversed(approach)))))
     out = Path(out_dir) / 'standing_grasp_check.json'
     out.write_text(json.dumps(result, indent=2))
     return out, result
