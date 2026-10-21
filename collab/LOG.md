@@ -5225,3 +5225,9 @@
 - FP의 실제 plate normal과 메시 반경을 사용해 노출된 상단 테두리에서 15 mm 안쪽을 파지점으로 두고, 위에서 아래로 100 mm 직선 접근을 만들었다. 충돌검사와 RRT를 호출하지 않고 Cartesian 21점 전부 IK 성공: 최대 IK 위치 잔차 **9.7e-10 m**, 인접 관절 waypoint 최대 변화 **0.481°**. 8개 손목 roll/normal 후보의 endpoint IK도 8/8 성공했다.
 - 산출물: `calibration/data/standing_plate_check_20261021/ik_no_collision.json`, `straight_approach_no_collision.json`(데이터라 git 제외).
 - 한계: 로봇/그리퍼가 가리는 동안 FP가 같은 pose를 반복하다 손이 빠질 때 위치가 갱신됐다. 따라서 standing pose가 보이고 IK 경로를 만들 수 있다는 확인일 뿐, pose의 외부 ground truth 정확도·그리퍼 finger 접촉·바구니 인출·실기 성공을 증명하지 않는다. 현행 pipeline은 tilt>8°를 거부하며 이 시험 경로를 아직 실행 경로로 연결하지 않았다.
+
+## 2026-10-21 14:1x KST Codex — BV 고정카메라 세운 접시 live plan check (`e951ca4`)
+- `pipeline.py --task plate --standing-grasp-check`를 추가했다. 일반 수평 파지는 기존 `max_tilt_deg=8`을 유지하고, 이 opt-in plan-only 모드에서만 FP tilt 65~115°를 허용한다.
+- 고정 D455의 새 FoundationPose pose로 접시 normal과 위쪽 테두리를 구하고, 100 mm 위에서 상단 테두리 안쪽 15 mm까지 Cartesian 21점 IK를 계산한다. 양면/손목 roll 8후보 중 IK 가능한 후보를 기록하고 plan JSON을 해당 새 real_pipeline run에 저장한 뒤 종료한다.
+- 이 모드는 `--execute`와 함께 쓰면 argparse에서 거부한다. 충돌검사·RRT·그리퍼 명령·로봇 이동이 없으므로 현재 확인 범위는 새 카메라 관측에서 파지 목표/관절 경로를 만들 수 있는지까지다. 실제 손가락 축·접촉과 바구니 인출은 별도 검증 전에는 실행하지 않는다.
+- 검증: 저장된 실제 tilt 약 86° FP pose 단위시험, direct carry 회귀 2개, py_compile 통과. 실제 카메라 live plan은 보스 실행 대기.
