@@ -5213,3 +5213,9 @@
 - 평가: `calibration/data/slot_cnn/br_v4_followup_recovery/comparison.json`; CNN-only Q1~Q4 overlay는 그 아래 각 체크포인트 폴더. 요청한 그래프: `calibration/data/slot_cnn/br_v4_report_recovery/learning_curves.png`, `evaluation_curves.png`, 원수치 `metrics_summary.json`.
 - 한계: 실기 사진 4장을 반복 평가했으므로 독립 정확도가 아니다. precision은 라벨 영역 안에서만 계산됐다. GPU 추론시간/VRAM 실측은 활성 학습 worker 때문에 연기됐다.
 - 막힘: 원 학습 PID 219805와 평가/보고 PID는 시작시각·명령을 확인해 종료했으나 DataLoader worker **PID 220013**이 SIGTERM/SIGKILL pending 상태로 계속 R이며 상속 GPU context 약 3.1 GiB를 놓지 않는다. 커널/GPU worker 정지라 사용자 재부팅(또는 세션 재시작) 전에는 안전하게 새 GPU 학습을 시작하지 않는다. 재부팅 뒤 sim_v4 보강→새 run_v5 학습→동일 gate 평가를 재개한다.
+
+## 2026-10-21 13:3x KST Codex — BT 파지 후 무정지 direct 운반 (`d0cfe4e`)
+- 보스가 본 파지 후 정지는 RRT가 아니라 `hold_s=3 s`와 손 안 접시 FoundationPose 재측정·삽입 경로 재계산이었다. `CARRY_PLANNER=direct`는 이미 RRT를 쓰지 않는다.
+- opt-in `CARRY_CONTINUOUS=1`을 추가했다. `CARRY_PLANNER=direct --auto`와 함께 쓸 때 파지 전에 생성·충돌검사한 경로를 유지하고, 파지 후 hold/FP 재측정/재계산을 생략한다. `lift + to_above`를 mover의 한 joint spline으로 합쳐 파지 직후 바구니 위까지 연속 이동한다. 삽입은 기존 저속 spline, 놓기, 복귀 순서다.
+- 충돌검사는 끄지 않았다. 연속 모드는 실제 파지 뒤 처짐을 재측정하지 않으므로 처음 계산한 hand-plate 모델에 의존하는 한계가 있다. 환경변수를 주지 않은 기본 실증은 기존 동작 그대로다.
+- 검증: direct 설정, 환경변수 parser, high-carry 바닥 제약, even-carry 4개 단위시험 통과. 실로봇 실행은 하지 않았다.
