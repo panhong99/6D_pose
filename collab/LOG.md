@@ -5233,3 +5233,4 @@
 - 검증: 저장된 실제 tilt 약 86° FP pose 단위시험, direct carry 회귀 2개, py_compile 통과. 실제 카메라 live plan은 보스 실행 대기.
 - 첫 live 실행에서 standing 분기는 라이브러리용 상태 출력 변수 `r`을 만들지 않았는데 공용 출력문이 이를 참조해 `UnboundLocalError`가 났다. 접시/카메라 오류가 아니며 plan-only여서 로봇 동작은 없었다. `6cc91b5`에서 standing 전용 상태 문구로 분리했고, 예상 밖 내부 오류도 터미널에는 2줄 요약하고 전체 traceback은 `/tmp/6d_pose_pipeline_error.log`에 저장하도록 바꿨다. py_compile 및 3개 회귀시험 통과.
 - 보스 지시로 `193c6fe`에서 `--execute`를 허용했다. 별도 빗살 충돌검사·RRT 없이 홈에서 pregrasp(1.0 deg/s), 상단 테두리 Cartesian 접근(0.5 deg/s), 그리퍼 닫기까지만 수행하고 그 자세에서 종료한다. 인출·운반·복귀는 없다. py_compile 및 3개 회귀시험 통과; 실로봇 실행은 보스가 수행한다.
+- 보스가 standing 시험 속도가 지나치게 느리다고 확인해 강제 1.0/0.5 deg/s를 제거했다. pregrasp와 최종 접근 모두 기존 `plate_ik_bc.vel_deg_s`를 사용한다(현재 config 60 deg/s).
