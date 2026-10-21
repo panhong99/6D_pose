@@ -5194,3 +5194,10 @@
 
 ## 2026-10-21 11:06 KST Codex — BR 학습 진행
 - run_v4 step28000, 추가 epoch8(9번째), 경과61.6분. 완료된 epoch 8개, 최근 synthetic validation loss 0.232325622013637. 기존 학습 PID219805/자동평가220245/보고227165의 명령과 시작시각 일치, 평가 대기 상태. 학습 종료 후 실기 평가 및 추론 실측 예정이며 현재 성능 개선 주장은 없음.
+
+## 2026-10-21 11:56 KST Codex — BS 관측 기반 direct 운반 모드
+- 구현 커밋: `71e8004`.
+- 보스 지시: 저장 운반 경로와 RRT 없이 현재 관측값에서 바로 경로 계산. 충돌검사를 없애는 것은 중간 관절·그리퍼·접시 충돌을 검증할 수 없어 거부하고 기존 검사는 유지했다.
+- `CARRY_PLANNER=direct`를 추가했다. 실행별 설정을 `basket_carry_mode=rule`, `basket_carry_rrt_fallback=false`로 바꾸고 `_carry_prior`와 carry library를 사용하지 않는다. 따라서 rise→across→drop 기하 경로가 실패하면 RRT로 넘어가지 않고 실행을 거부한다. 기본 모드는 변하지 않는다.
+- 최신 marker-free 관측(`real_pipeline/20261021_114353_plate_2l5wiv02`): basket x=0.9522 m, y=-0.1784 m, yaw=+0.66 deg, 5-frame spread 0.80 mm/0.35 deg, 12,761 points. 같은 grasp/T_base_basket으로 Q3 gap 1을 direct 재계획: 약 6 s, `carry=high 0.368`, phi=-20 deg, accepted=true, clearance ratio carry/insert/after=1.20/2.83/4.20. 산출물 `calibration/data/rl_plans/20261021_115510_317_taught/plan.json`(데이터라 git 제외).
+- 검증: direct 설정 unit test, high-carry 바닥 제약 test, even-carry test 3개 통과. 실로봇 실행은 하지 않았다. 슬롯 목표는 아직 CNN 출력이 아니라 marker-free basket pose에 바구니 모델 gap을 변환한 값이다.
