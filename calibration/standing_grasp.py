@@ -66,6 +66,8 @@ def plan_standing_grasp(T_base_plate, mesh_bounds, out_dir, approach_m=0.10,
     for k in range(n + 1):
         direct.append(np.degrees(q0 + (q1 - q0) * k / n).tolist())
     approach = best['joint_waypoints_deg']
+    retreat = list(reversed(approach))
+    to_home = retreat + list(reversed(direct))[1:]
     result = dict(created=time.strftime('%Y-%m-%d %H:%M:%S'), accepted=True, dry_run=True, margin_m=0.0,
                   mode='standing_grasp_check', execution_allowed=True,
                   collision_checked=False, rrt_used=False,
@@ -78,7 +80,9 @@ def plan_standing_grasp(T_base_plate, mesh_bounds, out_dir, approach_m=0.10,
                             approach=dict(planner='standing Cartesian IK, no collision check',
                                           min_clearance_straight_m=0.0, waypoints_deg=approach),
                             retreat=dict(planner='reverse of standing approach',
-                                         min_clearance_straight_m=0.0, waypoints_deg=list(reversed(approach)))))
+                                         min_clearance_straight_m=0.0, waypoints_deg=retreat),
+                            to_home=dict(planner='reverse approach then joint return, no collision check',
+                                         min_clearance_straight_m=0.0, waypoints_deg=to_home)))
     out = Path(out_dir) / 'standing_grasp_check.json'
     out.write_text(json.dumps(result, indent=2))
     return out, result

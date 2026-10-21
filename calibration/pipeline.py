@@ -953,7 +953,9 @@ def run_plate(args):
             children.run_mover(mover_command(args, path, 'approach', 'leg', opening_done=True,
                                              vel=standing_vel), env)
             gripper(['close', '--yes', '--force', str(grip_force or C['gripper']['force'])], env)
-            print('[standing] 파지 완료. 이 위치에서 종료합니다 (인출/운반/복귀 없음).', flush=True)
+            children.run_mover(mover_command(args, path, 'to_home', 'leg', opening_done=True,
+                                             vel=standing_vel), env)
+            print('[standing] 파지 후 접근 경로 역행 + 홈 복귀 완료. 접시는 잡은 상태입니다.', flush=True)
             return
         if not q.get('keep_perception', True):
             children.items = [it for it in children.items if it[1] is not perception]
