@@ -138,6 +138,7 @@ def main():
     a.add_argument('--bs', type=int, default=12)
     a.add_argument('--lr', type=float, default=5e-4)
     a.add_argument('--workers', type=int, default=8)
+    a.add_argument('--init', help='Initialize model weights from an existing checkpoint; optimizer/schedule start fresh')
     a = a.parse_args()
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=False)
@@ -147,7 +148,9 @@ def main():
     tr, va = SimSet(a.data, ids[nval:]), SimSet(a.data, ids[:nval], train=False)
     dl = torch.utils.data.DataLoader(tr, a.bs, shuffle=True, num_workers=a.workers, drop_last=True, persistent_workers=True)
     dv = torch.utils.data.DataLoader(va, a.bs, num_workers=4)
-    net = TineNet().cuda()
+    net = TineNet(pretrained=not bool(a.init)).cuda()
+    if a.init:
+        net.load_state_dict(torch.load(a.init, map_location='cuda', weights_only=True))
     opt = torch.optim.AdamW(net.parameters(), a.lr, weight_decay=1e-4)
     steps = a.epochs * len(dl)
     sched = torch.optim.lr_scheduler.OneCycleLR(opt, a.lr, total_steps=steps, pct_start=0.05)

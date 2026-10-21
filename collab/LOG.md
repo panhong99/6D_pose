@@ -5179,3 +5179,9 @@
   | Q4 | 23/25 | | 5–7 |
 
   어긋남이 사진마다 빗살 방향으로 일정하다(약 4 mm). sim root(레일 높이 49 mm에서 빗살과 만나는 점)와 라벨 root(눈에 보이는 접점)의 높이 정의가 다른 것으로 보인다. tip은 0.5–1.5 px다.
+
+## 2026-10-21 10:05 KST Codex — BR 추가 학습 시작
+- 보스가 추가 학습과 부족 시 후속 개선을 승인. run.sh/pipeline.py 실행 없음, GPU 여유 확인.
+- sim_v3 40,000장 및 기존 train/validation 분할·손실·평가지표 그대로, run_v3/last.pt에서 가중치만 초기화해 run_v4에 추가 12 epoch, lr=1e-4. optimizer/schedule은 새로 시작한다(완전한 상태 resume 아님). 기존 데이터/가중치 보존.
+- 종료 기준: tip recall≥0.97, precision≥0.93, Q1≥13/14, 번호 오답 0. 매 후보 v3+TTA와 비교하고 CNN-only 전체 사진 overlay도 확인한다. 실기 4장에 반복 평가하므로 독립 일반화 검증이 아니며 추가 사진이 필요하다.
+- 실행 확인: 학습 PID 219805 (exec session 9790), step400/추가 epoch0, loss0.254, 시작 후0.9분. 자동 오프라인 평가 PID220245: 학습 종료 뒤 v3 및 run_v4 ep02/05/08/11을 기존 eval.py로 비교, CNN 점만 그린 Q1–Q4 그림도 저장. 상태 `calibration/data/slot_cnn/br_v4_followup/state.json`, 평가 로그 `/tmp/slotcnn_br/followup.log`. 기존 20분 heartbeat를 BR 진행·평가·추가 개선으로 갱신했다. 아직 성능 개선/완료 주장은 하지 않는다.
