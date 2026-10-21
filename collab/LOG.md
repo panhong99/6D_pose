@@ -5235,3 +5235,4 @@
 - 보스 지시로 `193c6fe`에서 `--execute`를 허용했다. 별도 빗살 충돌검사·RRT 없이 홈에서 pregrasp(1.0 deg/s), 상단 테두리 Cartesian 접근(0.5 deg/s), 그리퍼 닫기까지만 수행하고 그 자세에서 종료한다. 인출·운반·복귀는 없다. py_compile 및 3개 회귀시험 통과; 실로봇 실행은 보스가 수행한다.
 - 보스가 standing 시험 속도가 지나치게 느리다고 확인해 강제 1.0/0.5 deg/s를 제거했다. pregrasp와 최종 접근 모두 기존 `plate_ik_bc.vel_deg_s`를 사용한다(현재 config 60 deg/s).
 - 보스가 파지 성공을 확인해, 닫은 뒤 Cartesian 접근 10 cm를 역행하고 처음 joint 접근을 역행해 홈까지 복귀하는 `to_home` leg를 추가했다. 접시는 닫은 채 유지하며 충돌검사/RRT 없이 기존 60 deg/s를 사용한다.
+- 보스 지시로 waypoint별 정지를 제거했다. 홈→pregrasp→테두리는 `to_grasp` 한 joint spline, 테두리→pregrasp→홈은 `to_home` 한 joint spline으로 실행하며 그리퍼를 닫는 지점에서만 정지한다.
