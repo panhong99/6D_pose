@@ -5191,3 +5191,6 @@
 - 보스 후속 요청 반영: `br_report.py`가 평가 종료 후 learning_curves.png(step-loss/epoch-validation/lr), evaluation_curves.png(tip/root recall·precision, 분면 recall, 번호를 답한 라벨 비율), metrics_summary.json을 새 `calibration/data/slot_cnn/br_v4_report/`에 기록. 검출 지표와 조건부 번호 정확도를 혼동하지 않으며 번호 미응답·오답 원수치도 보존. 실기4장 반복평가/라벨영역 한정 정밀도 한계 명시.
 - 같은 스크립트가 다른 학습/로봇 pipeline이 없을 때 batch1 FP32, warmup20 + 반복100, 일반/TTA forward 및 전체 predict의 평균·중앙값·p95 시간, PyTorch peak allocated/reserved와 nvidia-smi 프로세스 메모리를 JSON으로 계측. 카메라·번호 기하계산·초기 로드는 제외. 현재 학습 중이라 GPU 계측은 아직 실행하지 않았다.
 - 보고 대기 PID227165, 로그 `/tmp/slotcnn_br/report.log`. 기존 실기 평가 JSON+진행 중 학습 로그로 CPU 그래프 생성 smoke test 통과(임시 /tmp만). 평가 분할·손실·기존 지표 정의 변경 없음.
+
+## 2026-10-21 11:06 KST Codex — BR 학습 진행
+- run_v4 step28000, 추가 epoch8(9번째), 경과61.6분. 완료된 epoch 8개, 최근 synthetic validation loss 0.232325622013637. 기존 학습 PID219805/자동평가220245/보고227165의 명령과 시작시각 일치, 평가 대기 상태. 학습 종료 후 실기 평가 및 추론 실측 예정이며 현재 성능 개선 주장은 없음.
