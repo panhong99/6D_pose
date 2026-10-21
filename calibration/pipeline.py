@@ -948,13 +948,11 @@ def run_plate(args):
                 gripper(['activate'], env)
             gripper(['open', '--yes'], env)
             standing_vel = q.get('vel_deg_s', 2.0)
-            children.run_mover(mover_command(args, path, 'to_pregrasp', 'leg', opening_done=True,
-                                             vel=standing_vel), env)
-            children.run_mover(mover_command(args, path, 'approach', 'leg', opening_done=True,
-                                             vel=standing_vel), env)
+            children.run_mover(mover_command(args, path, 'to_grasp', 'leg', opening_done=True,
+                                             smooth=True, vel=standing_vel), env)
             gripper(['close', '--yes', '--force', str(grip_force or C['gripper']['force'])], env)
             children.run_mover(mover_command(args, path, 'to_home', 'leg', opening_done=True,
-                                             vel=standing_vel), env)
+                                             smooth=True, vel=standing_vel), env)
             print('[standing] 파지 후 접근 경로 역행 + 홈 복귀 완료. 접시는 잡은 상태입니다.', flush=True)
             return
         if not q.get('keep_perception', True):

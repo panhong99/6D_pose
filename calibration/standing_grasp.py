@@ -68,6 +68,7 @@ def plan_standing_grasp(T_base_plate, mesh_bounds, out_dir, approach_m=0.10,
     approach = best['joint_waypoints_deg']
     retreat = list(reversed(approach))
     to_home = retreat + list(reversed(direct))[1:]
+    to_grasp = direct + approach[1:]
     result = dict(created=time.strftime('%Y-%m-%d %H:%M:%S'), accepted=True, dry_run=True, margin_m=0.0,
                   mode='standing_grasp_check', execution_allowed=True,
                   collision_checked=False, rrt_used=False,
@@ -79,6 +80,8 @@ def plan_standing_grasp(T_base_plate, mesh_bounds, out_dir, approach_m=0.10,
                                               min_clearance_straight_m=0.0, waypoints_deg=direct),
                             approach=dict(planner='standing Cartesian IK, no collision check',
                                           min_clearance_straight_m=0.0, waypoints_deg=approach),
+                            to_grasp=dict(planner='one joint spline: home + Cartesian approach, no collision check',
+                                          min_clearance_straight_m=0.0, waypoints_deg=to_grasp),
                             retreat=dict(planner='reverse of standing approach',
                                          min_clearance_straight_m=0.0, waypoints_deg=retreat),
                             to_home=dict(planner='reverse approach then joint return, no collision check',

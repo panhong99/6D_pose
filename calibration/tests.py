@@ -160,6 +160,7 @@ class Pipeline(unittest.TestCase):
             self.assertTrue(result['execution_allowed'])
             self.assertGreaterEqual(sum(c['accepted'] for c in result['candidates']), 1)
             self.assertEqual(len(result['legs']['approach']['waypoints_deg']), 21)
+            self.assertGreater(len(result['legs']['to_grasp']['waypoints_deg']), 21)
             self.assertTrue(np.allclose(result['legs']['to_home']['waypoints_deg'][-1],
                                         pipeline.HOME_JOINTS_DEG))
 
