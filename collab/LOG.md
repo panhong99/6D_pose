@@ -5219,3 +5219,9 @@
 - opt-in `CARRY_CONTINUOUS=1`을 추가했다. `CARRY_PLANNER=direct --auto`와 함께 쓸 때 파지 전에 생성·충돌검사한 경로를 유지하고, 파지 후 hold/FP 재측정/재계산을 생략한다. `lift + to_above`를 mover의 한 joint spline으로 합쳐 파지 직후 바구니 위까지 연속 이동한다. 삽입은 기존 저속 spline, 놓기, 복귀 순서다.
 - 충돌검사는 끄지 않았다. 연속 모드는 실제 파지 뒤 처짐을 재측정하지 않으므로 처음 계산한 hand-plate 모델에 의존하는 한계가 있다. 환경변수를 주지 않은 기본 실증은 기존 동작 그대로다.
 - 검증: direct 설정, 환경변수 parser, high-carry 바닥 제약, even-carry 4개 단위시험 통과. 실로봇 실행은 하지 않았다.
+
+## 2026-10-21 13:5x KST Codex — BU 세워진 접시 FP·무충돌 IK 확인
+- 실로봇/카메라 명령 없이 최신 완료 실증 `calibration/data/real_pipeline/20261021_131518_plate_kv1h8u2o/robot_state.jsonl`을 재사용했다. Q3:12 release 뒤 고정 카메라 FoundationPose tracking은 접시를 최종 tilt **85.96°**로 출력했다. 마지막 5 frame의 위치 산포는 x/y/z 약 **0.75/0.91/1.58 mm**, tilt 산포 **0.27°**였다.
+- FP의 실제 plate normal과 메시 반경을 사용해 노출된 상단 테두리에서 15 mm 안쪽을 파지점으로 두고, 위에서 아래로 100 mm 직선 접근을 만들었다. 충돌검사와 RRT를 호출하지 않고 Cartesian 21점 전부 IK 성공: 최대 IK 위치 잔차 **9.7e-10 m**, 인접 관절 waypoint 최대 변화 **0.481°**. 8개 손목 roll/normal 후보의 endpoint IK도 8/8 성공했다.
+- 산출물: `calibration/data/standing_plate_check_20261021/ik_no_collision.json`, `straight_approach_no_collision.json`(데이터라 git 제외).
+- 한계: 로봇/그리퍼가 가리는 동안 FP가 같은 pose를 반복하다 손이 빠질 때 위치가 갱신됐다. 따라서 standing pose가 보이고 IK 경로를 만들 수 있다는 확인일 뿐, pose의 외부 ground truth 정확도·그리퍼 finger 접촉·바구니 인출·실기 성공을 증명하지 않는다. 현행 pipeline은 tilt>8°를 거부하며 이 시험 경로를 아직 실행 경로로 연결하지 않았다.
