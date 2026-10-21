@@ -5185,3 +5185,9 @@
 - sim_v3 40,000장 및 기존 train/validation 분할·손실·평가지표 그대로, run_v3/last.pt에서 가중치만 초기화해 run_v4에 추가 12 epoch, lr=1e-4. optimizer/schedule은 새로 시작한다(완전한 상태 resume 아님). 기존 데이터/가중치 보존.
 - 종료 기준: tip recall≥0.97, precision≥0.93, Q1≥13/14, 번호 오답 0. 매 후보 v3+TTA와 비교하고 CNN-only 전체 사진 overlay도 확인한다. 실기 4장에 반복 평가하므로 독립 일반화 검증이 아니며 추가 사진이 필요하다.
 - 실행 확인: 학습 PID 219805 (exec session 9790), step400/추가 epoch0, loss0.254, 시작 후0.9분. 자동 오프라인 평가 PID220245: 학습 종료 뒤 v3 및 run_v4 ep02/05/08/11을 기존 eval.py로 비교, CNN 점만 그린 Q1–Q4 그림도 저장. 상태 `calibration/data/slot_cnn/br_v4_followup/state.json`, 평가 로그 `/tmp/slotcnn_br/followup.log`. 기존 20분 heartbeat를 BR 진행·평가·추가 개선으로 갱신했다. 아직 성능 개선/완료 주장은 하지 않는다.
+
+## 2026-10-21 10:28 KST Codex — BR 진행 및 그래프/추론 계측 준비
+- run_v4 step10600, 추가 epoch3(네 번째), 22.8분, loss0.278. 학습과 자동평가 감시 정상.
+- 보스 후속 요청 반영: `br_report.py`가 평가 종료 후 learning_curves.png(step-loss/epoch-validation/lr), evaluation_curves.png(tip/root recall·precision, 분면 recall, 번호를 답한 라벨 비율), metrics_summary.json을 새 `calibration/data/slot_cnn/br_v4_report/`에 기록. 검출 지표와 조건부 번호 정확도를 혼동하지 않으며 번호 미응답·오답 원수치도 보존. 실기4장 반복평가/라벨영역 한정 정밀도 한계 명시.
+- 같은 스크립트가 다른 학습/로봇 pipeline이 없을 때 batch1 FP32, warmup20 + 반복100, 일반/TTA forward 및 전체 predict의 평균·중앙값·p95 시간, PyTorch peak allocated/reserved와 nvidia-smi 프로세스 메모리를 JSON으로 계측. 카메라·번호 기하계산·초기 로드는 제외. 현재 학습 중이라 GPU 계측은 아직 실행하지 않았다.
+- 보고 대기 PID227165, 로그 `/tmp/slotcnn_br/report.log`. 기존 실기 평가 JSON+진행 중 학습 로그로 CPU 그래프 생성 smoke test 통과(임시 /tmp만). 평가 분할·손실·기존 지표 정의 변경 없음.
