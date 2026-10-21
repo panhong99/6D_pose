@@ -144,6 +144,22 @@ class Trajectory(unittest.TestCase):
 
 
 class Pipeline(unittest.TestCase):
+    def test_standing_grasp_plan_from_saved_fp(self):
+        import tempfile
+        from standing_grasp import plan_standing_grasp
+        # Latest completed Q3:12 run: fixed-camera FP after release, ~86 deg.
+        T = np.array([[-0.07310, -0.00235, 0.99732, 0.75202],
+                      [0.30267, -0.95289, 0.01994, -0.07465],
+                      [0.95029, 0.30332, 0.07037, 0.11582],
+                      [0.0, 0.0, 0.0, 1.0]])
+        with tempfile.TemporaryDirectory() as out:
+            path, result = plan_standing_grasp(T, pipeline.plate_bounds(), out)
+            self.assertTrue(path.is_file())
+            self.assertTrue(result['accepted'])
+            self.assertFalse(result['collision_checked'])
+            self.assertGreaterEqual(sum(c['accepted'] for c in result['candidates']), 1)
+            self.assertEqual(len(result['legs']['retreat']['waypoints_deg']), 21)
+
     def test_stability_rejects_stale_repeated_invalid_and_gapped_frames(self):
         stable = pipeline.StablePose(np.eye(4), pipeline.planner_params())
         now, T = time.time(), np.eye(4)

@@ -892,7 +892,11 @@ def run_plate(args):
                 p, yaw, tilt = plate_root_in_base(Tbc @ T)
                 d = (p + np.array([*q['offset_m'], 0.0]) - target) * 1000     # the rollout uses FP + offset
                 hint = []
-                if q.get('library'):                                           # any direction, radius band
+                if args.standing_grasp_check:
+                    ok = 65.0 <= tilt <= 115.0
+                    if not ok:
+                        hint.append(f'기울기 {tilt:.1f} deg (세운 접시는 65~115 deg)')
+                elif q.get('library'):                                           # any direction, radius band
                     r, az = library_target(p, q)
                     ok = rlo <= r <= rhi and abs(np.degrees(az)) <= q['max_azimuth_deg'] and tilt <= q['max_tilt_deg']
                     if r < rlo or r > rhi:
@@ -910,7 +914,7 @@ def run_plate(args):
                 if not q.get('library') and not lo[1] <= d[1] <= hi[1]:
                     over = d[1] - hi[1] if d[1] > hi[1] else d[1] - lo[1]
                     hint.append(f'{"오른쪽으로" if over > 0 else "왼쪽으로"} {abs(over) / 10:.1f} cm')
-                if tilt > q['max_tilt_deg']:
+                if not args.standing_grasp_check and tilt > q['max_tilt_deg']:
                     hint.append(f'기울기 {tilt:.1f} deg (평평하게)')
                 where = (f'r {r:.3f} m, 방향 {np.degrees(az):+.0f} deg' if q.get('library')
                          else f'dx {d[0]:+.0f} dy {d[1]:+.0f} dz {d[2]:+.0f} mm')
@@ -921,6 +925,13 @@ def run_plate(args):
             if time.monotonic() > deadline:
                 raise RuntimeError('no stable plate pose inside the trained area before the timeout')
             time.sleep(0.05)
+        if args.standing_grasp_check:
+            from standing_grasp import plan_standing_grasp
+            path, check = plan_standing_grasp(Tbc @ T, plate_bounds(), out)
+            good = sum(bool(c['accepted']) for c in check['candidates'])
+            print(f'[standing] FP tilt {tilt:.2f} deg, top-rim IK candidates {good}/{len(check["candidates"])} OK', flush=True)
+            print(f'[standing] PLAN ONLY (충돌검사/RRT/실행 없음): {path}', flush=True)
+            return
         if not q.get('keep_perception', True):
             children.items = [it for it in children.items if it[1] is not perception]
             os.killpg(perception.pid, signal.SIGINT)            # free the GPU for the Isaac rollout
@@ -1494,6 +1505,9 @@ def parse_args(argv=None):
     p.add_argument('--no_library', action='store_true',
                    help='plate ik_bc: no plan library (10/8 13:xx validated mode: ready -> line -> BC rolled out in sim '
                         'per plate, box workspace); the library mode is not yet run on the real robot')
+    p.add_argument('--standing-grasp-check', action='store_true',
+                   help='plate PLAN ONLY: accept 65..115 deg FP tilt and test a top-rim Cartesian IK approach; '
+                        'no collision check, RRT, gripper command, or robot motion')
     p.add_argument('--place', choices=('lower', 'teach', 'slot', 'golden', 'basket'), default='basket',
                    help='plate, after the lift (10/12: default basket): lower = put it back; teach = Human jogs to the basket slot, '
                         'Enter stores carry / above / insert / retreat; slot = replay the taught slot path; '
@@ -1562,6 +1576,8 @@ def parse_args(argv=None):
     a = p.parse_args(argv)
     if a.offline_test and a.execute:
         p.error('--offline-test cannot be combined with --execute')
+    if a.standing_grasp_check and (a.execute or a.task != 'plate'):
+        p.error('--standing-grasp-check requires --task plate and forbids --execute')
     for name in ('timeout', 'pregrasp_height_m', 'tool_radius_m', 'conf'):
         if not np.isfinite(getattr(a, name)) or getattr(a, name) <= 0:
             p.error(f'--{name} must be positive and finite')
