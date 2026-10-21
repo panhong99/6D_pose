@@ -5231,3 +5231,4 @@
 - 고정 D455의 새 FoundationPose pose로 접시 normal과 위쪽 테두리를 구하고, 100 mm 위에서 상단 테두리 안쪽 15 mm까지 Cartesian 21점 IK를 계산한다. 양면/손목 roll 8후보 중 IK 가능한 후보를 기록하고 plan JSON을 해당 새 real_pipeline run에 저장한 뒤 종료한다.
 - 이 모드는 `--execute`와 함께 쓰면 argparse에서 거부한다. 충돌검사·RRT·그리퍼 명령·로봇 이동이 없으므로 현재 확인 범위는 새 카메라 관측에서 파지 목표/관절 경로를 만들 수 있는지까지다. 실제 손가락 축·접촉과 바구니 인출은 별도 검증 전에는 실행하지 않는다.
 - 검증: 저장된 실제 tilt 약 86° FP pose 단위시험, direct carry 회귀 2개, py_compile 통과. 실제 카메라 live plan은 보스 실행 대기.
+- 첫 live 실행에서 standing 분기는 라이브러리용 상태 출력 변수 `r`을 만들지 않았는데 공용 출력문이 이를 참조해 `UnboundLocalError`가 났다. 접시/카메라 오류가 아니며 plan-only여서 로봇 동작은 없었다. `6cc91b5`에서 standing 전용 상태 문구로 분리했고, 예상 밖 내부 오류도 터미널에는 2줄 요약하고 전체 traceback은 `/tmp/6d_pose_pipeline_error.log`에 저장하도록 바꿨다. py_compile 및 3개 회귀시험 통과.
