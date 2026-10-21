@@ -947,8 +947,11 @@ def run_plate(args):
             if 'status   : activated' not in gripper(['status'], env, check=True):
                 gripper(['activate'], env)
             gripper(['open', '--yes'], env)
-            children.run_mover(mover_command(args, path, 'to_pregrasp', 'leg', opening_done=True, vel=1.0), env)
-            children.run_mover(mover_command(args, path, 'approach', 'leg', opening_done=True, vel=0.5), env)
+            standing_vel = q.get('vel_deg_s', 2.0)
+            children.run_mover(mover_command(args, path, 'to_pregrasp', 'leg', opening_done=True,
+                                             vel=standing_vel), env)
+            children.run_mover(mover_command(args, path, 'approach', 'leg', opening_done=True,
+                                             vel=standing_vel), env)
             gripper(['close', '--yes', '--force', str(grip_force or C['gripper']['force'])], env)
             print('[standing] 파지 완료. 이 위치에서 종료합니다 (인출/운반/복귀 없음).', flush=True)
             return
