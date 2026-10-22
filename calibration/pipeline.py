@@ -461,7 +461,7 @@ def plate_cfg(policy):
 
 
 def configure_carry_planner(q, name=None):
-    """Apply an opt-in carry backend to this run-local config.
+    """Apply the selected carry backend to this run-local config.
 
     ``direct`` means a fresh geometric rise/across/drop solve only: no saved
     carry prior and no RRT fallback.  Collision checking remains mandatory.
@@ -475,8 +475,8 @@ def configure_carry_planner(q, name=None):
 
 
 def continuous_direct_requested(value=None):
-    """Whether the Human explicitly chose preplanned, no-post-lift-replan carry."""
-    value = os.environ.get('CARRY_CONTINUOUS', '') if value is None else value
+    """Whether preplanned, no-post-lift-replan carry is enabled (default: on)."""
+    value = os.environ.get('CARRY_CONTINUOUS', '1') if value is None else value
     return str(value).strip().lower() in ('1', 'true', 'yes', 'on')
 
 
@@ -984,17 +984,16 @@ def run_plate(args):
                       tilt=args.tilt_trim if args.tilt_trim is not None else q.get('basket_quadrant_tilt_trim_deg', 0.0))
 
             sim_kw = {}
-            # Opt-in fresh deterministic carry when the Human names the exact slot.  The
+            # Default fresh deterministic carry when the Human names the exact slot.  The
             # route is solved from the current observations as rise -> across -> drop.  It
             # keeps the normal held-plate / basket / cell collision checks, but deliberately
             # has neither a saved carry prior nor an RRT fallback.  Failure is a refusal.
-            carry_planner = configure_carry_planner(q)
+            carry_planner = configure_carry_planner(q, os.environ.get('CARRY_PLANNER', 'direct'))
             direct_carry = carry_planner == 'direct'
-            continuous_direct = continuous_direct_requested()
+            continuous_direct = continuous_direct_requested(
+                os.environ.get('CARRY_CONTINUOUS', '1' if direct_carry else '0'))
             if continuous_direct and not direct_carry:
                 raise RuntimeError('CARRY_CONTINUOUS=1 requires CARRY_PLANNER=direct')
-            if continuous_direct and not args.auto:
-                raise RuntimeError('CARRY_CONTINUOUS=1 requires --auto')
             if direct_carry:
                 print('   운반 순서: 현재 관측값으로 rise -> across -> drop 즉석 계산 '
                       '(저장 경로 없음, RRT 없음, 충돌검사 유지)', flush=True)
@@ -1159,10 +1158,10 @@ def run_plate(args):
             choose_gripper('abort')
             leg('from_grasp')
             raise RuntimeError('no grasp: measure how far the plate had to move and set plate_rl.offset_m')
-        merge = args.auto and args.insert in ('policy', 'quadrant') and q.get('auto_merged_legs', False) and early is not None   # (10/13 보스)
+        merge = (args.auto or (args.insert == 'quadrant' and continuous_direct)) and args.insert in ('policy', 'quadrant') and q.get('auto_merged_legs', False) and early is not None
         lift_alone = not merge or (args.insert == 'quadrant' and not continuous_direct)
-        # Normal quadrant insertion stops after lift and rebuilds the plan from the
-        # measured plate-in-hand pose.  The explicit continuous mode instead uses
+        # CARRY_CONTINUOUS=0 stops after lift and rebuilds the plan from the
+        # measured plate-in-hand pose.  Continuous mode instead uses
         # the already collision-checked pre-grasp hand model and joins lift+carry.
         if lift_alone:
             leg('lift')

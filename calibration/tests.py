@@ -417,6 +417,10 @@ class Pipeline(unittest.TestCase):
             self.assertTrue(pipeline.continuous_direct_requested(value))
         for value in ('', '0', 'false', 'off'):
             self.assertFalse(pipeline.continuous_direct_requested(value))
+        with patch.dict(pipeline.os.environ, {}, clear=True):
+            self.assertTrue(pipeline.continuous_direct_requested())
+        with patch.dict(pipeline.os.environ, {'CARRY_CONTINUOUS': '0'}):
+            self.assertFalse(pipeline.continuous_direct_requested())
 
     def test_basket_consistency_finds_moved_marker_blocks(self):
         # (10/19 보스) blocks 3 and 5 moved ~2 cm and every fit was > 10 mm: name the moved blocks, keep the frame
