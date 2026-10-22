@@ -104,6 +104,24 @@ PLATE_COLOURS = ''                                  # (10/22 보스: 꽂힌 접�
                                                     # (10/22 real 63 frames: red_white 58 -> 33 accepted, the lit rails read white)
 
 
+MIN_COVER = None                                    # (10/22, opt-in 0.68) refuse when the rack mask covers less of the fitted
+                                                    # basket's image footprint: a person / the arm over it (real 63 frames:
+                                                    # the 3 worst accepted fits, 21-26 mm, had 0.54-0.67; good ones >= 0.67)
+
+
+def rack_cover(rack, T, K, Tbc, half=(0.265, 0.26), depth_m=0.14):
+    """Share of the fitted basket's image footprint (rim and floor corners, convex hull) inside the YOLOE rack mask."""
+    C = np.array([[sx * half[0], sy * half[1], z, 1.0] for sx in (-1, 1) for sy in (-1, 1) for z in (0.0, -depth_m)])
+    p = (np.linalg.inv(Tbc) @ np.asarray(T) @ np.linalg.inv(STRUCT_TO_FRAME) @ C.T)[:3]
+    if (p[2] <= 0.05).any():
+        return 0.0
+    uv = (K @ (p / p[2]))[:2].T.astype(np.int32)
+    poly = np.zeros(rack.shape, np.uint8)
+    cv2.fillConvexPoly(poly, cv2.convexHull(uv), 1)
+    poly = poly.astype(bool)
+    return float((rack & poly).sum() / max(poly.sum(), 1))
+
+
 REFIT_MM = None                                     # (10/22) after the fit: drop points farther than this from the model, refit
 
 
@@ -281,8 +299,10 @@ def estimate(det, rgb, depth, K, Tbc, z_rim, posj=None, M=None):
     T[:2, :2] = [[np.cos(yaw), -np.sin(yaw)], [np.sin(yaw), np.cos(yaw)]]
     T[:2, 3], T[2, 3] = t, z_rim
     T = T @ STRUCT_TO_FRAME                                          # rack structure -> the slot (marker) frame
-    why = [w for w, bad in (('handle not seen', n_handle < MIN_HANDLE), ('few points', len(P) < MIN_POINTS)) if bad]
-    return dict(T=T, conf=conf, cost=cost, n_top=len(P), n_handle=n_handle, refused=', '.join(why),
+    cover = rack_cover(rack, T, K, Tbc)
+    why = [w for w, bad in (('handle not seen', n_handle < MIN_HANDLE), ('few points', len(P) < MIN_POINTS),
+                            (f'basket occluded (cover {cover:.2f})', MIN_COVER is not None and cover < MIN_COVER)) if bad]
+    return dict(T=T, conf=conf, cost=cost, n_top=len(P), n_handle=n_handle, cover=cover, refused=', '.join(why),
                 obstacles=obstacle_boxes(det, rack, depth, K, Tbc, posj))
 
 

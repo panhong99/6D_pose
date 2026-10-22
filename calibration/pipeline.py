@@ -1661,6 +1661,9 @@ def parse_args(argv=None):
     p.add_argument('--one_go', action='store_true',
                    help='(10/22 보스, opt-in) --insert quadrant --auto: after the grasp lift + carry + straight-down insert as ONE '
                         'spline (thinned to ~20 points, re-checked as the movesj curve), release, then ascend + home as one')
+    p.add_argument('--markers_off', action='store_true',
+                   help='(10/22 보스: 마커 뗌, opt-in) the marker blocks are off the basket rim: drop them from the collision model '
+                        '(they blocked Q3 pins 4-6)')
     p.add_argument('--obstacles', action='store_true',
                    help='(10/22 보스, opt-in, needs --basket_source vision) plates the fixed camera sees outside the basket '
                         '(not the one to pick) are obstacles: the carry goes over them (rule) or around (RRT), shown in RViz')
@@ -1731,6 +1734,10 @@ def parse_args(argv=None):
 
 def main(argv=None):
     args = parse_args(argv)
+    if args.markers_off:                                    # the planner's collision model (plate_plans.C)
+        import plate_plans
+        plate_plans.C['basket']['markers_off'] = True
+        print('[basket] --markers_off: 마커 블록을 충돌 모델에서 뺌', flush=True)
     try:
         if args.task == 'plate' and args.export_server:
             run_export_server(args)

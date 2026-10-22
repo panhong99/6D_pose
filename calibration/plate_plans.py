@@ -1095,7 +1095,7 @@ def basket_boxes(Tbb, wall=0.012, top=0.03, plates=()):
     loc = [('wall_robot', [-sx / 2 + wall / 2, 0, zc], [wall, sy, h]), ('wall_far', [sx / 2 - wall / 2, 0, zc], [wall, sy, h]),
            ('wall_right', [0, -sy / 2 + wall / 2, zc], [sx, wall, h]), ('wall_left', [0, sy / 2 - wall / 2, zc], [sx, wall, h])]
     mk = C['basket'].get('marker_blocks')                    # (10/16 보스) marker plates/blocks on the rim: the plate hit one
-    if mk:
+    if mk and not C['basket'].get('markers_off'):           # (10/22 보스 마커 뗌, opt-in --markers_off): no blocks on the rim
         layout = json.loads(cpath(C['basket']['layout']).read_text())
         for i in C['basket']['marker_ids'].values():
             if str(i) in layout:
@@ -2040,9 +2040,11 @@ if __name__ == '__main__':
     p.add_argument('--seed', type=int, default=0)
     p.add_argument('--measure', action='store_true', help='look_plans: basket from the fixed camera markers (read-only)')
     p.add_argument('--run', default=None, help='real run folder for the in-hand plate (default: newest with realplan_req)')
+    p.add_argument('--markers_off', action='store_true', help='(10/22) the marker blocks are off the rim: not in the collision model')
     p.add_argument('--frac', type=float, default=0.65, help='obstacle_demo: obstacle under this fraction of the carry')
     p.add_argument('--rise', type=float, default=0.10, help='obstacle_demo: carry rise over the grasp (m); markers are off')
     p.add_argument('--basket_dxy', type=float, nargs=2, default=(0.0, 0.0), help='obstacle_demo: move the run\'s basket (m)')
     a = p.parse_args()
+    C['basket']['markers_off'] = a.markers_off
     dict(basket_reach=basket_reach, quadrant_plans=quadrant_plans, look_plans=look_plans, random_plans=random_plans,
          obstacle_demo=obstacle_demo)[a.mode](a)

@@ -128,6 +128,7 @@ def main():
     a.add_argument('--yoloe', action='store_true', help='real YOLOE on the renders (domain gap: mostly not found)')
     a.add_argument('--plate_colours', default='', help="'', 'red', 'red_white' (basket_vision.PLATE_COLOURS)")
     a.add_argument('--refit_mm', type=float, default=None, help='basket_vision.REFIT_MM')
+    a.add_argument('--min_cover', type=float, default=None, help='basket_vision.MIN_COVER')
     a = a.parse_args()
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=False)
@@ -138,7 +139,7 @@ def main():
     tines = sd.tine_table(parts, B)
     rd, M = sd.Renderer(), bv.model_points()
     det = bv.Detector() if a.yoloe else MaskDetector()
-    bv.PLATE_COLOURS, bv.REFIT_MM = a.plate_colours, a.refit_mm
+    bv.PLATE_COLOURS, bv.REFIT_MM, bv.MIN_COVER = a.plate_colours, a.refit_mm, a.min_cover
     rng = np.random.default_rng(a.seed)
     rows = []
     for i in range(a.n):
@@ -165,6 +166,7 @@ def main():
         if 'T' in c:
             row['xy_mm'], row['yaw_deg'] = error(c['T'], T_bb)
             row['spread_mm'], row['spread_deg'] = round(c['spread_mm'], 1), round(c['spread_deg'], 2)
+        row['cover'] = [round(float(r.get('cover', 0)), 2) for r in res]
         per = [error(r['T'], T_bb) for r in res if 'T' in r]
         row['frame_xy_mm'] = [round(p[0], 1) for p in per]
         rows.append(row)

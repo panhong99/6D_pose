@@ -30,6 +30,8 @@ def frames():
         m = json.loads(meta.read_text())
         if m.get('T_base_basket') is None or m.get('T_base_cam') is None:
             continue
+        if (npz.parent / 'basket_vision.json').is_file():   # (10/22) that run's basket pose came from this method, not markers
+            continue
         z = np.load(npz)
         yield (f'{npz.parent.name}/{npz.stem}', z['rgb'], z['depth'], z['K'].astype(float),
                np.asarray(m['T_base_cam'], float), np.asarray(m['T_base_basket'], float), m.get('posj'))
@@ -41,11 +43,13 @@ def main():
     a.add_argument('--show', type=int, default=6)
     a.add_argument('--since', default='20261019_1700', help='runs from this time on (current marker layout = 10/19 16:5x)')
     a.add_argument('--plate_colours', default='', help="(10/22) '', 'red', 'red_white': pixels dropped from the rack fit")
+    a.add_argument('--min_cover', type=float, default=None, help='(10/22) basket_vision.MIN_COVER occlusion gate')
     a.add_argument('--refit_mm', type=float, default=None, help='(10/22) drop points farther than this from the fitted model, refit')
     a = a.parse_args()
     import basket_vision
     basket_vision.PLATE_COLOURS = a.plate_colours
     basket_vision.REFIT_MM = a.refit_mm
+    basket_vision.MIN_COVER = a.min_cover
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=False)
     z_rim = yaml.safe_load((ROOT / 'calibration/config.yaml').read_text())['basket']['fixed_z_m']
