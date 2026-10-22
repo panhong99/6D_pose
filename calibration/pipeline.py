@@ -996,6 +996,7 @@ def run_plate(args):
             print(f'[3/5] BC+RL 정책 rollout (sim) at ({x:.4f}, {y:.4f}) yaw {yaw:.1f}: 1~2 분', flush=True)
             plan = export_plan(x, y, yaw, out / 'export.log', q)
         early, shown, policy_job, rep = None, plan, None, None
+        one_go = None
         continuous_direct = False
         if args.place == 'basket' and args.insert == 'quadrant':   # (10/13) any basket pose, IK carry + insert, no teaching
             legs0 = json.loads(Path(plan).read_text())['legs']
@@ -1088,6 +1089,18 @@ def run_plate(args):
                 raise RuntimeError(f'{args.quadrant} pin {args.pin}: no insert plan from this grasp ({rep["tried"][:4]})')
             print(f'   {args.quadrant} (바구니 모델 {mq}) 핀 {args.pin}: 넣기 계획 OK, 운반 {rep["carry"]}, '
                   f'충돌 여유/기준 {rep["clearance_ratio"]}', flush=True)
+            if args.one_go:                                 # (10/22 보스) after the grasp: go, no stop until the release
+                if not (continuous_direct and args.auto):
+                    raise RuntimeError('--one_go needs --auto and the continuous direct carry (CARRY_PLANNER=direct, CARRY_CONTINUOUS=1)')
+                from plate_plans import one_go_plan
+                t_og = time.monotonic()
+                one_go, rep_og = one_go_plan(plan, early, Tbc, q, basket_T, qs['H'], qs['tool'], plates,
+                                             vel=args.vel_deg_s or q.get('vel_deg_s', 2.0))
+                if one_go is None:
+                    raise RuntimeError(f'--one_go: no single spline clears ({rep_og.get("why")}, {rep_og.get("tried", [])[-1:]})')
+                print(f'   한 번에 가기: 파지 후 {rep_og["before_points"]} -> {rep_og["after_points"]} 점, 충돌 여유 '
+                      f'운반 {rep_og["clear_held"]} / 넣기 {rep_og["clear_insert"]}, 넣기 수직 벗어남 {rep_og["down_off_vertical_mm"]} mm, '
+                      f'예상 {rep_og["est_s"]} s (지금 방식 {rep_og["est_s_before"]} s + 사진) [{time.monotonic() - t_og:.1f} s] {one_go}', flush=True)
             both = json.loads(Path(plan).read_text())
             both['legs'].update(json.loads(early.read_text())['legs'])
             shown = out / 'preview_plan.json'
@@ -1127,7 +1140,7 @@ def run_plate(args):
         if not args.execute:
             print('[5/5] 계획만 만들었습니다. --execute 로 실제 이동.', flush=True)
             return
-        vel = q.get('vel_deg_s', 2.0)
+        vel = args.vel_deg_s or q.get('vel_deg_s', 2.0)
 
         def leg(name):
             v = vel
@@ -1335,6 +1348,14 @@ def run_plate(args):
                     while (a_ := input(text).strip().lower()) not in keys:
                         pass
                     return a_
+                if one_go is not None:                      # (10/22 보스) lift + carry + insert, one spline, then release + back
+                    cur['plan'] = one_go
+                    sleg('one_go')
+                    choose_gripper(f'slot{k}_release')
+                    sleg('retreat')
+                    rec.event('done', place=args.place, quadrant=args.quadrant, pin=args.pin, insert='quadrant', one_go=True)
+                    print(f'[5/5] {args.quadrant} 핀 {args.pin} 넣기 완료 (한 번에 가기).', flush=True)
+                    return
                 if merge:
                     mleg([(splan, 'to_above')] if lift_alone else [(plan, 'lift'), (splan, 'to_above')], 'carry', vel)
                 else:
@@ -1601,6 +1622,11 @@ def parse_args(argv=None):
                    help='OPT-IN real --place basket --insert quadrant only: stop the insert spline if base-frame tool-force norm exceeds N; default off')
     p.add_argument('--auto', action='store_true', help='plate: no Human answers after the opening phrase: gripper '
                    'closes at the grasp pose (if FP says the plate did not move) and opens at the insert; stops go on')
+    p.add_argument('--one_go', action='store_true',
+                   help='(10/22 보스, opt-in) --insert quadrant --auto: after the grasp lift + carry + straight-down insert as ONE '
+                        'spline (thinned to ~20 points, re-checked as the movesj curve), release, then ascend + home as one')
+    p.add_argument('--vel_deg_s', type=float, default=None,
+                   help='(10/22 보스 "100까지") transport speed (deg/s, acc the same) instead of config plate_ik_bc.vel_deg_s')
     p.add_argument('--stop_at_above', action='store_true',
                    help='golden / basket: stop after stage 1 (plate held above the basket; Human takes over)')
     p.add_argument('--slot', type=int, default=None, help='slot number (default: data/teach/next_slot.json, then +1)')

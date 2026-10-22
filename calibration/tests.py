@@ -1718,6 +1718,43 @@ class BasketG0ActionTests(unittest.TestCase):
         self.assertEqual(mod.g0_first_true([[False, True, True], [False, False, True], [False, False, False]]),
                          [1, 2, None])
 
+
+class OneGoTests(unittest.TestCase):
+    """(10/22) --one_go: thinned single spline after the grasp."""
+
+    def test_rdp_keeps_corner_and_drops_straight_points(self):
+        from plate_plans import rdp_joint
+        w = np.array([[0, 0], [1, 0], [2, 0], [3, 0], [3, 1], [3, 2]], float)
+        self.assertEqual(rdp_joint(w, 0.1), [0, 3, 5])
+
+    def test_even_knots_ramps_down_to_the_tail_step(self):
+        from plate_plans import even_knots
+        w = np.c_[np.linspace(0, 100, 201), np.zeros(201)]
+        idx = even_knots(w, [0, 200], max_seg_deg=30, ratio=2.5, tail_seg_deg=1.0)
+        seg = np.diff(w[idx, 0])
+        self.assertLessEqual(seg.max(), 30 + 1e-9)
+        self.assertLessEqual(seg[-1], 2.5 + 1e-9)
+        self.assertTrue(np.all(seg[1:] <= 2.5 * seg[:-1] + 1e-9) and np.all(seg[:-1] <= 2.5 * seg[1:] + 1e-9))
+
+    def test_one_go_knots_refuses_when_the_spline_is_not_clear(self):
+        from plate_plans import one_go_knots
+
+        class Wall:                                          # joint 0 must stay below 0.5 rad
+            kin = None
+
+            def __init__(self, lim):
+                self.lim = lim
+
+            def path_clearance(self, path):
+                return float(min(2.0, (self.lim - np.asarray(path)[:, 0].max()) * 10 + 1.0))
+        head = np.c_[np.linspace(0, 0.4, 30), np.zeros(30)]
+        tail = np.c_[np.full(5, 0.4), np.linspace(0, -0.05, 5)]
+        K, rep = one_go_knots(head, tail, Wall(0.5), Wall(0.5))
+        self.assertIsNotNone(K)
+        self.assertLess(len(K), len(head) + len(tail) - 1)
+        K, rep = one_go_knots(head, tail, Wall(0.3), Wall(0.5))
+        self.assertIsNone(K)
+
 if __name__ == '__main__':
     unittest.main()
 

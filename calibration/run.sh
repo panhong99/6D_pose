@@ -9,7 +9,7 @@
 #   bash calibration/run.sh markers            read-only: live fixed-camera view of the 4 basket markers (q quits)
 #   bash calibration/run.sh basket_check       read-only: marker blocks vs the stored layout (which block moved)
 #   bash calibration/run.sh basket_relayout    store moved marker blocks where they are now (typed y; new layout file)
-#   bash calibration/run.sh look4 [--execute]  plate-free wrist photo per quadrant (look pose -> photo -> home); LOOK_QUADRANTS="Q1 Q3"
+#   bash calibration/run.sh look4 [--execute]  plate-free wrist photo per quadrant (look pose -> photo -> home); LOOK_QUADRANTS="Q1 Q3"; live marker view first (LOOK_SHOW=0 off), marker-free basket pose saved (LOOK_VISION=0 off), 30 deg/s
 #   bash calibration/run.sh sim [args]         Isaac Sim digital twin of the cell (see sim_scene.py)
 #   bash calibration/run.sh mover --plan P --leg L [--execute]   one plan leg, Human-run
 #   bash calibration/run.sh wrist_look         read-only: wrist photo at the current pose + model pins (starts its own stream)
@@ -117,7 +117,17 @@ case "$mode" in
       [ "$ans" = "area clear, e-stop in hand" ] || { echo "중단"; exit 1; }
       open=(--opening_done)
     fi
-    mover() { ( ros /usr/bin/python3 -u "$DIR/ros2_nodes.py" mover "$@" ); }
+    # (10/21 보스 "7배 빨라도 돼", then "더 빨라도") look legs at 30 deg/s; a later --vel_deg_s in "$@" wins
+    mover() { ( ros /usr/bin/python3 -u "$DIR/ros2_nodes.py" mover --vel_deg_s 30 --acc_deg_s2 30 "$@" ); }
+    if [ "${LOOK_SHOW:-1}" = 1 ]; then  # (10/21 보스) live fixed-camera marker view first: check the basket, q closes it (frees the camera)
+      echo "=== 고정 카메라 화면: 마커 4개(초록) 보이는지 확인 후 창에서 q ==="
+      conda run --no-capture-output -n foundationpose python -u "$DIR/camera_tools.py" markers_live || true
+    fi
+    if [ "${LOOK_VISION:-1}" = 1 ]; then  # (10/21 보스) marker-free basket pose (YOLOE + depth) from the fixed D455, robot at home
+      stamp=$(date +%Y%m%d_%H%M%S); vdir="$DIR/data/basket/wrist_look"
+      conda run --no-capture-output -n foundationpose python -u "$DIR/basket_vision.py" --camera fixed \
+        --out "$vdir/basket_vision_${stamp}.json" --save "$vdir/basket_vision_${stamp}.npz" || echo "!!! 마커 없는 바구니 위치 실패 (촬영은 계속)"
+    fi
     for qd in ${LOOK_QUADRANTS:-Q1 Q2 Q3 Q4}; do
       echo; echo "=== ${qd}: 손목 사진. 그리퍼 빈손, 바구니에 접시 없는지 확인 후 Enter (건너뛰기: s, 끝내기: q) ==="
       read -r ans; [ "$ans" = q ] && break; [ "$ans" = s ] && continue

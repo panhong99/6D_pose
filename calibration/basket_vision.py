@@ -11,6 +11,7 @@ maps the rack structure to the slot frame.  Checked offline against the marker p
 Opt-in (config basket.source: vision); the marker path is unchanged."""
 import argparse
 import json
+import sys
 import time
 from pathlib import Path
 
@@ -32,7 +33,7 @@ class Detector:
         self.m = YOLOE(str(ROOT / 'yoloe-v8l-seg.pt'))
         self.m.set_classes(PROMPTS, self.m.get_text_pe(PROMPTS))
 
-    def masks(self, rgb, conf=0.1):
+    def masks(self, rgb, conf=0.05):             # (10/21: basket turned -12 deg at x 0.85 -> rack only 0.10; was 0.1)
         """(rack mask or None, plate mask union, rack confidence)."""
         r = self.m.predict(rgb[:, :, ::-1].copy(), conf=conf, verbose=False, retina_masks=True)[0]
         h, w = rgb.shape[:2]
@@ -59,7 +60,30 @@ def cloud(mask, depth, K, Tbc, stride=1):
 
 def blue(rgb):
     hsv = cv2.cvtColor(rgb, cv2.COLOR_RGB2HSV)
-    return (hsv[..., 0] > 95) & (hsv[..., 0] < 125) & (hsv[..., 1] > 120) & (hsv[..., 2] > 60)
+    # The handle is often only a few pixels wide and its saturation drops under
+    # glare/exposure changes.  Keep this cue conservative in hue but less brittle
+    # in saturation/value; the expanded YOLOE ROI below limits false positives.
+    return (hsv[..., 0] > 88) & (hsv[..., 0] < 135) & (hsv[..., 1] > 70) & (hsv[..., 2] > 45)
+
+
+def handle_roi(rack):
+    """Return an image ROI around the YOLOE rack extent, including an external handle.
+
+    The basket handle can lie completely outside the segmentation mask.  Search
+    a scale-aware margin around the detected rack instead of intersecting the
+    colour cue with the rack mask itself.
+    """
+    ys, xs = np.nonzero(rack)
+    if len(xs) == 0:
+        return np.zeros_like(rack, dtype=bool)
+    h, w = rack.shape
+    pad_x = max(24, int((xs.max() - xs.min() + 1) * 0.20))
+    pad_y = max(24, int((ys.max() - ys.min() + 1) * 0.20))
+    x0, x1 = max(0, int(xs.min()) - pad_x), min(w, int(xs.max()) + pad_x + 1)
+    y0, y1 = max(0, int(ys.min()) - pad_y), min(h, int(ys.max()) + pad_y + 1)
+    roi = np.zeros_like(rack, dtype=bool)
+    roi[y0:y1, x0:x1] = True
+    return roi
 
 
 def model_points(n=20000, z_min=-0.13):
@@ -171,7 +195,10 @@ def estimate(det, rgb, depth, K, Tbc, z_rim, posj=None, M=None):
     seeds = global_search(P, M, z_rim)
     fits = sorted((icp_xy_yaw(P, M, y0, t0, z_rim) for y0, t0 in seeds), key=lambda r: r[2])
     yaw, t, cost = fits[0]
-    Hb, _ = cloud(m & blue(rgb), depth, K, Tbc)                    # the blue handle is basket -y: pick the turn of the
+    # Do not require the cue to be inside the segmentation mask: the handle is
+    # an external part of the basket and is commonly outside YOLOE's rack mask.
+    handle_pixels = handle_roi(rack) & blue(rgb) & ~plates
+    Hb, _ = cloud(handle_pixels, depth, K, Tbc)                    # the blue handle is basket -y: pick the turn of the
     Hb = Hb[(Hb[:, 2] > 0.03) & (Hb[:, 2] < z_rim + 0.03)]         # good fits (cost within 30 %) that puts it there
     n_handle = len(Hb)
     if n_handle >= 20:
@@ -208,6 +235,34 @@ def live(share, Tbc, posj, z_rim, n=5, gap_s=0.6, timeout_s=40.0, max_spread_mm=
         e = estimate(det, z['rgb'], z['depth'], z['K'].astype(float), Tbc, z_rim, posj, M)
         res.append(e if e is not None else dict(refused='rack not found'))
         time.sleep(gap_s)
+    return combine(res, z_rim, max_spread_mm, max_spread_deg)
+
+
+def camera(serial, Tbc, posj, z_rim, n=5, gap_s=0.6, save=None, max_spread_mm=6.0, max_spread_deg=1.5):
+    """(10/21 보스, look4) the same from the fixed D455 opened here (no perception process running): n frames ->
+    median pose; the first frame is saved to `save` (npz rgb/depth/K/t, the format of the perception share)."""
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'real_time_project'))
+    from real_time_utils import D455Source
+    det, M = Detector(), model_points()
+    cam = D455Source(serial=serial)
+    res = []
+    try:
+        for _ in range(15):                                         # auto exposure settles
+            cam.read()
+        for i in range(n):
+            fr = cam.read()
+            if i == 0 and save:
+                np.savez_compressed(save, rgb=fr.rgb, depth=fr.depth, K=fr.K, t=time.time())
+            e = estimate(det, fr.rgb, fr.depth, np.asarray(fr.K, float), Tbc, z_rim, posj, M)
+            res.append(e if e is not None else dict(refused='rack not found'))
+            time.sleep(gap_s)
+    finally:
+        cam.pipeline.stop()
+    return combine(res, z_rim, max_spread_mm, max_spread_deg)
+
+
+def combine(res, z_rim, max_spread_mm, max_spread_deg):
+    """Per-frame estimates -> median pose; refused if any frame is refused or they disagree."""
     why = sorted({r['refused'] for r in res if r.get('refused')})
     if why:
         return dict(ok=False, why='; '.join(why), frames=len(res))
@@ -229,15 +284,24 @@ def live(share, Tbc, posj, z_rim, n=5, gap_s=0.6, timeout_s=40.0, max_spread_mm=
 def main():
     a = argparse.ArgumentParser()
     a.add_argument('--share', default='/dev/shm/fixed_latest.npz')
-    a.add_argument('--T_base_cam', required=True, help='json with T_base_cam')
+    a.add_argument('--T_base_cam', help='json with T_base_cam (required unless --camera fixed)')
     a.add_argument('--posj', type=float, nargs=6, help='joints deg at the capture (the arm is cut out)')
-    a.add_argument('--z_rim', type=float, required=True)
+    a.add_argument('--z_rim', type=float)
     a.add_argument('--n', type=int, default=5)
     a.add_argument('--out', required=True)
+    a.add_argument('--camera', help='fixed D455 serial, or "fixed" = config camera/calibration/home joints: open the camera here instead of --share (10/21 look4)')
+    a.add_argument('--save', help='--camera: save the first frame here (npz)')
     a = a.parse_args()
+    if a.camera == 'fixed':                         # (look4) the config's camera, calibration, home joints, rim height
+        import calib_core as cc
+        import plate_plans as pp
+        a.camera, a.T_base_cam = str(pp.C['cameras']['fixed_serial']), a.T_base_cam or str(cc.latest_t_base_cam())
+        a.posj = a.posj or list(pp.HOME_JOINTS_DEG)
+        a.z_rim = a.z_rim if a.z_rim is not None else pp.C['basket']['fixed_z_m']
     Tbc = np.asarray(json.loads(Path(a.T_base_cam).read_text())['T_base_cam'], float)
     try:
-        r = live(a.share, Tbc, a.posj, a.z_rim, a.n)
+        r = (camera(a.camera, Tbc, a.posj, a.z_rim, a.n, save=a.save) if a.camera else
+             live(a.share, Tbc, a.posj, a.z_rim, a.n))
     except Exception as exc:
         r = dict(ok=False, why=f'{type(exc).__name__}: {exc}')
     Path(a.out).write_text(json.dumps(r))

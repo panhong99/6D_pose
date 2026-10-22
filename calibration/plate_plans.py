@@ -746,6 +746,140 @@ def merged_plan(parts, name, max_wp=100):
     return out / 'plan.json'
 
 
+# (10/22 보스 "파지 이후는 stop&go 말고 go") real legs 10/18-10/22 (393): duration ~ 0.36 s per movesj waypoint + 2.8 x
+# travel/vel, so the 60-point carry took ~30 s at 60 deg/s.  movesj passes its points at about equal time (even_carry).
+MOVESJ_S_PER_POINT, MOVESJ_TRAVEL_FACTOR = 0.36, 2.8
+
+
+def movesj_seconds(wp_deg, vel):
+    """Fitted real duration (s) of one movesj leg (incl. the mover start)."""
+    w = np.asarray(wp_deg, float)
+    return MOVESJ_S_PER_POINT * len(w) + MOVESJ_TRAVEL_FACTOR * float(np.abs(np.diff(w, axis=0)).max(1).sum()) / vel
+
+
+def equal_time_spline(knots, per=24):
+    """The movesj path model: a cubic through the knots at equal time, at rest at both ends -> dense joints."""
+    from scipy.interpolate import CubicSpline
+    K = np.asarray(knots, float)
+    s = CubicSpline(np.arange(len(K)), K, axis=0, bc_type='clamped')
+    t = np.linspace(0, len(K) - 1, (len(K) - 1) * per + 1)
+    return s(t), t
+
+
+def rdp_joint(w, tol):
+    """Indices of a Douglas-Peucker thinning of a joint path (max joint deviation from the chord <= tol)."""
+    w = np.asarray(w, float)
+    keep = {0, len(w) - 1}
+    stack = [(0, len(w) - 1)]
+    while stack:
+        a, b = stack.pop()
+        if b - a < 2:
+            continue
+        f = (np.arange(a + 1, b) - a) / (b - a)
+        dev = np.abs(w[a + 1:b] - (w[a] + f[:, None] * (w[b] - w[a]))).max(1)
+        i = int(np.argmax(dev))
+        if dev[i] > tol:
+            keep.add(a + 1 + i)
+            stack += [(a, a + 1 + i), (a + 1 + i, b)]
+    return sorted(keep)
+
+
+def even_knots(w, idx, max_seg_deg=30.0, ratio=2.5, tail_seg_deg=None):
+    """Add path points to the knot indices `idx` until no step is over max_seg_deg and neighbouring steps differ at
+    most `ratio`x (the last one also vs the first tail step): equal time per knot, so steps that jump make the spline
+    swing; the inserted knots are points of the checked path."""
+    w, idx = np.asarray(w, float), list(idx)
+    seg = lambda i: float(np.abs(w[idx[i + 1]] - w[idx[i]]).max())          # noqa: E731
+    for _ in range(200):
+        bad = None
+        for i in range(len(idx) - 1):
+            nxt = seg(i + 1) if i + 2 < len(idx) else tail_seg_deg
+            prv = seg(i - 1) if i > 0 else None
+            if seg(i) > max_seg_deg or (nxt and seg(i) > ratio * nxt) or (prv and seg(i) > ratio * prv):
+                bad = i
+                break
+        if bad is None or idx[bad + 1] - idx[bad] < 2:
+            break
+        idx.insert(bad + 1, (idx[bad] + idx[bad + 1]) // 2)
+    return idx
+
+
+def one_go_knots(head, tail, held, inserting, floor=None, tols=(10.0, 7.0, 5.0, 3.5, 2.5, 1.8, 1.2), tail_every=1,
+                 n_down=None, max_down_xy_mm=2.0):
+    """(10/22 보스) lift + carry (`head`, joint rad, thinned) then the drop + straight-down insert (`tail`, kept point
+    for point: equal time per point keeps it slow) as ONE movesj.  The fewest head knots whose equal-time spline stays
+    clear: held-plate checker up to the drop, insert checker after, `floor` (a FloorCheck or None) over the head.
+    -> (knots rad, report) or (None, report)."""
+    head, tail = np.asarray(head, float), np.asarray(tail, float)
+    tail = tail[sorted(set(range(0, len(tail), tail_every)) | {len(tail) - 1})]   # 1 cm steps -> 2 cm: fewer points
+    hd = np.degrees(head)
+    tail_seg = float(np.degrees(np.abs(tail[1] - tail[0]).max())) if len(tail) > 1 else None
+    tried = []
+    for tol in tols:
+        idx = even_knots(hd, rdp_joint(hd, tol), tail_seg_deg=tail_seg)
+        K = np.vstack([head[idx], tail[1:]])
+        nh = len(idx) - 1                                   # knot index where the drop starts
+        S, t = equal_time_spline(K)
+        i0 = np.minimum(np.floor(t).astype(int), len(K) - 2)
+        chord = K[i0] + (t - i0)[:, None] * (K[i0 + 1] - K[i0])
+        a, b = S[t <= nh], S[t >= nh]
+        c_held = held.path_clearance(a)
+        c_ins = inserting.path_clearance(b)
+        c_fl = floor.path_clearance(a) if floor is not None else np.inf
+        rep = dict(tol_deg=tol, knots=len(K), head_knots=len(idx), clear_held=round(float(c_held), 2),
+                   clear_insert=round(float(c_ins), 2), clear_floor=None if floor is None else round(float(c_fl), 2),
+                   spline_vs_chords_deg=round(float(np.degrees(np.abs(S - chord).max())), 2),
+                   insert_vs_chords_deg=round(float(np.degrees(np.abs(S - chord)[t >= nh].max())), 2))
+        if n_down:                                          # the straight-down insert: TCP off the vertical (mm)
+            kin = held.kin
+            Sd = S[t >= len(K) - n_down]
+            P_ = np.array([kin.fk(x)[:3, 3] for x in Sd[::3]])
+            rep['down_off_vertical_mm'] = round(float(1000 * np.linalg.norm(P_[:, :2] - P_[-1, :2], axis=1).max()), 2)
+        tried.append(rep)
+        if min(c_held, c_ins, c_fl) >= 1.0 and rep.get('down_off_vertical_mm', 0.0) <= max_down_xy_mm:
+            return K, dict(rep, tried=tried)
+    return None, dict(tried=tried)
+
+
+def one_go_plan(grasp_plan, insert_plan, Tbc, q, Tbb, H, tool, plates=(), vel=60.0):
+    """(10/22 보스, opt-in --one_go) after the grasp: lift + carry + straight-down insert as ONE spline, then (after the
+    release) ascend + home as one more.  -> (plan.json path, report) or (None, report)."""
+    G, P = json.loads(Path(grasp_plan).read_text()), json.loads(Path(insert_plan).read_text())
+    k = (P.get('quadrant_plan') or {}).get('drop_start')
+    if k is None:
+        return None, dict(why='insert plan has no drop_start (not a high carry)')
+    lift = np.radians(G['legs']['lift']['waypoints_deg'])
+    carry = np.radians(P['legs']['to_above']['waypoints_deg'])
+    down = np.radians(P['legs']['descend']['waypoints_deg'])
+    if np.degrees(np.abs(lift[-1] - carry[0]).max()) > 0.5 or np.degrees(np.abs(carry[-1] - down[0]).max()) > 0.5:
+        return None, dict(why='legs do not join')
+    held, inserting, _ = quadrant_checkers(Tbc, q, Tbb, H, tool, plates=plates)
+    head = np.vstack([lift, carry[1:k + 1]])
+    tail = np.vstack([carry[k:], down[1:]])
+    K, rep = None, {}
+    for every in (2, 1):                                     # 2 cm steps down if it stays straight, else 1 cm
+        K, rep = one_go_knots(head, tail, held, inserting, tail_every=every, n_down=(len(down) + every - 1) // every)
+        if K is not None:
+            break
+    old = len(lift) + len(carry) - 1
+    if K is None:
+        return None, dict(rep, why='no thinned spline clears')
+    up = P['legs']['ascend']['waypoints_deg'] + P['legs']['to_home']['waypoints_deg'][1:]
+    Kd = np.round(np.degrees(K), 3).tolist()
+    rep.update(before_points=old + len(down) - 1, after_points=len(Kd),
+               est_s=round(movesj_seconds(Kd, vel), 1),
+               est_s_before=round(movesj_seconds(np.vstack([np.degrees(lift), np.degrees(carry[1:])]), vel)
+                                  + movesj_seconds(np.degrees(down), q.get('basket_quadrant_vel_deg_s', 10.0)), 1))
+    plan = dict(dry_run=True, accepted=True, source=f'one_go {Path(grasp_plan).parent.name} + {Path(insert_plan).parent.name}',
+                reasons=[], margin_m=0.0, created=time.strftime('%Y-%m-%d %H:%M:%S'), one_go=rep,
+                legs=dict(one_go=dict(waypoints_deg=Kd, min_clearance_straight_m=0.0, drop_knot=rep['head_knots'] - 1),
+                          retreat=dict(waypoints_deg=thin_waypoints(up), min_clearance_straight_m=0.0)))
+    out = DATA / 'rl_plans' / (time.strftime('%Y%m%d_%H%M%S') + f'_{int(time.time() * 1000) % 1000:03d}_one_go')
+    out.mkdir(parents=True, exist_ok=True)
+    (out / 'plan.json').write_text(json.dumps(plan, indent=1))
+    return out / 'plan.json', rep
+
+
 # ---------------------------------------------------------------- basket reach map (10/13 보스: basket anywhere in reach, 4 quadrants)
 QUADRANTS = {'Q1': ('far', 'right'), 'Q2': ('far', 'left'), 'Q3': ('near', 'left'), 'Q4': ('near', 'right')}   # top view, robot at the bottom
 
