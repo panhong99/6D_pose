@@ -660,6 +660,12 @@ def run_viz(a):
                 ms.append(marker('plan_path', 3, Marker.TEXT_VIEW_FACING, pose=box_pose(end[:3, 3] + [0, 0, 0.06]),
                                  scale=(0, 0, 0.035), rgba=(1, 1, 1, 1), text='close here'))
             ms.append(gripper('plan', 1, (0.3, 0.6, 1.0, 0.45)))
+            for i, (_, c, size, R) in enumerate(o[:4] for o in state['plan'].get('obstacles', [])):   # (10/22 장애물 데모)
+                T = box_pose(c)
+                T[:3, :3] = np.asarray(R)
+                ms.append(marker('obstacles', 2 * i, Marker.CUBE, pose=T, scale=size, rgba=(1.0, 0.15, 0.1, 0.55)))
+                ms.append(marker('obstacles', 2 * i + 1, Marker.TEXT_VIEW_FACING, pose=box_pose(np.add(c, [0, 0, 0.18])),
+                                 scale=(0, 0, 0.04), rgba=(1, 0.4, 0.3, 1), text='obstacle'))
         mk_pub.publish(MarkerArray(markers=ms))
 
     def load_plan(path):

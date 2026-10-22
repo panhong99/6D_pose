@@ -642,6 +642,16 @@ def basket_source(args):
     return args.basket_source or C['basket'].get('source', 'markers')
 
 
+VISION_OBSTACLES = []
+
+
+def seen_obstacles(target_xy, keep_out_m=0.15):
+    """(10/22 보스 장애물 데모) the plates basket_vision saw outside the basket, without the one to pick (its centre
+    within keep_out_m of the FP target) -> collision boxes (name, centre, size, R)."""
+    return [tuple(o[:4]) for o in VISION_OBSTACLES
+            if np.hypot(o[1][0] - target_xy[0], o[1][1] - target_xy[1]) > keep_out_m]
+
+
 def basket_from_vision(Tbc, posj, out, children, n=5):
     """(10/20 보스: 바구니에 아루코가 없다고 가정) basket pose from the fixed RGB-D the perception process shares
     (calibration/basket_vision.py: YOLOE rack mask + depth + basket model fit, the arm cut out).  Refuses (RuntimeError)
@@ -664,6 +674,7 @@ def basket_from_vision(Tbc, posj, out, children, n=5):
     if not r.get('ok'):
         raise RuntimeError(f'basket vision refused: {r.get("why")} (arm out of the view? basket in the camera view?)')
     Tb = np.asarray(r['T'], float)
+    VISION_OBSTACLES[:] = r.get('obstacles', [])            # (10/22 장애물 데모) plates seen outside the basket
     yaw = np.degrees(np.arctan2(Tb[1, 0], Tb[0, 0]))
     print(f'[basket] 마커 없이: centre ({Tb[0, 3]:.3f}, {Tb[1, 3]:+.3f}) m, yaw {yaw:+.1f} deg, '
           f'{r["frames"]} frames spread {r["spread_mm"]:.1f} mm / {r["spread_deg"]:.1f} deg', flush=True)
@@ -1018,6 +1029,16 @@ def run_plate(args):
             # has neither a saved carry prior nor an RRT fallback.  Failure is a refusal.
             carry_planner = configure_carry_planner(q, os.environ.get('CARRY_PLANNER', 'direct'))
             direct_carry = carry_planner == 'direct'
+            if args.carry_rise is not None:
+                q['basket_carry_rise_m'] = float(args.carry_rise)
+            if args.obstacles:                              # (10/22 보스) seen plates in the collision model + the carry floor
+                if basket_source(args) != 'vision':
+                    raise RuntimeError('--obstacles needs --basket_source vision (the plates are found with the basket)')
+                q['_obstacles'] = seen_obstacles(p[:2])
+                q['basket_carry_rrt_fallback'] = True       # over them by rule first, around them by RRT if that fails
+                print(f'   장애물 (고정 카메라, 잡을 접시 제외): {len(q["_obstacles"])}개 '
+                      + ', '.join(f'({o[1][0]:.2f}, {o[1][1]:+.2f}, {o[1][2]:.2f}) m {np.round(o[2], 2).tolist()}' for o in q['_obstacles']),
+                      flush=True)
             continuous_direct = continuous_direct_requested(
                 os.environ.get('CARRY_CONTINUOUS', '1' if direct_carry else '0'))
             if continuous_direct and not direct_carry:
@@ -1105,7 +1126,7 @@ def run_plate(args):
             both['legs'].update(json.loads(early.read_text())['legs'])
             shown = out / 'preview_plan.json'
             shown.write_text(json.dumps(dict(both, preview_only=True, basket_T=np.asarray(basket_T).tolist(),
-                                             plate_in_tcp=np.asarray(H).tolist())))
+                                             plate_in_tcp=np.asarray(H).tolist(), obstacles=q.get('_obstacles', []))))
         elif args.place in ('golden', 'basket'):          # (10/12) whole path before moving: reach check + RViz preview
             legs0 = json.loads(Path(plan).read_text())['legs']
             early = golden_slot_plan(q['golden_teach'], legs0['to_grasp']['waypoints_deg'][-1], legs0['lift']['waypoints_deg'][-1],
@@ -1625,6 +1646,11 @@ def parse_args(argv=None):
     p.add_argument('--one_go', action='store_true',
                    help='(10/22 보스, opt-in) --insert quadrant --auto: after the grasp lift + carry + straight-down insert as ONE '
                         'spline (thinned to ~20 points, re-checked as the movesj curve), release, then ascend + home as one')
+    p.add_argument('--obstacles', action='store_true',
+                   help='(10/22 보스, opt-in, needs --basket_source vision) plates the fixed camera sees outside the basket '
+                        '(not the one to pick) are obstacles: the carry goes over them (rule) or around (RRT), shown in RViz')
+    p.add_argument('--carry_rise', type=float, default=None,
+                   help='(10/22, opt-in) carry rise over the grasp height (m) instead of config basket_carry_rise_m')
     p.add_argument('--vel_deg_s', type=float, default=None,
                    help='(10/22 보스 "100까지") transport speed (deg/s, acc the same) instead of config plate_ik_bc.vel_deg_s')
     p.add_argument('--stop_at_above', action='store_true',

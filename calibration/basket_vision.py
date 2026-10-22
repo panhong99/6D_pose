@@ -34,10 +34,11 @@ class Detector:
         self.m.set_classes(PROMPTS, self.m.get_text_pe(PROMPTS))
 
     def masks(self, rgb, conf=0.05):             # (10/21: basket turned -12 deg at x 0.85 -> rack only 0.10; was 0.1)
-        """(rack mask or None, plate mask union, rack confidence)."""
+        """(rack mask or None, plate mask union, rack confidence); self.plate_masks = [(mask, conf), ...] each plate."""
         r = self.m.predict(rgb[:, :, ::-1].copy(), conf=conf, verbose=False, retina_masks=True)[0]
         h, w = rgb.shape[:2]
         rack, best, plates = None, 0.0, np.zeros((h, w), bool)
+        self.plate_masks = []
         if r.masks is None:
             return rack, plates, best
         for mk, c, k in zip(r.masks.data.cpu().numpy() > 0.5, r.boxes.conf.cpu().numpy(), r.boxes.cls.cpu().numpy()):
@@ -45,7 +46,40 @@ class Detector:
                 rack, best = mk, float(c)
             elif int(k) == 1:
                 plates |= mk
+                self.plate_masks.append((mk, float(c)))
         return rack, plates, best
+
+
+def obstacle_boxes(det, rack, depth, K, Tbc, posj=None, min_conf=0.25, min_points=150, pad=0.01):
+    """(10/22 보스 장애물 데모) plates seen OUTSIDE the basket (YOLOE 'plate' masks, < 30 % in the rack mask) -> oriented
+    boxes (name, centre, size, R) in base: depth points (table and arm cut off), PCA axes, 2-98 % extents + pad,
+    >= 3 cm thick.  The plate to pick is one of them: the pipeline drops the one at the grasp target."""
+    from scipy.spatial import cKDTree
+    out = []
+    for i, (mk, c) in enumerate(getattr(det, 'plate_masks', [])):
+        if c < min_conf or (rack is not None and (mk & rack).sum() > 0.3 * mk.sum()):
+            continue
+        P, _ = cloud(cv2.erode(mk.astype(np.uint8), np.ones((5, 5), np.uint8)).astype(bool), depth, K, Tbc)
+        P = P[P[:, 2] > 0.0]                                        # table top ~ -0.02
+        if posj is not None and len(P):
+            d, _ = cKDTree(arm_points(posj)).query(P)
+            P = P[d > 0.04]
+        if len(P) < min_points:
+            continue
+        m = np.median(P, axis=0)
+        P = P[np.linalg.norm(P - m, axis=1) < 0.25]                 # depth bleeding off the rim
+        if len(P) < min_points:
+            continue
+        mu = P.mean(0)
+        _, _, Vt = np.linalg.svd(P - mu, full_matrices=False)
+        R = Vt.T * np.sign(np.linalg.det(Vt.T))
+        L = (P - mu) @ R
+        lo, hi = np.percentile(L, 2, axis=0), np.percentile(L, 98, axis=0)
+        size = np.maximum(hi - lo + 2 * pad, [0.03, 0.03, 0.03])
+        centre = mu + R @ ((lo + hi) / 2)
+        out.append((f'obstacle_plate_{i}', np.round(centre, 4).tolist(), np.round(size, 4).tolist(), np.round(R, 5).tolist(),
+                    round(c, 3), len(P)))
+    return out
 
 
 def cloud(mask, depth, K, Tbc, stride=1):
@@ -212,7 +246,8 @@ def estimate(det, rgb, depth, K, Tbc, z_rim, posj=None, M=None):
     T[:2, 3], T[2, 3] = t, z_rim
     T = T @ STRUCT_TO_FRAME                                          # rack structure -> the slot (marker) frame
     why = [w for w, bad in (('handle not seen', n_handle < MIN_HANDLE), ('few points', len(P) < MIN_POINTS)) if bad]
-    return dict(T=T, conf=conf, cost=cost, n_top=len(P), n_handle=n_handle, refused=', '.join(why))
+    return dict(T=T, conf=conf, cost=cost, n_top=len(P), n_handle=n_handle, refused=', '.join(why),
+                obstacles=obstacle_boxes(det, rack, depth, K, Tbc, posj))
 
 
 def live(share, Tbc, posj, z_rim, n=5, gap_s=0.6, timeout_s=40.0, max_spread_mm=6.0, max_spread_deg=1.5):
@@ -278,7 +313,8 @@ def combine(res, z_rim, max_spread_mm, max_spread_deg):
     ok = spread_mm <= max_spread_mm and spread_deg <= max_spread_deg
     return dict(ok=ok, why='' if ok else f'frames disagree: {spread_mm:.1f} mm, {spread_deg:.1f} deg', T=T.tolist(),
                 spread_mm=spread_mm, spread_deg=spread_deg, frames=len(res),
-                conf=float(np.median([r['conf'] for r in res])), n_points=int(np.median([r['n_top'] for r in res])))
+                conf=float(np.median([r['conf'] for r in res])), n_points=int(np.median([r['n_top'] for r in res])),
+                obstacles=max((r.get('obstacles', []) for r in res), key=len))   # (10/22) plates outside the basket
 
 
 def main():

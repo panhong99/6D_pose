@@ -1169,7 +1169,41 @@ def quadrant_checkers(Tbc, q, Tbb, H, tool, plates=()):
     else:
         insert = held[:2] + [with_plate(basket_checker((), m_ins))]
     free = [lib['frame'][0], lib['table'][0], basket]
+    obs = q.get('_obstacles') or []                          # (10/22 보스 장애물 데모, opt-in) seen obstacles: (name, centre, size, R)
+    if obs:
+        ob = obstacle_checker(obs, q)
+        held, insert, free = held + [with_plate(ob)], insert + [with_plate(ob)], free + [ob]
     return MultiChecker(held), MultiChecker(insert), MultiChecker(free)
+
+
+def obstacle_checker(boxes, q, pad=0.35):
+    """(10/22) a distance field around the seen obstacle boxes only (5 mm, their extent + pad): ~0.2 s to build."""
+    from robot_model import CollisionChecker
+    P = np.vstack([np.asarray(c) + np.asarray(R) @ (np.array(sg) * np.asarray(sz) / 2)
+                   for _, c, sz, R in boxes for sg in np.array(np.meshgrid([-1, 1], [-1, 1], [-1, 1])).T.reshape(-1, 3)])
+    lo, hi = P.min(0) - pad, P.max(0) + pad
+    lo[2] = max(lo[2], -0.05)
+    ch = CollisionChecker(Kinematics(), boxes, resolution=0.005, margin=q.get('obstacle_margin_m', 0.02),
+                          bounds=tuple(zip(lo, hi)))
+    ch.set_tool(q.get('tool_length_m', 0.165), q.get('tool_radius_m', 0.06))
+    return ch
+
+
+def upright_box(c, size, R):
+    """An oriented box -> (centre, half sizes, R) of the smallest box around it with a vertical z (turned about z only)."""
+    R = np.asarray(R, float)
+    P = np.array(np.meshgrid([-1, 1], [-1, 1], [-1, 1])).T.reshape(-1, 3) * np.asarray(size) / 2 @ R.T
+    a = R[:2, int(np.argmax(np.linalg.norm(R[:2], axis=0)))]          # the most horizontal box axis sets the yaw
+    yaw = np.arctan2(a[1], a[0]) if np.linalg.norm(a) > 1e-9 else 0.0
+    Rz = np.array([[np.cos(yaw), -np.sin(yaw), 0], [np.sin(yaw), np.cos(yaw), 0], [0, 0, 1.0]])
+    L = P @ Rz
+    return np.asarray(c, float) + Rz @ ((L.max(0) + L.min(0)) / 2), (L.max(0) - L.min(0)) / 2, Rz
+
+
+def plate_obstacle(T_plate, thick=0.03):
+    """(10/22) a plate seen at pose T (FP: z = plate normal) -> oriented box (name, centre, size, R)."""
+    T = np.asarray(T_plate, float)
+    return ('obstacle_plate', T[:3, 3].tolist(), [2 * PLATE_R, 2 * PLATE_R, thick], T[:3, :3].tolist())
 
 
 class FloorCheck:
@@ -1389,10 +1423,11 @@ def quadrant_plan(Tbb, quadrant, gap, H, tool, start_deg, Tbc, q, grasp_legs=Non
         z_base = max([g_low + float(rise)]                   # (10/19 보스) grasp_low_z: the plate's bottom on the stand (FP)
                      + [t + clear[k] for k, t in tops if k == 'marker'])
         stand = [(np.asarray(c), np.asarray(sz) / 2, R_) for n_, c, sz, R_ in basket_boxes(Tbb, plates=plates) if n_.startswith('plate')]
+        stand_all = stand + [upright_box(c, sz, R_) for _, c, sz, R_ in (q.get('_obstacles') or [])]   # (10/22 장애물 데모) seen
 
         def z_low(P):                                        # (10/18) a standing plate only raises the floor near it: its top +
             z = z_base                                       # clear right over it, 1 m per m lower with the horizontal distance
-            for c, h, R_ in stand:
+            for c, h, R_ in stand_all:
                 loc = (P - c) @ R_
                 d = np.linalg.norm(np.maximum(np.abs(loc[:, :2]) - h[:2], 0.0), axis=1).min()
                 z = max(z, c[2] + h[2] + clear['plate'] - d)
@@ -1884,10 +1919,97 @@ def _random_figure(rows, path):
 _RANDOM = {}
 _REACH = {}
 
+def obstacle_demo(a):
+    """(10/22 보스 장애물 데모, offline) a real continuous-carry run: the carry without obstacles, then a plate standing on
+    the table under the middle of that carry (--frac along it) as a seen obstacle -> the carry again.  Prints the
+    planning time, writes obstacle_demo.png (top + side view) next to the plans, sends the obstacle plan to RViz."""
+    import matplotlib
+    matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+    from calib_core import latest_t_base_cam
+    d = DATA / 'real_pipeline' / a.run if a.run else max((x for x in (DATA / 'real_pipeline').iterdir()
+                                                          if '"slot_plan"' in (x / 'robot_state.jsonl').read_text(errors='ignore')
+                                                          if (x / 'robot_state.jsonl').exists()), key=lambda x: x.name)
+    ev = [json.loads(x) for x in (d / 'robot_state.jsonl').read_text().splitlines() if '"event"' in x]
+    g = next(e for e in ev if e['event'] == 'plan')
+    P = json.loads(Path(next(e['plan'] for e in ev if e['event'] == 'slot_plan')).read_text())
+    G = json.loads(Path(g['plan']).read_text())['legs']
+    H, Tbb, qp = np.asarray(P['plate_in_tcp']), np.array(P['basket_T']), P['quadrant_plan']
+    Tbb[:2, 3] += a.basket_dxy                               # the basket moved (no markers: anywhere in reach)
+    tool = np.eye(4)
+    tool[2, 3] = C['plate_ik_bc'].get('tool_length_m', 0.165)
+    Tbc = np.asarray(json.loads(Path(latest_t_base_cam()).read_text())['T_base_cam'])
+    kin, cl = Kinematics(), plate_cloud(H, tool)
+
+    def plan(obs):
+        q = dict(C['plate_ik_bc'], _obstacles=obs, basket_carry_mode='rule', basket_carry_rrt_fallback=True)
+        if a.rise is not None:
+            q['basket_carry_rise_m'] = a.rise
+        t0 = time.time()
+        path, rep = quadrant_plan(Tbb, qp['quadrant'], qp['gap'] - 1, H, tool, G['lift']['waypoints_deg'][-1], Tbc, q,
+                                  grasp_deg=G['to_grasp']['waypoints_deg'][-1], faces=(float(qp['face']),),
+                                  phi_first=qp['phi_deg'], grasp_low_z=g['plate_root_fp'][2])
+        dt = time.time() - t0
+        if path is None:
+            print(f'  no plan ({dt:.1f} s): {rep["tried"][:3]}')
+            return None, None, dt
+        L = np.radians(json.loads(Path(path).read_text())['legs']['to_above']['waypoints_deg'])
+        pts = [cl @ kin.fk(w)[:3, :3].T + kin.fk(w)[:3, 3] for w in L]
+        print(f'  {path}: {dt:.1f} s, carry {rep["carry"]}, clearance {rep["clearance_ratio"]}, '
+              f'plate lowest point max {max(p_[:, 2].min() for p_ in pts):.3f} m')
+        return path, pts, dt
+    print('without obstacles:')
+    p0, pts0, t_0 = plan([])
+    m = pts0[int(len(pts0) * a.frac)].mean(0)
+    v = pts0[-1].mean(0) - pts0[0].mean(0)
+    v[2] = 0
+    v /= np.linalg.norm(v)
+    T = np.eye(4)                                            # standing on the table (top -0.02), face across the carry
+    T[:3, :3] = np.stack([[0, 0, 1.0], np.cross(np.r_[v[:2], 0], [0, 0, 1.0]), np.r_[v[:2], 0]], 1)
+    T[:3, 3] = [m[0], m[1], -0.02 + PLATE_R]
+    obs = [plate_obstacle(T)]
+    print(f'with a standing plate at ({m[0]:.3f}, {m[1]:+.3f}) m:')
+    p1, pts1, t_1 = plan(obs)
+    fig, ax = plt.subplots(1, 2, figsize=(11, 4.5))
+    for pts, lab, col in ((pts0, 'no obstacle', '0.6'), (pts1, 'plate seen', 'tab:blue')):
+        if pts is None:
+            continue
+        c = np.array([p_.mean(0) for p_ in pts])
+        low = np.array([p_[:, 2].min() for p_ in pts])
+        ax[0].plot(c[:, 1], c[:, 0], color=col, label=lab)
+        ax[1].plot(np.r_[0, np.cumsum(np.linalg.norm(np.diff(c[:, :2], axis=0), axis=1))], low, color=col, label=lab)
+    corners = (np.array([[-1, -1], [1, -1], [1, 1], [-1, 1], [-1, -1]]) * [0.015, PLATE_R]) @ np.stack([v[:2], [-v[1], v[0]]])
+    ax[0].fill(m[1] + corners[:, 1], m[0] + corners[:, 0], color='tab:red', alpha=0.5, label='obstacle')
+    bb = np.array([[-0.265, -0.26], [0.265, -0.26], [0.265, 0.26], [-0.265, 0.26], [-0.265, -0.26]]) @ Tbb[:2, :2].T + Tbb[:2, 3]
+    ax[0].plot(bb[:, 1], bb[:, 0], color='k', lw=1, label='basket')
+    ax[0].set_xlabel('y (m)')
+    ax[0].set_ylabel('x (m)')
+    ax[0].invert_xaxis()
+    ax[0].set_aspect('equal')
+    ax[1].axhline(-0.02 + 2 * PLATE_R, color='tab:red', ls='--', lw=1, label='obstacle top')
+    ax[1].set_xlabel('plate centre path length (m)')
+    ax[1].set_ylabel('plate lowest point z (m)')
+    for x_ in ax:
+        x_.spines[['top', 'right']].set_visible(False)
+        x_.legend(frameon=False, fontsize=8)
+    fig.tight_layout()
+    out = Path(p1 or p0).parent / 'obstacle_demo.png'
+    fig.savefig(out, dpi=120)
+    print(f'figure: {out}  (planning {t_0:.1f} s without, {t_1:.1f} s with the obstacle)')
+    if p1 is not None:                                       # RViz preview (run.sh viz): grasp + carry + the obstacle box
+        both = dict(json.loads(Path(p1).read_text()), preview_only=True, obstacles=obs)
+        both['legs'] = dict({k: G[k] for k in ('to_grasp', 'lift')}, **both['legs'])
+        (Path(p1).parent / 'preview_plan.json').write_text(json.dumps(both))
+        import socket
+        socket.socket(socket.AF_INET, socket.SOCK_DGRAM).sendto(json.dumps(dict(plan=str(Path(p1).parent / 'preview_plan.json'))).encode(),
+                                                               ('127.0.0.1', C['udp'].get('viz', 5011)))
+        print(f'RViz: {Path(p1).parent / "preview_plan.json"} (bash calibration/run.sh viz)')
+
+
 if __name__ == '__main__':
     import argparse
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument('mode', choices=('basket_reach', 'quadrant_plans', 'look_plans', 'random_plans'))
+    p.add_argument('mode', choices=('basket_reach', 'quadrant_plans', 'look_plans', 'random_plans', 'obstacle_demo'))
     p.add_argument('--basket', type=float, nargs=3, default=(0.75, 0.15, 0.0), metavar=('X', 'Y', 'YAW'), help='quadrant_plans: basket pose')
     p.add_argument('--plate', type=float, nargs=2, default=None, help='quadrant_plans: plate x y (turns the newest grasp about joint 1)')
     p.add_argument('--quadrants', nargs='+', default=['Q3', 'Q4', 'Q1', 'Q2'])
@@ -1918,5 +2040,9 @@ if __name__ == '__main__':
     p.add_argument('--seed', type=int, default=0)
     p.add_argument('--measure', action='store_true', help='look_plans: basket from the fixed camera markers (read-only)')
     p.add_argument('--run', default=None, help='real run folder for the in-hand plate (default: newest with realplan_req)')
+    p.add_argument('--frac', type=float, default=0.65, help='obstacle_demo: obstacle under this fraction of the carry')
+    p.add_argument('--rise', type=float, default=0.10, help='obstacle_demo: carry rise over the grasp (m); markers are off')
+    p.add_argument('--basket_dxy', type=float, nargs=2, default=(0.0, 0.0), help='obstacle_demo: move the run\'s basket (m)')
     a = p.parse_args()
-    dict(basket_reach=basket_reach, quadrant_plans=quadrant_plans, look_plans=look_plans, random_plans=random_plans)[a.mode](a)
+    dict(basket_reach=basket_reach, quadrant_plans=quadrant_plans, look_plans=look_plans, random_plans=random_plans,
+         obstacle_demo=obstacle_demo)[a.mode](a)

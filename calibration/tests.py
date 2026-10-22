@@ -1755,6 +1755,28 @@ class OneGoTests(unittest.TestCase):
         K, rep = one_go_knots(head, tail, Wall(0.3), Wall(0.5))
         self.assertIsNone(K)
 
+
+class ObstacleTests(unittest.TestCase):
+    """(10/22) seen plates as obstacles."""
+
+    def test_upright_box_of_a_standing_plate(self):
+        from plate_plans import PLATE_R, plate_obstacle, upright_box
+        T = np.eye(4)
+        T[:3, :3] = np.stack([[0, 0, 1.0], [0, 1.0, 0], [-1.0, 0, 0]], 1)    # plate normal along -x: standing
+        T[:3, 3] = [0.9, 0.1, 0.114]
+        _, c, size, R = plate_obstacle(T)
+        cu, h, Rz = upright_box(c, size, R)
+        self.assertAlmostEqual(cu[2] + h[2], 0.114 + PLATE_R, places=6)       # top of the standing plate
+        self.assertAlmostEqual(Rz[2, 2], 1.0)
+        self.assertAlmostEqual(sorted(h[:2])[0], 0.015, places=6)
+
+    def test_seen_obstacles_drop_the_plate_to_pick(self):
+        import pipeline
+        pipeline.VISION_OBSTACLES[:] = [('a', [0.90, 0.34, 0.08], [0.25, 0.25, 0.04], np.eye(3).tolist(), 0.9, 900),
+                                        ('b', [0.95, 0.08, 0.11], [0.04, 0.26, 0.26], np.eye(3).tolist(), 0.8, 700)]
+        self.assertEqual([o[0] for o in pipeline.seen_obstacles([0.905, 0.35])], ['b'])
+        pipeline.VISION_OBSTACLES[:] = []
+
 if __name__ == '__main__':
     unittest.main()
 
