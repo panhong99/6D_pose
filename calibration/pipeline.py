@@ -246,6 +246,10 @@ class Children:
 
     def __init__(self, out):
         self.out, self.items, self.active_mover = out, [], None
+        self.external_perception = None
+
+    def reuse_perception(self, state):
+        self.external_perception = state
 
     def start(self, name, command, env=None):
         log = self.out / f'{name}.log'
@@ -256,6 +260,11 @@ class Children:
         return child
 
     def check(self):
+        if self.external_perception is not None:
+            from perception_service import process_start
+            state = self.external_perception
+            if process_start(state['pid']) != state['start_tick']:
+                raise RuntimeError('background perception stopped; plate run cannot continue')
         for name, child, log in self.items:
             if child.poll() is not None:
                 tail = '\n'.join(log.read_text(errors='replace').splitlines()[-12:])
@@ -867,11 +876,25 @@ def run_plate(args):
         if args.plate_color == 'white':                # (10/16 보스) white plate: same YCB 029 shape, white texture only
             prompt, mesh = C['white_plate']['prompt'], cpath(C['white_plate']['obj'])
             print(f'[plate] 흰 접시: YOLOE "{prompt}", FP mesh {mesh}', flush=True)
-        perception = children.start('perception', [sys.executable, '-u', str(ROOT / 'real_time_project/main.py'),
-                                                    '--detector', 'yoloe', '--width', '640', '--height', '480',
-                                                    '--serial', args.serial, '--prompt', prompt, '--conf', str(args.conf),
-                                                    '--mesh_file', str(mesh),
-                                                    '--wrist_serial', C['cameras']['wrist_serial']], vision_env)
+        from perception_service import live_state
+        warm = live_state()
+        if warm is not None:
+            expected = dict(prompt=prompt, mesh=str(Path(mesh).resolve()), conf=float(args.conf), serial=args.serial,
+                            wrist_serial=C['cameras']['wrist_serial'])
+            if any(warm.get(key) != value for key, value in expected.items()):
+                raise RuntimeError(f'background perception uses {warm.get("prompt")}; expected {prompt}. '
+                                   'Stop/restart it for this plate color before running the pipeline')
+            if time.time() - Path('/dev/shm/fixed_latest.npz').stat().st_mtime > 3:
+                raise RuntimeError('background perception is alive but fixed camera frames are stale')
+            children.reuse_perception(warm)
+            perception = None
+            print(f'   미리 띄운 YOLOE+FoundationPose 재사용 (pid {warm["pid"]})', flush=True)
+        else:
+            perception = children.start('perception', [sys.executable, '-u', str(ROOT / 'real_time_project/main.py'),
+                                                        '--detector', 'yoloe', '--width', '640', '--height', '480',
+                                                        '--serial', args.serial, '--prompt', prompt, '--conf', str(args.conf),
+                                                        '--mesh_file', str(mesh),
+                                                        '--wrist_serial', C['cameras']['wrist_serial']], vision_env)
         if basket_vision:
             Tb = basket_from_vision(Tbc, cur['posj'] if args.execute else None, out, children)
             T0 = np.array(json.loads((DATA / 'basket' / 'slot_01_in_basket.json').read_text())['T_base_basket_at_teach'])
@@ -955,7 +978,7 @@ def run_plate(args):
                                              smooth=True, vel=standing_vel), env)
             print('[standing] 파지 후 접근 경로 역행 + 홈 복귀 완료. 접시는 잡은 상태입니다.', flush=True)
             return
-        if not q.get('keep_perception', True):
+        if perception is not None and not q.get('keep_perception', True):
             children.items = [it for it in children.items if it[1] is not perception]
             os.killpg(perception.pid, signal.SIGINT)            # free the GPU for the Isaac rollout
             perception.wait(timeout=20)
