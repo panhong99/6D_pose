@@ -99,7 +99,7 @@ Phase 2 작업판이다(10/20 보스 시작). Phase 1(10/22 시연까지)의 작
 
 | # | 일 | 자세한 내용 | 상태 |
 |---|---|---|---|
-| **BX** | **오늘 밤 맨 먼저: 빗살 인지 정확도 올리기 (보스 10/22 저녁: "오늘 밤 코덱스가 할 일은 빗살 인지 정확도를 올리는 것이 가장 중요")** | 아래 'BX 자세히'. BR의 다음 단계(sim_v4 보강 → run_v5). | **오늘 밤 (Codex)** |
+| **BX** | **오늘 밤 맨 먼저: 빗살 인지 정확도 올리기 (보스 10/22 저녁: "오늘 밤 코덱스가 할 일은 빗살 인지 정확도를 올리는 것이 가장 중요")** | 아래 'BX 자세히'. BR의 다음 단계(sim_v4 보강 → run_v5). | **미달 (10/23 04:1x, Claude가 학습·평가 대행)**: sim_v4(60k) 렌더 후 Codex 학습 미시작 → Claude가 run_v5(30 epoch) 실행·epoch별 평가(`calibration/data/slot_cnn/run_v5_eval_summary.tsv`). 최종 ep29 tip 0.964/0.942, Q1 11/14(v3 0.952/0.941, 11/14), 번호 오답 0이나 Q1 답 0·Q4 ~90% 거부 → 병목은 번호 규칙(slots.py). 수치 LOG |
 | **BW** | 꽂힌 접시가 있을 때 마커 없는 바구니 위치 안정화 | 보스 10/22 저녁: **Claude가 맡는다** (sim에서 안정화). Codex는 하지 않는다. | Claude 진행 |
 | **BV** | **고정카메라 세운 접시 파지·홈 복귀** | `--standing-grasp-check --execute`: 홈→상단 10 cm→테두리를 한 spline, 닫기 후 역행→홈도 한 spline. 충돌검사·RRT 없음. 기존 속도. | 완료 (`193c6fe`, 홈 `ea059a7`, spline `eaf1f75`), 보스 실증 대기 |
 | **BU** | **세워진 접시 FP·무충돌 IK 확인** | 최신 Q3:12 실증의 삽입 후 FP pose(tilt 85.96°)로 노출된 상단 테두리 100 mm 직선 접근을 구성. 충돌검사/RRT 없이 Cartesian 21점 IK 검증. | 완료 (`c9a571f`) |
@@ -208,7 +208,8 @@ Phase 2 작업판이다(10/20 보스 시작). Phase 1(10/22 시연까지)의 작
 
 ## 수정 요청 (Claude → Codex)
 
-(없음)
+- (10/22 21:5x Claude) BX: sim_v4 렌더 완료(60,000장 + labels.json) 확인. **run_v5 학습을 바로 시작해 주세요.** GPU는 지금 약 4.2 GB 사용 중(Claude 삽입 RL Isaac + 바구니 sim 평가) → 남은 ~7 GB 안에서 batch를 잡을 것. 22:15까지 학습 프로세스가 안 보이면 Claude가 BR과 같은 train.py 설정(v3에서 초기화, epoch 30, 새 폴더 run_v5)으로 대신 띄우고 LOG에 적는다. Codex는 들어오면 그 실행을 이어받아 평가·곡선을 맡는다.
+- (10/22 22:1x Claude) 22:14까지 Codex 학습이 없어 **Claude가 run_v5를 띄웠다** (PID 471761): `experiments/slot_cnn/train.py --data calibration/data/slot_cnn/sim_v4 --out calibration/data/slot_cnn/run_v5 --epochs 30 --bs 12 --lr 0.0003 --workers 6 --init calibration/data/slot_cnn/run_v3/last.pt`, 로그 `calibration/data/slot_cnn/run_v5.log`, epoch당 ~15분(05:45 종료 예상), 매 epoch `epNN.pt`. **Codex: 이 실행은 건드리지 말고 epoch가 쌓이는 대로 BR과 같은 평가(eval.py --tta, number_check, Q1 수, 10/21 사진 겹친 그림)와 학습 곡선(br_report.py 방식)을 맡아 주세요.** 분면 이름 Q1↔Q2/Q3↔Q4 확인도 BX 3번 그대로.
 
 ## 점검 기록 (Claude)
 

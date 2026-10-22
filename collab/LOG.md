@@ -5236,3 +5236,112 @@
 - 보스가 standing 시험 속도가 지나치게 느리다고 확인해 강제 1.0/0.5 deg/s를 제거했다. pregrasp와 최종 접근 모두 기존 `plate_ik_bc.vel_deg_s`를 사용한다(현재 config 60 deg/s).
 - 보스가 파지 성공을 확인해, 닫은 뒤 Cartesian 접근 10 cm를 역행하고 처음 joint 접근을 역행해 홈까지 복귀하는 `to_home` leg를 추가했다. 접시는 닫은 채 유지하며 충돌검사/RRT 없이 기존 60 deg/s를 사용한다.
 - 보스 지시로 waypoint별 정지를 제거했다. 홈→pregrasp→테두리는 `to_grasp` 한 joint spline, 테두리→pregrasp→홈은 `to_home` 한 joint spline으로 실행하며 그리퍼를 닫는 지점에서만 정지한다.
+
+## 2026-10-22 Codex — markerless basket handle ROI fix
+- 원인: `basket_vision.py`가 `rack_mask & blue(rgb)`만 검사해 YOLOE 마스크 밖에 있는 외부 손잡이를 항상 놓칠 수 있었다.
+- 수정: YOLOE 바구니 mask의 20% scale-aware 확장 ROI(최소 24 px)에서 blue cue를 검색하고, 반사/노출을 고려해 HSV 범위를 H 88–135, S>70, V>45로 완화했다. 기존 marker 경로와 로봇 동작은 건드리지 않았다.
+- 검증: `py_compile` 통과. 공유 프레임 `/dev/shm/fixed_latest.npz`에서 YOLOE conf 0.856, 확장 ROI blue 픽셀 396, depth 유효 handle point 73(기준 20 이상), basket model fit cost 11.54 mm, 결과 `ok=true`, pose spread(단일 프레임) 0.0 mm/0.0 deg. 실로봇 명령은 실행하지 않았다.
+- 한계: 이 결과는 현재 공유 프레임의 markerless 관측·기하 fit 통과이며, handle 색이 보이지 않는 시점에는 여전히 거부한다. 다중 프레임 안정성 및 실제 운반 성공은 별도 검증이다.
+- 100장 연속 신규 공유 RGB-D 프레임 재검증(약 55.2초, 고정 배치): 서로 다른 timestamp 100/100, YOLOE rack 검출 100/100, handle 유효 depth 점 >=20은 100/100, `handle not seen` 0/100. handle 점 수 최소/중앙/최대 29/76/146, YOLOE confidence 0.791/0.839/0.917. 원자료 `/tmp/basket_handle_100_result.json`. 이는 같은 위치·조명에서의 검출률이며 GT 위치 정확도나 바구니 이동 후 성능을 뜻하지 않는다.
+- 현재 손목 공유 프레임 한 장을 `calibration/data/slot_cnn/live_20261022/wrist_20261022_current.raw.png`에 저장(프레임 age 0.30 s). run_v3/last.pt + TTA, threshold 0.3으로 CNN root 73개/tip 61개 예측. root-tip 거리·영상의 어두운 선·교차 제거·수평 성분 기준을 통과한 23개 선만 `cnn_lines.png`에 그렸고 `cnn_lines.json`에 좌표·score를 저장했다. 이는 현재 광각 사진에서 부분 결과이며 왼쪽과 오른쪽 일부 빗살이 누락됨. 촬영 위치와 지면진실 라벨이 없어 정확도 수치/칸 번호를 주장하지 않는다.
+
+## 2026-10-22 Codex — 마커 없는 접시 이동 실증 준비
+- 현재 공유 고정 RGB-D 5장으로 `basket_vision.py` 실행: `ok=true`, pose `(1.0199, -0.2002, 0.1440) m`, yaw `+2.88°`, 최대 산포 0.84 mm/0.12°, median YOLOE conf 0.862, median 점군 11,069. 결과 `calibration/data/basket/markerless_preflight_20261022/basket_pose.json`; 모델 투영 `model_projection_review.png`은 바구니 윤곽과 대체로 겹친다.
+- 실증 순서와 명령: `collab/MARKERLESS_DEMO_PREP_20261022.md`. 상주 perception PID 24819/24829가 카메라를 점유 중이라 pipeline 자체 카메라와 동시 실행하지 않아야 함을 기록했다. `demo1022`는 마커 검사를 선행하므로 직접 `pipeline --basket_source vision`을 쓴다.
+- 5프레임 pose 및 투영 확인은 바구니 위치의 외부 기준 정확도나 실제 계획 성공을 증명하지 않는다. 로봇/그리퍼 명령은 실행하지 않았다. 계획 전용 파이프라인도 상주 카메라 점유 때문에 아직 실행하지 않았다.
+
+## 2026-10-22 Codex — 흰 접시 FP+YOLOE 상주 재사용
+- `calibration/perception_service.py`로 고정/손목 D455, 접시 YOLOE, FoundationPose를 별도 프로세스에 상주시킨다. `pipeline.py`는 색·프롬프트·메시·카메라·confidence와 프레임 신선도를 검사해 일치할 때만 재사용하며 실행 종료 시 상주 프로세스를 종료하지 않는다. 사용법: `collab/PERCEPTION_WARM_START.md`.
+- 흰 접시 서비스 PID 330076을 시작했고, 같은 색 설정과 새 고정 프레임(확인 시 age 0.21 s)을 확인했다. 파이프라인 회귀시험 35개 통과, py_compile 통과. 실로봇/그리퍼 명령은 실행하지 않았다.
+- 한계: 별도 `basket_vision.py`의 바구니 YOLOE는 여전히 매 실행 로드된다. 색을 바꿀 때는 서비스를 정지·재시작해야 한다. 재사용 상태의 실기 전체 소요시간 감소는 아직 계측하지 않았다.
+
+## 2026-10-22 Codex — BW 밤 작업 예약
+- 보스 보고: 바구니는 빨간 접시 전후 움직이지 않았고, 빨간 접시를 빼니 관측이 진행됨. 정확도 확인은 아직 없음.
+- 빨간 접시 전 `20261022_140611_plate_f0f5on5z/basket_vision.json`: 5프레임 산포 0.79 mm/0.17°, YOLOE conf 0.862. 꽂힌 뒤 `20261022_142007_plate_ow_3wwkj/`와 `20261022_143811_plate_z7tp0wh9/`: 산포 8.1/7.5 mm로 6 mm 게이트 거부. 같은 T_base_cam 사용.
+- 진단 그림 `calibration/data/basket/vision_debug_20261022_1445/detection_and_3d_alignment.png`: YOLOE `plate` 마스크는 받침 위 흰 접시만 분리하고, 꽂힌 빨간 접시는 `rack` 마스크에 남아 점군 정합에 유입됨. 한 프레임 관측이므로 원인 가설로 기록.
+- 오늘 밤 Codex의 BW 업무를 TASKBOARD 맨 위에 추가했다. 빈/점유 조건 마스크·깊이 점군·ICP의 프레임별 비교와 게이트를 유지하는 개선안을 오프라인 평가한다. 로봇/그리퍼 실행 없이 수용률·산포·기준 pose 차이·PNG를 보고한다.
+
+## 2026-10-22 19:1x~ Claude — 보스 저녁 지시 받음, 밤 작업 시작
+- 보스 지시(19:1x): (1) 마커 뗀 바구니를 YOLOE로 추적: 못 찾는 문제를 sim에서 안정화 (Claude) (2) Codex는 빗살 인지 정확도(BX, 학습 길게, 곡선 확인) (3) 장애물 회피 데모: 접시를 장애물로 인지해 피하며 삽입, GUI로 보이기, 지연시간 최소 (4) 속도 100 deg/s까지 (5) 파지 후 stop&go 말고 한 spline으로 go (6) 바구니 위 10 cm 정렬은 RL, 학습 길게.
+- (5)+(4) `03835a9` opt-in `--one_go --vel_deg_s 100`: 실기 393 구간 회귀로 **소요 ≈ 0.36 s × movesj 점 수 + 2.8 × 이동각/속도** → 파지 후 지연의 주범은 점 수(운반 60점 ≈ 21 s). lift+운반+수직 삽입을 한 spline으로, 운반 점을 RDP로 줄이고(구간 ≤30°, 이웃 비 ≤2.5배) 등시간 3차 spline으로 다시 충돌검사, 삽입 직선은 수직 벗어남 ≤2 mm. 10/22 실기 2건 재계산: 79 → 23점, 충돌 여유 운반 1.26–1.4 / 넣기 2.2–2.8, 수직 벗어남 0.04–0.3 mm, 예상 36 s → 14 s(사진 정지 제외). 실기 미확인.
+- (3) `f795647` opt-in `--obstacles`(+`--basket_source vision`), `--carry_rise`: basket_vision의 YOLOE 'plate' 마스크 중 바구니 밖 접시를 깊이 → PCA 상자로 출력(저장 실프레임: 받침 위 흰 접시 24.8×24.4×3.9 cm로 잡힘). 잡을 접시(FP 15 cm 안)는 빼고 충돌 모델 + 운반 바닥(서 있는 접시처럼 넘어가기)에 넣고, 실패 시 RRT. RViz 미리보기에 빨간 상자. 오프라인 `plate_plans.py obstacle_demo`: 바구니 15 cm 이동 + 운반 중간 탁자에 세운 접시 → 접시 최저점 21 → 30 cm로 넘어감, 계획 1.9 s(RRT 없음). 그림 `calibration/data/rl_plans/20261022_193731_052_taught/obstacle_demo.png`.
+
+## 2026-10-22 21:0x Claude — 진행 (30분 기록)
+- 바구니 비전 실기 평가(10/19–20 고정 카메라 프레임, 마커 정답; `experiments/basket_free/fit.py`):
+  - 기준선 63장: 통과 58, 오차 중앙값 3.2 / p90 9.8 / 최대 30.9 mm, yaw p90 1.8°, **틀렸는데 통과 4** (`basket_free_20261022_base`).
+  - 빨강+흰 화소 제외: 통과 58 → 33(밝은 레일이 흰색으로 빠짐) → 버림. 빨강만 제외(`PLATE_COLOURS='red'`): p90 7.2 / 최대 26.3 mm, yaw p90 1.2°, 틀린 통과 4 그대로. 흰 덩어리만 제외: 비슷.
+  - 모델 거리 재정합: 실기 depth가 철사 사이로 번져 점-모델 중앙 18 mm라 동작 안 함(효과 0).
+  - 틀린 통과 4장 그림 확인: 원인은 접시가 아니라 **가림**(보스가 바구니 위로 숙임, 팔이 절반 가림). 맞춘 바구니 윤곽 안을 YOLOE 마스크가 덮는 비율: 틀린 것 0.54/0.65/0.67, 정상 최소 0.67 → opt-in `MIN_COVER` 게이트 추가, 평가 중.
+  - 평가 세트 오류 수정: 10/21–22 실기는 바구니 pose가 비전 결과라 정답이 아님 → 제외.
+- 장애물/계획: 넓은 범위(바구니 x 0.80–1.06, y −0.42~−0.08, yaw ±40°, Q3/Q4 핀 4·6·8·10) 계획 750개 중 45% 성공. **Q3 핀 4·6은 0/172 — 뗀 마커 블록이 계획 모델에 남아 막음** → opt-in `--markers_off`(pipeline, plate_plans) 추가, 같은 조건 Q3 핀 6 실패 → 성공 확인. 마커 없는 계획 세트(600+200) 생성 중. 약 4%는 worker 병렬 파일 경합으로 보이는 오류(`catching classes that do not inherit from BaseException`, `Bad CRC-32`) — 재현 안 됨, 미해결.
+- 지도: `calibration/data/basket/random_20261022_195158/placement_map.png`.
+- RViz: `ros2_nodes.py viz`가 preview_plan의 obstacles를 빨간 상자+글자로 발행함을 토픽으로 확인.
+- 삽입 RL(10 cm 위 정렬 보정) 긴 학습 시작 20:24: `rl/logs/basket/insert_rl_20261022_wide_seen6` (gx30_seen에서 시작, 넓은 범위 계획 264/74, 칸 오차 ±30 mm, 보는 잡음 6 mm, 전체 랜덤화, 300회, 회차 ~250 s). 0회차 검증 64.9%(Q3 67 / Q4 63).
+- 버그 수정 `54baae9`: 연속 운반(기본)에서 `--insert_policy`가 조용히 무시되던 것 → 파지 전 손 모델로 보정 적용.
+
+## 2026-10-22 21:1x Claude — 가림 게이트·마커 블록 제거 커밋, RL 재시작
+- `ff276c0` opt-in `basket_vision.MIN_COVER`(0.68 시험), `--markers_off`. 실기 마커 정답 55장(비전 pose로 저장된 10/21–22 제외), `PLATE_COLOURS='red'`+0.68: 통과 54→52, **틀린 통과 4→2**, 최대 30.9→18.8 mm, p90 10.0→6.8 mm, yaw 최대 175→4.9°. 꽂힌 접시 프레임(after_release)만: 23장 최대 7.6 mm, 틀린 통과 0. 남은 2장은 팔이 가린 프레임(18.8 mm/4.9°, 10.5 mm/3.4°). 결과 `calibration/data/basket/basket_free_20261022_{base_markersonly,red_cover068}`.
+- 마커 없는 계획 세트(`--markers_off`, 같은 넓은 범위): 학습 `random_20261022_203630` 456/600(76%), 검증 `random_20261022_210134` 156/200. Q3 핀 4·6이 0% → 81–90%, Q4 약 60%(주로 ik/limit·insert 여유).
+- 삽입 RL 재시작(마커 없는 바구니가 실제 조건): 첫 실행(`insert_rl_20261022_wide_seen6`, 마커 있는 계획)은 it7에서 PID로 중지(eval it0 0.649 → it5 0.608). 새 실행 `rl/logs/basket/insert_rl_20261022_wide_mo_seen6`: 학습 264+456 계획, 검증 마커 없는 156, 나머지 설정 동일, 300회.
+- sim 바구니 평가(기하만, YOLOE 대역 마스크) 60장면 × 2(기준선 / 빨강+가림) 실행 중. 이전 대기 스크립트가 시작되지 않아 21:0x에 직접 시작.
+
+## 2026-10-22 22:1x Claude — BX run_v5 대신 시작, sim 바구니 평가 1차
+- Codex의 sim_v4 렌더 완료(60,000장) 후 22:14까지 학습이 시작되지 않아 Claude가 run_v5 시작(PID 471761, v3 초기화, sim_v4, 30 epoch, lr 3e-4, bs 12). epoch당 ~15분. 평가·곡선은 Codex에 요청(TASKBOARD 수정 요청).
+- sim 바구니 평가 기준선(`calibration/data/basket/sim_eval_20261022_base`, 60장면, 바구니 x 0.72–1.08 / y −0.42~0.20 / yaw ±50°, 꽂힌 접시 0–2, YOLOE 대신 정답 윤곽 마스크): 틀린 통과 **0**, 뒤집힘 0, yaw p90 0.27°, 거부 8/60 모두 "프레임 불일치" 6.3–9.5 mm. 위치 오차 중앙 6.7 mm는 모든 장면이 같은 방향(바구니 x +3~6, y +4~6 mm)인 sim 편향(렌더 형상/깊이 번짐 흉내)으로 판단 — sim 절대값은 쓰지 않음. 실기 빈 바구니 산포는 0.8 mm라 sim 깊이 잡음이 과함 → 게이트(6 mm)는 그대로.
+- 결론(현재까지): 바구니 위치·yaw 자유도 자체는 기하 정합에서 문제 없음. 실기 위험은 가림·꽂힌 접시 → `PLATE_COLOURS='red'` + `MIN_COVER 0.68`(opt-in)로 줄임. YOLOE 미검출은 sim으로 검증 불가(렌더에 conf ≤ 0.09).
+- 22:4x sim 바구니 평가 `sim_eval_20261022_red_cover`(같은 60장면, `PLATE_COLOURS='red'`, `MIN_COVER 0.68`): 통과 52/60(기준선과 같음), 틀린 통과 0, yaw p90 0.28° → 새 옵션이 넓은 위치·yaw에서 가리지 않은 장면을 거부하지 않음. 삽입 RL(`insert_rl_20261022_wide_mo_seen6`) eval it0/5/10/15 = 0.583/0.571/0.551/0.564 (검증 156개, 아직 개선 없음). run_v5 ep2 진행, loss 0.32.
+- 00:2x 장애물 + 한 번에 가기 결합 오프라인 확인: obstacle_demo 계획(`rl_plans/20261022_193731_052_taught`, 바구니 15 cm 이동, 세운 접시 장애물)에 `one_go_plan`(장애물 포함 충돌 모델): 65 → 16점, 충돌 여유 운반 1.41 / 넣기 2.76, 수직 벗어남 0.49 mm, 예상 30 → 9.9 s(100 deg/s). `rl_plans/20261023_002325_256_one_go/plan.json`. 실기 로봇·카메라가 꺼져 있어 pipeline 계획 전용 실행은 못 함(확인 못 함).
+- run_v5 epoch 평가 자동화(`calibration/data/slot_cnn/run_v5_eval_summary.tsv`): ep00–09 tip 재현율 0.81–0.98, 정밀도 0.82–0.93, Q1 9–13/14 — 실기 4장이라 epoch 간 출렁임 큼. 삽입 RL eval it20 0.551(개선 없음, GPU 공유로 회차 ~780 s).
+- 01:1x 삽입 RL 방법 변경: `insert_rl_20261022_wide_mo_seen6` eval it0–25 = 0.583/0.571/0.551/0.564/0.551/0.538, 하락 추세 → it26에서 PID로 중지(best.pt = it0 보존). 학습 rollout의 탐색 std가 0.15–0.30에서 줄지 않고 lr 2e-4에서 정책이 출발점보다 나빠짐. 새 실행 `rl/logs/basket/insert_rl_20261023_wide_mo_seen6_lr5e5`(PID 525792): lr 5e-5, init_std 0.15, 나머지 동일.
+- 02:5x 삽입 RL(lr 5e-5) eval it5 **0.603**(it0 0.583, Q3 0.64 / Q4 0.55). run_v5 ep22 tip 0.964/0.931, Q1 11/14.
+- 03:5x run_v5 ep20–27 tip 0.94–0.964 / 0.93–0.94, Q1 11/14(목표 13/14 미달). 칸 번호(`tine_numbers`, 100회 vision 오차): 모든 체크포인트 **틀린 번호 0**, 그러나 Q1은 v3·v5 모두 답 0(전부 거부), Q4 약 90% 거부, Q2·Q3는 대부분 답함 → 병목은 검출이 아니라 번호 규칙(slots.py, 사진 4장으로 정한 경계·분면 이름 의심).
+- 04:1x run_v5 30 epoch 종료. 최종 ep29: tip 재현율/정밀도 **0.964/0.942**, Q1 tip **11/14**, root 0.602/0.538, 번호 오답 0(Q1 답 0, Q4 대부분 거부). 기준(≥0.97/≥0.93, Q1 ≥13/14) **미달**. Q1에서 놓친 tip은 오른쪽 줄 위쪽, 마커 블록 그늘·위 레일과 겹치는 곳(`eval_run_v5_ep29/real_Q1.jpg`) — 마커를 뗀 지금은 사라질 가림이지만 시험 사진 4장이 모두 마커 있는 10/19 사진이라 확인 불가. 다음: 마커 없는 손목 사진(look4) 새 시험 세트 + 번호 규칙(slots.py) 일반화가 먼저.
+- 05:5x 삽입 RL(lr 5e-5) eval it0–40: 0.583/0.603/0.564/0.545/0.583/0.571/0.558/0.571/0.571 — 정체. 실패 분해(검증 156): it0 정확 91, **떨어뜨림 18, 똑바로 안 앉음 17**, ±1칸 21, ±2칸 8, +4칸 1 / it40 정확 89, 떨어뜨림 18, 안 앉음 19, ±1칸 21, ±2칸 8, +4칸 1. 실패 65 중 35는 삽입 보정으로 못 고치는 유형(sim 손 안 미끄러짐·안착), 고칠 수 있는 칸 오차 ~30은 학습 전후 그대로.
+
+## 2026-10-23 아침 보고
+
+**요약**
+- 된 것: 파지 후 한 spline(`--one_go`, 오프라인 36 → 14 s), 100 deg/s(`--vel_deg_s`), 장애물 접시 인식·회피 데모(`--obstacles`, 계획 1.9 s, RViz 표시), 마커 없는 바구니 오인식 줄이기(틀린 통과 4 → 2), 뗀 마커 블록 제거(`--markers_off`, 계획 성공 45 → 76 %). 모두 opt-in, 실기 미확인.
+- 안 된 것: 빗살 CNN run_v5 목표 미달(tip 0.964 / Q1 11/14, 목표 0.97 / 13/14). 넓은 범위 삽입 RL은 밤새 개선 없음(58 % 근처). Codex는 밤새 응답 없음 → CNN 학습·평가는 Claude가 대행.
+- 보스가 오늘 할 것: (1) 계획 전용으로 새 옵션 확인 → (2) 실기 `--one_go --vel_deg_s 100` 한 번 → (3) 장애물 데모(바구니 ~15 cm 이동 + 세운 접시) → (4) 마커 없는 손목 사진(look4) 몇 장(새 CNN 시험 세트).
+
+### 1. 어제 보스가 시킨 일
+1) 마커 뗀 바구니를 YOLOE로 안정적으로 찾기(Claude, sim) 2) 빗살 인지 정확도(Codex, 학습 길게, 곡선) 3) 장애물(접시) 회피하며 삽입, GUI, 지연 최소 4) 속도 100 deg/s 5) 파지 후 stop&go 없이 한 spline 6) 바구니 10 cm 위 정렬 RL, 학습 길게.
+
+### 2. 업무 설계
+- **한 spline(5, 4)**: 실기 393 구간 회귀 → 소요 ≈ 0.36 s × movesj 점 수 + 2.8 × 이동각/속도. 즉 정지의 주범은 점 수. 파지 후 lift + 운반 + 수직 삽입을 한 movesj로 묶고 운반 점을 RDP로 줄임(구간 ≤ 30°, 이웃 비 ≤ 2.5배로 감속 램프). movesj는 점마다 같은 시간이라 삽입 구간(1–2 cm 간격)은 저절로 느림. 줄인 점은 등시간 3차 spline 모델로 다시 충돌검사 + 삽입 수직 벗어남 ≤ 2 mm 검사. 놓기 후 상승+홈 한 spline. 사람이 고른 값: 구간 30°, 비 2.5, 2 mm.
+- **장애물(3)**: 바구니 비전과 같은 YOLOE 호출의 'plate' 마스크 중 바구니 밖 접시 → 깊이 점 → PCA 상자. 잡을 접시(FP 15 cm 안)는 제외. 충돌 모델에 넣고, 운반 '바닥'을 장애물 근처에서 높임(꽂힌 접시와 같은 규칙: 위로 넘어감). 규칙이 실패하면 RRT. RViz preview에 빨간 상자. 학습 아님(기하).
+- **바구니 비전(1)**: 실기 고정 카메라 프레임(마커 정답) + 새 sim 평가기(`experiments/basket_free/sim.py`, nvdiffrast 렌더, 바구니 x 0.72–1.08 / y −0.42~0.20 / yaw ±50°, 꽂힌 접시 0–2). sim 렌더는 YOLOE가 못 찾아(conf ≤ 0.09) 정답 윤곽 마스크로 대신 → sim은 기하만 검증.
+- **CNN(2)**: Codex sim_v4 60k(마커 없는 장면 포함) → run_v5(v3 초기화, 30 epoch, lr 3e-4). 실기 v4 4장(시험만)으로 epoch마다 평가.
+- **RL(6)**: 기존 삽입 보정 PPO(gx30_seen, 한 번의 결정으로 aim/lean/dz/yaw 보정)를 넓은 바구니 범위·마커 없는 계획으로 이어 학습. 칸 오차 ±30 mm, 보는 칸 오차 잡음 6 mm(손목 CNN 가정), 전체 랜덤화.
+
+### 3. 실험 결과
+| 일 | 완료 조건 | 결과 | 상태 |
+|---|---|---|---|
+| 한 spline + 100 deg/s | 충돌 여유 ≥ 1, 삽입 수직 ≤ 2 mm | 10/22 실기 2건: 79 → 23점, 여유 1.26–1.4 / 2.2–2.8, 수직 0.04–0.3 mm, 예상 36 → 14 s. 장애물 계획에도: 65 → 16점, 30 → 9.9 s | 오프라인 완료, 실기 대기 |
+| 장애물 회피 | 장애물 인식, 경로 변화, 계획 지연 | 저장 실프레임: 받침 흰 접시 24.8×24.4×3.9 cm 상자로 잡힘. 데모(바구니 15 cm 이동, 탁자에 세운 접시): 접시 최저점 0.22 → 0.30 m로 넘어감, 계획 1.9 s | 오프라인 완료 |
+| 바구니 비전 실기 | 틀린 통과 0 | 마커 정답 55장: 기준 틀린 통과 4, 최대 30.9 mm, yaw 최대 175°(뒤집힘) → 빨강 제외 + 가림 게이트 0.68: 틀린 통과 2, 최대 18.8 mm, p90 6.8 mm, yaw 최대 4.9°. 꽂힌 접시 프레임만 최대 7.6 mm, 틀린 통과 0. 남은 2장 = 팔이 가린 프레임 | 미완(2장) |
+| 바구니 비전 sim | 넓은 위치·yaw | 60장면: 틀린 통과 0, 뒤집힘 0, yaw p90 0.27°, 거부 8(프레임 불일치 6–9 mm, sim 깊이 잡음 과함 — 실기 빈 바구니는 0.8 mm). 새 옵션도 같음 | 완료 |
+| 계획 범위 | 넓은 바구니 범위 | 마커 블록 포함 45 % → `--markers_off` 76 %(Q3 핀 4·6: 0 → 81–90 %, Q4 ~60 %) | 완료 |
+| 빗살 CNN | tip ≥ .97/.93, Q1 ≥ 13/14, 번호 오답 0 | ep29 tip .964/.942, Q1 11/14, 번호 오답 0. 단 Q1 번호 답 0, Q4 ~90 % 거부. sim loss 0.33 → 0.21(검증도 같이 내려감, 과적합 없음) | **미달** |
+| 삽입 RL | 시작점(58.3 %)보다 높음 | lr 2e-4: it25 53.8 %(하락, 중지). lr 5e-5: it0–60 54.5–60.3 %, 정체 | **미달** |
+
+그림·파일:
+- 장애물 전후: `calibration/data/rl_plans/20261023_070831_829_taught/obstacle_demo.png` (RViz: `.../preview_plan.json`)
+- 계획 지도: `calibration/data/basket/random_20261022_195158/placement_map.png`
+- CNN 곡선: `calibration/data/slot_cnn/run_v5_curves.png`, epoch 표 `calibration/data/slot_cnn/run_v5_eval_summary.tsv`, Q1 그림 `calibration/data/slot_cnn/eval_run_v5_ep29/real_Q1.jpg`
+- 바구니 비전 결과: `calibration/data/basket/basket_free_20261022_{base_markersonly,red_cover068}`, `sim_eval_20261022_{base,red_cover}`
+- RL: `rl/logs/basket/insert_rl_20261023_wide_mo_seen6_lr5e5/`
+
+보스가 바로 실행할 명령:
+- 장애물 데모 GUI(오프라인, 직접 확인함): 터미널 1 `bash calibration/run.sh viz`, 터미널 2 `~/miniconda3/envs/foundationpose/bin/python calibration/plate_plans.py obstacle_demo --run 20261022_151839_plate_0o9zrl2k --basket_dxy -0.10 -0.15 --frac 0.5 --markers_off`
+- 실기 계획 전용(로봇 안 움직임; **확인 못 함** — 밤에 로봇·카메라가 꺼져 있었음): `bash calibration/run.sh pipeline --task plate --plate_policy ik_bc --place basket --insert quadrant --quadrant Q3 --region front --plate_color red --sim_q --auto --basket_source vision --markers_off --one_go --vel_deg_s 100` (+ 장애물: `--obstacles --carry_rise 0.10`). 출력의 '한 번에 가기 … 점, 충돌 여유, 예상 s'와 RViz 확인 후 같은 명령에 `--execute`.
+
+### 4. 개선/보완
+- **실기 위험(한 spline)**: movesj 내부 속도 분배는 기록(점 수 회귀)으로 추정했을 뿐 실측 아님. 첫 실기는 `--vel_deg_s 60`부터 권장. 연속 모드는 파지 후 처짐을 재측정하지 않음(Codex BT와 같은 한계).
+- **장애물**: 지금은 '위로 넘기'만. 너무 높은 장애물은 RRT로 가는데 그 속도는 이번에 재지 않음. 현재 배치는 받침–바구니 사이가 28 cm라 장애물을 놓을 자리가 없음 → 바구니를 옮겨야 함.
+- **바구니 비전**: `PLATE_COLOURS='red'`, `MIN_COVER 0.68`은 아직 기본 off. 보스 OK면 비전 모드 기본으로. 팔이 가린 2장은 여전히 통과 → 팔을 화면 밖에 두고 볼 것. YOLOE 미검출은 sim으로 검증 불가 → 실기 프레임을 더 모아야 함. 평가 세트에서 10/21–22 실기는 정답이 비전 결과여서 제외함(수정 완료).
+- **CNN**: 병목은 검출보다 번호 규칙(slots.py, 사진 4장에 맞춘 경계, 분면 이름 Q1↔Q2 / Q3↔Q4 의심). Q1에서 놓친 tip은 마커 블록 그늘 — 마커를 뗀 지금 사진으로 다시 봐야 함. 필요: 마커 없는 look4 사진 20–30장(보스).
+- **RL**: 실패 65/156 중 35는 sim에서 운반 중 떨어뜨림(18)·안 앉음(17)이라 삽입 보정으로 못 고침. 칸 오차(~30)는 학습 전후 그대로 → 6 mm 잡음으로 보는 칸 오차가 칸 간격(~24 mm)에 비해 정보가 약하고, 정책 dx 상한 ±3 cm. 다음: sim 손 안 미끄러짐부터 줄이기, CNN 실측 오차 분포로 보는 잡음 교체.
+- **기타**: 계획 생성 worker 약 4 %가 병렬 파일 경합으로 보이는 오류(`catching classes that do not inherit from BaseException`, `Bad CRC-32`) — 재현 안 됨. 회귀시험은 GPU/CPU 부하 때 Pipeline 시간초과(부하 낮을 때 재실행해 통과 후 커밋).
+- 커밋: 03835a9, f795647, 54baae9, ff276c0, 768c7d0(운반 바닥에 바구니 벽 포함 — `--markers_off` + 낮은 상승에서 벽을 스치던 버그).
