@@ -1419,6 +1419,8 @@ def quadrant_plan(Tbb, quadrant, gap, H, tool, start_deg, Tbc, q, grasp_legs=Non
             grasp_deg = grasp_legs['to_grasp'][-1]
         clear = dict(marker=q.get('basket_carry_clear_m', 0.05), plate=q.get('basket_carry_plate_clear_m', 0.05))
         tops = [(n_.split('_')[0], c[2] + sz[2] / 2) for n_, c, sz, _ in basket_boxes(Tbb, plates=plates) if n_.startswith(('marker', 'plate'))]
+        tops += [('marker', c[2] + sz[2] / 2) for n_, c, sz, _ in basket_boxes(Tbb) if n_.startswith('wall')]   # (10/23: with
+        # --markers_off nothing else kept the carry floor over the rim: a 10 cm rise grazed the walls; the marker tops are higher)
         g_low = float(grasp_low_z) if grasp_low_z is not None else low_at(grasp_deg if grasp_deg is not None else start_deg)
         z_base = max([g_low + float(rise)]                   # (10/19 보스) grasp_low_z: the plate's bottom on the stand (FP)
                      + [t + clear[k] for k, t in tops if k == 'marker'])
