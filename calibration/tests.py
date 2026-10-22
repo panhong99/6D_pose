@@ -569,6 +569,7 @@ class Pipeline(unittest.TestCase):
                 patch('faulthandler.enable'),
                 patch.object(pipeline, 'plate_root_in_base', return_value=(plate_root, 0.0, 0.0)),
                 patch.object(pipeline, 'load_basket_insert_policy', return_value=MagicMock()),
+                patch('perception_service.live_state', return_value=None),
                 patch.object(pipeline, 'export_plan', return_value=plan_path),
                 patch.object(pipeline, 'wait_choice', return_value=True),
                 patch.object(camera_tools, 'basket_measure', return_value={}),

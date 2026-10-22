@@ -783,6 +783,10 @@ def run_plate(args):
     Legs: to_ready, grasp, [close + object check], lift, [Human: lower?], lower, [open], retreat, to_home."""
     q, udp = plate_cfg(args.plate_policy), C['udp']
     grip_force = None
+    from perception_service import live_state
+    if args.plate_color in ('auto', 'detect') and live_state() is not None:
+        raise RuntimeError('A warm perception service owns the fixed camera; specify --plate_color red or white '
+                           'to match that service, or stop it before automatic color detection')
     if args.plate_color == 'detect':                        # (10/20 보스) wherever the plate lies (opt-in)
         args.plate_color, red, white = plate_color_detect(C)
         print(f'[plate] 접시 색 (위치 무관 검출): {args.plate_color} (red {red:.2f}, white {white:.2f})', flush=True)
