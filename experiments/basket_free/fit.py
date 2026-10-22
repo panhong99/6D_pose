@@ -40,7 +40,12 @@ def main():
     a.add_argument('--out', default=str(ROOT / 'calibration/data/basket/basket_free_20261020'))
     a.add_argument('--show', type=int, default=6)
     a.add_argument('--since', default='20261019_1700', help='runs from this time on (current marker layout = 10/19 16:5x)')
+    a.add_argument('--plate_colours', default='', help="(10/22) '', 'red', 'red_white': pixels dropped from the rack fit")
+    a.add_argument('--refit_mm', type=float, default=None, help='(10/22) drop points farther than this from the fitted model, refit')
     a = a.parse_args()
+    import basket_vision
+    basket_vision.PLATE_COLOURS = a.plate_colours
+    basket_vision.REFIT_MM = a.refit_mm
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=False)
     z_rim = yaml.safe_load((ROOT / 'calibration/config.yaml').read_text())['basket']['fixed_z_m']
@@ -65,7 +70,8 @@ def main():
     (out / 'results.jsonl').write_text(''.join(json.dumps(r) + '\n' for r in rows))
     s = dict(frames=len(rows), found=sum(r['ok'] for r in rows))
     for tag, keep in (('all', lambda r: True), ('offset_fit_1019', lambda r: r['name'] < '20261020'),
-                      ('test_1020', lambda r: r['name'] >= '20261020')):
+                      ('test_1020', lambda r: r['name'] >= '20261020'), ('arm_above', lambda r: 'fixed_above' in r['name']),
+                      ('plates_in_after_release', lambda r: 'after_release' in r['name'])):
         ok = [r for r in rows if r['ok'] and keep(r)]
         acc = [r for r in ok if not r.get('refused')]
         if not acc:

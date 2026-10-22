@@ -1076,8 +1076,19 @@ def run_plate(args):
                     kw['faces'] = qs['faces']
                 if qs.get('phi_first') is not None:         # (10/19 보스) the replan after the lift: the chosen phi first
                     kw['phi_first'] = qs['phi_first']
+                yaw_q = qs['yaw']
+                if insert_policy_expert is not None and continuous_direct:   # (10/22) no post-lift replan: the learned
+                    if not args.sim_q:                      # correction from the pre-grasp hand model, per candidate pin
+                        raise RuntimeError('--insert_policy needs --sim_q')
+                    seen = (landed_gap_error(basket_T, mq, args.pin, args.insert_landed_pins)
+                            if args.insert_landed_pins else None)
+                    corr = basket_insert_policy_params(insert_policy_expert, mq, pin_gap(basket_T, mq, args.pin),
+                                                       qs['H'], basket_T, seen=seen)
+                    kw, yaw_q = apply_basket_insert_policy(kw, yaw_q, corr, be.B['full']['tine_lean_deg'][mq])
+                    qs['policy_correction'] = dict(pin=args.pin, dx_m=corr['dx'], dy_m=corr['dy'], lean=corr['lean'],
+                                                   dz_m=corr['dz'], yaw_deg=corr['yaw'])
                 return quadrant_plan(basket_T, mq, pin_gap(basket_T, mq, args.pin), qs['H'], qs['tool'], start_deg, Tbc, q,
-                                     yaw_trim_deg=qs['yaw'], y_shift_m=args.y_shift, grasp_deg=legs0['to_grasp']['waypoints_deg'][-1],
+                                     yaw_trim_deg=yaw_q, y_shift_m=args.y_shift, grasp_deg=legs0['to_grasp']['waypoints_deg'][-1],
                                      plates=plates, grasp_low_z=float(p[2]), **kw)   # (10/19) 15 cm from the plate on the stand
             if args.region:                                 # (10/19 보스) any pin of the front / back half that has a plan
                 from plate_plans import basket_gaps
@@ -1110,6 +1121,10 @@ def run_plate(args):
                 raise RuntimeError(f'{args.quadrant} pin {args.pin}: no insert plan from this grasp ({rep["tried"][:4]})')
             print(f'   {args.quadrant} (바구니 모델 {mq}) 핀 {args.pin}: 넣기 계획 OK, 운반 {rep["carry"]}, '
                   f'충돌 여유/기준 {rep["clearance_ratio"]}', flush=True)
+            if qs.get('policy_correction'):
+                pc = qs['policy_correction']
+                print(f'   삽입 정책 보정 (파지 전 손 모델): dx {pc["dx_m"]:+.4f} m, dy {pc["dy_m"]:+.4f} m, lean {pc["lean"]:+.3f}, '
+                      f'dz {pc["dz_m"]:+.4f} m, yaw {pc["yaw_deg"]:+.2f} deg', flush=True)
             if args.one_go:                                 # (10/22 보스) after the grasp: go, no stop until the release
                 if not (continuous_direct and args.auto):
                     raise RuntimeError('--one_go needs --auto and the continuous direct carry (CARRY_PLANNER=direct, CARRY_CONTINUOUS=1)')

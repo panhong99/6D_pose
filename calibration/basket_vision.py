@@ -100,6 +100,38 @@ def blue(rgb):
     return (hsv[..., 0] > 88) & (hsv[..., 0] < 135) & (hsv[..., 1] > 70) & (hsv[..., 2] > 45)
 
 
+PLATE_COLOURS = ''                                  # (10/22 보스: 꽂힌 접시) 'red' / 'red_white': drop those pixels from the rack fit
+                                                    # (10/22 real 63 frames: red_white 58 -> 33 accepted, the lit rails read white)
+
+
+REFIT_MM = None                                     # (10/22) after the fit: drop points farther than this from the model, refit
+
+
+def refit(P, M, yaw, t, z_rim, mm, trim=0.9):
+    """(10/22) plates standing in the rack sit between the tines, ~1 cm off any model point: keep the points within
+    `mm` of the fitted model and fit again (they pulled the pose ~1 cm and made the frames disagree)."""
+    from scipy.spatial import cKDTree
+    c, s = np.cos(yaw), np.sin(yaw)
+    loc = np.c_[(P[:, :2] - t) @ np.array([[c, -s], [s, c]]), P[:, 2] - z_rim]
+    d, _ = cKDTree(M).query(loc)
+    keep = d <= mm / 1000
+    if keep.sum() < 0.3 * len(P):
+        return yaw, t, None
+    return icp_xy_yaw(P[keep], M, yaw, t, z_rim, trim=trim)
+
+
+def plate_colour(rgb, white=True, blob_px=11):
+    """(10/22) plates standing in the rack (YOLOE keeps them in the rack mask): red or white pixels; the rack wires
+    are dark grey, the blue handle is kept."""
+    hsv = cv2.cvtColor(rgb, cv2.COLOR_RGB2HSV)
+    h, s_, v = hsv[..., 0], hsv[..., 1], hsv[..., 2]
+    red = ((h < 10) | (h > 165)) & (s_ > 80) & (v > 50)
+    wh = (s_ < 45) & (v > 150) if white else np.zeros_like(red)
+    if white == 'blob':                             # only large white areas (a plate face), not the lit rails
+        wh = cv2.morphologyEx(wh.astype(np.uint8), cv2.MORPH_OPEN, np.ones((blob_px, blob_px), np.uint8)).astype(bool)
+    return cv2.dilate((red | wh).astype(np.uint8), np.ones((5, 5), np.uint8)).astype(bool)
+
+
 def handle_roi(rack):
     """Return an image ROI around the YOLOE rack extent, including an external handle.
 
@@ -219,6 +251,8 @@ def estimate(det, rgb, depth, K, Tbc, z_rim, posj=None, M=None):
     if rack is None:
         return None
     m = cv2.dilate(rack.astype(np.uint8), np.ones((9, 9), np.uint8)).astype(bool) & ~plates
+    if PLATE_COLOURS:
+        m &= ~plate_colour(rgb, white={'red': False, 'red_white': True, 'red_white_blob': 'blob'}[PLATE_COLOURS])
     P, _ = cloud(m, depth, K, Tbc)
     P = P[(P[:, 2] > 0.015) & (P[:, 2] < z_rim + 0.03)]
     if posj is not None:
@@ -241,6 +275,8 @@ def estimate(det, rgb, depth, K, Tbc, z_rim, posj=None, M=None):
             return np.median((Hb[:, :2] - r[1]) @ np.array([-s, c]))
         flip = icp_xy_yaw(P, M, yaw + np.pi, t, z_rim)             # the rim is nearly 180-deg symmetric: the handle decides
         yaw, t, cost = min((fits[0], flip), key=handle_y)
+    if REFIT_MM:
+        yaw, t, _ = refit(P, M, yaw, t, z_rim, REFIT_MM)
     T = np.eye(4)
     T[:2, :2] = [[np.cos(yaw), -np.sin(yaw)], [np.sin(yaw), np.cos(yaw)]]
     T[:2, 3], T[2, 3] = t, z_rim
