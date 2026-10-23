@@ -1097,6 +1097,8 @@ def run_plate(args):
                 kw.update(sim_kw)
                 if qs.get('faces'):                         # (10/19) region mode: keep the face the pin was chosen with
                     kw['faces'] = qs['faces']
+                if args.keep_face:                          # (10/23 보스) never the flipped wrist: every plate in the same way
+                    kw['faces'] = tuple(kw.get('faces', (1.0, -1.0)))[:1]
                 if qs.get('phi_first') is not None:         # (10/19 보스) the replan after the lift: the chosen phi first
                     kw['phi_first'] = qs['phi_first']
                 yaw_q = qs['yaw']
@@ -1704,6 +1706,9 @@ def parse_args(argv=None):
     p.add_argument('--markers_off', action='store_true',
                    help='(10/22 보스: 마커 뗌, opt-in) the marker blocks are off the basket rim: drop them from the collision model '
                         '(they blocked Q3 pins 4-6)')
+    p.add_argument('--keep_face', action='store_true',
+                   help='(10/23 보스, opt-in) the usual plate face only, never the flipped wrist: a 2nd plate goes in the same way '
+                        'as the 1st, or no plan (with a plate standing beside, the usual face can fail the gripper check)')
     p.add_argument('--obstacles', action='store_true',
                    help='(10/22 보스, opt-in, needs --basket_source vision) plates the fixed camera sees outside the basket '
                         '(not the one to pick) are obstacles: the carry goes over them (rule) or around (RRT), shown in RViz')
