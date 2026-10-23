@@ -211,6 +211,30 @@ Phase 2 작업판이다(10/20 보스 시작). Phase 1(10/22 시연까지)의 작
 - (10/22 21:5x Claude) BX: sim_v4 렌더 완료(60,000장 + labels.json) 확인. **run_v5 학습을 바로 시작해 주세요.** GPU는 지금 약 4.2 GB 사용 중(Claude 삽입 RL Isaac + 바구니 sim 평가) → 남은 ~7 GB 안에서 batch를 잡을 것. 22:15까지 학습 프로세스가 안 보이면 Claude가 BR과 같은 train.py 설정(v3에서 초기화, epoch 30, 새 폴더 run_v5)으로 대신 띄우고 LOG에 적는다. Codex는 들어오면 그 실행을 이어받아 평가·곡선을 맡는다.
 - (10/22 22:1x Claude) 22:14까지 Codex 학습이 없어 **Claude가 run_v5를 띄웠다** (PID 471761): `experiments/slot_cnn/train.py --data calibration/data/slot_cnn/sim_v4 --out calibration/data/slot_cnn/run_v5 --epochs 30 --bs 12 --lr 0.0003 --workers 6 --init calibration/data/slot_cnn/run_v3/last.pt`, 로그 `calibration/data/slot_cnn/run_v5.log`, epoch당 ~15분(05:45 종료 예상), 매 epoch `epNN.pt`. **Codex: 이 실행은 건드리지 말고 epoch가 쌓이는 대로 BR과 같은 평가(eval.py --tta, number_check, Q1 수, 10/21 사진 겹친 그림)와 학습 곡선(br_report.py 방식)을 맡아 주세요.** 분면 이름 Q1↔Q2/Q3↔Q4 확인도 BX 3번 그대로.
 
+- (10/23 10:2x Claude, 보스 지시 "CNN은 코덱스가") **CB: 빗살 CNN은 Codex 담당.** Claude가 run_v5에 이어 **run_v6**를 띄워 두었다 (PID 871937): `experiments/slot_cnn/train.py --data calibration/data/slot_cnn/sim_v4 --out calibration/data/slot_cnn/run_v6 --epochs 40 --bs 12 --lr 0.00015 --workers 6 --init calibration/data/slot_cnn/run_v5/last.pt`, 로그 `calibration/data/slot_cnn/run_v6.log`, epoch ~15분(약 20:30 종료). 보스: 학습을 길게, 약한 과적합은 괜찮음. Codex가 할 일:
+  1. 이 실행을 이어받는다. 설정을 바꾸고 싶으면 멈추기 전에 LOG에 이유를 적는다(PID로만 종료).
+  2. epoch마다 run_v5와 같은 평가(eval.py --tta, number_check, Q1 수)와 학습·검증 곡선(그림: grid 없음, 위/오른쪽 축 없음, 제목 없음).
+  3. run_v5의 병목은 검출이 아니라 번호 규칙(slots.py): Q1 번호 답 0, Q4 ~90 % 거부. 분면 이름 Q1↔Q2/Q3↔Q4 의심부터 확인하고 고친다(옵션으로, 기존 동작 유지).
+  4. 커밋 안 된 `experiments/slot_cnn/data.py`(v4 profile: 마커 없는 장면, 꽂힌 접시)는 sim_v4를 만든 코드다. 확인 후 커밋.
+  5. 앞/뒤 정의(10/23 보스): front = 작은 번호(1, 2, ..), back = 큰 번호(8, 9, 10). 번호 1 = 로봇에서 가장 먼 쪽.
+
+## 10/23(금) 저녁 ~ 10/26(일) 업무 (보스 10/23 퇴근 전 지시, 야간업무 방식, 보스 일요일 점검 가능)
+
+목표 시연: **11/3**. 이야기: 바구니 분면에 bowl(장애물)이 놓여 있음 → 고정카메라 YOLOE로 **빈 분면을 자동으로 찾음**(우선 Q3 또는 Q4) → 그 분면에 접시 2개를 front/back으로 넣음 → 관전자용 GUI.
+
+**Codex 담당 — CB: 빗살 CNN 정확도**
+- 위 CB 항목 그대로. run_v6(PID 871937) 이어받기, epoch마다 평가(eval.py --tta, number_check, Q1 수), 곡선, 번호 규칙(slots.py) 수정, data.py 커밋.
+- 학습은 길게(약한 과적합 OK). 정확도가 오르는 동안은 계속 학습·검사한다. 판단 근거(수치, 로그 경로)는 LOG에.
+- 10/26 일요일 아침까지 결과 요약을 LOG에 `## 2026-10-26 Codex CNN` 으로.
+
+**Claude 담당**
+1. **CD: 빈 분면 자동 선택** (opt-in): 고정카메라 YOLOE에 'bowl'을 더해, bowl이 있는 분면 = 찬 분면. 빈 Q3/Q4 중 하나를 고름. bowl은 운반 경로의 장애물로도 넣음.
+2. **CE: 관전자 GUI**: 고정카메라 view에 YOLOE bbox(bowl, plate, 바구니)와 분면 상태(빈/참, 고른 분면)를 실시간 overlay. 동작이 끝날 때까지 계속 표시. 손목 view 없음.
+3. **CF: 시연 순서**: 빈 분면 자동 → front/back 접시 2개(그리퍼 쪽 규칙: Q3는 back 먼저, Q4는 front 먼저) → 한 명령(run.sh)으로.
+4. **CG: 바구니 위치 자유도**: 닿는 범위 안에서 바구니 좌우·yaw가 바뀌어도 마커 없이 경로가 나오게. Q4 실패(넣는 자세가 관절 한계 밖) → 목표 칸을 보고 파지 방향 선택.
+5. **CH: 플래너 보고서**: 입력, 파이프라인 연산 순서, 출력이 쓰이는 곳, RRT가 언제 어떻게 쓰이는지. `collab/PLANNER_REPORT_20261023.md`.
+- 실기 명령은 보내지 않는다(로봇·그리퍼). 실기 확인용 명령은 보고서·LOG에 적어 둔다.
+
 ## 점검 기록 (Claude)
 
 - 10/20 Claude: Phase 1 작업판 보관, 새 작업판 시작.
