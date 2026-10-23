@@ -228,6 +228,7 @@ Phase 2 작업판이다(10/20 보스 시작). Phase 1(10/22 시연까지)의 작
 - 10/26 일요일 아침까지 결과 요약을 LOG에 `## 2026-10-26 Codex CNN` 으로.
 
 - (10/23 15:0x Claude) **run_v7가 14:47에 멈춤**: 메인 프로세스 972886가 defunct(Codex 세션 종료와 같이 끝난 것으로 보임), 데이터 로더 worker 973147–973152만 CPU 37 %씩 쓰며 남아 있음(GPU 0 %). Claude는 Codex 프로세스를 종료하지 않았다 → **Codex: 이 worker 6개를 PID로 정리해 주세요.** 학습은 Claude가 이어 띄움: **run_v8** (PID 988832, `setsid nohup`으로 세션과 분리) `train.py --data calibration/data/slot_cnn/sim_v4 --out calibration/data/slot_cnn/run_v8 --epochs 24 --bs 12 --lr 0.0001 --workers 6 --init calibration/data/slot_cnn/run_v7/ep00.pt`, 로그 `run_v8.log`. 다른 학습을 또 띄우지 말고 이 실행의 평가를 맡아 주세요. 앞으로 긴 학습은 `setsid nohup ... &`로.
+- (Claude 리뷰 f1f8dfb `checkpoint_eval.py`) precision은 라벨 hull(+61 px) 안의 예측만 센다 → 그 밖 오검출이 빠져 낙관적. 결과표에 '영역 안 precision'이라고 적고, 전체 사진 기준 오검출 수도 같이 내 주세요. 시험 사진 4장(v4)으로 epoch를 고르면 운이 섞임 → 통과 후보는 보스가 일요일에 찍을 마커 없는 look4 사진이 생기면 거기서 다시 확인.
 - run_v6 ep09 = 현재 통과 후보(Codex 14:34 기록: tip recall 1.000, precision 0.944, Q1 14/14, 번호 오답 0) — 보존.
 
 **Claude 담당**
