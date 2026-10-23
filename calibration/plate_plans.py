@@ -2056,10 +2056,10 @@ def two_plate_demo(a):
         q['basket_carry_rise_m'] = a.rise
     viz = ('127.0.0.1', C['udp'].get('viz', 5011))
 
-    def plan(pin, plates):
+    def plan(pin, plates, faces=(float(qp['face']), -float(qp['face']))):
         t0 = time.time()
         path, rep = quadrant_plan(Tbb, mq, pin_gap(Tbb, mq, pin), H, tool, G['lift']['waypoints_deg'][-1], Tbc, q,
-                                  grasp_deg=G['to_grasp']['waypoints_deg'][-1], faces=(float(qp['face']), -float(qp['face'])),
+                                  grasp_deg=G['to_grasp']['waypoints_deg'][-1], faces=faces,
                                   phi_first=qp['phi_deg'], grasp_low_z=g['plate_root_fp'][2], plates=plates)
         return path, rep, time.time() - t0
 
@@ -2078,6 +2078,7 @@ def two_plate_demo(a):
     if p1 is None:
         raise SystemExit(f'plate 1: no plan ({rep1["tried"][:3]})')
     print(f'   경로 OK [{dt1:.1f} s], 운반 {rep1["carry"]}  -> RViz: {show(p1)}', flush=True)
+    face = (float(rep1['face']),)                            # (10/23 보스) plate 2 goes in the same way as plate 1
     T1 = kin.fk(np.radians(json.loads(Path(p1).read_text())['legs']['descend']['waypoints_deg'][-1])) @ tool @ H
     box = plate_obstacle(T1)
     box = (f'plate 1 ({mq}:{pin1})',) + tuple(box[1:])
@@ -2085,7 +2086,7 @@ def two_plate_demo(a):
         input('   RViz에서 첫 번째 접시 경로를 확인하고 Enter: 두 번째 접시 ')
     print(f'[2/2] 두 번째 접시 -> {mq} {pin2}번 칸', flush=True)
     print(f'[장애물] 관측: 바구니 {mq} {pin1}번 칸에 꽂힌 접시 1개, 꼭대기 약 {(box[1][2] + max(box[2]) / 2) * 100:.0f} cm', flush=True)
-    p0, rep0, dt0 = plan(pin2, ())
+    p0, rep0, dt0 = plan(pin2, (), face)
     disc = plate_cloud(np.eye(4), np.eye(4)) @ T1[:3, :3].T + T1[:3, 3]   # plate 1 as the disc (the box corners stick out ~5 cm)
 
     def gap(path, part=None, legs=('descend',)):
@@ -2101,9 +2102,10 @@ def two_plate_demo(a):
     if c0 is not None:
         print(f'[장애물] 이 접시를 무시한 운반 [{dt0:.1f} s]: 들고 가는 접시가 꽂힌 접시와 '
               + ('부딪힘' if c0 < 0.01 else f'{c0 * 100:.1f} cm') + (' -> 피하는 경로를 만듭니다' if c0 < 0.03 else ''), flush=True)
-    p2, rep2, dt2 = plan(pin2, [(mq, pin_gap(Tbb, mq, pin1))])
+    p2, rep2, dt2 = plan(pin2, [(mq, pin_gap(Tbb, mq, pin1))], face)
     if p2 is None:
-        raise SystemExit(f'plate 2: no plan with plate 1 standing ({rep2["tried"][:3]})')
+        raise SystemExit(f'plate 2: no plan the same way as plate 1 with plate 1 standing ({rep2["tried"][:3]}); '
+                         f'{mq}: the gripper side of the plate decides the order (Q3 large pins first, Q4 small first)')
     c2, c2d = gap(p2, 'carry'), min(gap(p2, 'drop'), gap(p2))
     print(f'[장애물] 실제 경로 [{dt2:.1f} s]: 운반 높이 {rep2["carry"]} m, 꽂힌 접시와 운반 중 최소 {c2 * 100:.1f} cm, '
           f'옆 칸으로 내릴 때 {c2d * 100:.1f} cm (접시끼리 포개지는 거리, 그리퍼·팔은 꽂힌 접시 검사 유지) '
@@ -2147,7 +2149,7 @@ if __name__ == '__main__':
     p.add_argument('--frac', type=float, default=0.65, help='obstacle_demo: obstacle under this fraction of the carry')
     p.add_argument('--rise', type=float, default=0.10, help='obstacle_demo: carry rise over the grasp (m); markers are off')
     p.add_argument('--basket_dxy', type=float, nargs=2, default=(0.0, 0.0), help='obstacle_demo: move the run\'s basket (m)')
-    p.add_argument('--demo_pins', type=int, nargs=2, default=(6, 10), help='two_plate_demo: 1st and 2nd plate pins')
+    p.add_argument('--demo_pins', type=int, nargs=2, default=(2, 6), help='two_plate_demo: 1st and 2nd plate pins')
     p.add_argument('--no_wait', action='store_true', help='two_plate_demo: no Enter between the plates')
     a = p.parse_args()
     C['basket']['markers_off'] = a.markers_off
