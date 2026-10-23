@@ -1189,10 +1189,16 @@ def obstacle_checker(boxes, q, pad=0.35):
     return ch
 
 
-def obstacle_clearance(path, H, tool, boxes, legs=('to_above', 'descend', 'one_go')):
-    """(10/23 보스 장애물 안내) the held plate along a plan's carry vs each box -> [min distance m (< 0 = inside), ...]."""
-    plan = json.loads(Path(path).read_text())['legs']
+def obstacle_clearance(path, H, tool, boxes, legs=('to_above', 'descend', 'one_go'), part=None):
+    """(10/23 보스 장애물 안내) the held plate along a plan's carry vs each box -> [min distance m (< 0 = inside), ...].
+    part 'carry' / 'drop': to_above before / from its drop start (the plan's quadrant_plan.drop_start)."""
+    P_ = json.loads(Path(path).read_text())
+    plan = P_['legs']
     W = [w for leg in legs if leg in plan for w in plan[leg]['waypoints_deg']]
+    if part is not None:
+        k = (P_.get('quadrant_plan') or {}).get('drop_start')
+        W = plan['to_above']['waypoints_deg']
+        W = W if k is None else (W[:k + 1] if part == 'carry' else W[k:])
     if not W or not boxes:
         return []
     kin, cl = Kinematics(), plate_cloud(H, tool)
@@ -2024,10 +2030,89 @@ def obstacle_demo(a):
         print(f'RViz: {Path(p1).parent / "preview_plan.json"} (bash calibration/run.sh viz)')
 
 
+
+def two_plate_demo(a):
+    """(10/23 보스 장애물 데모, offline, RViz) plate 1 into an empty quadrant, then plate 2 with plate 1 standing there:
+    the plan that ignores plate 1 (grey) vs the plan that goes over it (green), plate 1 shown as a red box.  The in-hand
+    plate, grasp and basket come from a real run (--run); pins --pins (1st, 2nd; pin 1 = farthest from the robot)."""
+    import socket
+    from calib_core import latest_t_base_cam
+    d = DATA / 'real_pipeline' / a.run if a.run else max((x for x in (DATA / 'real_pipeline').iterdir()
+                                                          if '"slot_plan"' in (x / 'robot_state.jsonl').read_text(errors='ignore')
+                                                          if (x / 'robot_state.jsonl').exists()), key=lambda x: x.name)
+    ev = [json.loads(x) for x in (d / 'robot_state.jsonl').read_text().splitlines() if '"event"' in x]
+    g = next(e for e in ev if e['event'] == 'plan')
+    P = json.loads(Path(next(e['plan'] for e in ev if e['event'] == 'slot_plan')).read_text())
+    G = json.loads(Path(g['plan']).read_text())['legs']
+    H, Tbb, qp = np.asarray(P['plate_in_tcp']), np.array(P['basket_T']), P['quadrant_plan']
+    Tbb[:2, 3] += a.basket_dxy
+    mq = qp['quadrant']
+    tool = np.eye(4)
+    tool[2, 3] = C['plate_ik_bc'].get('tool_length_m', 0.165)
+    Tbc = np.asarray(json.loads(Path(latest_t_base_cam()).read_text())['T_base_cam'])
+    kin = Kinematics()
+    q = dict(C['plate_ik_bc'], basket_carry_mode='rule')
+    if a.rise is not None:
+        q['basket_carry_rise_m'] = a.rise
+    viz = ('127.0.0.1', C['udp'].get('viz', 5011))
+
+    def plan(pin, plates):
+        t0 = time.time()
+        path, rep = quadrant_plan(Tbb, mq, pin_gap(Tbb, mq, pin), H, tool, G['lift']['waypoints_deg'][-1], Tbc, q,
+                                  grasp_deg=G['to_grasp']['waypoints_deg'][-1], faces=(float(qp['face']), -float(qp['face'])),
+                                  phi_first=qp['phi_deg'], grasp_low_z=g['plate_root_fp'][2], plates=plates)
+        return path, rep, time.time() - t0
+
+    def show(path, obstacles=(), compare=None):
+        both = dict(json.loads(Path(path).read_text()), preview_only=True, obstacles=list(obstacles),
+                    compare_legs=json.loads(Path(compare).read_text())['legs'] if compare else {})
+        both['legs'] = dict({k: G[k] for k in ('to_grasp', 'lift')}, **both['legs'])
+        out = Path(path).parent / 'preview_plan.json'
+        out.write_text(json.dumps(both))
+        socket.socket(socket.AF_INET, socket.SOCK_DGRAM).sendto(json.dumps(dict(plan=str(out))).encode(), viz)
+        return out
+
+    pin1, pin2 = a.demo_pins
+    print(f'[1/2] 첫 번째 접시 -> {mq} {pin1}번 칸: 바구니가 비어 있음, 장애물 없음', flush=True)
+    p1, rep1, dt1 = plan(pin1, ())
+    if p1 is None:
+        raise SystemExit(f'plate 1: no plan ({rep1["tried"][:3]})')
+    print(f'   경로 OK [{dt1:.1f} s], 운반 {rep1["carry"]}  -> RViz: {show(p1)}', flush=True)
+    T1 = kin.fk(np.radians(json.loads(Path(p1).read_text())['legs']['descend']['waypoints_deg'][-1])) @ tool @ H
+    box = plate_obstacle(T1)
+    box = (f'plate 1 ({mq}:{pin1})',) + tuple(box[1:])
+    if not a.no_wait:
+        input('   RViz에서 첫 번째 접시 경로를 확인하고 Enter: 두 번째 접시 ')
+    print(f'[2/2] 두 번째 접시 -> {mq} {pin2}번 칸', flush=True)
+    print(f'[장애물] 관측: 바구니 {mq} {pin1}번 칸에 꽂힌 접시 1개, 꼭대기 약 {(box[1][2] + max(box[2]) / 2) * 100:.0f} cm', flush=True)
+    p0, rep0, dt0 = plan(pin2, ())
+    disc = plate_cloud(np.eye(4), np.eye(4)) @ T1[:3, :3].T + T1[:3, 3]   # plate 1 as the disc (the box corners stick out ~5 cm)
+
+    def gap(path, part=None, legs=('descend',)):
+        P_ = json.loads(Path(path).read_text())
+        W = P_['legs']['to_above']['waypoints_deg'] if part else P_['legs'][legs[0]]['waypoints_deg']
+        k = P_['quadrant_plan'].get('drop_start')
+        W = W if part is None or k is None else (W[:k + 1] if part == 'carry' else W[k:])
+        cl = plate_cloud(H, tool)
+        from scipy.spatial import cKDTree
+        tree = cKDTree(disc)
+        return min(tree.query(cl @ T[:3, :3].T + T[:3, 3])[0].min() for T in (kin.fk(np.radians(w)) for w in W))
+    c0 = gap(p0, 'carry') if p0 else None
+    if c0 is not None:
+        print(f'[장애물] 이 접시를 무시한 운반 [{dt0:.1f} s]: 들고 가는 접시가 꽂힌 접시와 '
+              + ('부딪힘' if c0 < 0.01 else f'{c0 * 100:.1f} cm') + (' -> 피하는 경로를 만듭니다' if c0 < 0.03 else ''), flush=True)
+    p2, rep2, dt2 = plan(pin2, [(mq, pin_gap(Tbb, mq, pin1))])
+    if p2 is None:
+        raise SystemExit(f'plate 2: no plan with plate 1 standing ({rep2["tried"][:3]})')
+    c2, c2d = gap(p2, 'carry'), min(gap(p2, 'drop'), gap(p2))
+    print(f'[장애물] 실제 경로 [{dt2:.1f} s]: 운반 높이 {rep2["carry"]} m, 꽂힌 접시와 운반 중 최소 {c2 * 100:.1f} cm, '
+          f'옆 칸으로 내릴 때 {c2d * 100:.1f} cm (접시끼리 포개지는 거리, 그리퍼·팔은 꽂힌 접시 검사 유지) '
+          f'(RViz: 초록 = 실제, 회색 = 무시한 경로, 빨간 상자 = 첫 번째 접시)  -> {show(p2, [box], p0)}', flush=True)
+
 if __name__ == '__main__':
     import argparse
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument('mode', choices=('basket_reach', 'quadrant_plans', 'look_plans', 'random_plans', 'obstacle_demo'))
+    p.add_argument('mode', choices=('basket_reach', 'quadrant_plans', 'look_plans', 'random_plans', 'obstacle_demo', 'two_plate_demo'))
     p.add_argument('--basket', type=float, nargs=3, default=(0.75, 0.15, 0.0), metavar=('X', 'Y', 'YAW'), help='quadrant_plans: basket pose')
     p.add_argument('--plate', type=float, nargs=2, default=None, help='quadrant_plans: plate x y (turns the newest grasp about joint 1)')
     p.add_argument('--quadrants', nargs='+', default=['Q3', 'Q4', 'Q1', 'Q2'])
@@ -2062,7 +2147,9 @@ if __name__ == '__main__':
     p.add_argument('--frac', type=float, default=0.65, help='obstacle_demo: obstacle under this fraction of the carry')
     p.add_argument('--rise', type=float, default=0.10, help='obstacle_demo: carry rise over the grasp (m); markers are off')
     p.add_argument('--basket_dxy', type=float, nargs=2, default=(0.0, 0.0), help='obstacle_demo: move the run\'s basket (m)')
+    p.add_argument('--demo_pins', type=int, nargs=2, default=(6, 10), help='two_plate_demo: 1st and 2nd plate pins')
+    p.add_argument('--no_wait', action='store_true', help='two_plate_demo: no Enter between the plates')
     a = p.parse_args()
     C['basket']['markers_off'] = a.markers_off
     dict(basket_reach=basket_reach, quadrant_plans=quadrant_plans, look_plans=look_plans, random_plans=random_plans,
-         obstacle_demo=obstacle_demo)[a.mode](a)
+         obstacle_demo=obstacle_demo, two_plate_demo=two_plate_demo)[a.mode](a)
