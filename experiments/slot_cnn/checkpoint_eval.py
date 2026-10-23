@@ -58,12 +58,24 @@ def main():
                 ] > 0
             ] if len(points) else points
             matches, distances = E.match(inside, gt, a.tol)
+            # The v4 annotations cover one quadrant rather than the complete
+            # image.  Keep the historical in-area precision for comparable
+            # checkpoint selection, but also expose every prediction in the
+            # frame as requested by the review.  ``unmatched_full_frame`` is
+            # deliberately conservative: a real tine outside the annotated
+            # quadrant is counted as unmatched because this four-photo set
+            # has no ground truth for it.
             rec[kind] = {
                 'labels': len(gt),
                 'found': len(matches),
                 'pred_in_area': len(inside),
+                'pred_full_frame': len(points),
+                'unmatched_in_area': len(inside) - len(matches),
+                'unmatched_full_frame': len(points) - len(matches),
                 'recall': len(matches) / max(1, len(gt)),
-                'precision': len(matches) / max(1, len(inside)),
+                'precision': len(matches) / max(1, len(inside)),  # compatibility: in-area precision
+                'precision_in_area': len(matches) / max(1, len(inside)),
+                'precision_full_frame_conservative': len(matches) / max(1, len(points)),
                 'err_px_median': float(np.median(distances)) if len(distances) else None,
             }
         rows.append(rec)
@@ -72,12 +84,19 @@ def main():
     for kind in KEYS:
         labels = sum(row[kind]['labels'] for row in rows)
         found = sum(row[kind]['found'] for row in rows)
-        predicted = sum(row[kind]['pred_in_area'] for row in rows)
+        predicted_area = sum(row[kind]['pred_in_area'] for row in rows)
+        predicted_full = sum(row[kind]['pred_full_frame'] for row in rows)
         total[kind] = {
             'labels': labels,
             'found': found,
             'recall': found / max(1, labels),
-            'precision': found / max(1, predicted),
+            'pred_in_area': predicted_area,
+            'pred_full_frame': predicted_full,
+            'unmatched_in_area': predicted_area - found,
+            'unmatched_full_frame': predicted_full - found,
+            'precision': found / max(1, predicted_area),  # compatibility: in-area precision
+            'precision_in_area': found / max(1, predicted_area),
+            'precision_full_frame_conservative': found / max(1, predicted_full),
         }
 
     numbers = {
@@ -95,6 +114,11 @@ def main():
         'th': a.th,
         'tol_px': a.tol,
         'tta': a.tta,
+        'precision_note': (
+            'precision_in_area uses the annotated quadrant hull dilated by 30 px. '
+            'precision_full_frame_conservative counts predictions outside that area as unmatched, '
+            'although the rest of the frame is not exhaustively labelled.'
+        ),
         'total': total,
         'photos': rows,
         'tine_numbers': numbers,
