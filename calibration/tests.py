@@ -724,8 +724,8 @@ class Pipeline(unittest.TestCase):
         Tbc = np.asarray(load_json(args.t_base_cam)['T_base_cam'])
         Tcam = inv_T(Tbc) @ make_T(np.eye(3), [0.85, 0.50, .0285] if refused else [1.04, .05, .0285])
         poses, joints, children = MagicMock(), MagicMock(), MagicMock()
-        now = time.time()
-        poses.packets.side_effect = lambda: iter(pose_packet(Tcam, now - .2 + i * .01) for i in range(8))
+        # stamps from the read time: the checker build before the loop takes ~2.5 s under load (> the 2 s freshness)
+        poses.packets.side_effect = lambda: (lambda now: iter(pose_packet(Tcam, now - .2 + i * .01) for i in range(8)))(time.time())
         joints.packets.side_effect = lambda: iter([dict(posj=[0] * 6, t=time.time())])
         with tempfile.TemporaryDirectory() as tmp, \
                 patch.object(pipeline, 'DATA', Path(tmp)), \

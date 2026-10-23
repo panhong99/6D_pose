@@ -652,6 +652,28 @@ def seen_obstacles(target_xy, keep_out_m=0.15):
             if np.hypot(o[1][0] - target_xy[0], o[1][1] - target_xy[1]) > keep_out_m]
 
 
+def say_obstacles(obs, inserted, clear_naive, clear_plan, dt_naive, dt_plan):
+    """(10/23 보스 장애물 데모) what the cameras saw on the way and what the plan does about it, in words."""
+    print(f'[장애물] 고정 카메라 관측: 테이블 위 접시 {len(obs)}개 (잡을 접시 제외)'
+          + (f', 바구니에 이미 꽂힌 접시 {" ".join(inserted)}' if inserted else ''), flush=True)
+    for i, (_, c, size, _R) in enumerate(o[:4] for o in obs):
+        top = c[2] + 0.5 * max(size)
+        print(f'   {i + 1}) 접시: 위치 ({c[0]:.2f}, {c[1]:+.2f}) m, 꼭대기 약 {top * 100:.0f} cm', flush=True)
+    if not obs:
+        return
+    if clear_naive is not None:
+        worst = int(np.argmin(clear_naive))
+        if clear_naive[worst] < 0.02:
+            print(f'[장애물] 장애물을 무시하면: 들고 가는 접시가 장애물 {worst + 1}과 '
+                  + ('부딪힘' if clear_naive[worst] < 0 else f'{clear_naive[worst] * 100:.1f} cm (너무 가까움)')
+                  + f' -> 피하는 경로를 만듭니다 [{dt_naive:.1f} s]', flush=True)
+        else:
+            print(f'[장애물] 장애물을 무시해도 {clear_naive[worst] * 100:.1f} cm 떨어져 지나감 [{dt_naive:.1f} s]', flush=True)
+    if clear_plan:
+        print('[장애물] 실제 경로: ' + ', '.join(f'장애물 {i + 1}과 최소 {d * 100:.1f} cm' for i, d in enumerate(clear_plan))
+              + f' [{dt_plan:.1f} s]  (RViz: 초록 = 실제 경로, 회색 = 장애물 무시 경로)', flush=True)
+
+
 def basket_from_vision(Tbc, posj, out, children, n=5):
     """(10/20 보스: 바구니에 아루코가 없다고 가정) basket pose from the fixed RGB-D the perception process shares
     (calibration/basket_vision.py: YOLOE rack mask + depth + basket model fit, the arm cut out).  Refuses (RuntimeError)
@@ -1091,6 +1113,7 @@ def run_plate(args):
                 return quadrant_plan(basket_T, mq, pin_gap(basket_T, mq, args.pin), qs['H'], qs['tool'], start_deg, Tbc, q,
                                      yaw_trim_deg=yaw_q, y_shift_m=args.y_shift, grasp_deg=legs0['to_grasp']['waypoints_deg'][-1],
                                      plates=plates, grasp_low_z=float(p[2]), **kw)   # (10/19) 15 cm from the plate on the stand
+            t_qplan = time.monotonic()
             if args.region:                                 # (10/19 보스) any pin of the front / back half that has a plan
                 from plate_plans import basket_gaps
                 same_q = [int(v.split(':')[-1]) for v in (args.basket_plates or []) if ':' not in v or v.split(':')[0] == args.quadrant]
@@ -1120,6 +1143,21 @@ def run_plate(args):
                 early, rep = qplan(legs0['lift']['waypoints_deg'][-1])
             if early is None:
                 raise RuntimeError(f'{args.quadrant} pin {args.pin}: no insert plan from this grasp ({rep["tried"][:4]})')
+            naive = None
+            if args.obstacles:                              # (10/23 보스) say what was seen; the plan without them to compare
+                from plate_plans import obstacle_clearance
+                dt_plan, clear_naive, dt_naive = time.monotonic() - t_qplan, None, 0.0
+                if q['_obstacles']:
+                    keep, t0_ = q.pop('_obstacles'), time.monotonic()
+                    try:
+                        naive, _ = qplan(legs0['lift']['waypoints_deg'][-1])
+                    finally:
+                        q['_obstacles'] = keep
+                    dt_naive = time.monotonic() - t0_
+                    if naive is not None:
+                        clear_naive = obstacle_clearance(naive, qs['H'], qs['tool'], q['_obstacles'])
+                say_obstacles(q['_obstacles'], args.basket_plates or [], clear_naive,
+                              obstacle_clearance(early, qs['H'], qs['tool'], q['_obstacles']), dt_naive, dt_plan)
             print(f'   {args.quadrant} (바구니 모델 {mq}) 핀 {args.pin}: 넣기 계획 OK, 운반 {rep["carry"]}, '
                   f'충돌 여유/기준 {rep["clearance_ratio"]}', flush=True)
             if qs.get('policy_correction'):
@@ -1142,7 +1180,8 @@ def run_plate(args):
             both['legs'].update(json.loads(early.read_text())['legs'])
             shown = out / 'preview_plan.json'
             shown.write_text(json.dumps(dict(both, preview_only=True, basket_T=np.asarray(basket_T).tolist(),
-                                             plate_in_tcp=np.asarray(H).tolist(), obstacles=q.get('_obstacles', []))))
+                                             plate_in_tcp=np.asarray(H).tolist(), obstacles=q.get('_obstacles', []),
+                                             compare_legs=json.loads(naive.read_text())['legs'] if naive else {})))
         elif args.place in ('golden', 'basket'):          # (10/12) whole path before moving: reach check + RViz preview
             legs0 = json.loads(Path(plan).read_text())['legs']
             early = golden_slot_plan(q['golden_teach'], legs0['to_grasp']['waypoints_deg'][-1], legs0['lift']['waypoints_deg'][-1],

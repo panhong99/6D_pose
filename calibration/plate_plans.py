@@ -1189,6 +1189,22 @@ def obstacle_checker(boxes, q, pad=0.35):
     return ch
 
 
+def obstacle_clearance(path, H, tool, boxes, legs=('to_above', 'descend', 'one_go')):
+    """(10/23 보스 장애물 안내) the held plate along a plan's carry vs each box -> [min distance m (< 0 = inside), ...]."""
+    plan = json.loads(Path(path).read_text())['legs']
+    W = [w for leg in legs if leg in plan for w in plan[leg]['waypoints_deg']]
+    if not W or not boxes:
+        return []
+    kin, cl = Kinematics(), plate_cloud(H, tool)
+    P = np.vstack([cl @ T[:3, :3].T + T[:3, 3] for T in (kin.fk(np.radians(w)) for w in W)])
+    out = []
+    for _, c, size, R in (b[:4] for b in boxes):
+        L = np.abs((P - np.asarray(c)) @ np.asarray(R)) - np.asarray(size) / 2
+        d = np.linalg.norm(np.maximum(L, 0.0), axis=1) + np.minimum(L.max(1), 0.0)
+        out.append(float(d.min()))
+    return out
+
+
 def upright_box(c, size, R):
     """An oriented box -> (centre, half sizes, R) of the smallest box around it with a vertical z (turned about z only)."""
     R = np.asarray(R, float)

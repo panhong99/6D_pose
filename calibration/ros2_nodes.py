@@ -653,6 +653,10 @@ def run_viz(a):
                 if leg in legs:                                     # basket plans (10/12: four stages)
                     ms.append(marker('plan_path', 10 + i, Marker.LINE_STRIP, scale=(0.004, 0, 0), rgba=rgba,
                                      points=path_points(legs[leg]['waypoints_deg'])))
+            for i, leg in enumerate(('to_above', 'descend')):  # (10/23 보스 장애물 안내) the plan without the obstacles, grey
+                if leg in state['plan'].get('compare_legs', {}):
+                    ms.append(marker('plan_compare', i, Marker.LINE_STRIP, scale=(0.003, 0, 0), rgba=(0.6, 0.6, 0.6, 0.8),
+                                     points=path_points(state['plan']['compare_legs'][leg]['waypoints_deg'])))
             if 'to_grasp' in legs:
                 end = kin.fk(np.radians(legs['to_grasp']['waypoints_deg'][-1])) @ box_pose([0, 0, tcp_m])
                 ms.append(marker('plan_path', 2, Marker.SPHERE, pose=box_pose(end[:3, 3]), scale=(0.02, 0.02, 0.02),
@@ -665,7 +669,7 @@ def run_viz(a):
                 T[:3, :3] = np.asarray(R)
                 ms.append(marker('obstacles', 2 * i, Marker.CUBE, pose=T, scale=size, rgba=(1.0, 0.15, 0.1, 0.55)))
                 ms.append(marker('obstacles', 2 * i + 1, Marker.TEXT_VIEW_FACING, pose=box_pose(np.add(c, [0, 0, 0.18])),
-                                 scale=(0, 0, 0.04), rgba=(1, 0.4, 0.3, 1), text='obstacle'))
+                                 scale=(0, 0, 0.04), rgba=(1, 0.4, 0.3, 1), text=f'obstacle {i + 1}'))
         mk_pub.publish(MarkerArray(markers=ms))
 
     def load_plan(path):
