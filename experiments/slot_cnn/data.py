@@ -29,9 +29,9 @@ K_WRIST = np.array([[643.6035, 0, 637.8715], [0, 642.8423, 364.3775], [0, 0, 1.0
 
 
 # ----------------------------------------------------------------------------------------------------- basket geometry
-def basket_parts():
+def basket_parts(include_marker_blocks=False):
     import basket_env as be
-    return be.full_basket_parts(include_marker_blocks=False), be.B
+    return be.full_basket_parts(include_marker_blocks=include_marker_blocks), be.B
 
 
 def tine_table(parts, B):
@@ -241,13 +241,52 @@ def table_texture(rng, size=1024):
     return np.clip(tex, 0, 1).astype(np.float32)
 
 
-def build_scene(rng, parts, B, tines):
+def _inserted_plates(m, rng, tines, B, profile):
+    """V4 occluders: red/white plates already standing between adjacent tines."""
+    if profile != 'v4':
+        return 0
+    n = int(rng.choice([0, 1, 2], p=[0.35, 0.50, 0.15]))
+    if not n:
+        return 0
+    picked = rng.choice(('Q1', 'Q2', 'Q3', 'Q4'), size=n, replace=False)
+    added = 0
+    for q in picked:
+        rows = [[t for t in tines if t['q'] == q and t['row'] == row] for row in (0, 1)]
+        count = min(map(len, rows))
+        if count < 2:
+            continue
+        gap = int(rng.integers(0, count - 1))
+        x = np.mean([rows[row][gap]['base'][0] + rows[row][gap + 1]['base'][0] for row in (0, 1)]) / 2
+        y = np.mean([t['base'][1] for row in rows for t in row])
+        z = float(B['full']['floor_z']) + 0.128
+        colour = (np.array([0.72, 0.025, 0.035]) * rng.uniform(0.7, 1.25)
+                  if rng.random() < 0.5 else np.full(3, rng.uniform(0.78, 0.98)))
+        # Disc axis is basket x: plates stand in the y-z plane between neighbouring tine stations.
+        axis = np.array([1.0, 0.0, rng.normal(0, 0.08)])
+        R = _frame_z(axis)
+        v, nn, ff = _unit_cyl(48)
+        radius, thick = rng.uniform(0.126, 0.138), rng.uniform(0.009, 0.020)
+        m.add((v * [radius, radius, thick] - [0, 0, thick / 2]) @ R.T + [x, y, z],
+              nn @ R.T, ff, np.clip(colour, 0, 1))
+        cap = np.r_[[[0, 0, 0]], np.c_[np.cos(np.linspace(0, 2 * np.pi, 48, endpoint=False)),
+                                      np.sin(np.linspace(0, 2 * np.pi, 48, endpoint=False)), np.zeros(48)]]
+        fc = np.array([[0, 1 + i, 1 + (i + 1) % 48] for i in range(48)])
+        for zz in (-thick / 2, thick / 2):
+            sign = -1.0 if zz < 0 else 1.0
+            m.add((cap * [radius, radius, 1] + [0, 0, zz]) @ R.T + [x, y, z],
+                  np.tile(R[:, 2] * sign, (49, 1)), fc, np.clip(colour * 0.95, 0, 1))
+        added += 1
+    return added
+
+
+def build_scene(rng, parts, B, tines, profile='legacy'):
     """Basket (randomised tines) + table + distractor blocks in the basket frame -> Mesh, tines used."""
     f = B['full']
     m = Mesh()
     wire = np.clip(np.array([0.16, 0.16, 0.17]) * rng.uniform(0.6, 1.8) + rng.normal(0, 0.02, 3), 0.03, 0.5)
     tine = np.clip(np.full(3, rng.uniform(0.1, 0.6)) + rng.normal(0, 0.03, 3), 0.03, 0.7)   # (v2) real tines: thin, often
-    r_rod, r_tine = rng.uniform(0.0015, 0.0024), rng.uniform(0.0011, 0.0019)               # lighter metal than the frame
+    r_rod = rng.uniform(0.0013, 0.0026) if profile == 'v4' else rng.uniform(0.0015, 0.0024)
+    r_tine = rng.uniform(0.00075, 0.0021) if profile == 'v4' else rng.uniform(0.0011, 0.0019)
     for p in parts:
         if p[0] == 'cyl':
             if abs(p[3] - f['pin_r']) < 1e-9:
@@ -261,6 +300,7 @@ def build_scene(rng, parts, B, tines):
     ts = random_tines(tines, B, rng)
     for t in ts:
         m.cyl(t['base'], t['top'], r_tine, tine * rng.uniform(0.9, 1.1))
+    inserted = _inserted_plates(m, rng, ts, B, profile)
     z_t = f['floor_z'] - 0.006                                       # table under the basket floor
     S = 1.28                                                         # 1024 texels * 2.5 mm / 2
     v = np.array([[-S, -S, z_t], [S, -S, z_t], [S, S, z_t], [-S, S, z_t]])
@@ -272,7 +312,7 @@ def build_scene(rng, parts, B, tines):
         if rng.random() < 0.5:
             c[:2] = c[[1, 0]]
         m.box(c, rng.uniform(0.04, 0.14, 3), np.full(3, rng.uniform(0.75, 0.98)))
-    return m, ts
+    return m, ts, inserted
 
 
 def add_held(m, rng, T_basket_cam):
@@ -301,15 +341,22 @@ def add_held(m, rng, T_basket_cam):
                   np.clip(colour * 0.95, 0, 1))
 
 
-def sample_camera(rng, poses):
+def sample_camera(rng, poses, profile='legacy'):
     """A real wrist view (T_basket_cam) moved by a few cm and degrees."""
     from scipy.spatial.transform import Rotation
     looks = [i for i, (n, _) in enumerate(poses) if n.startswith('wrist_look')]
-    i = rng.choice(looks) if looks and rng.random() < 0.6 else rng.integers(len(poses))   # straight-down looks (v3: 60 %, v1-v2: 40 %)
+    q14 = [i for i, (n, _) in enumerate(poses) if n.startswith('wrist_look') and ('Q1' in n or 'Q4' in n)]
+    if profile == 'v4' and q14 and rng.random() < 0.55:
+        i = rng.choice(q14)
+    else:
+        i = rng.choice(looks) if looks and rng.random() < 0.6 else rng.integers(len(poses))
     T = poses[i][1].copy()
-    T[:3, 3] += rng.normal(0, [0.04, 0.04, 0.04])
-    yaw = Rotation.from_euler('z', rng.uniform(-30, 30), degrees=True).as_matrix()   # basket placed at another yaw
-    T[:3, :3] = Rotation.from_rotvec(rng.normal(0, np.radians(5), 3)).as_matrix() @ yaw @ T[:3, :3]
+    pos_sigma = [0.11, 0.11, 0.065] if profile == 'v4' else [0.04, 0.04, 0.04]
+    T[:3, 3] += rng.normal(0, pos_sigma)
+    yaw_lim = 45 if profile == 'v4' else 30
+    rot_sigma = 8 if profile == 'v4' else 5
+    yaw = Rotation.from_euler('z', rng.uniform(-yaw_lim, yaw_lim), degrees=True).as_matrix()
+    T[:3, :3] = Rotation.from_rotvec(rng.normal(0, np.radians(rot_sigma), 3)).as_matrix() @ yaw @ T[:3, :3]
     return T
 
 
@@ -400,27 +447,30 @@ def labels(ts, rail, T_cam_world, depth):
     return out
 
 
-def render_set(out, n, seed):
+def render_set(out, n, seed, profile='legacy'):
     out.mkdir(parents=True, exist_ok=False)
-    parts, B = basket_parts()
-    tines, rail = tine_table(parts, B), B['pins']['rail_z']
+    parts_clean, B = basket_parts(False)
+    parts_marker, _ = basket_parts(True)
+    tines, rail = tine_table(parts_clean, B), B['pins']['rail_z']
     poses = camera_poses()
     rd = Renderer()
     rng = np.random.default_rng(seed)
     meta = []
     for i in range(n):
-        m, ts = build_scene(rng, parts, B, tines)
-        Tbc = sample_camera(rng, poses)
+        marker_blocks = bool(profile == 'v4' and rng.random() < 0.35)  # markerless scenes remain the majority
+        m, ts, inserted = build_scene(rng, parts_marker if marker_blocks else parts_clean, B, tines, profile)
+        Tbc = sample_camera(rng, poses, profile)
         add_held(m, rng, Tbc)
         if i % 20 == 0:                                              # a new table texture every 20 samples
             tex = table_texture(rng)
         Tcw = np.linalg.inv(Tbc)
         img, depth = rd.render(m, Tcw, tex, rng)
         cv2.imwrite(str(out / f'{i:06d}.jpg'), post(img, rng), [cv2.IMWRITE_JPEG_QUALITY, 95])
-        meta.append(dict(i=i, tines=labels(ts, rail, Tcw, depth)))
+        meta.append(dict(i=i, profile=profile, marker_blocks=marker_blocks, inserted_plates=inserted,
+                         tines=labels(ts, rail, Tcw, depth)))
         if i % 500 == 0:
             print(f'{i}/{n}', flush=True)
-    (out / 'labels.json').write_text(json.dumps(dict(size=[OW, OH], scale=[SX, SY], samples=meta)))
+    (out / 'labels.json').write_text(json.dumps(dict(size=[OW, OH], scale=[SX, SY], profile=profile, samples=meta)))
 
 
 def sheet(d, out=None, k=8):
@@ -453,10 +503,11 @@ if __name__ == '__main__':
     a.add_argument('--out', default=str(DATA / 'slot_cnn/check'))
     a.add_argument('--n', type=int, default=100)
     a.add_argument('--seed', type=int, default=0)
+    a.add_argument('--profile', choices=('legacy', 'v4'), default='legacy')
     a = a.parse_args()
     if a.cmd == 'check':
         check(Path(a.out))
     elif a.cmd == 'render':
-        render_set(Path(a.out), a.n, a.seed)
+        render_set(Path(a.out), a.n, a.seed, a.profile)
     else:
         sheet(a.dir)
