@@ -4,7 +4,7 @@
 #   bash calibration/run.sh stream             read-only flange pose stream -> UDP 5006 (needed by calibrate.py)
 #   bash calibration/run.sh viz [--plan P]     read-only RViz: real robot, FoundationPose plate, plan preview (UDP 5011)
 #   bash calibration/run.sh pipeline [args]    terminal 2: cube pipeline in conda foundationpose (see pipeline.py)
-#   bash calibration/run.sh demo4 [--execute]  meeting demo: Q4, Q3, Q1, Q2 one --auto --sim_q run each; DEMO_PINS="Q3:front Q3:back:white" picks pins/colour
+#   bash calibration/run.sh demo4 [--execute]  meeting demo: Q4, Q3, Q1, Q2 one --auto --sim_q run each; DEMO_PINS="Q3:back Q3:front:white" picks pins/colour
 #   bash calibration/run.sh demo1022 Q3|Q4 [--execute]   10/22 demo: two plates in that quadrant, fixed order (collab/DEMO_20261022.md)
 #   bash calibration/run.sh markers            read-only: live fixed-camera view of the 4 basket markers (q quits)
 #   bash calibration/run.sh basket_check       read-only: marker blocks vs the stored layout (which block moved)
@@ -45,8 +45,9 @@ case "$mode" in
       case "$a" in --execute) ;; *) echo "!!! demo1022: 알 수 없는 인자 '$a' (허용: --execute). 명령은 한 줄씩 실행"; exit 2 ;; esac
     done
     case "$qd" in
-      Q3) pins="Q3:front:red Q3:back:white" ;;      # (10/19 보스) always red first, then white; Q3: front first (gripper on the far side)
-      Q4) pins="Q4:back:red Q4:front:white" ;;      # (10/19 보스) always red first, then white; Q4: back first (gripper on the robot side)
+      Q3) pins="Q3:back:red Q3:front:white" ;;      # (10/19 보스) always red first, then white; Q3: robot-side (large pins) first (gripper on the far side)
+      Q4) pins="Q4:front:red Q4:back:white" ;;      # (10/19 보스) always red first, then white; Q4: far (small pins) first (gripper on the robot side)
+      # (10/23 보스: front = small pin numbers, back = large; the labels were swapped, the order of the ends is unchanged)
       *) echo "usage: bash calibration/run.sh demo1022 Q3|Q4 [--execute]   (collab/DEMO_20261022.md)"; exit 2 ;;
     esac
     ( cd "$DIR/.." && conda run --no-capture-output -n foundationpose python -u "$DIR/camera_tools.py" basket_check ) || {
@@ -72,7 +73,7 @@ case "$mode" in
     # (10/19 15:1x 보스 A) the order typed: the gripper is on the robot side of the plate in Q4 (back pin first there: white
     # into 7 touched the red at 11) but on the far side in Q3 (front first).  The planner also checks the gripper on standing plates.
     pins_run="$(echo $pins_in)"
-    echo "### 순서 그대로: $pins_run (Q3는 front 먼저, Q4는 back 먼저 - 그리퍼 쪽)"
+    echo "### 순서 그대로: $pins_run (Q3는 back(큰 번호) 먼저, Q4는 front(작은 번호) 먼저 - 그리퍼 쪽)"
     placed="${DEMO_BASKET_PLATES:-}"   # plates already in the basket before this demo, e.g. DEMO_BASKET_PLATES="Q3:10 Q4:10"
     for qp in $pins_run; do
       IFS=: read -r q pin color landed <<< "$qp"; color=${color:-auto}   # (10/19 보스) auto = the plate on the stand

@@ -698,20 +698,21 @@ def fixed_basket_z(Tb, cb):
     return Tb
 
 
-def region_pins(n, region, occupied=(), spacing=4, back_first=None):
+def region_pins(n, region, occupied=(), spacing=4, front_first=None):
     """(10/19 보스) candidate pins for "a plate in the front / back of the quadrant", in the order to try; pin 1 = farthest
-    from the robot, n = nearest.  front: the robot half, nearest first (leaves room behind it).  back: farther than every
-    plate already in this quadrant, nearest first; with none there, the far half.
+    from the robot, n = nearest.  (10/23 보스: front = the small pin numbers 1, 2, .., back = the large ones 8, 9, 10; the
+    two were swapped before.)  back: the large-number half, the largest first.  front: smaller than every plate already
+    in this quadrant, the largest such first; with none there, the small-number half.
     No candidate is closer than `spacing` pins to a plate already there (보스: red at 10 -> white at 6 or farther; with 2
-    the white went in at 9, and real plates land ~1-2 pins off the aim).  back_first: the first back pin with none there
+    the white went in at 9, and real plates land ~1-2 pins off the aim).  front_first: the first front pin with none there
     (10/20 보스: Q4 red at 6 + white at 10 landed only 1-2 pins apart -> red farther from the robot)."""
     occupied = [int(o) for o in occupied]
-    if region == 'front':
+    if region == 'back':
         cand = list(range(n, n // 2, -1))
-    elif region == 'back':
-        top = min(occupied) - spacing if occupied else (int(back_first) if back_first else n // 2)
+    elif region == 'front':
+        top = min(occupied) - spacing if occupied else (int(front_first) if front_first else n // 2)
         cand = list(range(top, 0, -1))
-        if not occupied and back_first:              # then the rest of the back half, if none of those plans
+        if not occupied and front_first:             # then the rest of the front half, if none of those plans
             cand += list(range(top + 1, n // 2 + 1))
     else:
         raise ValueError(f'region {region!r}: front or back')
@@ -1094,7 +1095,7 @@ def run_plate(args):
                 from plate_plans import basket_gaps
                 same_q = [int(v.split(':')[-1]) for v in (args.basket_plates or []) if ':' not in v or v.split(':')[0] == args.quadrant]
                 cands = region_pins(len(basket_gaps()[mq]), args.region, same_q, int(q.get('basket_region_min_spacing', 4)),
-                                    (q.get('basket_region_back_first_pin') or {}).get(args.quadrant))
+                                    (q.get('basket_region_front_first_pin') or {}).get(args.quadrant))
                 print(f'   {args.quadrant} {args.region}: 후보 핀 {cands} (이미 있는 접시 {same_q})', flush=True)
                 early, rep, why = None, None, {}
                 order = sim_kw.get('faces', (1.0, -1.0))   # (10/19 보스: the wrist spun ~170 deg on Q3 pin 12) every pin with the
@@ -1650,7 +1651,7 @@ def parse_args(argv=None):
                    help='OPT-IN: apply the deterministic mean of a basket insert PPO checkpoint after lift, using canonical hand pose and unseen gap error; requires --task plate --place basket --insert quadrant --sim_q --execute')
     p.add_argument('--region', choices=('front', 'back'), default=None,
                    help='(10/19 보스) --insert quadrant: instead of --pin, the first pin of this half of the quadrant that has a plan '
-                        '(front = robot half, back = behind the plates already there); see region_pins')
+                        '(10/23 보스: front = small pin numbers 1, 2, .. (far from the robot), back = large 8, 9, 10); see region_pins')
     p.add_argument('--chosen_pin_out', type=Path, default=None, help='with --region: write the chosen "Q:pin" here (demo4)')
     p.add_argument('--pin', type=int, default=5, help='--insert quadrant: pin-pair number in the quadrant, 1 = farthest from '
                    'the robot (wrist image top -> bottom); the plate goes into the gap just robot-side of that pair')

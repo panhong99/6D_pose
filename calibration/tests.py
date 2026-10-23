@@ -357,16 +357,16 @@ class Pipeline(unittest.TestCase):
         np.testing.assert_allclose(tt, [0.9, -0.2], atol=0.005)
 
     def test_region_pins_front_back_and_spacing(self):
-        # (10/19 보스) front = robot half nearest first; back = behind the plates there, >= 4 pins from a plate
-        self.assertEqual(pipeline.region_pins(12, 'front'), [12, 11, 10, 9, 8, 7])
-        self.assertEqual(pipeline.region_pins(12, 'back'), [6, 5, 4, 3, 2, 1])
-        self.assertEqual(pipeline.region_pins(12, 'back', [10]), [6, 5, 4, 3, 2, 1])   # (보스) red at 10 -> white <= 6
-        self.assertEqual(pipeline.region_pins(12, 'front', [6]), [12, 11, 10])
-        self.assertEqual(pipeline.region_pins(12, 'back', [10, 5]), [1])            # behind every plate there
-        self.assertEqual(pipeline.region_pins(12, 'back', [10], spacing=2), [8, 7, 6, 5, 4, 3, 2, 1])
-        self.assertEqual(pipeline.region_pins(12, 'front', [10], spacing=2), [12, 8, 7])
-        self.assertEqual(pipeline.region_pins(12, 'back', back_first=3), [3, 2, 1, 4, 5, 6])   # (10/20 보스) Q4 red farther
-        self.assertEqual(pipeline.region_pins(12, 'front', [4]), [12, 11, 10, 9, 8])
+        # (10/23 보스) back = large pins largest first; front = smaller than the plates there, >= 4 pins from a plate
+        self.assertEqual(pipeline.region_pins(12, 'back'), [12, 11, 10, 9, 8, 7])
+        self.assertEqual(pipeline.region_pins(12, 'front'), [6, 5, 4, 3, 2, 1])
+        self.assertEqual(pipeline.region_pins(12, 'front', [10]), [6, 5, 4, 3, 2, 1])   # (보스) red at 10 -> white <= 6
+        self.assertEqual(pipeline.region_pins(12, 'back', [6]), [12, 11, 10])
+        self.assertEqual(pipeline.region_pins(12, 'front', [10, 5]), [1])            # behind every plate there
+        self.assertEqual(pipeline.region_pins(12, 'front', [10], spacing=2), [8, 7, 6, 5, 4, 3, 2, 1])
+        self.assertEqual(pipeline.region_pins(12, 'back', [10], spacing=2), [12, 8, 7])
+        self.assertEqual(pipeline.region_pins(12, 'front', front_first=3), [3, 2, 1, 4, 5, 6])   # (10/20 보스) Q4 red farther
+        self.assertEqual(pipeline.region_pins(12, 'back', [4]), [12, 11, 10, 9, 8])
         with self.assertRaises(ValueError):
             pipeline.region_pins(12, 'middle')
         self.assertEqual(pipeline.parse_args(['--region', 'back']).region, 'back')
