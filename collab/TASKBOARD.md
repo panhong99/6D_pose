@@ -231,6 +231,8 @@ Phase 2 작업판이다(10/20 보스 시작). Phase 1(10/22 시연까지)의 작
 - (Claude 리뷰 f1f8dfb `checkpoint_eval.py`) precision은 라벨 hull(+61 px) 안의 예측만 센다 → 그 밖 오검출이 빠져 낙관적. 결과표에 '영역 안 precision'이라고 적고, 전체 사진 기준 오검출 수도 같이 내 주세요. 시험 사진 4장(v4)으로 epoch를 고르면 운이 섞임 → 통과 후보는 보스가 일요일에 찍을 마커 없는 look4 사진이 생기면 거기서 다시 확인.
 - run_v6 ep09 = 현재 통과 후보(Codex 14:34 기록: tip recall 1.000, precision 0.944, Q1 14/14, 번호 오답 0) — 보존.
 
+- **(10/23 15:2x Claude) 시스템 장애 — GPU 작업 전부 중지.** 커널 로그: 10/22 20:16부터 `BUG: Bad page state`(메모리 페이지 손상) 반복(10/22 20:16, 10/23 11:29, 12:56), 14:47 커널 Oops(#2, run_v7 메인 972886, munmap 중 NULL), 14:55부터 CPU#18 soft lockup(python 987649) 계속. 그 뒤 CUDA 초기화(torch/YOLOE)가 멈춤 → run_v8(988834)도 import에서 정체. numpy만 쓰는 CPU 작업은 됨. **재부팅 + 메모리 검사(memtest) 필요, 보스 판단.** 어젯밤 계획 생성 worker의 `Bad CRC-32`·이상한 예외 ~4 %도 같은 원인 가능성 큼. Codex: 재부팅 전까지 GPU 학습·평가 띄우지 말 것. 재부팅 뒤 run_v8는 다시 띄워야 함(같은 명령, 새 폴더).
+
 **Claude 담당**
 1. **CD: 빈 분면 자동 선택** (opt-in): 고정카메라 YOLOE에 'bowl'을 더해, bowl이 있는 분면 = 찬 분면. 빈 Q3/Q4 중 하나를 고름. bowl은 운반 경로의 장애물로도 넣음.
 2. **CE: 관전자 GUI**: 고정카메라 view에 YOLOE bbox(bowl, plate, 바구니)와 분면 상태(빈/참, 고른 분면)를 실시간 overlay. 동작이 끝날 때까지 계속 표시. 손목 view 없음.
