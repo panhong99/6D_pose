@@ -190,15 +190,24 @@ def arm_points(posj_deg):
     return _CH.robot_points(np.radians(posj_deg))
 
 
+def model_tree(M):
+    """KD-tree of the basket model, cached per model array."""
+    from scipy.spatial import cKDTree
+    global _TREE
+    if '_TREE' not in globals() or _TREE[0] is not M:
+        _TREE = (M, cKDTree(M))
+    return _TREE[1]
+
+
 def icp_xy_yaw(S, M, yaw0, t0, z_rim, iters=30, trim=0.7):
     """Scene points S (base) onto the model M (basket frame) in x, y, yaw at a fixed height: trimmed point-to-point."""
-    from scipy.spatial import cKDTree
+    tree = model_tree(M)                                          # (10/23) built once: was 30x per call, 6 s a frame
     yaw, t = yaw0, np.asarray(t0, float)
     for _ in range(iters):
         c, s = np.cos(yaw), np.sin(yaw)
         R = np.array([[c, -s], [s, c]])
         loc = np.c_[(S[:, :2] - t) @ R, S[:, 2] - z_rim]          # scene in the basket frame
-        d, j = cKDTree(M).query(loc)
+        d, j = tree.query(loc, workers=-1)
         keep = d <= np.quantile(d, trim)
         a, b = loc[keep, :2], M[j[keep], :2]                       # loc -> model: small 2D rigid update
         ca, cb = a.mean(0), b.mean(0)
@@ -215,7 +224,7 @@ def icp_xy_yaw(S, M, yaw0, t0, z_rim, iters=30, trim=0.7):
             break
     c, s = np.cos(yaw), np.sin(yaw)                               # (a Powell polish on the truncated distance was
     loc = np.c_[(S[:, :2] - t) @ np.array([[c, -s], [s, c]]), S[:, 2] - z_rim]   # tried: 10/20 xy median 3.4 -> 5.8 mm)
-    d, _ = cKDTree(M).query(loc)
+    d, _ = tree.query(loc, workers=-1)
     return yaw, t, float(np.mean(np.sort(d)[:int(trim * len(d))]))
 
 
@@ -227,12 +236,28 @@ def raster(xy, lo, n, cell):
     return img
 
 
-def global_search(P, M, z_rim, cell=0.005, half=0.5, step_deg=1.0, keep=6, band=(-0.07, 0.03)):
+def model_rasters(M, Mu, n, half, cell, step_deg):
+    """(10/23) the blurred, flipped top-view raster of the model at every yaw: the same each frame and run, so cached."""
+    from scipy.ndimage import gaussian_filter
+    global _RAST
+    key = (id(M), len(Mu), n, half, cell, step_deg)          # Mu: the band of M (a new array per call)
+    if '_RAST' not in globals() or _RAST[0] != key:
+        yaws, out = np.radians(np.arange(0.0, 360.0, step_deg)), []
+        for a in yaws:
+            R = np.array([[np.cos(a), -np.sin(a)], [np.sin(a), np.cos(a)]])
+            Mi = gaussian_filter(np.minimum(raster(Mu[:, :2] @ R.T, np.array([-half, -half]), n, cell), 3.0), 1.5)
+            out.append((Mi / (np.linalg.norm(Mi) + 1e-9))[::-1, ::-1])
+        _RAST = (key, yaws, np.array(out))
+    return _RAST[1], _RAST[2]
+
+
+def global_search(P, M, z_rim, cell=0.005, half=0.5, step_deg=1.0, keep=6, band=(-0.07, 0.03), chunk=40):
     """Top-view correlation of the upper structure (rails, handle, wall tops, tine tops) over every yaw and shift:
     -> the `keep` best (yaw, centre) seeds for the ICP.  Rewards overlap both ways, so a turned fit that leaves the
-    model's rails or tine rows without scene points loses (the ICP alone sits in +-20 deg wire-pitch minima)."""
+    model's rails or tine rows without scene points loses (the ICP alone sits in +-20 deg wire-pitch minima).
+    (10/23) = fftconvolve(scene, model[::-1, ::-1], 'same') per yaw, batched over yaws on all cores (6 s -> <1 s)."""
     from scipy.ndimage import gaussian_filter
-    from scipy.signal import fftconvolve
+    from scipy import fft
     S = P[(P[:, 2] - z_rim > band[0]) & (P[:, 2] - z_rim < band[1])]
     Mu = M[(M[:, 2] > band[0]) & (M[:, 2] < band[1])]
     ctr = np.median(S[:, :2], axis=0)
@@ -240,17 +265,15 @@ def global_search(P, M, z_rim, cell=0.005, half=0.5, step_deg=1.0, keep=6, band=
     lo = ctr - half
     Si = gaussian_filter(np.minimum(raster(S[:, :2], lo, n, cell), 3.0), 1.5)
     Si -= Si.mean()
+    yaws, Mr = model_rasters(M, Mu, n, half, cell, step_deg)
+    shape = [fft.next_fast_len(2 * n - 1, True)] * 2
+    Sf, a0 = fft.rfft2(Si, shape, workers=-1), (n - 1) // 2
     out = []
-    for yd in np.arange(0.0, 360.0, step_deg):
-        a = np.radians(yd)
-        R = np.array([[np.cos(a), -np.sin(a)], [np.sin(a), np.cos(a)]])
-        m = Mu[:, :2] @ R.T
-        Mi = gaussian_filter(np.minimum(raster(m, np.array([-half, -half]), n, cell), 3.0), 1.5)
-        Mi /= np.linalg.norm(Mi) + 1e-9
-        c = fftconvolve(Si, Mi[::-1, ::-1], mode='same')
-        k = np.unravel_index(np.argmax(c), c.shape)
-        shift = (np.array(k) - n // 2) * cell
-        out.append((c[k], a, ctr + shift))
+    for i in range(0, len(yaws), chunk):
+        c = fft.irfft2(Sf * fft.rfft2(Mr[i:i + chunk], shape, workers=-1), shape, workers=-1)[:, a0:a0 + n, a0:a0 + n]
+        for a, ci in zip(yaws[i:i + chunk], c):
+            k = np.unravel_index(np.argmax(ci), ci.shape)
+            out.append((ci[k], a, ctr + (np.array(k) - n // 2) * cell))
     out.sort(key=lambda r: -r[0])
     seeds = []
     for sc, a, t in out:                                           # distinct seeds (yaw > 5 deg apart)
