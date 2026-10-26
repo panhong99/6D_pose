@@ -60,7 +60,8 @@ def robot_cfg():
                 gains=sim_utils.UrdfConverterCfg.JointDriveCfg.PDGainsCfg(stiffness=0.0, damping=0.0)),
             rigid_props=sim_utils.RigidBodyPropertiesCfg(disable_gravity=True, max_depenetration_velocity=1.0),
             articulation_props=sim_utils.ArticulationRootPropertiesCfg(
-                enabled_self_collisions=False, solver_position_iteration_count=16, solver_velocity_iteration_count=4)),
+                enabled_self_collisions=False, solver_position_iteration_count=r["solver"][0],
+                solver_velocity_iteration_count=r["solver"][1])),
         init_state=ArticulationCfg.InitialStateCfg(
             joint_pos={f"joint_{i + 1}": math.radians(q) for i, q in enumerate(r["start_deg"])} | {FINGERS: 0.0}),
         actuators={"arm": ImplicitActuatorCfg(joint_names_expr=["joint_[1-6]"], stiffness=r["arm"]["stiffness"],

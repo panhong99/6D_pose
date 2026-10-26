@@ -7,6 +7,7 @@ robot:
   # start = the real "closer" pose of 10/26 (fingertips ~8 cm above the near rim), hand open, back of the hand up
   start_deg: [-10.21, 24.85, 114.29, -7.16, -28.86, -84.15]
   arm: {stiffness: 4000.0, damping: 200.0, effort: 300.0}
+  solver: [64, 8]                      # position / velocity iterations: 16/4 let fingers pass their limits (scripted grid 109 -> 1 glitch)
   hand: {stiffness: 5.0, damping: 0.05, effort: 7.5}   # real driver P = 5 Nm/rad (10/26); pilot 6 with 20 held worse (14/64 vs 55/64)
 geometry:
   table_top_z: -0.020
@@ -31,7 +32,7 @@ action:
   arm_box_m: 0.15                      # TCP stays within this of its start point
   arm_joint_deg_s: 15.0               # every arm joint at most this fast (pilot 4: 200 deg/s wrist flip)
   turn_step_deg: 0.5                   # wrist turn per step at |a| = 1 (15 deg/s)
-  turn_max_deg: 90.0                   # wrist turn cone (pilot 8: roll the palm to the rim; 40 in pilot 4)
+  turn_max_deg: 40.0                   # wrist turn cone (pilot 4 setting; 90 in pilot 8 found nothing)
   finger_alpha: 0.08                   # EMA of the finger targets (slow fingers, 보스: slowest)
 rewards:                               # name: weight (Isaac Lab multiplies by dt: points per second)
   reach: 1.0
