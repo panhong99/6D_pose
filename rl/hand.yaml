@@ -37,6 +37,7 @@ rewards:                               # name: weight (Isaac Lab multiplies by d
   pinch: 1.0
   touch: 3.0                           # distal links on the plate, 0..1
   lift: 6.0
+  level: 6.0                           # held + up 2 cm: 1 at level, 0.24 at 30 deg (pilot 4 hung the plate at ~44 deg)
   hold: 10.0
   success: 3000.0                      # one-step terms x dt (1/30 s): 100 points once
   knocked: -2.0

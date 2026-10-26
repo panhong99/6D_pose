@@ -257,6 +257,12 @@ def r_lift(env):
     return st["held"].float() * torch.clamp(st["lift"] / 0.10, 0.0, 1.0)
 
 
+def r_level(env):                   # pilot 4 held the plate up for ~9.5 s but hanging ~44 deg: reward a level hold
+    st = _state(env)
+    tilt = torch.rad2deg(torch.acos(st["up"][:, 2].clamp(-1.0, 1.0)))
+    return (st["held"] & (st["lift"] > 0.02)).float() * (1.0 - torch.tanh(tilt / T["max_tilt_deg"]))
+
+
 def r_hold(env):
     return _state(env)["lifted"].float()
 
@@ -278,7 +284,7 @@ def r_ended_early(env):             # leaving the box or losing the plate ends t
     return (st["tcp_out"] | (st["p"][:, 2] < REST_Z - 0.03)).float()
 
 
-REWARD_FUNCS = {"reach": r_reach, "pinch": r_pinch, "touch": r_touch, "lift": r_lift, "hold": r_hold, "success": r_success,
+REWARD_FUNCS = {"reach": r_reach, "pinch": r_pinch, "touch": r_touch, "level": r_level, "lift": r_lift, "hold": r_hold, "success": r_success,
                 "knocked": r_knocked, "collision": r_collision, "action_rate": mdp.action_rate_l2,
                 "ended_early": r_ended_early}
 
