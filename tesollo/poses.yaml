@@ -24,7 +24,7 @@ pregrasp:
   side: left
   source: 'computed (USB DG_5F_S20_LEFT FK): thumb-index pinch, fingers 3-5 half tucked;
     not yet checked on the hand, tips 40 mm apart'
-grasp:
+grasp_tips_old:
   joints_rad:
   - -0.8945
   - 0.7565
@@ -49,4 +49,30 @@ grasp:
   saved: '2026-10-26 19:08:57'
   side: left
   source: 'computed (USB DG_5F_S20_LEFT FK): thumb-index pinch, fingers 3-5 half tucked;
-    not yet checked on the hand, tips 6 mm apart'
+    not yet checked on the hand, tips 6 mm apart (10/26: slipped, tips only)'
+grasp:
+  joints_rad:
+  - -0.6544
+  - 0.8548
+  - -0.6444
+  - -0.6624
+  - 0.7545
+  - 1.2783
+  - 0.8163
+  - 0.387
+  - 0.0
+  - 0.8727
+  - 0.6109
+  - 0.4363
+  - 0.0
+  - 0.8727
+  - 0.6109
+  - 0.4363
+  - 0.0
+  - 0.0
+  - 0.6109
+  - 0.4363
+  saved: '2026-10-26 19:13:08'
+  side: left
+  source: 'computed (USB FK): distal pads of thumb and index facing (-0.93), ~3 mm
+    apart, near the OK pregrasp'
