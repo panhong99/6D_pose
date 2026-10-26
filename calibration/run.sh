@@ -7,6 +7,7 @@
 #   bash calibration/run.sh demo4 [--execute]  meeting demo: Q4, Q3, Q1, Q2 one --auto --sim_q run each; DEMO_PINS="Q3:back Q3:front:white" picks pins/colour
 #   bash calibration/run.sh demo1022 Q3|Q4 [--execute]   10/22 demo: two plates in that quadrant, fixed order (collab/DEMO_20261022.md)
 #   bash calibration/run.sh demo1103 [--execute]   11/3 demo: bowls seen -> the empty Q3/Q4 -> two plates there (red, white), spectator view
+#   bash calibration/run.sh demo1103_fixed [--execute]   11/3 fallback: the same view, but a saved basket pose and fixed Q3 pins 11 -> 6
 #   bash calibration/run.sh markers            read-only: live fixed-camera view of the 4 basket markers (q quits)
 #   bash calibration/run.sh basket_check       read-only: marker blocks vs the stored layout (which block moved)
 #   bash calibration/run.sh basket_relayout    store moved marker blocks where they are now (typed y; new layout file)
@@ -40,6 +41,27 @@ case "$mode" in
                  rviz2 -d "$0/viz.rviz"' "$DIR" "$@" ;;
   pipeline)
     cd "$DIR/.." && exec conda run --no-capture-output -n foundationpose python -u "$DIR/pipeline.py" "$@" ;;
+  demo1103_fixed)   # (10/26 보스 최후의 수) the spectator view still shows YOLOE live, but the run does not depend on it:
+                    # basket pose from DEMO_BASKET (saved good measurement), quadrant + pins fixed (Q3 11 then 6: same face,
+                    # rule carry 0.371 m, clearance >= 1.5 x on 10/26's basket), DEMO_FULL quadrants drawn as holding bowls
+    for a in "$@"; do
+      case "$a" in --execute) ;; *) echo "!!! demo1103_fixed: 알 수 없는 인자 '$a' (허용: --execute)"; exit 2 ;; esac
+    done
+    basket="${DEMO_BASKET:-$DIR/data/basket/demo_basket_fixed.json}"
+    [ -f "$basket" ] || { echo "!!! 바구니 위치 파일 없음: $basket"; exit 1; }
+    q="${DEMO_QUADRANT:-Q3}"; p1="${DEMO_PIN1:-11}"; p2="${DEMO_PIN2:-6}"
+    common=(--task plate --plate_policy ik_bc --place basket --insert quadrant --quadrant "$q" --sim_q --auto
+            --basket_json "$basket" --markers_off --one_go --vel_deg_s "${DEMO_VEL:-60}" --keep_face --demo_view
+            --demo_full ${DEMO_FULL:-Q1 Q2})
+    echo "### 고정 시연: ${q} ${p1} -> ${p2}, 바구니 ${basket} (바구니를 옮기지 말 것)"
+    echo "=== 1/2 빨간 접시: 받침 위에 올려 두고 Enter (끝내기: q) ==="; read -r ans; [ "$ans" = q ] && exit 0
+    conda run --no-capture-output -n foundationpose python -u "$DIR/pipeline.py" "${common[@]}" --pin "$p1" \
+      --plate_color red "$@" || { echo "!!! 1번째 실패 - 로그 확인"; exit 1; }
+    echo "=== 2/2 흰 접시 -> ${q} ${p2}: 받침 위에 올려 두고 Enter (끝내기: q) ==="; read -r ans; [ "$ans" = q ] && exit 0
+    conda run --no-capture-output -n foundationpose python -u "$DIR/pipeline.py" "${common[@]}" --pin "$p2" \
+      --basket_plates "$q:$p1" --plate_color white "$@" || { echo "!!! 2번째 실패 - 로그 확인"; exit 1; }
+    echo "=== 시연 끝: ${q} ${p1}, ${p2} ==="
+    ;;
   demo1103)   # (10/23 보스) 11/3 demo: YOLOE sees the bowls, the empty quadrant (Q3 / Q4) is taken, two plates go in there in
               # the gripper-side order (--region first / second), the fixed view with the boxes stays up during each run
     for a in "$@"; do

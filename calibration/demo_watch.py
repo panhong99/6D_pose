@@ -235,6 +235,7 @@ def main():
     a.add_argument('--chosen_file', help='the pipeline writes the quadrant it took here (drawn yellow)')
     a.add_argument('--until_pid', type=int, help='exit when this process ends (the pipeline)')
     a.add_argument('--no_window', action='store_true')
+    a.add_argument('--show_full', nargs='+', default=None, help='(10/26) draw these quadrants as holding a bowl regardless')
     a.add_argument('--png', help='offline: save the overlay here')
     a.add_argument('--detect_only', action='store_true', help='(10/26) YOLOE boxes only (no basket, quadrants, state); q quits')
     a.add_argument('--camera', help="--detect_only: open this D455 here ('fixed' = the config's fixed camera) instead of the share")
@@ -267,6 +268,8 @@ def main():
         dets = det(rgb)
         Tb = load_basket(a.basket) if a.basket else None
         counts = bowl_quadrants(dets, depth, K, Tbc, Tb) if Tb is not None else {}
+        for q in a.show_full or []:                     # (10/26 보스 최후의 수) shown as full whatever is seen there
+            counts[q] = max(counts.get(q, 0), 150)
         chosen_by_rule, empty = choose(counts, a.allowed) if Tb is not None else (None, [])
         taken = Path(a.chosen_file).read_text().strip().split(':')[0] if a.chosen_file and Path(a.chosen_file).exists() else None
         n += 1

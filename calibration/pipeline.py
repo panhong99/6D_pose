@@ -683,7 +683,8 @@ def start_demo_watch(args, Tbc, posj, out, children, env):
                                   '--state', str(out / 'demo_quadrants.json'), '--chosen_file', str(out / 'chosen_quadrant.txt'),
                                   '--allowed', *args.auto_quadrants, '--until_pid', str(os.getpid())]
                    + (['--posj', *map(str, posj)] if posj is not None else ['--posj', *map(str, HOME_JOINTS_DEG)])
-                   + ([] if args.demo_view else ['--no_window']), env)
+                   + ([] if args.demo_view else ['--no_window'])
+                   + (['--show_full', *args.demo_full] if args.demo_full else []), env)
     print('[분면] 고정 카메라 관측 창: YOLOE bbox + 분면 (초록 = 빈, 빨강 = bowl, 노랑 = 고른 분면)'
           if args.demo_view else '[분면] 고정 카메라로 bowl 관측 시작', flush=True)
 
@@ -955,7 +956,7 @@ def run_plate(args):
         basket_delta, basket_T = None, None
         if args.insert == 'quadrant' and (args.place != 'basket' or not args.quadrant):
             raise SystemExit('--insert quadrant needs --place basket (measured markers) and --quadrant Q1..Q4')
-        basket_vision = args.place in ('basket', 'teach') and basket_source(args) == 'vision'
+        basket_vision = args.place in ('basket', 'teach') and (basket_source(args) == 'vision' or args.basket_json is not None)
         if basket_vision:                                    # (10/20 보스: 아루코 없다고 가정) after perception starts
             print('[basket] 마커 없이 고정 카메라 RGB-D로 바구니 자세를 잽니다 (인식 시작 후)', flush=True)
         elif args.place in ('basket', 'teach'):              # markers first: the fixed D455 is FoundationPose's afterwards
@@ -1019,8 +1020,15 @@ def run_plate(args):
         if watch:                                           # (10/23 11/3 시연) spectator view + the empty quadrant
             start_demo_watch(args, Tbc, cur['posj'] if args.execute else None, out, children, vision_env)
         if basket_vision:
-            Tb = basket_from_vision(Tbc, cur['posj'] if args.execute else None, out, children,
-                                    cut=('bowl',) if watch else ())
+            if args.basket_json is not None:                # (10/26 보스 최후의 수) a pose measured earlier, no vision now
+                r_ = json.loads(args.basket_json.read_text())
+                Tb = np.asarray(r_['T'], float)
+                (out / 'basket_vision.json').write_text(json.dumps(dict(r_, ok=True, fixed_from=str(args.basket_json))))
+                print(f'[basket] 저장된 바구니 위치 사용 (지금 재지 않음): {args.basket_json}  centre ({Tb[0, 3]:.3f}, '
+                      f'{Tb[1, 3]:+.3f}) m, yaw {np.degrees(np.arctan2(Tb[1, 0], Tb[0, 0])):+.1f} deg', flush=True)
+            else:
+                Tb = basket_from_vision(Tbc, cur['posj'] if args.execute else None, out, children,
+                                        cut=('bowl',) if watch else ())
             T0 = np.array(json.loads((DATA / 'basket' / 'slot_01_in_basket.json').read_text())['T_base_basket_at_teach'])
             basket_delta, basket_T = Tb @ np.linalg.inv(T0), Tb
             if args.quadrant == 'auto':
@@ -1770,6 +1778,11 @@ def parse_args(argv=None):
                         '(10/23 11/3 시연, opt-in) auto = the first empty one of --auto_quadrants, bowls seen by the fixed camera '
                         '(calibration/demo_watch.py; needs --basket_source vision)')
     p.add_argument('--auto_quadrants', nargs='+', default=['Q3', 'Q4'], help='--quadrant auto: candidates in this order')
+    p.add_argument('--basket_json', type=Path, default=None,
+                   help='(10/26 보스 최후의 수, opt-in) the basket pose from this basket_vision.json (an earlier good measurement), '
+                        'not measured now; the basket must not have moved')
+    p.add_argument('--demo_full', nargs='+', default=None, metavar='Q',
+                   help='(10/26 보스 최후의 수) --demo_view shows these quadrants as holding a bowl, whatever YOLOE sees there')
     p.add_argument('--demo_view', action='store_true',
                    help='(10/23 11/3 시연, opt-in) spectator window: the fixed camera with YOLOE boxes and the quadrants, until the end')
     p.add_argument('--yaw_trim', type=float, default=None, help='--insert quadrant: turn the plate face about the vertical at '
