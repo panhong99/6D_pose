@@ -357,6 +357,28 @@ class Pipeline(unittest.TestCase):
         self.assertLess(abs(np.degrees(yaw) - 12.0), abs(11.0 - 12.0))          # moves toward the truth
         np.testing.assert_allclose(tt, [0.9, -0.2], atol=0.005)
 
+    def test_auto_quadrant_votes_over_frames(self):
+        """(10/26) one frame with a bowl flickering into Q4 no longer stops the run; a quadrant empty in < 5/7 is never taken."""
+        import threading
+        def feed(out, pattern):
+            for i, e in enumerate(pattern):
+                (out / 'demo_quadrants.json').write_text(json.dumps(dict(
+                    frame=i + 1, basket=[[1]], counts={}, empty=e, empty_now=e, dets=[])))
+                time.sleep(0.12)
+        for pattern, want in (([['Q4']] * 2 + [[]] + [['Q4']] * 4, 'Q4'), ([['Q3', 'Q4']] * 7, 'Q3'),
+                              ([['Q4'], []] * 3 + [['Q4']], None)):
+            with tempfile.TemporaryDirectory() as d:
+                out = Path(d)
+                th = threading.Thread(target=feed, args=(out, pattern))
+                th.start()
+                with contextlib.redirect_stdout(io.StringIO()):
+                    if want is None:
+                        with self.assertRaises(RuntimeError):
+                            pipeline.auto_quadrant(out, pipeline.Children(out), ['Q3', 'Q4'], timeout_s=5)
+                    else:
+                        self.assertEqual(pipeline.auto_quadrant(out, pipeline.Children(out), ['Q3', 'Q4'], timeout_s=5), want)
+                th.join()
+
     def test_optional_child_restarts_never_raises(self):
         """(10/26) the spectator view died during the retreat and stopped the arm: an optional child is restarted."""
         import tempfile

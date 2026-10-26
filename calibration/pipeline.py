@@ -724,8 +724,10 @@ def seen_bowls(out, children, timeout_s=30.0):
     raise RuntimeError(f'demo_watch: no frame with the basket in {timeout_s:.0f} s')
 
 
-def auto_quadrant(out, children, allowed, frames=3, timeout_s=30.0):
-    """(10/23 11/3 시연) the empty quadrant from `frames` agreeing demo_watch frames after the basket pose -> 'Q3' / 'Q4'."""
+def auto_quadrant(out, children, allowed, frames=7, need=5, timeout_s=30.0):
+    """(10/23 11/3 시연) the empty quadrant -> 'Q3' / 'Q4': over `frames` demo_watch frames after the basket pose, the first
+    of `allowed` seen empty in >= `need` of them (10/26: a bowl on the Q1/Q4 line came and went, 'all frames agree' stopped
+    the run)."""
     state, seen, t0 = out / 'demo_quadrants.json', [], time.monotonic()
     while len(seen) < frames:
         children.check()
@@ -734,21 +736,20 @@ def auto_quadrant(out, children, allowed, frames=3, timeout_s=30.0):
         try:
             s = json.loads(state.read_text())
         except (OSError, ValueError):
-            time.sleep(0.1)
+            time.sleep(0.05)
             continue
         if s.get('basket') is not None and (not seen or s['frame'] != seen[-1]['frame']):
             seen.append(s)
-        time.sleep(0.1)
-    empties = [tuple(s['empty']) for s in seen]
-    if len(set(empties)) > 1:
-        raise RuntimeError(f'--quadrant auto: the frames disagree on the empty quadrants {empties} (bowl at a quadrant edge?)')
+        time.sleep(0.05)
+    votes = {q: sum(q in s.get('empty_now', s['empty']) for s in seen) for q in allowed}
     counts, plates = seen[-1]['counts'], seen[-1].get('plates', {})
     print('[분면] ' + ', '.join(f'{q} {"bowl" if counts.get(q, 0) >= 150 else "접시" if plates.get(q, 0) >= 150 else "비어 있음"}'
                                for q in ('Q1', 'Q2', 'Q3', 'Q4'))
-          + f'  (YOLOE {", ".join(sorted({d[0] for d in seen[-1]["dets"]}))})', flush=True)
-    empty = [q for q in allowed if q in empties[0]]
+          + f'  (빈 분면 투표 {votes} / {frames} 프레임; YOLOE {", ".join(sorted({d[0] for d in seen[-1]["dets"]}))})', flush=True)
+    empty = [q for q in allowed if votes[q] >= need]
     if not empty:
-        raise RuntimeError(f'--quadrant auto: no empty quadrant among {allowed} (bowls in {[q for q in allowed if q not in empties[0]]})')
+        raise RuntimeError(f'--quadrant auto: no quadrant among {allowed} empty in {need}/{frames} frames {votes} '
+                           '(a bowl there, or on a quadrant line)')
     (out / 'chosen_quadrant.txt').write_text(empty[0] + '\n')
     print(f'[분면] 빈 분면 {empty} -> {empty[0]} 로 넣습니다', flush=True)
     return empty[0]

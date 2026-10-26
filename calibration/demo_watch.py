@@ -255,7 +255,8 @@ def main():
     if a.detect_only:
         return detect_live(a)
     Tbc = np.asarray(json.loads(Path(a.T_base_cam).read_text())['T_base_cam'], float)
-    det, last, n, recent = Detector(), 0.0, 0, []
+    det, n, recent = Detector(), 0, []
+    last = 0.0 if a.frame else time.time() - 1.0     # (10/26 보스) not the previous run's frame left in the share
     win = 'demo: fixed camera'
     if not a.no_window and not a.png:
         cv2.namedWindow(win, cv2.WINDOW_NORMAL)
@@ -284,6 +285,7 @@ def main():
         Tb = load_basket(a.basket) if a.basket else None
         counts = bowl_quadrants(dets, depth, K, Tbc, Tb) if Tb is not None else {}
         plates = bowl_quadrants(dets, depth, K, Tbc, Tb, min_conf=0.15, name='plate') if Tb is not None else {}
+        now = occupied(counts, plates)                  # this frame alone (the pipeline votes over frames)
         recent = (recent + [(counts, plates)])[-max(1, a.hold):]       # the largest of the last frames: a bowl / plate
         counts = {q: max(c.get(q, 0) for c, _ in recent) for q in QUADRANTS}   # missed in one frame stays on the view
         plates = {q: max(p_.get(q, 0) for _, p_ in recent) for q in QUADRANTS}
@@ -296,6 +298,7 @@ def main():
         taken = Path(a.chosen_file).read_text().strip().split(':')[0] if a.chosen_file and Path(a.chosen_file).exists() else None
         n += 1
         write_state(a.state, dict(t=t, frame=n, basket=None if Tb is None else Tb.tolist(), counts=counts, plates=plates, empty=empty,
+                                  empty_now=[q for q in a.allowed if not now[q] and q not in (a.show_full or []) + (a.show_plate or [])],
                                   chosen=chosen_by_rule, bowls=bowl_boxes(dets, depth, K, Tbc, a.posj),
                                   dets=[(nm, round(c, 3), b) for nm, c, b, _ in dets]))
         img = draw(rgb, dets, K, Tbc, Tb, counts, taken or chosen_by_rule,
