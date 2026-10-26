@@ -28,20 +28,49 @@ SPLIT = (0.035, 0.0095)                            # x: the clip between near / 
 QUADRANTS = {'Q1': ('far', 'right'), 'Q2': ('far', 'left'), 'Q3': ('near', 'left'), 'Q4': ('near', 'right')}
 
 
-class Detector:
-    def __init__(self):
-        from ultralytics import YOLOE
-        self.m = YOLOE(str(ROOT / 'yoloe-v8l-seg.pt'))
-        self.m.set_classes(PROMPTS, self.m.get_text_pe(PROMPTS))
+BOWL_PROMPT = 'white ceramic bowl'                # (10/26 real frame: 'bowl' 0.23 / missed, this on the zoomed basket 0.31-0.35)
 
-    def __call__(self, rgb, conf=0.15):
-        """-> [(name, conf, (x0, y0, x1, y1), mask bool HxW), ...]"""
-        r = self.m.predict(rgb[:, :, ::-1].copy(), conf=conf, verbose=False, retina_masks=True)[0]
+
+class Detector:
+    """YOLOE on the whole frame for the other prompts; 'bowl' in the prompts = a second pass on the basket box (+ margin)
+    zoomed `zoom` x with BOWL_PROMPT alone (bowls are ~40 px there and lose to 'plate' / the rack in one pass)."""
+
+    def __init__(self, prompts=PROMPTS, zoom=2.0):
+        from ultralytics import YOLOE
+        self.names, self.zoom = [p for p in prompts if p != 'bowl'], zoom
+        self.m = YOLOE(str(ROOT / 'yoloe-v8l-seg.pt'))
+        self.m.set_classes(self.names, self.m.get_text_pe(self.names))
+        self.bowl = None
+        if 'bowl' in prompts:
+            self.bowl = YOLOE(str(ROOT / 'yoloe-v8l-seg.pt'))
+            self.bowl.set_classes([BOWL_PROMPT, 'dish drying rack'], self.bowl.get_text_pe([BOWL_PROMPT, 'dish drying rack']))
+
+    def _predict(self, model, names, rgb, conf):
+        r = model.predict(rgb[:, :, ::-1].copy(), conf=conf, verbose=False, retina_masks=True)[0]
         if r.boxes is None or not len(r.boxes):
             return []
         masks = r.masks.data.cpu().numpy() > 0.5 if r.masks is not None else [None] * len(r.boxes)
-        return [(PROMPTS[int(k)], float(c), tuple(int(v) for v in b), m) for k, c, b, m in
+        return [(names[int(k)], float(c), tuple(int(v) for v in b), m) for k, c, b, m in
                 zip(r.boxes.cls.cpu().numpy(), r.boxes.conf.cpu().numpy(), r.boxes.xyxy.cpu().numpy(), masks)]
+
+    def __call__(self, rgb, conf=0.15, margin=30):
+        """-> [(name, conf, (x0, y0, x1, y1), mask bool HxW), ...]"""
+        dets = self._predict(self.m, self.names, rgb, conf)
+        if self.bowl is None:
+            return dets
+        h, w = rgb.shape[:2]
+        racks = [d for d in dets if d[0] == 'dish drying rack']
+        x0, y0, x1, y1 = max(racks, key=lambda d: d[1])[2] if racks else (0, 0, w, h)
+        x0, y0, x1, y1 = max(0, x0 - margin), max(0, y0 - margin), min(w, x1 + margin), min(h, y1 + margin)
+        crop = cv2.resize(np.ascontiguousarray(rgb[y0:y1, x0:x1]), None, fx=self.zoom, fy=self.zoom, interpolation=cv2.INTER_CUBIC)
+        for name, c, b, m in self._predict(self.bowl, ['bowl', 'rack'], crop, conf):
+            if name != 'bowl':
+                continue
+            full = np.zeros((h, w), bool)
+            if m is not None:
+                full[y0:y1, x0:x1] = cv2.resize(m.astype(np.uint8), (x1 - x0, y1 - y0), interpolation=cv2.INTER_NEAREST) > 0
+            dets.append(('bowl', c, tuple(int(v / self.zoom) + o for v, o in zip(b, (x0, y0, x0, y0))), full))
+        return dets
 
 
 def quadrant_of(xy):
@@ -61,7 +90,7 @@ def quadrant_corners(q):
     return np.array([[x[0], y[0], 0], [x[1], y[0], 0], [x[1], y[1], 0], [x[0], y[1], 0]])
 
 
-def bowl_quadrants(dets, depth, K, Tbc, Tb, min_conf=0.25, min_points=80, share=0.25):
+def bowl_quadrants(dets, depth, K, Tbc, Tb, min_conf=0.2, min_points=80, share=0.25):
     """Bowls -> {quadrant: bowl points there}; a bowl counts in every quadrant holding >= `share` of its points."""
     from basket_vision import cloud
     out = {q: 0 for q in QUADRANTS}
@@ -87,7 +116,7 @@ def bowl_boxes(dets, depth, K, Tbc, posj=None):
     from types import SimpleNamespace
     from basket_vision import obstacle_boxes
     det = SimpleNamespace(plate_masks=[(m, c) for n, c, _, m in dets if n == 'bowl' and m is not None])
-    return [(f'bowl_{i}',) + tuple(b[1:]) for i, b in enumerate(obstacle_boxes(det, None, depth, K, Tbc, posj))]
+    return [(f'bowl_{i}',) + tuple(b[1:]) for i, b in enumerate(obstacle_boxes(det, None, depth, K, Tbc, posj, min_conf=0.2, min_points=60))]
 
 
 def choose(counts, allowed=('Q3', 'Q4'), min_points=150):
@@ -99,7 +128,7 @@ def choose(counts, allowed=('Q3', 'Q4'), min_points=150):
 def draw(rgb, dets, K, Tbc, Tb, counts, chosen, note=''):
     img = rgb.copy()
     for name, c, (x0, y0, x1, y1), _ in dets:
-        col = COLOURS[name]
+        col = COLOURS.get(name, (255, 60, 200))
         cv2.rectangle(img, (x0, y0), (x1, y1), col, 2)
         cv2.putText(img, f'{name} {c:.2f}', (x0, max(14, y0 - 5)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, col, 2)
     if Tb is not None:
@@ -114,8 +143,8 @@ def draw(rgb, dets, K, Tbc, Tb, counts, chosen, note=''):
                 (w, h), _ = cv2.getTextSize(s, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 2)
                 u, v = uv.mean(0).astype(int)
                 cv2.putText(img, s, (u - w // 2, v - 4 + i * (h + 6)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, col, 2)
-    lines = [f'empty: {" ".join(q for q in QUADRANTS if counts.get(q, 0) < 150) or "-"}',
-             f'target: {chosen or "-"}'] + ([note] if note else [])
+    lines = ([f'empty: {" ".join(q for q in QUADRANTS if counts.get(q, 0) < 150) or "-"}', f'target: {chosen or "-"}']
+             if Tb is not None or note else []) + ([note] if note else [])
     for i, s in enumerate(lines):
         cv2.putText(img, s, (10, 26 + 26 * i), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (255, 255, 255), 2)
     return img
@@ -135,11 +164,67 @@ def write_state(path, state):
     os.replace(tmp, path)
 
 
+def detect_live(a):
+    """(10/26 보스: YOLOE만 띄워서 검출 확인) boxes + masks only, camera opened here (nothing else may hold it) at its
+    own rate, or the perception share.  Prompts / conf from the command line; fps and YOLOE ms on the image."""
+    import sys
+    det = Detector(a.prompts)
+    cam = None
+    if a.camera:
+        sys.path.insert(0, str(ROOT / 'real_time_project'))
+        from real_time_utils import D455Source
+        serial = a.camera
+        if serial == 'fixed':
+            sys.path.insert(0, str(ROOT / 'calibration'))
+            import plate_plans as pp
+            serial = str(pp.C['cameras']['fixed_serial'])
+        cam = D455Source(serial=serial)
+    win, last, t_prev = 'YOLOE detect', 0.0, time.perf_counter()
+    cv2.namedWindow(win, cv2.WINDOW_NORMAL)
+    cv2.resizeWindow(win, 1280, 960)
+    try:
+        while True:
+            if cam is not None:
+                rgb = cam.read().rgb
+            else:
+                try:
+                    z = np.load(a.share)
+                    if float(z['t']) <= last:
+                        if (cv2.waitKey(20) & 0xff) in (ord('q'), 27):
+                            break
+                        continue
+                    last, rgb = float(z['t']), z['rgb']
+                except (OSError, ValueError, KeyError):
+                    time.sleep(0.05)
+                    continue
+            t0 = time.perf_counter()
+            dets = det(rgb, a.conf)
+            ms = (time.perf_counter() - t0) * 1000
+            img = rgb.copy()
+            for name, c, _, mk in dets:                        # masks lightly filled so a missed bowl is obvious
+                if mk is not None:
+                    col = np.array(COLOURS.get(name, (255, 60, 200)), np.uint8)
+                    img[mk] = (0.6 * img[mk] + 0.4 * col).astype(np.uint8)
+            img = draw(img, dets, None, None, None, {}, None)
+            now = time.perf_counter()
+            fps, t_prev = 1.0 / max(now - t_prev, 1e-6), now
+            cv2.rectangle(img, (0, 0), (img.shape[1], 58), (0, 0, 0), -1)
+            cv2.putText(img, f'{fps:4.1f} fps  YOLOE {ms:4.0f} ms  conf>={a.conf}  ' + ', '.join(
+                f'{n} {sum(d[0] == n for d in dets)}' for n in det.names), (10, 24), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+            cv2.imshow(win, img[:, :, ::-1])
+            if (cv2.waitKey(1) & 0xff) in (ord('q'), 27):
+                break
+    finally:
+        if cam is not None:
+            cam.close()
+        cv2.destroyAllWindows()
+
+
 def main():
     a = argparse.ArgumentParser()
     a.add_argument('--share', default='/dev/shm/fixed_latest.npz')
     a.add_argument('--frame', help='offline: one saved frame (npz rgb/depth/K) instead of the share')
-    a.add_argument('--T_base_cam', required=True)
+    a.add_argument('--T_base_cam', help='required unless --detect_only')
     a.add_argument('--basket', help="basket_vision.json (T); quadrants drawn once it exists")
     a.add_argument('--posj', type=float, nargs=6, help='joints deg (the arm is cut out of the bowl boxes)')
     a.add_argument('--state', default='/dev/shm/demo_quadrants.json')
@@ -148,7 +233,13 @@ def main():
     a.add_argument('--until_pid', type=int, help='exit when this process ends (the pipeline)')
     a.add_argument('--no_window', action='store_true')
     a.add_argument('--png', help='offline: save the overlay here')
+    a.add_argument('--detect_only', action='store_true', help='(10/26) YOLOE boxes only (no basket, quadrants, state); q quits')
+    a.add_argument('--camera', help="--detect_only: open this D455 here ('fixed' = the config's fixed camera) instead of the share")
+    a.add_argument('--prompts', nargs='+', default=PROMPTS, help='--detect_only: YOLOE prompts')
+    a.add_argument('--conf', type=float, default=0.15, help='--detect_only: YOLOE confidence threshold')
     a = a.parse_args()
+    if a.detect_only:
+        return detect_live(a)
     Tbc = np.asarray(json.loads(Path(a.T_base_cam).read_text())['T_base_cam'], float)
     det, last, n = Detector(), 0.0, 0
     win = 'demo: fixed camera'
