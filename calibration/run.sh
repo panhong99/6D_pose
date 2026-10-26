@@ -42,33 +42,45 @@ case "$mode" in
   pipeline)
     cd "$DIR/.." && exec conda run --no-capture-output -n foundationpose python -u "$DIR/pipeline.py" "$@" ;;
   demo1103_fixed)   # (10/26 보스 최후의 수) the spectator view still shows YOLOE live, but the run does not depend on it:
-                    # basket pose from DEMO_BASKET (saved good measurement), quadrant + pins fixed (Q3 11 then 6: same face,
-                    # rule carry 0.371 m, clearance >= 1.5 x on 10/26's basket), DEMO_FULL quadrants drawn as holding bowls
+                    # basket pose from DEMO_BASKET (saved good measurement), quadrant + pins fixed, DEMO_FULL quadrants drawn
+                    # as holding bowls (default: all but the target, 보스: a bowl always sits in the other of Q3 / Q4).
+                    # Pins (10/26 basket, same face, rule carry 0.371 m, both plates from the right stand or the white from
+                    # the left one): Q3 back 12 -> front 6, Q4 front 3 -> back 10 (Q3 11 -> 6 has no plan from the left stand)
     for a in "$@"; do
       case "$a" in --execute) ;; *) echo "!!! demo1103_fixed: 알 수 없는 인자 '$a' (허용: --execute)"; exit 2 ;; esac
     done
     basket="${DEMO_BASKET:-$DIR/data/basket/demo_basket_fixed.json}"
     [ -f "$basket" ] || { echo "!!! 바구니 위치 파일 없음: $basket"; exit 1; }
-    q="${DEMO_QUADRANT:-Q3}"; p1="${DEMO_PIN1:-11}"; p2="${DEMO_PIN2:-6}"
+    q="${DEMO_QUADRANT:-Q3}"
+    case "$q" in
+      Q3) p1="${DEMO_PIN1:-12}"; p2="${DEMO_PIN2:-6}"; full="${DEMO_FULL:-Q1 Q2 Q4}" ;;
+      Q4) p1="${DEMO_PIN1:-3}"; p2="${DEMO_PIN2:-10}"; full="${DEMO_FULL:-Q1 Q2 Q3}" ;;
+      *) echo "!!! DEMO_QUADRANT=Q3 또는 Q4"; exit 2 ;;
+    esac
     common=(--task plate --plate_policy ik_bc --place basket --insert quadrant --quadrant "$q" --sim_q --auto
             --basket_json "$basket" --markers_off --one_go --vel_deg_s "${DEMO_VEL:-60}" --keep_face --demo_view
-            --demo_full ${DEMO_FULL:-Q1 Q2})
+            --demo_full $full --no_wrist_view)
     echo "### 고정 시연: ${q} ${p1} -> ${p2}, 바구니 ${basket} (바구니를 옮기지 말 것)"
-    echo "=== 1/2 빨간 접시: 받침 위에 올려 두고 Enter (끝내기: q) ==="; read -r ans; [ "$ans" = q ] && exit 0
+    echo "=== 1/2 빨간 접시: 오른쪽 받침 위에 올려 두고 Enter (끝내기: q) ==="; read -r ans; [ "$ans" = q ] && exit 0
     conda run --no-capture-output -n foundationpose python -u "$DIR/pipeline.py" "${common[@]}" --pin "$p1" \
       --plate_color red "$@" || { echo "!!! 1번째 실패 - 로그 확인"; exit 1; }
-    echo "=== 2/2 흰 접시 -> ${q} ${p2}: 받침 위에 올려 두고 Enter (끝내기: q) ==="; read -r ans; [ "$ans" = q ] && exit 0
+    echo "=== 2/2 흰 접시 -> ${q} ${p2}: 받침 위 (왼쪽 그대로 또는 오른쪽) Enter (끝내기: q) ==="; read -r ans; [ "$ans" = q ] && exit 0
     conda run --no-capture-output -n foundationpose python -u "$DIR/pipeline.py" "${common[@]}" --pin "$p2" \
       --basket_plates "$q:$p1" --plate_color white "$@" || { echo "!!! 2번째 실패 - 로그 확인"; exit 1; }
     echo "=== 시연 끝: ${q} ${p1}, ${p2} ==="
     ;;
   demo1103)   # (10/23 보스) 11/3 demo: YOLOE sees the bowls, the empty quadrant (Q3 / Q4) is taken, two plates go in there in
-              # the gripper-side order (--region first / second), the fixed view with the boxes stays up during each run
+              # the gripper-side order (--region first / second), the fixed view with the boxes stays up during each run.
+              # (10/26 보스) latency first: no obstacle avoidance (rule carry as planned), 80 deg/s, fixed camera only
+              # (no wrist view), basket pose from DEMO_BASKET (saved json; DEMO_BASKET=vision measures it now, ~6 s)
     for a in "$@"; do
       case "$a" in --execute) ;; *) echo "!!! demo1103: 알 수 없는 인자 '$a' (허용: --execute)"; exit 2 ;; esac
     done
-    common=(--task plate --plate_policy ik_bc --place basket --insert quadrant --sim_q --auto --basket_source vision
-            --markers_off --one_go --vel_deg_s "${DEMO_VEL:-60}" --keep_face --demo_view --obstacles)
+    basket="${DEMO_BASKET:-$DIR/data/basket/demo_basket_fixed.json}"
+    if [ "$basket" = vision ]; then where=(--basket_source vision)
+    else [ -f "$basket" ] || { echo "!!! 바구니 위치 파일 없음: $basket"; exit 1; }; where=(--basket_json "$basket"); fi
+    common=(--task plate --plate_policy ik_bc --place basket --insert quadrant --sim_q --auto "${where[@]}"
+            --markers_off --one_go --vel_deg_s "${DEMO_VEL:-80}" --keep_face --demo_view --no_wrist_view)
     chosen="$(mktemp)"; rm -f "$chosen"
     echo "=== 1/2 빨간 접시: 받침 위에 올려 두고 Enter (끝내기: q) ==="; read -r ans; [ "$ans" = q ] && exit 0
     conda run --no-capture-output -n foundationpose python -u "$DIR/pipeline.py" "${common[@]}" --quadrant auto \

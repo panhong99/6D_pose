@@ -678,13 +678,15 @@ def start_demo_watch(args, Tbc, posj, out, children, env):
     """(10/23 11/3 시연) calibration/demo_watch.py on the perception's shared fixed frames: YOLOE boxes + quadrants (window
     with --demo_view), the bowls per quadrant -> out/demo_quadrants.json.  Ends with this process."""
     (out / 'basket_vision_T_base_cam.json').write_text(json.dumps(dict(T_base_cam=np.asarray(Tbc).tolist())))
+    placed = sorted({v.split(':')[0] if ':' in v else args.quadrant for v in (args.basket_plates or [])} - {'auto'})
     children.start('demo_watch', [sys.executable, '-u', str(HERE / 'demo_watch.py'), '--T_base_cam',
                                   str(out / 'basket_vision_T_base_cam.json'), '--basket', str(out / 'basket_vision.json'),
                                   '--state', str(out / 'demo_quadrants.json'), '--chosen_file', str(out / 'chosen_quadrant.txt'),
                                   '--allowed', *args.auto_quadrants, '--until_pid', str(os.getpid())]
                    + (['--posj', *map(str, posj)] if posj is not None else ['--posj', *map(str, HOME_JOINTS_DEG)])
                    + ([] if args.demo_view else ['--no_window'])
-                   + (['--show_full', *args.demo_full] if args.demo_full else []), env)
+                   + (['--show_full', *args.demo_full] if args.demo_full else [])
+                   + (['--show_plate', *placed] if placed else []), env)
     print('[분면] 고정 카메라 관측 창: YOLOE bbox + 분면 (초록 = 빈, 빨강 = bowl, 노랑 = 고른 분면)'
           if args.demo_view else '[분면] 고정 카메라로 bowl 관측 시작', flush=True)
 
@@ -727,8 +729,9 @@ def auto_quadrant(out, children, allowed, frames=3, timeout_s=30.0):
     empties = [tuple(s['empty']) for s in seen]
     if len(set(empties)) > 1:
         raise RuntimeError(f'--quadrant auto: the frames disagree on the empty quadrants {empties} (bowl at a quadrant edge?)')
-    counts = seen[-1]['counts']
-    print('[분면] ' + ', '.join(f'{q} {"bowl" if counts.get(q, 0) >= 150 else "비어 있음"}' for q in ('Q1', 'Q2', 'Q3', 'Q4'))
+    counts, plates = seen[-1]['counts'], seen[-1].get('plates', {})
+    print('[분면] ' + ', '.join(f'{q} {"bowl" if counts.get(q, 0) >= 150 else "접시" if plates.get(q, 0) >= 150 else "비어 있음"}'
+                               for q in ('Q1', 'Q2', 'Q3', 'Q4'))
           + f'  (YOLOE {", ".join(sorted({d[0] for d in seen[-1]["dets"]}))})', flush=True)
     empty = [q for q in allowed if q in empties[0]]
     if not empty:
@@ -801,17 +804,20 @@ def fixed_basket_z(Tb, cb):
     return Tb
 
 
-def region_pins(n, region, occupied=(), spacing=4, front_first=None):
+def region_pins(n, region, occupied=(), spacing=4, front_first=None, back_first=None):
     """(10/19 보스) candidate pins for "a plate in the front / back of the quadrant", in the order to try; pin 1 = farthest
     from the robot, n = nearest.  (10/23 보스: front = the small pin numbers 1, 2, .., back = the large ones 8, 9, 10; the
     two were swapped before.)  back: the large-number half, the largest first.  front: smaller than every plate already
     in this quadrant, the largest such first; with none there, the small-number half.
     No candidate is closer than `spacing` pins to a plate already there (보스: red at 10 -> white at 6 or farther; with 2
     the white went in at 9, and real plates land ~1-2 pins off the aim).  front_first: the first front pin with none there
-    (10/20 보스: Q4 red at 6 + white at 10 landed only 1-2 pins apart -> red farther from the robot)."""
+    (10/20 보스: Q4 red at 6 + white at 10 landed only 1-2 pins apart -> red farther from the robot).  back_first: the
+    same for back (10/26: at that basket Q4 pins 12 / 11 never plan, 2-5 s each before 10)."""
     occupied = [int(o) for o in occupied]
     if region == 'back':
         cand = list(range(n, n // 2, -1))
+        if back_first:
+            cand = [c for c in cand if c <= int(back_first)] + sorted(c for c in cand if c > int(back_first))
     elif region == 'front':
         top = min(occupied) - spacing if occupied else (int(front_first) if front_first else n // 2)
         cand = list(range(top, 0, -1))
@@ -898,6 +904,11 @@ def run_plate(args):
     Legs: to_ready, grasp, [close + object check], lift, [Human: lower?], lower, [open], retreat, to_home."""
     q, udp = plate_cfg(args.plate_policy), C['udp']
     grip_force = None
+    t_run = time.monotonic()
+
+    def lap(what):                                          # (10/26 보스: latency) seconds since the start, demo view only
+        if args.demo_view:
+            print(f'[시간 +{time.monotonic() - t_run:5.1f} s] {what}', flush=True)
     from perception_service import live_state
     if args.plate_color in ('auto', 'detect') and live_state() is not None:
         raise RuntimeError('A warm perception service owns the fixed camera; specify --plate_color red or white '
@@ -998,8 +1009,9 @@ def run_plate(args):
         from perception_service import live_state
         warm = live_state()
         if warm is not None:
-            expected = dict(prompt=prompt, mesh=str(Path(mesh).resolve()), conf=float(args.conf), serial=args.serial,
-                            wrist_serial=C['cameras']['wrist_serial'])
+            expected = dict(prompt=prompt, mesh=str(Path(mesh).resolve()), conf=float(args.conf), serial=args.serial)
+            if not args.no_wrist_view:
+                expected['wrist_serial'] = C['cameras']['wrist_serial']
             if any(warm.get(key) != value for key, value in expected.items()):
                 raise RuntimeError(f'background perception uses {warm.get("prompt")}; expected {prompt}. '
                                    'Stop/restart it for this plate color before running the pipeline')
@@ -1012,8 +1024,9 @@ def run_plate(args):
             perception = children.start('perception', [sys.executable, '-u', str(ROOT / 'real_time_project/main.py'),
                                                         '--detector', 'yoloe', '--width', '640', '--height', '480',
                                                         '--serial', args.serial, '--prompt', prompt, '--conf', str(args.conf),
-                                                        '--mesh_file', str(mesh),
-                                                        '--wrist_serial', C['cameras']['wrist_serial']], vision_env)
+                                                        '--mesh_file', str(mesh)]
+                                       + ([] if args.no_wrist_view else ['--wrist_serial', C['cameras']['wrist_serial']]),
+                                       vision_env)
         watch = args.quadrant == 'auto' or args.demo_view
         if args.quadrant == 'auto' and not basket_vision:
             raise RuntimeError('--quadrant auto needs --basket_source vision (the quadrants come from the seen basket)')
@@ -1031,8 +1044,10 @@ def run_plate(args):
                                         cut=('bowl',) if watch else ())
             T0 = np.array(json.loads((DATA / 'basket' / 'slot_01_in_basket.json').read_text())['T_base_basket_at_teach'])
             basket_delta, basket_T = Tb @ np.linalg.inv(T0), Tb
+            lap('바구니 위치')
             if args.quadrant == 'auto':
                 args.quadrant = auto_quadrant(out, children, args.auto_quadrants)
+                lap(f'빈 분면 {args.quadrant}')
             elif watch:
                 (out / 'chosen_quadrant.txt').write_text(args.quadrant + '\n')
             if watch and args.obstacles:                    # the bowls are in the way of the carry too
@@ -1100,6 +1115,7 @@ def run_plate(args):
             if time.monotonic() > deadline:
                 raise RuntimeError('no stable plate pose inside the trained area before the timeout')
             time.sleep(0.05)
+        lap('접시 인식 (FP 4회 안정)')
         if args.standing_grasp_check:
             from standing_grasp import plan_standing_grasp
             path, check = plan_standing_grasp(Tbc @ T, plate_bounds(), out)
@@ -1226,7 +1242,8 @@ def run_plate(args):
                 from plate_plans import basket_gaps
                 same_q = [int(v.split(':')[-1]) for v in (args.basket_plates or []) if ':' not in v or v.split(':')[0] == args.quadrant]
                 cands = region_pins(len(basket_gaps()[mq]), args.region, same_q, int(q.get('basket_region_min_spacing', 4)),
-                                    (q.get('basket_region_front_first_pin') or {}).get(args.quadrant))
+                                    (q.get('basket_region_front_first_pin') or {}).get(args.quadrant),
+                                    (q.get('basket_region_back_first_pin') or {}).get(args.quadrant))
                 print(f'   {args.quadrant} {args.region}: 후보 핀 {cands} (이미 있는 접시 {same_q})', flush=True)
                 early, rep, why = None, None, {}
                 order = sim_kw.get('faces', (1.0, -1.0))   # (10/19 보스: the wrist spun ~170 deg on Q3 pin 12) every pin with the
@@ -1320,6 +1337,7 @@ def run_plate(args):
                 from plate_plans import basket_range_note
                 basket_range_note(Tbb, q)
         viz(plan=str(shown))
+        lap('경로 계획 끝')
         print(f'   plan: {plan}  (30 분 유효)', flush=True)
         if not args.execute:
             print('[5/5] 계획만 만들었습니다. --execute 로 실제 이동.', flush=True)
@@ -1539,6 +1557,7 @@ def run_plate(args):
                     sleg('retreat')
                     rec.event('done', place=args.place, quadrant=args.quadrant, pin=args.pin, insert='quadrant', one_go=True)
                     print(f'[5/5] {args.quadrant} 핀 {args.pin} 넣기 완료 (한 번에 가기).', flush=True)
+                    lap('넣기 + 복귀 끝')
                     return
                 if merge:
                     mleg([(splan, 'to_above')] if lift_alone else [(plan, 'lift'), (splan, 'to_above')], 'carry', vel)
@@ -1783,6 +1802,8 @@ def parse_args(argv=None):
                         'not measured now; the basket must not have moved')
     p.add_argument('--demo_full', nargs='+', default=None, metavar='Q',
                    help='(10/26 보스 최후의 수) --demo_view shows these quadrants as holding a bowl, whatever YOLOE sees there')
+    p.add_argument('--no_wrist_view', action='store_true',
+                   help='(10/26 보스, opt-in) the perception window shows the fixed camera only (the wrist camera is not opened)')
     p.add_argument('--demo_view', action='store_true',
                    help='(10/23 11/3 시연, opt-in) spectator window: the fixed camera with YOLOE boxes and the quadrants, until the end')
     p.add_argument('--yaw_trim', type=float, default=None, help='--insert quadrant: turn the plate face about the vertical at '

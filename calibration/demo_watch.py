@@ -92,13 +92,14 @@ def quadrant_corners(q):
     return np.array([[x[0], y[0], 0], [x[1], y[0], 0], [x[1], y[1], 0], [x[0], y[1], 0]])
 
 
-def bowl_quadrants(dets, depth, K, Tbc, Tb, min_conf=0.2, min_points=80, share=0.25):
-    """Bowls -> {quadrant: bowl points there}; a bowl counts in every quadrant holding >= `share` of its points."""
+def bowl_quadrants(dets, depth, K, Tbc, Tb, min_conf=0.2, min_points=80, share=0.25, name='bowl'):
+    """Bowls (or `name`: 'plate' = plates already in the basket) -> {quadrant: their points there}; one counts in every
+    quadrant holding >= `share` of its points."""
     from basket_vision import cloud
     out = {q: 0 for q in QUADRANTS}
     Tbi = np.linalg.inv(Tb)
-    for name, c, _, mk in dets:
-        if name != 'bowl' or c < min_conf or mk is None:
+    for n_, c, _, mk in dets:
+        if n_ != name or c < min_conf or mk is None:
             continue
         P, _ = cloud(cv2.erode(mk.astype(np.uint8), np.ones((5, 5), np.uint8)).astype(bool), depth, K, Tbc)
         P = P[P[:, 2] > 0.0]
@@ -127,8 +128,15 @@ def choose(counts, allowed=('Q3', 'Q4'), min_points=150):
     return (empty[0] if empty else None), empty
 
 
-def draw(rgb, dets, K, Tbc, Tb, counts, chosen, note='', show_conf=False):
+def occupied(counts, plates, min_points=150):
+    """(10/26 보스: Q3에 물체가 있는데 empty) quadrant -> 'bowl' / 'plate' (already inserted) / None = empty."""
+    return {q: 'bowl' if counts.get(q, 0) >= min_points else 'plate' if plates.get(q, 0) >= min_points else None
+            for q in QUADRANTS}
+
+
+def draw(rgb, dets, K, Tbc, Tb, counts, chosen, note='', show_conf=False, plates=None):
     img = rgb.copy()
+    occ = occupied(counts, plates or {})
     for name, c, (x0, y0, x1, y1), _ in dets:
         col = COLOURS.get(name, (255, 60, 200))
         cv2.rectangle(img, (x0, y0), (x1, y1), col, 2)
@@ -139,14 +147,13 @@ def draw(rgb, dets, K, Tbc, Tb, counts, chosen, note='', show_conf=False):
         for q in QUADRANTS:
             P = quadrant_corners(q) @ Tcb[:3, :3].T + Tcb[:3, 3]
             uv = (P @ K.T)[:, :2] / P[:, 2:3]
-            full = counts.get(q, 0) >= 150
-            col = (255, 220, 0) if q == chosen else (230, 40, 40) if full else (40, 210, 60)
+            col = (255, 220, 0) if q == chosen else (230, 40, 40) if occ[q] else (40, 210, 60)
             cv2.polylines(img, [uv.astype(np.int32)], True, col, 4 if q == chosen else 2)
-            for i, s in enumerate((q, 'bowl' if full else 'empty')):
+            for i, s in enumerate((q, occ[q] or 'empty')):
                 (w, h), _ = cv2.getTextSize(s, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 2)
                 u, v = uv.mean(0).astype(int)
                 cv2.putText(img, s, (u - w // 2, v - 4 + i * (h + 6)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, col, 2)
-    lines = ([f'empty: {" ".join(q for q in QUADRANTS if counts.get(q, 0) < 150) or "-"}', f'target: {chosen or "-"}']
+    lines = ([f'empty: {" ".join(q for q in QUADRANTS if not occ[q]) or "-"}', f'target: {chosen or "-"}']
              if Tb is not None or note else []) + ([note] if note else [])
     for i, s in enumerate(lines):
         cv2.putText(img, s, (10, 26 + 26 * i), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (255, 255, 255), 2)
@@ -236,6 +243,8 @@ def main():
     a.add_argument('--until_pid', type=int, help='exit when this process ends (the pipeline)')
     a.add_argument('--no_window', action='store_true')
     a.add_argument('--show_full', nargs='+', default=None, help='(10/26) draw these quadrants as holding a bowl regardless')
+    a.add_argument('--show_plate', nargs='+', default=None, help='(10/26) quadrants the pipeline already put a plate in')
+    a.add_argument('--hold', type=int, default=3, help='a bowl / plate seen in one of the last HOLD frames still counts (no flicker)')
     a.add_argument('--png', help='offline: save the overlay here')
     a.add_argument('--detect_only', action='store_true', help='(10/26) YOLOE boxes only (no basket, quadrants, state); q quits')
     a.add_argument('--camera', help="--detect_only: open this D455 here ('fixed' = the config's fixed camera) instead of the share")
@@ -245,7 +254,7 @@ def main():
     if a.detect_only:
         return detect_live(a)
     Tbc = np.asarray(json.loads(Path(a.T_base_cam).read_text())['T_base_cam'], float)
-    det, last, n = Detector(), 0.0, 0
+    det, last, n, recent = Detector(), 0.0, 0, []
     win = 'demo: fixed camera'
     if not a.no_window and not a.png:
         cv2.namedWindow(win, cv2.WINDOW_NORMAL)
@@ -268,16 +277,23 @@ def main():
         dets = det(rgb)
         Tb = load_basket(a.basket) if a.basket else None
         counts = bowl_quadrants(dets, depth, K, Tbc, Tb) if Tb is not None else {}
+        plates = bowl_quadrants(dets, depth, K, Tbc, Tb, min_conf=0.15, name='plate') if Tb is not None else {}
+        recent = (recent + [(counts, plates)])[-max(1, a.hold):]       # the largest of the last frames: a bowl / plate
+        counts = {q: max(c.get(q, 0) for c, _ in recent) for q in QUADRANTS}   # missed in one frame stays on the view
+        plates = {q: max(p_.get(q, 0) for _, p_ in recent) for q in QUADRANTS}
         for q in a.show_full or []:                     # (10/26 보스 최후의 수) shown as full whatever is seen there
             counts[q] = max(counts.get(q, 0), 150)
-        chosen_by_rule, empty = choose(counts, a.allowed) if Tb is not None else (None, [])
+        for q in a.show_plate or []:
+            plates[q] = max(plates.get(q, 0), 150)
+        occ = occupied(counts, plates)
+        chosen_by_rule, empty = choose({q: 150 if occ[q] else 0 for q in QUADRANTS}, a.allowed) if Tb is not None else (None, [])
         taken = Path(a.chosen_file).read_text().strip().split(':')[0] if a.chosen_file and Path(a.chosen_file).exists() else None
         n += 1
-        write_state(a.state, dict(t=t, frame=n, basket=None if Tb is None else Tb.tolist(), counts=counts, empty=empty,
+        write_state(a.state, dict(t=t, frame=n, basket=None if Tb is None else Tb.tolist(), counts=counts, plates=plates, empty=empty,
                                   chosen=chosen_by_rule, bowls=bowl_boxes(dets, depth, K, Tbc, a.posj),
                                   dets=[(nm, round(c, 3), b) for nm, c, b, _ in dets]))
         img = draw(rgb, dets, K, Tbc, Tb, counts, taken or chosen_by_rule,
-                   '' if Tb is not None else 'basket: measuring ...')
+                   '' if Tb is not None else 'basket: measuring ...', plates=plates)
         if a.png:
             cv2.imwrite(a.png, img[:, :, ::-1])
             print(json.dumps(dict(counts=counts, empty=empty, chosen=chosen_by_rule, dets=len(dets))), flush=True)
