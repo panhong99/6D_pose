@@ -1,0 +1,57 @@
+# Tesollo DG-5F-S left on the M1013: grasp the flat plate on its box and lift it (보스 10/26: grasp success only;
+# the arm path to the plate exists).  Read by hand_env.py / train.py hand.  Frames: robot base = env origin, z up.
+paths:
+  robot_urdf: assets/m1013_dg5fs_left.urdf      # env_setup.py hand_urdf
+  experiment: hand_grasp
+robot:
+  # start = the real "closer" pose of 10/26 (fingertips ~8 cm above the near rim), hand open, back of the hand up
+  start_deg: [-10.21, 24.85, 114.29, -7.16, -28.86, -84.15]
+  arm: {stiffness: 4000.0, damping: 200.0, effort: 300.0}
+  hand: {stiffness: 5.0, damping: 0.05, effort: 7.5}   # real driver P = 5 Nm/rad on fingers 1-3 (10/26)
+geometry:
+  table_top_z: -0.020
+  plate_xy: [1.027, -0.093]            # fixed camera 10/26
+  box_size: [0.15, 0.15]
+  box_h: 0.085                         # plate bottom ~0.065 (camera: plate centre z 0.09, ~5 cm thick)
+  plate_mass: [0.25, 0.45]             # kg, randomised at startup (029 usd mass is 0.30)
+  plate_reset_xy: 0.02                 # +- plate shift at reset
+  rim_r: 0.128
+  rim_dz: 0.016
+  friction: [0.6, 1.2]                 # static friction range (plate and finger links), dynamic = 0.9 x
+task:
+  sim_dt: 0.008333333333               # 120 Hz physics, 30 Hz policy
+  decimation: 4
+  episode_s: 12.0
+  lift_ok: 0.05                        # success: plate >= 5 cm up ...
+  hold_steps: 60                       # ... for 2 s, tilt below max_tilt_deg
+  max_tilt_deg: 30.0
+  knocked_m: 0.04                      # plate moved this far in xy while not lifted -> knocked
+action:
+  arm_step_m: 0.0015                   # TCP translation per policy step at |a| = 1 (4.5 cm/s; orientation fixed)
+  arm_box_m: 0.15                      # TCP stays within this of its start point
+  finger_alpha: 0.08                   # EMA of the finger targets (slow fingers, 보스: slowest)
+rewards:                               # name: weight (Isaac Lab multiplies by dt: points per second)
+  reach: 1.0
+  pinch: 3.0
+  lift: 6.0
+  hold: 10.0
+  success: 100.0
+  knocked: -2.0
+  collision: -20.0
+  action_rate: -0.01
+ppo:
+  num_steps_per_env: 24
+  save_interval: 100
+  actor_hidden_dims: [512, 256, 128]
+  critic_hidden_dims: [512, 256, 128]
+  init_noise_std: 0.8
+  entropy_coef: 0.005
+  learning_rate: 3.0e-4
+  num_learning_epochs: 5
+  num_mini_batches: 4
+  gamma: 0.99
+  lam: 0.95
+  desired_kl: 0.01
+  clip_param: 0.2
+  max_grad_norm: 1.0
+  seed: 42

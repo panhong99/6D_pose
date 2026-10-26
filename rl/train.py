@@ -6,6 +6,7 @@
   $ISAAC -p rl/train.py chunk --stage 2 --iters 500 [--resume <model.pt>]   # one Isaac process (used by curriculum)
   $ISAAC -p rl/train.py bc                                          # IL demos -> actor checkpoint (prints BC_CHECKPOINT)
   $ISAAC -p rl/train.py curriculum --stage 2 --init <bc model_0.pt> --critic_warmup 100 --experiment <name>
+  $ISAAC -p rl/train.py hand --iters 300 [--num_envs 1024]       # Tesollo DG-5F-S plate grasp (hand_env.py, hand.yaml)
 
 curriculum (no Isaac app in this process): trains `chunk` iterations per Isaac process (resume from the last checkpoint,
 watchdog + retries).  After each chunk the saved checkpoint with the best 50-iteration training success is
@@ -170,6 +171,50 @@ def run_chunk(args, cfg):
             runner.writer.close()
         if tracking_run is not None:
             tracking_run.finish()
+        sys.stdout.flush()
+        env.close()
+        app.close()
+
+
+# ---------------------------------------------------------------- Tesollo hand plate grasp (hand_env.py, hand.yaml)
+
+def run_hand(args, cfg):
+    """One headless PPO run of the DG-5F-S plate grasp (no curriculum: 보스 looks at the GUI before anything longer)."""
+    import sys
+    sys.stdout.reconfigure(line_buffering=True)
+    from isaaclab.app import AppLauncher
+    app = AppLauncher(headless=True).app
+
+    import shutil
+    from isaaclab.envs import ManagerBasedRLEnv
+    from isaaclab.utils.io import dump_yaml
+    from isaaclab_rl.rsl_rl import RslRlVecEnvWrapper
+    from rsl_rl.runners import OnPolicyRunner
+
+    import hand_env
+    from rl_utils import ppo_runner_cfg
+
+    hcfg = dict(hand_env.H, curriculum={"chunk": args.iters})
+    hcfg["paths"] = dict(hcfg["paths"], log_root=cfg["paths"]["log_root"])
+    agent = ppo_runner_cfg(hcfg, 1)
+    agent.max_iterations = args.iters
+    env_cfg = hand_env.make_env_cfg(args.num_envs)
+    env_cfg.seed = agent.seed
+    log_dir = new_run_dir(hcfg, 1)
+    log_dir.mkdir(parents=True, exist_ok=True)
+    env = ManagerBasedRLEnv(env_cfg)
+    runner = OnPolicyRunner(RslRlVecEnvWrapper(env), agent.to_dict(), log_dir=str(log_dir), device=env.device)
+    if args.resume:
+        runner.load(args.resume)
+    dump_yaml(str(log_dir / "params" / "env.yaml"), env_cfg)
+    dump_yaml(str(log_dir / "params" / "agent.yaml"), agent)
+    shutil.copy2(RL_DIR / "hand.yaml", log_dir / "params" / "hand.yaml")
+    print(f"[hand] log {log_dir}", flush=True)
+    try:
+        runner.learn(num_learning_iterations=args.iters, init_at_random_ep_len=True)
+    finally:
+        if runner.writer is not None:
+            runner.writer.close()
         sys.stdout.flush()
         env.close()
         app.close()
@@ -487,6 +532,10 @@ def parse_args():
     k.add_argument("--resume", default=None)
     k.add_argument("--freeze_actor", action="store_true", help="critic warm-up: only the value function learns")
     k.add_argument("--experiment", default=None)
+    h = sub.add_parser("hand", help="Tesollo DG-5F-S plate grasp: one headless PPO run (hand_env.py, hand.yaml)")
+    h.add_argument("--iters", type=int, required=True)
+    h.add_argument("--num_envs", type=int, default=1024)
+    h.add_argument("--resume", default=None)
     return p.parse_args()
 
 
@@ -499,6 +548,8 @@ if __name__ == "__main__":
         cfg["paths"]["experiment"] = args.experiment
     if args.mode == "chunk":
         run_chunk(args, cfg)
+    elif args.mode == "hand":
+        run_hand(args, cfg)
     elif args.mode == "bc":
         run_bc(args, cfg)
     else:
