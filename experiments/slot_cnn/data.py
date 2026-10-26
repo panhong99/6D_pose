@@ -243,7 +243,7 @@ def table_texture(rng, size=1024):
 
 def _inserted_plates(m, rng, tines, B, profile):
     """V4 occluders: red/white plates already standing between adjacent tines."""
-    if profile != 'v4':
+    if profile not in ('v4', 'v5_cross'):
         return 0
     n = int(rng.choice([0, 1, 2], p=[0.35, 0.50, 0.15]))
     if not n:
@@ -285,8 +285,9 @@ def build_scene(rng, parts, B, tines, profile='legacy'):
     m = Mesh()
     wire = np.clip(np.array([0.16, 0.16, 0.17]) * rng.uniform(0.6, 1.8) + rng.normal(0, 0.02, 3), 0.03, 0.5)
     tine = np.clip(np.full(3, rng.uniform(0.1, 0.6)) + rng.normal(0, 0.03, 3), 0.03, 0.7)   # (v2) real tines: thin, often
-    r_rod = rng.uniform(0.0013, 0.0026) if profile == 'v4' else rng.uniform(0.0015, 0.0024)
-    r_tine = rng.uniform(0.00075, 0.0021) if profile == 'v4' else rng.uniform(0.0011, 0.0019)
+    thin_real = profile in ('v4', 'v5_cross')
+    r_rod = rng.uniform(0.0013, 0.0026) if thin_real else rng.uniform(0.0015, 0.0024)
+    r_tine = rng.uniform(0.00075, 0.0021) if thin_real else rng.uniform(0.0011, 0.0019)
     for p in parts:
         if p[0] == 'cyl':
             if abs(p[3] - f['pin_r']) < 1e-9:
@@ -341,22 +342,35 @@ def add_held(m, rng, T_basket_cam):
                   np.clip(colour * 0.95, 0, 1))
 
 
-def sample_camera(rng, poses, profile='legacy'):
+def sample_camera(rng, poses, profile='legacy', return_info=False):
     """A real wrist view (T_basket_cam) moved by a few cm and degrees."""
     from scipy.spatial.transform import Rotation
     looks = [i for i, (n, _) in enumerate(poses) if n.startswith('wrist_look')]
     q14 = [i for i, (n, _) in enumerate(poses) if n.startswith('wrist_look') and ('Q1' in n or 'Q4' in n)]
-    if profile == 'v4' and q14 and rng.random() < 0.55:
+    # 10/26 markerless photos showed that the opposite-side look exposes the complete pair of rows:
+    # Q3 look -> Q4 target, Q4 look -> Q3 target.  Prefer the new markerless captures and keep the
+    # physical quadrant labels unchanged; only the camera distribution changes.
+    cross = [i for i, (n, _) in enumerate(poses)
+             if n.startswith('wrist_look/20261026_') and ('_Q3' in n or '_Q4' in n)]
+    if profile == 'v5_cross' and cross:
+        i = rng.choice(cross)
+    elif profile == 'v4' and q14 and rng.random() < 0.55:
         i = rng.choice(q14)
     else:
         i = rng.choice(looks) if looks and rng.random() < 0.6 else rng.integers(len(poses))
     T = poses[i][1].copy()
-    pos_sigma = [0.11, 0.11, 0.065] if profile == 'v4' else [0.04, 0.04, 0.04]
+    pos_sigma = ([0.055, 0.055, 0.035] if profile == 'v5_cross' else
+                 [0.11, 0.11, 0.065] if profile == 'v4' else [0.04, 0.04, 0.04])
     T[:3, 3] += rng.normal(0, pos_sigma)
-    yaw_lim = 45 if profile == 'v4' else 30
-    rot_sigma = 8 if profile == 'v4' else 5
+    yaw_lim = 18 if profile == 'v5_cross' else 45 if profile == 'v4' else 30
+    rot_sigma = 4 if profile == 'v5_cross' else 8 if profile == 'v4' else 5
     yaw = Rotation.from_euler('z', rng.uniform(-yaw_lim, yaw_lim), degrees=True).as_matrix()
     T[:3, :3] = Rotation.from_rotvec(rng.normal(0, np.radians(rot_sigma), 3)).as_matrix() @ yaw @ T[:3, :3]
+    if return_info:
+        name = poses[i][0]
+        view = 'Q3' if '_Q3' in name else 'Q4' if '_Q4' in name else None
+        target = {'Q3': 'Q4', 'Q4': 'Q3'}.get(view)
+        return T, dict(camera_source=name, view_quadrant=view, target_quadrant=target)
     return T
 
 
@@ -457,16 +471,16 @@ def render_set(out, n, seed, profile='legacy'):
     rng = np.random.default_rng(seed)
     meta = []
     for i in range(n):
-        marker_blocks = bool(profile == 'v4' and rng.random() < 0.35)  # markerless scenes remain the majority
+        marker_blocks = bool(profile == 'v4' and rng.random() < 0.35)  # v5_cross is markerless, as deployed
         m, ts, inserted = build_scene(rng, parts_marker if marker_blocks else parts_clean, B, tines, profile)
-        Tbc = sample_camera(rng, poses, profile)
+        Tbc, camera_info = sample_camera(rng, poses, profile, return_info=True)
         add_held(m, rng, Tbc)
         if i % 20 == 0:                                              # a new table texture every 20 samples
             tex = table_texture(rng)
         Tcw = np.linalg.inv(Tbc)
         img, depth = rd.render(m, Tcw, tex, rng)
         cv2.imwrite(str(out / f'{i:06d}.jpg'), post(img, rng), [cv2.IMWRITE_JPEG_QUALITY, 95])
-        meta.append(dict(i=i, profile=profile, marker_blocks=marker_blocks, inserted_plates=inserted,
+        meta.append(dict(i=i, profile=profile, marker_blocks=marker_blocks, inserted_plates=inserted, **camera_info,
                          tines=labels(ts, rail, Tcw, depth)))
         if i % 500 == 0:
             print(f'{i}/{n}', flush=True)
@@ -503,7 +517,7 @@ if __name__ == '__main__':
     a.add_argument('--out', default=str(DATA / 'slot_cnn/check'))
     a.add_argument('--n', type=int, default=100)
     a.add_argument('--seed', type=int, default=0)
-    a.add_argument('--profile', choices=('legacy', 'v4'), default='legacy')
+    a.add_argument('--profile', choices=('legacy', 'v4', 'v5_cross'), default='legacy')
     a = a.parse_args()
     if a.cmd == 'check':
         check(Path(a.out))
