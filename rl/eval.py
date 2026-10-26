@@ -4,6 +4,7 @@
   $ISAAC -p rl/eval.py gate --headless --checkpoint <model.pt> [--num_envs 2048]   # deterministic success rate (EVAL_JSON)
   $ISAAC -p rl/eval.py watch [--checkpoint <model.pt>]                            # GUI; default follows the newest checkpoint
   $ISAAC -p rl/eval.py demo --checkpoint <model.pt>                               # GUI: home -> ready MoveJ -> policy
+  $ISAAC -p rl/eval.py hand [--headless] [--checkpoint <model.pt>]                # DG-5F-S plate grasp: success rate / GUI replay
   $ISAAC -p rl/eval.py export --headless --checkpoint <model.pt> --plate_x X --plate_y Y [--plate_yaw_deg D]  # real-robot plan
   $ISAAC -p rl/eval.py library --headless --checkpoint <model.pt> --approach ik --residual off   # plans per radius
   $ISAAC -p rl/eval.py serve --headless --checkpoint <model.pt> [--approach ik --residual off]   # warm export server
@@ -28,7 +29,7 @@ import time
 from rl_utils import load_config, newest_stage_checkpoint
 
 
-DEFAULT_ENVS = {"gate": 2048, "watch": 4, "demo": 4, "trace": 32, "scripted": 8, "export": 16, "serve": 8, "library": 1}
+DEFAULT_ENVS = {"gate": 2048, "watch": 4, "hand": 512, "demo": 4, "trace": 32, "scripted": 8, "export": 16, "serve": 8, "library": 1}
 
 
 def parse_args():
@@ -402,6 +403,45 @@ def run_watch(args, cfg, app):
             hit = env.termination_manager.get_term(name)
             if hit.any():
                 print(f"[watch] env {hit.nonzero().flatten().tolist()} ended: {name}", flush=True)
+    env.close()
+
+
+def run_hand(args, cfg, app):
+    """Tesollo DG-5F-S plate grasp (hand_env.py): headless = every env one deterministic episode -> success rate and
+    termination counts; with the GUI (no --headless) = replay the checkpoint (default: newest hand_grasp run)."""
+    import torch
+    from isaaclab.envs import ManagerBasedRLEnv
+    from isaaclab_rl.rsl_rl import RslRlVecEnvWrapper
+    from rsl_rl.runners import OnPolicyRunner
+    import hand_env
+    from rl_utils import latest_checkpoint, ppo_runner_cfg, runs_root
+    hcfg = dict(hand_env.H, curriculum={"chunk": 1})
+    hcfg["paths"] = dict(hcfg["paths"], log_root=cfg["paths"]["log_root"])
+    ck = args.checkpoint or latest_checkpoint(max(runs_root(hcfg).glob("*_stage1"), key=lambda d: d.stat().st_mtime))
+    n = args.num_envs or DEFAULT_ENVS["hand"]
+    env = ManagerBasedRLEnv(hand_env.make_env_cfg(n, viewer=not args.headless))
+    venv = RslRlVecEnvWrapper(env)
+    runner = OnPolicyRunner(venv, ppo_runner_cfg(hcfg, 1).to_dict(), log_dir=None, device=env.device)
+    runner.load(str(ck))
+    policy, obs = runner.get_inference_policy(device=env.device), venv.get_observations()
+    print(f"[hand] {ck}, {n} envs", flush=True)
+    done = torch.zeros(n, dtype=torch.bool, device=env.device)
+    ends = {k: 0 for k in ("success", "collision", "plate_lost", "tcp_out", "time_out")}
+    best_lift = torch.zeros(n, device=env.device)
+    while app.is_running() and (not args.headless or not done.all()):
+        with torch.inference_mode():
+            obs, _, _, _ = venv.step(policy(obs))
+        best_lift = torch.maximum(best_lift, hand_env._state(env)["lift"])
+        for k in ends:
+            hit = env.termination_manager.get_term(k) & ~done
+            ends[k] += int(hit.sum())
+            if not args.headless and hit.any():
+                print(f"[hand] env {hit.nonzero().flatten().tolist()} ended: {k}", flush=True)
+            if args.headless:
+                done |= hit
+    if args.headless:
+        print(f"HAND_RESULT success {ends['success']}/{n} = {ends['success'] / n:.3f}  ends {ends}  "
+              f"best lift median {best_lift.median().item() * 100:.1f} cm", flush=True)
     env.close()
 
 
@@ -904,6 +944,8 @@ if __name__ == "__main__":
             run_gate(args, cfg)
         elif args.mode == "watch":
             run_watch(args, cfg, app)
+        elif args.mode == "hand":
+            run_hand(args, cfg, app)
         elif args.mode == "demo":
             run_demo(args, cfg, app)
         elif args.mode == "export":

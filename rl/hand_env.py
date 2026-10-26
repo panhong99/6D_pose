@@ -21,6 +21,7 @@ from isaaclab.actuators import ImplicitActuatorCfg
 from isaaclab.assets import ArticulationCfg, AssetBaseCfg, RigidObjectCfg
 from isaaclab.controllers import DifferentialIKControllerCfg
 from isaaclab.envs import ManagerBasedRLEnvCfg
+from isaaclab.envs.mdp.actions.task_space_actions import DifferentialInverseKinematicsAction
 from isaaclab.managers import EventTermCfg as EventTerm
 from isaaclab.managers import ObservationGroupCfg as ObsGroup
 from isaaclab.managers import ObservationTermCfg as ObsTerm
@@ -120,12 +121,16 @@ def _state(env):
     lifted = (lift > T["lift_ok"]) & tilt_ok & held
     if not hasattr(env, "_hold_count"):
         env._hold_count = torch.zeros(env.num_envs, dtype=torch.long, device=env.device)
-        env._plate_start = p.clone()
+        env._plate_start, env._tcp_start = p.clone(), tcp.clone()
+    # start positions are taken on the first step of an episode: at reset the body buffers still hold the old episode
+    fresh = env.episode_length_buf <= 1
+    env._plate_start[fresh], env._tcp_start[fresh] = p[fresh], tcp[fresh]
     env._hold_count = torch.where(lifted, env._hold_count + 1, torch.zeros_like(env._hold_count))
     moved = torch.norm(p[:, :2] - env._plate_start[:, :2], dim=1)
     st = dict(p=p, up=up, tips=tips, tcp=tcp, rim=rim, dt_rim=dt_rim, opposite=opposite, near=near, held=held,
               lift=lift, lifted=lifted, success=env._hold_count >= T["hold_steps"],
-              knocked=(moved > T["knocked_m"]) & (lift < 0.02))
+              knocked=(moved > T["knocked_m"]) & (lift < 0.02),
+              tcp_out=((tcp - env._tcp_start).abs() > A["arm_box_m"] + 0.03).any(dim=1))     # walls hold it; safety only
     env._hand_state, env._hand_state_step = st, env.common_step_counter
     return st
 
@@ -133,7 +138,6 @@ def _state(env):
 def reset_task_state(env, env_ids):
     if hasattr(env, "_hold_count"):
         env._hold_count[env_ids] = 0
-        env._plate_start[env_ids] = env.scene["plate"].data.root_pos_w[env_ids] - env.scene.env_origins[env_ids]
     env._hand_state_step = None
 
 
@@ -180,9 +184,34 @@ class ObservationsCfg:
 
 # ---------------------------------------------------------------- actions
 
+class BoxedDiffIKAction(DifferentialInverseKinematicsAction):
+    """Diff-IK TCP translation that cannot push the TCP out of its start box (arm_box_m per axis; z also not below
+    the plate rim - 2 cm): the outward part of the command is dropped at the wall.  Pilot 2 (10/26) walked the palm
+    down through the weak fingers and out of the box when that only ended the episode."""
+
+    def process_actions(self, actions):
+        env = self._env
+        if hasattr(env, "_tcp_start"):
+            st = _state(env)
+            rel = st["tcp"] - env._tcp_start
+            a = actions.clone()
+            box = A["arm_box_m"]
+            a[:, :3] = torch.where((rel >= box) & (a[:, :3] > 0), torch.zeros_like(a[:, :3]), a[:, :3])
+            a[:, :3] = torch.where((rel <= -box) & (a[:, :3] < 0), torch.zeros_like(a[:, :3]), a[:, :3])
+            low = st["tcp"][:, 2] <= st["rim"][:, 2] - 0.02
+            a[:, 2] = torch.where(low & (a[:, 2] < 0), torch.zeros_like(a[:, 2]), a[:, 2])
+            actions = a
+        super().process_actions(actions)
+
+
+@configclass
+class BoxedDiffIKActionCfg(mdp.DifferentialInverseKinematicsActionCfg):
+    class_type: type = BoxedDiffIKAction
+
+
 @configclass
 class ActionsCfg:
-    arm = mdp.DifferentialInverseKinematicsActionCfg(
+    arm = BoxedDiffIKActionCfg(
         asset_name="robot", joint_names=["joint_[1-6]"], body_name="link_base",
         controller=DifferentialIKControllerCfg(command_type="pose", use_relative_mode=True, ik_method="dls"),
         scale=(A["arm_step_m"],) * 3 + (0.0,) * 3)                 # translation only, orientation held
@@ -191,9 +220,9 @@ class ActionsCfg:
 
 # ---------------------------------------------------------------- rewards (per step; Isaac Lab multiplies by dt)
 
-def r_reach(env):
+def r_reach(env):                   # thumb and the nearer of index / middle, each toward the rim (thumb starts ~25 cm off)
     d = _state(env)["dt_rim"]
-    return 1.0 - torch.tanh((d[:, 0] + torch.minimum(d[:, 1], d[:, 2])) / 0.1)
+    return 1.0 - 0.5 * (torch.tanh(d[:, 0] / 0.15) + torch.tanh(torch.minimum(d[:, 1], d[:, 2]) / 0.15))
 
 
 def r_pinch(env):
@@ -222,8 +251,14 @@ def r_collision(env):
     return (torch.norm(env.scene["arm_contacts"].data.net_forces_w, dim=-1).amax(dim=1) > 1.0).float()
 
 
+def r_ended_early(env):             # leaving the box or losing the plate ends the episode: never a way out of penalties
+    st = _state(env)
+    return (st["tcp_out"] | (st["p"][:, 2] < REST_Z - 0.03)).float()
+
+
 REWARD_FUNCS = {"reach": r_reach, "pinch": r_pinch, "lift": r_lift, "hold": r_hold, "success": r_success,
-                "knocked": r_knocked, "collision": r_collision, "action_rate": mdp.action_rate_l2}
+                "knocked": r_knocked, "collision": r_collision, "action_rate": mdp.action_rate_l2,
+                "ended_early": r_ended_early}
 
 
 @configclass
@@ -246,17 +281,7 @@ def t_plate_lost(env):              # fell off the box or left the hand far belo
 
 
 def t_tcp_out(env):                 # hand wandered away from its start box
-    st = _state(env)
-    return torch.norm(st["tcp"] - env._tcp_start, dim=1) > A["arm_box_m"] if hasattr(env, "_tcp_start") else torch.zeros(
-        env.num_envs, dtype=torch.bool, device=env.device)
-
-
-def remember_tcp_start(env, env_ids):
-    r = env.scene["robot"]
-    tcp = r.data.body_pos_w[:, r.body_names.index("link_base")] - env.scene.env_origins
-    if not hasattr(env, "_tcp_start"):
-        env._tcp_start = tcp.clone()
-    env._tcp_start[env_ids] = tcp[env_ids]
+    return _state(env)["tcp_out"]
 
 
 @configclass
@@ -289,7 +314,6 @@ class EventCfg:                     # order matters: scene default -> plate shif
                        "yaw": (-math.pi, math.pi)}, "velocity_range": {}, "asset_cfg": SceneEntityCfg("plate")})
     box_follow = EventTerm(func=box_under_plate, mode="reset")
     reset_state = EventTerm(func=reset_task_state, mode="reset")
-    tcp_start = EventTerm(func=remember_tcp_start, mode="reset")
 
 
 # ---------------------------------------------------------------- env config

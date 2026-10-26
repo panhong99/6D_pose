@@ -35,9 +35,10 @@ rewards:                               # name: weight (Isaac Lab multiplies by d
   pinch: 3.0
   lift: 6.0
   hold: 10.0
-  success: 100.0
+  success: 3000.0                      # one-step terms x dt (1/30 s): 100 points once
   knocked: -2.0
-  collision: -20.0
+  collision: -600.0                    # -20 points once (ends the episode)
+  ended_early: -600.0                  # -20 points once: tcp_out / plate off the box (pilot 1 left the box at once)
   action_rate: -0.01
 ppo:
   num_steps_per_env: 24
