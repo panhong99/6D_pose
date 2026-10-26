@@ -5345,3 +5345,46 @@
 - **RL**: 실패 65/156 중 35는 sim에서 운반 중 떨어뜨림(18)·안 앉음(17)이라 삽입 보정으로 못 고침. 칸 오차(~30)는 학습 전후 그대로 → 6 mm 잡음으로 보는 칸 오차가 칸 간격(~24 mm)에 비해 정보가 약하고, 정책 dx 상한 ±3 cm. 다음: sim 손 안 미끄러짐부터 줄이기, CNN 실측 오차 분포로 보는 잡음 교체.
 - **기타**: 계획 생성 worker 약 4 %가 병렬 파일 경합으로 보이는 오류(`catching classes that do not inherit from BaseException`, `Bad CRC-32`) — 재현 안 됨. 회귀시험은 GPU/CPU 부하 때 Pipeline 시간초과(부하 낮을 때 재실행해 통과 후 커밋).
 - 커밋: 03835a9, f795647, 54baae9, ff276c0, 768c7d0(운반 바닥에 바구니 벽 포함 — `--markers_off` + 낮은 상승에서 벽을 스치던 버그).
+
+### 2026-10-23 14:34 Codex — run_v6 안전 중단 후 이어 학습
+- run_v6는 실로봇 pipeline과 GPU 계산이 겹쳐 exact PID 871937만 중지했으며, 완성 체크포인트 `calibration/data/slot_cnn/run_v6/ep14.pt`까지 보존했다. ep15는 중간 종료라 체크포인트가 없다.
+- `train.py` 체크포인트에는 optimizer/scheduler 상태가 없어 동일 실행의 정확한 재개는 불가능하다. 기존 폴더를 덮어쓰지 않고 새 폴더 `run_v7`에서 ep14 가중치를 초기값으로 25 epoch를 이어 학습한다. 재시작 시 OneCycle이 다시 상승하는 영향을 줄이기 위해 최대 lr을 중단 직전 1.08e-4보다 낮은 1.0e-4로 둔다.
+- 실로봇 `run.sh`/`pipeline.py`와 slot CNN 계산이 없고 GPU에는 데스크톱 프로세스만 있음을 확인한 뒤 시작한다. run_v6 ep09는 현재 기준 통과 후보(tip recall 1.000, precision 0.944, Q1 14/14, 번호 오답 0)로 보존한다.
+
+### 2026-10-23 15:13 Codex — run_v7 orphan 정리 및 평가기 리뷰 반영
+- taskboard 지시대로 run_v7 worker PID 973147–973152의 `/proc` 시작 tick·명령·부모(972886)를 확인한 뒤 TERM했다. 계산은 멈췄지만 부모 972886가 Codex app-server 아래 zombie라 worker도 defunct로 남아 있으며 CPU 작업은 하지 않는다. zombie는 신호로 제거할 수 없고 부모의 wait/reap가 필요하다.
+- Claude가 띄운 run_v8 PID 988834는 14분 이상 경과해도 출력 폴더/args.json/log가 생성되지 않았고 GPU 계산도 시작하지 않아 import 초기화 단계에서 정체된 상태다. 새 학습은 중복 실행하지 않았다.
+- `checkpoint_eval.py`에 기존 영역 안 precision과 함께 full-frame 예측 수, unmatched 수, 보수적 full-frame precision을 추가했다. 전체 프레임은 완전 라벨이 아니므로 영역 밖 실제 빗살도 unmatched로 세는 보수 지표임을 JSON에 명시했다. 호환용 `precision`은 기존 영역 안 정의를 유지한다. py_compile·diff check 통과, 커밋 `e07cf7c`.
+
+### 2026-10-26 09:25 Codex — 재부팅 후 슬롯 CNN 학습 복구
+- 시스템 부팅 시각 `2026-10-26 09:17:22` 확인. 실로봇 `run.sh`/`pipeline.py` 및 다른 slot CNN 계산이 없고 GPU에는 데스크톱 프로세스만 있음을 확인했다.
+- taskboard의 장애 복구 지시에 따라 새 폴더 `calibration/data/slot_cnn/run_v8`에서 학습을 재시작했다. PID 8312, `/proc` start_ticks 40590, 명령: sim_v4 / 24 epoch / bs12 / lr1e-4 / run_v7 ep00 초기화. 로그 `calibration/data/slot_cnn/run_v8.log`.
+- 09:25 step 100까지 정상 진행(loss 0.2489, heat 0.0373, offset 0.2115), GPU 3.13 GiB. 재부팅 이후 커널 bad-page/Oops/soft-lockup 재발 로그는 현재 없음.
+- 독립 실기 판정용 마커 없는 look4 20–30장은 아직 새로 들어오지 않았다. run_v6 ep09는 기존 4장 반복평가에서만 기준을 통과한 후보이며 독립 정확도로 주장하지 않는다.
+
+### 2026-10-26 09:45 Codex — run_v8 ep00 평가
+- `calibration/data/slot_cnn/fast_eval_run_v8_ep00/metrics.json` (`--tta`, th 0.3, 8 px): tip 84/84 recall 1.000, 영역 안 precision 0.944(84/89), Q1 14/14, tip 번호 오답 0. root recall 0.651, 영역 안 precision 0.574.
+- 전체 프레임 tip 예측은 252개이며 라벨 매치 84개라 보수적 full-frame precision 0.333, unmatched 168. 단 v4는 한 사진에서 한 분면만 라벨돼 있으므로 영역 밖 실제 빗살도 unmatched로 포함한다. 모델 선택 기준은 기존 영역 안 precision을 유지하되 전체 예측 수도 함께 보고한다.
+- Q1 tip 번호: right 812, wrong 0, refused 474/1286. Q4는 right 305, wrong 0, refused 2279/2584로 번호 거부 병목은 그대로다. 새 마커 없는 look4 사진이 없어 독립 정확도 판정은 보류한다.
+
+### 2026-10-26 10:25 Codex — run_v9 ep01 중간 평가
+- `calibration/data/slot_cnn/fast_eval_run_v9_ep01/metrics.json` (`--tta`, th 0.3, 8 px): tip recall 0.976(82/84), 영역 안 precision 0.953(82/86), Q1 12/14, tip 번호 오답 0. 전체 tip 기준은 만족하지만 Q1 기준 13/14에는 미달했다.
+- root는 recall 0.627(52/83), 영역 안 precision 0.559(52/93). Q1 tip 번호 판독은 전부 거부됐고, Q2~Q4는 답한 경우 오답 0이었다. 기존 4장 반복평가이므로 독립 정확도로 주장하지 않는다.
+- run_v9 학습 PID 8626은 epoch 2에서 정상 진행 중이다. 고정 카메라 detect-only PID 35372가 동시에 실행 중임을 확인했으며, 이 heartbeat에서는 카메라 프로세스를 변경하지 않았다. 새 마커 없는 look4 20~30장은 아직 필요하다.
+
+### 2026-10-26 10:45 Codex — run_v9 ep02 중간 평가
+- `calibration/data/slot_cnn/fast_eval_run_v9_ep02/metrics.json` (`--tta`, th 0.3, 8 px): tip recall 0.976(82/84), 영역 안 precision 0.943(82/87), Q1 12/14, tip 번호 오답 0. 종료 기준의 전체 tip 수치는 만족하지만 Q1 13/14에는 계속 미달했다.
+- root recall 0.627(52/83), 영역 안 precision 0.565(52/92). Q1 tip 번호는 전부 거부됐고 Q2~Q4는 답한 경우 오답 0으로, 번호 규칙 병목도 그대로다.
+- run_v9 PID 8626은 epoch 3에서 정상 진행 중이고 재부팅 후 커널 Oops/bad-page/soft-lockup/GPU Xid 재발은 없다. `run.sh`/`pipeline.py`가 없어 ep02 평가를 순차 실행했으며 중복 학습은 시작하지 않았다.
+
+### 2026-10-26 11:05 Codex — run_v9 ep03 후보 통과, 학습 worker segfault
+- `calibration/data/slot_cnn/fast_eval_run_v9_ep03/metrics.json` (`--tta`, th 0.3, 8 px): tip recall 0.988(83/84), 영역 안 precision 0.943(83/88), Q1 13/14, tip 번호 오답 0. 기존 4장 반복평가의 종료 수치 기준은 모두 통과했다. root recall 0.614, 영역 안 precision 0.573.
+- 번호 판독은 Q1 전부 거부, Q4 대부분 거부가 계속되어 검출 수치 통과와 별개로 번호 규칙 병목은 남아 있다. 마커 없는 look4 20~30장 독립 시험 전에는 실기 정확도 통과로 주장하지 않는다.
+- run_v9은 ep03 저장 뒤 epoch 4 초입에서 DataLoader worker의 `Unexpected segmentation fault`와 `ConnectionResetError(104)`로 종료됐다. PID 8626과 worker 8699–8704가 모두 사라졌고, 커널 Oops/bad-page/soft-lockup/GPU Xid 로그는 재발하지 않았다. ep03이 기존 반복시험 기준을 통과했고 새 독립 사진이 없으므로 단순 epoch 재연장은 시작하지 않고 체크포인트를 보존한다.
+
+### 2026-10-26 21:05 Codex — Q3/Q4 교차 시야 슬롯 CNN 완료
+- 보스 관찰(Q3에서 Q4, Q4에서 Q3 빗살이 더 잘 보임)을 학습 분포에 반영했다. `v5_cross`는 물리적 분면 번호를 유지하고 카메라 분포만 교차시킨다. 30,000장 렌더 후 `run_v9/ep03.pt`에서 초기화해 `run_v10_cross` 12 epoch(lr 5e-5, bs12, workers4)를 완료했다. 코드 커밋 `73f401a`, 평가·보고서 커밋 `e48b364`.
+- 12개 checkpoint를 모두 `--tta`, th 0.3, 8 px로 기존 v4 라벨 4장과 새 마커 없는 19장에 순차 평가했다. 선언 기준을 모두 만족한 모델은 ep02: tip recall 1.000(84/84), 영역 안 precision 0.933(84/90), Q1 14/14, 번호 right 5211 / wrong 0 / refused 3061. root는 recall 0.614, 영역 안 precision 0.537이라 tip보다 약하다.
+- ep02 교차 시야 기하 일관성은 259/260, whole row 20/20, strict 번호판정 7/10, ambiguous row 4였다. baseline run_v9 ep03은 258/260, whole row 19/20, strict 7/10, ambiguous row 3이므로 검출은 +1 개선됐지만 번호 모호성은 1행 늘었다. ep03 이후는 260/260이어도 strict 5/10·ambiguous 6으로 악화돼 단순 연장은 하지 않는다.
+- 결과: `outputs/slot_cnn_run_v10_cross_report/summary.json`, `checkpoint_summary.tsv`, `training_curves.png`, `checkpoint_comparison.png`, `activation_maps_Q3_Q4_normalized.jpg`, `tip_probability_maps_Q3_Q4.jpg`. 선택 모델 오버레이는 `outputs/slot_cnn_cross_view_run_v10_ep02/cross_view_contact_sheet.jpg`, 기존 라벨 전체 평가는 `calibration/data/slot_cnn/eval_run_v10_cross_ep02/`.
+- 한계: v4는 반복 평가한 라벨 4장뿐이고, 새 마커 없는 19장은 손 라벨이 없어 259/260을 독립 정확도로 주장할 수 없다. 다음 개선은 epoch 연장보다 Q4→Q3에서 남은 ambiguous 번호 규칙/끝단 hard negative를 별도 검증해야 한다.

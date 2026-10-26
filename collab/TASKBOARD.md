@@ -99,6 +99,7 @@ Phase 2 작업판이다(10/20 보스 시작). Phase 1(10/22 시연까지)의 작
 
 | # | 일 | 자세한 내용 | 상태 |
 |---|---|---|---|
+| **CI** | **Q3/Q4 교차 시야 슬롯 CNN 학습** | Q3 시야로 Q4, Q4 시야로 Q3 슬롯을 보는 sim_v5_cross 30k → run_v10_cross 12 epoch → 기존 v4 4장과 마커 없는 19장 전 checkpoint 평가 | **완료 (`e48b364`)**: ep02 선택. tip 84/84, 영역 안 precision 0.933, Q1 14/14, 번호 오답 0. 교차 시야 259/260, strict 7/10. baseline 258/260·7/10 대비 검출 +1, ambiguous row 3→4라 번호 모호성은 미개선. 새 19장은 손 라벨이 없어 독립 정확도 아님. 보고서 `outputs/slot_cnn_run_v10_cross_report/` |
 | **BX** | **오늘 밤 맨 먼저: 빗살 인지 정확도 올리기 (보스 10/22 저녁: "오늘 밤 코덱스가 할 일은 빗살 인지 정확도를 올리는 것이 가장 중요")** | 아래 'BX 자세히'. BR의 다음 단계(sim_v4 보강 → run_v5). | **미달 (10/23 04:1x, Claude가 학습·평가 대행)**: sim_v4(60k) 렌더 후 Codex 학습 미시작 → Claude가 run_v5(30 epoch) 실행·epoch별 평가(`calibration/data/slot_cnn/run_v5_eval_summary.tsv`). 최종 ep29 tip 0.964/0.942, Q1 11/14(v3 0.952/0.941, 11/14), 번호 오답 0이나 Q1 답 0·Q4 ~90% 거부 → 병목은 번호 규칙(slots.py). 수치 LOG |
 | **BW** | 꽂힌 접시가 있을 때 마커 없는 바구니 위치 안정화 | 보스 10/22 저녁: **Claude가 맡는다** (sim에서 안정화). Codex는 하지 않는다. | Claude 진행 |
 | **BV** | **고정카메라 세운 접시 파지·홈 복귀** | `--standing-grasp-check --execute`: 홈→상단 10 cm→테두리를 한 spline, 닫기 후 역행→홈도 한 spline. 충돌검사·RRT 없음. 기존 속도. | 완료 (`193c6fe`, 홈 `ea059a7`, spline `eaf1f75`), 보스 실증 대기 |
