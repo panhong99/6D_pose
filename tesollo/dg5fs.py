@@ -5,7 +5,9 @@
     wave  : (보스 runs it) fingers 1 (thumb) .. 5 one at a time: the two curl joints (_3, _4) bend by --bend rad from
             the start pose (clipped to +-CURL_LIMIT) over --move_s seconds and come back to the start pose.
             Enter per finger, q stops (the hand stays where it is).
-    home  : (보스 runs it) all 20 joints to 0 = the official MoveIt 'open' pose (flat open hand), one Enter, slow.
+    save NAME : read-only: the joint angles now -> tesollo/poses.yaml as NAME (pose shaped by hand in DGManager's
+            teaching mode, then DGManager closed and the driver started again).
+    go NAME   : (보스 runs it) all 20 joints to a saved pose; 'open' = all 0 (official MoveIt pose). One Enter, slow.
 
 Needs the official driver running in another terminal (Developer Mode DIP switch, see README):
     source /opt/ros/jazzy/setup.bash && source ~/pan/tesollo_ws/install/setup.bash
@@ -18,11 +20,13 @@ import socket
 import subprocess
 import sys
 import time
+from pathlib import Path
 
 JOINTS = [f'joint_{f}_{k}' for f in range(1, 6) for k in range(1, 5)]
 CURL_LIMIT = 1.4                                  # rad; URDF allows +-1.57 on joints _3/_4, targets are clipped inside
 MAX_BEND = 0.6                                    # rad; largest --bend, relative to the start pose
-HOME_RATE = 0.25                                  # rad/s; home: the joint farthest from 0 moves no faster than this
+HOME_RATE = 0.25                                  # rad/s; go: the joint that moves most is no faster than this
+POSES = Path(__file__).with_name('poses.yaml')    # saved hand poses (grasp, release, ...); 'open' = all 0 is built in
 
 
 def tcp_ok(ip, port, timeout=2.0):
@@ -153,21 +157,51 @@ def wave(a):
         hand.close()
 
 
-def home(a):
-    """All 20 joints to 0 (the official MoveIt 'open' pose: flat open hand), slowly: >= HOME_RATE rad/s worst joint."""
+def load_poses():
+    """{name: 20 joint angles [rad]}: 'open' (all 0, the official MoveIt pose) + the saved ones in POSES."""
+    import yaml
+    saved = yaml.safe_load(POSES.read_text()) if POSES.exists() else {}
+    return {'open': [0.0] * len(JOINTS), **{k: v['joints_rad'] for k, v in (saved or {}).items()}}
+
+
+def save(a):
+    """Read-only on the hand: the joint angles now -> POSES[name] (taught by hand in DGManager, driver back on)."""
+    import yaml
+    if a.name == 'open':
+        sys.exit("'open' is fixed (all 0)")
+    hand = Hand(a.side)
+    q = hand.read()
+    hand.close()
+    if q is None:
+        sys.exit(f'no /dg5f_s_{a.side}/joint_states - start the driver first (see the top of this file)')
+    show(q)
+    saved = (yaml.safe_load(POSES.read_text()) if POSES.exists() else None) or {}
+    saved[a.name] = dict(joints_rad=[round(v, 4) for v in q], saved=time.strftime('%Y-%m-%d %H:%M:%S'), side=a.side)
+    POSES.write_text(yaml.safe_dump(saved, sort_keys=False))
+    print(f'saved as "{a.name}" in {POSES}')
+
+
+def go(a):
+    """(보스 runs it) all 20 joints to a saved pose (or 'open'), slowly: the worst joint <= HOME_RATE rad/s, one Enter."""
+    poses = load_poses()
+    if a.name not in poses:
+        sys.exit(f'no pose "{a.name}"; saved: {list(poses)}')
+    target = poses[a.name]
     hand = Hand(a.side)
     start = hand.read()
     if start is None:
         sys.exit(f'no /dg5f_s_{a.side}/joint_states - start the driver first (see the top of this file)')
     print('now [rad]:')
     show(start)
-    far = max(abs(v) for v in start)
+    print(f'"{a.name}" [rad]:')
+    show(target)
+    far = max(abs(t - v) for t, v in zip(target, start))
     move_s = max(a.move_s, far / HOME_RATE)
     try:
-        ans = input(f'\nall joints to 0 (open hand), largest change {far:.2f} rad in {move_s:.1f} s. Enter = go, q = stop: ')
+        ans = input(f'\nto "{a.name}", largest change {far:.2f} rad in {move_s:.1f} s. Enter = go, q = stop: ')
         if ans.strip().lower() == 'q':
             return
-        hand.go([0.0] * len(JOINTS), move_s)
+        hand.go(target, move_s)
         q = hand.read()
         if q is not None:
             print('reached [rad]:')
@@ -178,14 +212,15 @@ def home(a):
 
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument('mode', choices=('check', 'wave', 'home'))
+    p.add_argument('mode', choices=('check', 'wave', 'save', 'go'))
+    p.add_argument('name', nargs='?', default='open', help='save / go: pose name (grasp, release, open, ...)')
     p.add_argument('--side', choices=('right', 'left'), default='left')
     p.add_argument('--ip', default='169.254.186.73')   # 보스 10/26: left hand, /24, no gateway
     p.add_argument('--port', type=int, default=502)
     p.add_argument('--bend', type=float, default=0.5, help='wave: curl change from the start pose [rad] (sign = direction)')
-    p.add_argument('--move_s', type=float, default=3.0, help='wave: seconds per move')
+    p.add_argument('--move_s', type=float, default=3.0, help='wave / go: seconds per move (go: at least the HOME_RATE time)')
     a = p.parse_args()
-    {'check': check, 'wave': wave, 'home': home}[a.mode](a)
+    {'check': check, 'wave': wave, 'save': save, 'go': go}[a.mode](a)
 
 
 if __name__ == '__main__':
