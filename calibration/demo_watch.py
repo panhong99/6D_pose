@@ -56,7 +56,9 @@ class Detector:
     def __call__(self, rgb, conf=0.15, margin=30):
         """-> [(name, conf, (x0, y0, x1, y1), mask bool HxW), ...]"""
         dets = self._predict(self.m, self.names, rgb, conf)
-        if self.bowl is None:
+        racks = sorted((d for d in dets if d[0] == 'dish drying rack'), key=lambda d: -d[1])
+        dets = [d for d in dets if d[0] != 'dish drying rack'] + racks[:1]   # (10/26) one basket in the cell: the cloth under
+        if self.bowl is None:                                                # it came as a 2nd rack (0.50 vs 0.93)
             return dets
         h, w = rgb.shape[:2]
         racks = [d for d in dets if d[0] == 'dish drying rack']
@@ -125,12 +127,13 @@ def choose(counts, allowed=('Q3', 'Q4'), min_points=150):
     return (empty[0] if empty else None), empty
 
 
-def draw(rgb, dets, K, Tbc, Tb, counts, chosen, note=''):
+def draw(rgb, dets, K, Tbc, Tb, counts, chosen, note='', show_conf=False):
     img = rgb.copy()
     for name, c, (x0, y0, x1, y1), _ in dets:
         col = COLOURS.get(name, (255, 60, 200))
         cv2.rectangle(img, (x0, y0), (x1, y1), col, 2)
-        cv2.putText(img, f'{name} {c:.2f}', (x0, max(14, y0 - 5)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, col, 2)
+        label = f'{name} {c:.2f}' if show_conf else ('basket' if name == 'dish drying rack' else name)   # (10/26 보스) spectators:
+        cv2.putText(img, label, (x0, max(14, y0 - 5)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, col, 2)              # no jittering numbers
     if Tb is not None:
         Tcb = np.linalg.inv(Tbc) @ Tb
         for q in QUADRANTS:
@@ -166,7 +169,7 @@ def write_state(path, state):
 
 def detect_live(a):
     """(10/26 보스: YOLOE만 띄워서 검출 확인) boxes + masks only, camera opened here (nothing else may hold it) at its
-    own rate, or the perception share.  Prompts / conf from the command line; fps and YOLOE ms on the image."""
+    own rate, or the perception share.  Prompts / conf from the command line; fps and YOLOE ms in the terminal."""
     import sys
     det = Detector(a.prompts)
     cam = None
@@ -179,7 +182,7 @@ def detect_live(a):
             import plate_plans as pp
             serial = str(pp.C['cameras']['fixed_serial'])
         cam = D455Source(serial=serial)
-    win, last, t_prev = 'YOLOE detect', 0.0, time.perf_counter()
+    win, last, t_prev, n_frames = 'YOLOE detect', 0.0, time.perf_counter(), 0
     cv2.namedWindow(win, cv2.WINDOW_NORMAL)
     cv2.resizeWindow(win, 1280, 960)
     try:
@@ -205,12 +208,12 @@ def detect_live(a):
                 if mk is not None:
                     col = np.array(COLOURS.get(name, (255, 60, 200)), np.uint8)
                     img[mk] = (0.6 * img[mk] + 0.4 * col).astype(np.uint8)
-            img = draw(img, dets, None, None, None, {}, None)
-            now = time.perf_counter()
-            fps, t_prev = 1.0 / max(now - t_prev, 1e-6), now
-            cv2.rectangle(img, (0, 0), (img.shape[1], 58), (0, 0, 0), -1)
-            cv2.putText(img, f'{fps:4.1f} fps  YOLOE {ms:4.0f} ms  conf>={a.conf}  ' + ', '.join(
-                f'{n} {sum(d[0] == n for d in dets)}' for n in det.names), (10, 24), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+            img = draw(img, dets, None, None, None, {}, None, show_conf=True)
+            n_frames += 1                                      # (10/26 보스) no changing numbers on the image: terminal, every 5 s
+            if time.perf_counter() - t_prev > 5.0:
+                print(f'{n_frames / (time.perf_counter() - t_prev):.1f} fps, YOLOE {ms:.0f} ms, conf >= {a.conf}: '
+                      + ', '.join(f'{n} {sum(d[0] == n for d in dets)}' for n in det.names + (['bowl'] if det.bowl else [])), flush=True)
+                t_prev, n_frames = time.perf_counter(), 0
             cv2.imshow(win, img[:, :, ::-1])
             if (cv2.waitKey(1) & 0xff) in (ord('q'), 27):
                 break
