@@ -3,7 +3,9 @@
     check : read-only. Does this PC have a 169.254.x address, does the hand answer on TCP 502, and (driver running)
             what are the joint angles now.  Sends nothing to the hand.
     wave  : (보스 runs it) fingers 1 (thumb) .. 5 one at a time: the two curl joints (_3, _4) bend by --bend rad from
-            the start pose (clipped to +-CURL_LIMIT) over --move_s seconds and come back to the start pose.  Enter per finger, q stops (the hand stays where it is).
+            the start pose (clipped to +-CURL_LIMIT) over --move_s seconds and come back to the start pose.
+            Enter per finger, q stops (the hand stays where it is).
+    home  : (보스 runs it) all 20 joints to 0 = the official MoveIt 'open' pose (flat open hand), one Enter, slow.
 
 Needs the official driver running in another terminal (Developer Mode DIP switch, see README):
     source /opt/ros/jazzy/setup.bash && source ~/pan/tesollo_ws/install/setup.bash
