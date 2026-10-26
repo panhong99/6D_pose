@@ -7,7 +7,7 @@ robot:
   # start = the real "closer" pose of 10/26 (fingertips ~8 cm above the near rim), hand open, back of the hand up
   start_deg: [-10.21, 24.85, 114.29, -7.16, -28.86, -84.15]
   arm: {stiffness: 4000.0, damping: 200.0, effort: 300.0}
-  hand: {stiffness: 5.0, damping: 0.05, effort: 7.5}   # real driver P = 5 Nm/rad on fingers 1-3 (10/26)
+  hand: {stiffness: 5.0, damping: 0.05, effort: 7.5}   # real driver P = 5 Nm/rad (10/26); pilot 6 with 20 held worse (14/64 vs 55/64)
 geometry:
   table_top_z: -0.020
   plate_xy: [1.027, -0.093]            # fixed camera 10/26
@@ -37,7 +37,7 @@ rewards:                               # name: weight (Isaac Lab multiplies by d
   pinch: 1.0
   touch: 3.0                           # distal links on the plate, 0..1
   lift: 6.0
-  level: 6.0                           # held + up 2 cm: 1 at level, 0.24 at 30 deg (pilot 4 hung the plate at ~44 deg)
+  level: 3.0                           # held + up 2 cm: 1 at level, 0.24 at 30 deg (pilot 4 hung the plate at ~44 deg)
   hold: 10.0
   success: 3000.0                      # one-step terms x dt (1/30 s): 100 points once
   knocked: -2.0
