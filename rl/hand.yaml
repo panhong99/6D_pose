@@ -29,10 +29,13 @@ task:
 action:
   arm_step_m: 0.0015                   # TCP translation per policy step at |a| = 1 (4.5 cm/s; orientation fixed)
   arm_box_m: 0.15                      # TCP stays within this of its start point
+  turn_step_deg: 0.5                   # wrist turn per step at |a| = 1 (15 deg/s)
+  turn_max_deg: 40.0                   # wrist turn cone around the start orientation (pilot 4)
   finger_alpha: 0.08                   # EMA of the finger targets (slow fingers, 보스: slowest)
 rewards:                               # name: weight (Isaac Lab multiplies by dt: points per second)
   reach: 1.0
-  pinch: 3.0
+  pinch: 1.0
+  touch: 3.0                           # distal links on the plate, 0..1
   lift: 6.0
   hold: 10.0
   success: 3000.0                      # one-step terms x dt (1/30 s): 100 points once
