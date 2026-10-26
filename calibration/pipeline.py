@@ -1025,6 +1025,7 @@ def run_plate(args):
                                                         '--detector', 'yoloe', '--width', '640', '--height', '480',
                                                         '--serial', args.serial, '--prompt', prompt, '--conf', str(args.conf),
                                                         '--mesh_file', str(mesh)]
+                                       + (['--fixed_share_s', '0.05'] if args.demo_view else [])   # (10/26 보스) 2 fps view
                                        + ([] if args.no_wrist_view else ['--wrist_serial', C['cameras']['wrist_serial']]),
                                        vision_env)
         watch = args.quadrant == 'auto' or args.demo_view

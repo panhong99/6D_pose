@@ -93,6 +93,8 @@ def parse_args(argv=None):
     g.add_argument('--wrist_serial', default='', help='also show this colour-only D455 (wrist) on the right; its newest '
                    'rectified frame is shared at --wrist_share for the pipeline photos (one owner of the camera)')
     g.add_argument('--wrist_share', type=Path, default=Path('/dev/shm/wrist_latest.npz'))
+    g.add_argument('--fixed_share_s', type=float, default=0.5,
+                   help='(10/26) seconds between shared fixed frames (the 11/3 spectator view: 0.05)')
     g.add_argument('--fixed_share', type=Path, default=Path('/dev/shm/fixed_latest.npz'),
                    help='(10/14) the fixed D455 RGB-D frame (rgb, depth m, K, t) every 0.5 s, for the pipeline (plate angle)')
     g.add_argument('--width', type=int, default=640)
@@ -217,7 +219,7 @@ def main():
         while True:
             t0 = time.perf_counter()
             frame = camera.read()
-            if args.fixed_share and time.time() - fixed_saved > 0.5:     # one owner of the camera: share the frame
+            if args.fixed_share and time.time() - fixed_saved > args.fixed_share_s:   # one owner of the camera: share the frame
                 fixed_saved = time.time()
                 tmp = args.fixed_share.with_name(args.fixed_share.stem + '.tmp.npz')
                 np.savez(tmp, rgb=frame.rgb, depth=frame.depth, K=frame.K, t=fixed_saved)
