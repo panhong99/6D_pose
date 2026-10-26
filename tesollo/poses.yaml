@@ -105,11 +105,11 @@ grasp_calc_pad:
 grasp:
   joints_rad:
   - -0.0349
-  - 1.4818
+  - 1.5691
   - -1.2427
   - 0.3683
   - -0.1623
-  - 1.5481
+  - 1.6354
   - -0.2321
   - 0.6981
   - -0.1885
@@ -124,7 +124,7 @@ grasp:
   - -0.0454
   - 1.4853
   - 1.5499
-  saved: '2026-10-26 19:25:40'
+  saved: '2026-10-26 19:32:08'
   side: left
-  source: "taught_1 (\uBCF4\uC2A4 teaching mode) + 2 deg on thumb J2 and index J6\
-    \ to squeeze"
+  source: "taught_1 (\uBCF4\uC2A4 teaching mode) + 7 deg on thumb J2 and index J6\
+    \ (\uBCF4\uC2A4: close more; +2 slipped)"
