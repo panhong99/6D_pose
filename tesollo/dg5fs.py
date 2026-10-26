@@ -20,6 +20,7 @@ import time
 JOINTS = [f'joint_{f}_{k}' for f in range(1, 6) for k in range(1, 5)]
 CURL_LIMIT = 1.4                                  # rad; URDF allows +-1.57 on joints _3/_4, targets are clipped inside
 MAX_BEND = 0.6                                    # rad; largest --bend, relative to the start pose
+HOME_RATE = 0.25                                  # rad/s; home: the joint farthest from 0 moves no faster than this
 
 
 def tcp_ok(ip, port, timeout=2.0):
@@ -150,16 +151,39 @@ def wave(a):
         hand.close()
 
 
+def home(a):
+    """All 20 joints to 0 (the official MoveIt 'open' pose: flat open hand), slowly: >= HOME_RATE rad/s worst joint."""
+    hand = Hand(a.side)
+    start = hand.read()
+    if start is None:
+        sys.exit(f'no /dg5f_s_{a.side}/joint_states - start the driver first (see the top of this file)')
+    print('now [rad]:')
+    show(start)
+    far = max(abs(v) for v in start)
+    move_s = max(a.move_s, far / HOME_RATE)
+    try:
+        ans = input(f'\nall joints to 0 (open hand), largest change {far:.2f} rad in {move_s:.1f} s. Enter = go, q = stop: ')
+        if ans.strip().lower() == 'q':
+            return
+        hand.go([0.0] * len(JOINTS), move_s)
+        q = hand.read()
+        if q is not None:
+            print('reached [rad]:')
+            show(q)
+    finally:
+        hand.close()
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument('mode', choices=('check', 'wave'))
+    p.add_argument('mode', choices=('check', 'wave', 'home'))
     p.add_argument('--side', choices=('right', 'left'), default='left')
     p.add_argument('--ip', default='169.254.186.73')   # 보스 10/26: left hand, /24, no gateway
     p.add_argument('--port', type=int, default=502)
     p.add_argument('--bend', type=float, default=0.5, help='wave: curl change from the start pose [rad] (sign = direction)')
     p.add_argument('--move_s', type=float, default=3.0, help='wave: seconds per move')
     a = p.parse_args()
-    {'check': check, 'wave': wave}[a.mode](a)
+    {'check': check, 'wave': wave, 'home': home}[a.mode](a)
 
 
 if __name__ == '__main__':
