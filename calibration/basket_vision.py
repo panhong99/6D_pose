@@ -339,8 +339,9 @@ def live(share, Tbc, posj, z_rim, n=5, gap_s=0.6, timeout_s=40.0, max_spread_mm=
     while len(res) < n:
         if time.time() - t0 > timeout_s:
             raise RuntimeError(f'basket vision: {len(res)}/{n} frames in {timeout_s:.0f} s')
-        try:
-            z = np.load(share)
+        try:                                                        # (10/26) whole frame read here (Bad CRC once)
+            with np.load(share) as z_:
+                z = {k: z_[k] for k in ('t', 'rgb', 'depth', 'K')}
             t = float(z['t'])
         except Exception:
             time.sleep(0.1)

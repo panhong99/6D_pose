@@ -247,13 +247,18 @@ class Children:
     def __init__(self, out):
         self.out, self.items, self.active_mover = out, [], None
         self.external_perception = None
+        self.optional = {}                                  # name -> (command, env, restarts left): a viewer, never stops a run
 
     def reuse_perception(self, state):
         self.external_perception = state
 
-    def start(self, name, command, env=None):
+    def start(self, name, command, env=None, optional=False):
+        """optional (10/26: the spectator view died on one bad shared frame during the retreat and stopped the arm): when it
+        exits it is started again (3 times), never an error."""
+        if optional:
+            self.optional.setdefault(name, [command, env, 3])
         log = self.out / f'{name}.log'
-        with log.open('wb') as stream:
+        with log.open('ab' if optional else 'wb') as stream:
             child = subprocess.Popen(command, cwd=ROOT, env=env, stdin=subprocess.DEVNULL, stdout=stream,
                                      stderr=subprocess.STDOUT, start_new_session=True, preexec_fn=_die_with_parent)
         self.items.append((name, child, log))
@@ -265,8 +270,16 @@ class Children:
             state = self.external_perception
             if process_start(state['pid']) != state['start_tick']:
                 raise RuntimeError('background perception stopped; plate run cannot continue')
-        for name, child, log in self.items:
-            if child.poll() is not None:
+        for name, child, log in list(self.items):
+            if child.poll() is not None and name in self.optional:
+                self.items.remove((name, child, log))
+                command, env, left = self.optional[name]
+                print(f'   [{name}] 종료됨 ({child.returncode}, {log}) - 로봇은 계속, ' +
+                      (f'다시 띄움 (남은 {left - 1}회)' if left > 0 else '다시 띄우지 않음'), flush=True)
+                if left > 0:
+                    self.optional[name][2] -= 1
+                    self.start(name, command, env, optional=True)
+            elif child.poll() is not None:
                 tail = '\n'.join(log.read_text(errors='replace').splitlines()[-12:])
                 raise RuntimeError(f'{name} exited ({child.returncode}). Log: {log}\n{tail}')
 
@@ -686,7 +699,7 @@ def start_demo_watch(args, Tbc, posj, out, children, env):
                    + (['--posj', *map(str, posj)] if posj is not None else ['--posj', *map(str, HOME_JOINTS_DEG)])
                    + ([] if args.demo_view else ['--no_window'])
                    + (['--show_full', *args.demo_full] if args.demo_full else [])
-                   + (['--show_plate', *placed] if placed else []), env)
+                   + (['--show_plate', *placed] if placed else []), env, optional=True)
     print('[분면] 고정 카메라 관측 창: YOLOE bbox + 분면 (초록 = 빈, 빨강 = bowl, 노랑 = 고른 분면)'
           if args.demo_view else '[분면] 고정 카메라로 bowl 관측 시작', flush=True)
 
@@ -741,13 +754,22 @@ def auto_quadrant(out, children, allowed, frames=3, timeout_s=30.0):
     return empty[0]
 
 
+def share_t(path):
+    """Time of the shared fixed frame, -inf while missing / being replaced (10/26: a Bad CRC read once)."""
+    try:
+        with np.load(path) as z:
+            return float(z['t'])
+    except Exception:
+        return float('-inf')
+
+
 def basket_from_vision(Tbc, posj, out, children, n=5, cut=()):
     """(10/20 보스: 바구니에 아루코가 없다고 가정) basket pose from the fixed RGB-D the perception process shares
     (calibration/basket_vision.py: YOLOE rack mask + depth + basket model fit, the arm cut out).  Refuses (RuntimeError)
     when the frames disagree or the rack / its blue handle is not seen."""
     share = Path('/dev/shm/fixed_latest.npz')
     t0 = time.time()
-    while not (share.exists() and float(np.load(share)['t']) > t0):     # the perception process writes it every 0.5 s
+    while not share_t(share) > t0:     # the perception process writes it every 0.5 s
         children.check()
         if time.time() - t0 > 60:
             raise RuntimeError('basket vision: no fixed-camera frame from the perception process in 60 s')
@@ -1531,9 +1553,9 @@ def run_plate(args):
                         rec.event('wrist_snapshot', at=tag, png=str(png))
                         share = Path('/dev/shm/fixed_latest.npz')         # (10/14) fixed RGB-D at the same stop: held-plate angle (L)
                         t_f = time.time()
-                        while share.exists() and float(np.load(share)['t']) < t_ask and time.time() - t_f < 3:
+                        while share_t(share) < t_ask and time.time() - t_f < 3:
                             time.sleep(0.1)
-                        if share.exists() and float(np.load(share)['t']) >= t_ask:
+                        if share_t(share) >= t_ask:
                             import shutil
                             shutil.copy(share, out / f'fixed_{tag}.npz')
                             (out / f'fixed_{tag}.json').write_text(json.dumps(dict(

@@ -14,6 +14,7 @@ import contextlib
 import io
 import json
 import tempfile
+import sys
 import time
 import unittest
 from pathlib import Path
@@ -355,6 +356,24 @@ class Pipeline(unittest.TestCase):
         yaw, tt, cost = bv.icp_xy_yaw(S, M, np.radians(11.0), [0.903, -0.197], 0.144)   # seeds come 1 deg apart
         self.assertLess(abs(np.degrees(yaw) - 12.0), abs(11.0 - 12.0))          # moves toward the truth
         np.testing.assert_allclose(tt, [0.9, -0.2], atol=0.005)
+
+    def test_optional_child_restarts_never_raises(self):
+        """(10/26) the spectator view died during the retreat and stopped the arm: an optional child is restarted."""
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            ch = pipeline.Children(Path(d))
+            ch.start('view', [sys.executable, '-c', 'pass'], optional=True)
+            for _ in range(3):
+                ch.items[-1][1].wait(timeout=10)
+                ch.check()
+            self.assertEqual(ch.optional['view'][2], 0)
+            ch.items[-1][1].wait(timeout=10)
+            ch.check()                                  # out of restarts: still no error, just gone
+            self.assertEqual(ch.items, [])
+            ch.start('perception', [sys.executable, '-c', 'pass'])
+            ch.items[-1][1].wait(timeout=10)
+            with self.assertRaises(RuntimeError):
+                ch.check()
 
     def test_region_pins_front_back_and_spacing(self):
         # (10/23 보스) back = large pins largest first; front = smaller than the plates there, >= 4 pins from a plate

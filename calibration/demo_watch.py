@@ -14,6 +14,7 @@ import argparse
 import json
 import os
 import time
+import zipfile
 from pathlib import Path
 
 import cv2
@@ -262,18 +263,23 @@ def main():
     while True:
         if a.until_pid and not Path(f'/proc/{a.until_pid}').exists():
             break
-        try:
-            z = np.load(a.frame or a.share)
-            t = float(z['t']) if 't' in z else 0.0
-        except (OSError, ValueError, KeyError):
+        try:                                            # (10/26) the whole frame read here: one bad read (Bad CRC on
+            with np.load(a.frame or a.share) as z:      # 'depth.npy', the view died) skips that frame
+                t = float(z['t']) if 't' in z else 0.0
+                if not a.frame and t <= last:
+                    z = None
+                else:
+                    rgb, depth, K = z['rgb'], z['depth'], z['K'].astype(float)
+        except (OSError, ValueError, KeyError, EOFError, zipfile.BadZipFile) as exc:
+            if not isinstance(exc, FileNotFoundError):
+                print(f'shared frame skipped: {exc!r}', flush=True)
             time.sleep(0.05)
             continue
-        if not a.frame and t <= last:
+        if z is None:
             if not a.no_window and (cv2.waitKey(30) & 0xff) in (ord('q'), 27) and not a.until_pid:
                 break
             continue
         last = t
-        rgb, depth, K = z['rgb'], z['depth'], z['K'].astype(float)
         dets = det(rgb)
         Tb = load_basket(a.basket) if a.basket else None
         counts = bowl_quadrants(dets, depth, K, Tbc, Tb) if Tb is not None else {}
