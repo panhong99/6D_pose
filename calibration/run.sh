@@ -6,6 +6,7 @@
 #   bash calibration/run.sh pipeline [args]    terminal 2: cube pipeline in conda foundationpose (see pipeline.py)
 #   bash calibration/run.sh demo4 [--execute]  meeting demo: Q4, Q3, Q1, Q2 one --auto --sim_q run each; DEMO_PINS="Q3:back Q3:front:white" picks pins/colour
 #   bash calibration/run.sh demo1022 Q3|Q4 [--execute]   10/22 demo: two plates in that quadrant, fixed order (collab/DEMO_20261022.md)
+#   bash calibration/run.sh demo1103 [--execute]   11/3 demo: bowls seen -> the empty Q3/Q4 -> two plates there (red, white), spectator view
 #   bash calibration/run.sh markers            read-only: live fixed-camera view of the 4 basket markers (q quits)
 #   bash calibration/run.sh basket_check       read-only: marker blocks vs the stored layout (which block moved)
 #   bash calibration/run.sh basket_relayout    store moved marker blocks where they are now (typed y; new layout file)
@@ -39,6 +40,24 @@ case "$mode" in
                  rviz2 -d "$0/viz.rviz"' "$DIR" "$@" ;;
   pipeline)
     cd "$DIR/.." && exec conda run --no-capture-output -n foundationpose python -u "$DIR/pipeline.py" "$@" ;;
+  demo1103)   # (10/23 보스) 11/3 demo: YOLOE sees the bowls, the empty quadrant (Q3 / Q4) is taken, two plates go in there in
+              # the gripper-side order (--region first / second), the fixed view with the boxes stays up during each run
+    for a in "$@"; do
+      case "$a" in --execute) ;; *) echo "!!! demo1103: 알 수 없는 인자 '$a' (허용: --execute)"; exit 2 ;; esac
+    done
+    common=(--task plate --plate_policy ik_bc --place basket --insert quadrant --sim_q --auto --basket_source vision
+            --markers_off --one_go --vel_deg_s "${DEMO_VEL:-60}" --keep_face --demo_view --obstacles)
+    chosen="$(mktemp)"; rm -f "$chosen"
+    echo "=== 1/2 빨간 접시: 받침 위에 올려 두고 Enter (끝내기: q) ==="; read -r ans; [ "$ans" = q ] && exit 0
+    conda run --no-capture-output -n foundationpose python -u "$DIR/pipeline.py" "${common[@]}" --quadrant auto \
+      --region first --chosen_pin_out "$chosen" --plate_color red "$@" || { echo "!!! 1번째 실패 - 로그 확인"; exit 1; }
+    got="$(cat "$chosen")"; q="${got%%:*}"
+    echo "--- ${got} 에 넣음"
+    echo "=== 2/2 흰 접시 -> ${q}: 받침 위에 올려 두고 Enter (끝내기: q) ==="; read -r ans; [ "$ans" = q ] && exit 0
+    conda run --no-capture-output -n foundationpose python -u "$DIR/pipeline.py" "${common[@]}" --quadrant "$q" \
+      --region second --basket_plates "$got" --plate_color white "$@" || { echo "!!! 2번째 실패 - 로그 확인"; exit 1; }
+    echo "=== 시연 끝: ${q} 에 두 장 ==="
+    ;;
   demo1022)   # (10/19 보스) the 10/22 demo, one word per quadrant: two plates, the order the gripper side needs
     qd="${1:-}"; shift || true
     for a in "$@"; do              # (10/19) two pasted lines ran as '--executebash calibration/run.sh demo1022 Q3': stop here

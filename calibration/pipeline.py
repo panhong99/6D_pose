@@ -674,7 +674,70 @@ def say_obstacles(obs, inserted, clear_naive, clear_plan, dt_naive, dt_plan):
               + f' [{dt_plan:.1f} s]  (RViz: 초록 = 실제 경로, 회색 = 장애물 무시 경로)', flush=True)
 
 
-def basket_from_vision(Tbc, posj, out, children, n=5):
+def start_demo_watch(args, Tbc, posj, out, children, env):
+    """(10/23 11/3 시연) calibration/demo_watch.py on the perception's shared fixed frames: YOLOE boxes + quadrants (window
+    with --demo_view), the bowls per quadrant -> out/demo_quadrants.json.  Ends with this process."""
+    (out / 'basket_vision_T_base_cam.json').write_text(json.dumps(dict(T_base_cam=np.asarray(Tbc).tolist())))
+    children.start('demo_watch', [sys.executable, '-u', str(HERE / 'demo_watch.py'), '--T_base_cam',
+                                  str(out / 'basket_vision_T_base_cam.json'), '--basket', str(out / 'basket_vision.json'),
+                                  '--state', str(out / 'demo_quadrants.json'), '--chosen_file', str(out / 'chosen_quadrant.txt'),
+                                  '--allowed', *args.auto_quadrants, '--until_pid', str(os.getpid())]
+                   + (['--posj', *map(str, posj)] if posj is not None else ['--posj', *map(str, HOME_JOINTS_DEG)])
+                   + ([] if args.demo_view else ['--no_window']), env)
+    print('[분면] 고정 카메라 관측 창: YOLOE bbox + 분면 (초록 = 빈, 빨강 = bowl, 노랑 = 고른 분면)'
+          if args.demo_view else '[분면] 고정 카메라로 bowl 관측 시작', flush=True)
+
+
+FIRST_REGION = {'Q3': 'back', 'Q4': 'front', 'Q1': 'front', 'Q2': 'back'}   # (10/19 보스 A, 10/23 labels) the half to fill first:
+# Q3 gripper on the far side -> large pins (back) first; Q4 gripper on the robot side -> small pins (front) first.  Q1/Q2: by the same
+# turn of the wrist as Q4/Q3 (untested on the robot)
+
+
+def seen_bowls(out, children, timeout_s=30.0):
+    """The bowls (oriented boxes) of the newest demo_watch frame that has the basket."""
+    t0 = time.monotonic()
+    while time.monotonic() - t0 < timeout_s:
+        children.check()
+        try:
+            s = json.loads((out / 'demo_quadrants.json').read_text())
+            if s.get('basket') is not None:
+                return [tuple(b) for b in s.get('bowls', [])]
+        except (OSError, ValueError):
+            pass
+        time.sleep(0.2)
+    raise RuntimeError(f'demo_watch: no frame with the basket in {timeout_s:.0f} s')
+
+
+def auto_quadrant(out, children, allowed, frames=3, timeout_s=30.0):
+    """(10/23 11/3 시연) the empty quadrant from `frames` agreeing demo_watch frames after the basket pose -> 'Q3' / 'Q4'."""
+    state, seen, t0 = out / 'demo_quadrants.json', [], time.monotonic()
+    while len(seen) < frames:
+        children.check()
+        if time.monotonic() - t0 > timeout_s:
+            raise RuntimeError(f'--quadrant auto: {len(seen)}/{frames} demo_watch frames with the basket in {timeout_s:.0f} s')
+        try:
+            s = json.loads(state.read_text())
+        except (OSError, ValueError):
+            time.sleep(0.1)
+            continue
+        if s.get('basket') is not None and (not seen or s['frame'] != seen[-1]['frame']):
+            seen.append(s)
+        time.sleep(0.1)
+    empties = [tuple(s['empty']) for s in seen]
+    if len(set(empties)) > 1:
+        raise RuntimeError(f'--quadrant auto: the frames disagree on the empty quadrants {empties} (bowl at a quadrant edge?)')
+    counts = seen[-1]['counts']
+    print('[분면] ' + ', '.join(f'{q} {"bowl" if counts.get(q, 0) >= 150 else "비어 있음"}' for q in ('Q1', 'Q2', 'Q3', 'Q4'))
+          + f'  (YOLOE {", ".join(sorted({d[0] for d in seen[-1]["dets"]}))})', flush=True)
+    empty = [q for q in allowed if q in empties[0]]
+    if not empty:
+        raise RuntimeError(f'--quadrant auto: no empty quadrant among {allowed} (bowls in {[q for q in allowed if q not in empties[0]]})')
+    (out / 'chosen_quadrant.txt').write_text(empty[0] + '\n')
+    print(f'[분면] 빈 분면 {empty} -> {empty[0]} 로 넣습니다', flush=True)
+    return empty[0]
+
+
+def basket_from_vision(Tbc, posj, out, children, n=5, cut=()):
     """(10/20 보스: 바구니에 아루코가 없다고 가정) basket pose from the fixed RGB-D the perception process shares
     (calibration/basket_vision.py: YOLOE rack mask + depth + basket model fit, the arm cut out).  Refuses (RuntimeError)
     when the frames disagree or the rack / its blue handle is not seen."""
@@ -690,7 +753,7 @@ def basket_from_vision(Tbc, posj, out, children, n=5):
     cmd = [sys.executable, str(HERE / 'basket_vision.py'), '--share', str(share), '--T_base_cam',
            str(out / 'basket_vision_T_base_cam.json'), '--z_rim', str(C['basket']['fixed_z_m']), '--n', str(n),
            '--out', str(res_path)] + (['--posj', *map(str, posj)] if posj is not None else
-                                      ['--posj', *map(str, HOME_JOINTS_DEG)])
+                                      ['--posj', *map(str, HOME_JOINTS_DEG)]) + (['--cut', *cut] if cut else [])
     subprocess.run(cmd, cwd=ROOT, check=True, timeout=180)
     r = json.loads(res_path.read_text())
     if not r.get('ok'):
@@ -933,10 +996,28 @@ def run_plate(args):
                                                         '--serial', args.serial, '--prompt', prompt, '--conf', str(args.conf),
                                                         '--mesh_file', str(mesh),
                                                         '--wrist_serial', C['cameras']['wrist_serial']], vision_env)
+        watch = args.quadrant == 'auto' or args.demo_view
+        if args.quadrant == 'auto' and not basket_vision:
+            raise RuntimeError('--quadrant auto needs --basket_source vision (the quadrants come from the seen basket)')
+        if watch:                                           # (10/23 11/3 시연) spectator view + the empty quadrant
+            start_demo_watch(args, Tbc, cur['posj'] if args.execute else None, out, children, vision_env)
         if basket_vision:
-            Tb = basket_from_vision(Tbc, cur['posj'] if args.execute else None, out, children)
+            Tb = basket_from_vision(Tbc, cur['posj'] if args.execute else None, out, children,
+                                    cut=('bowl',) if watch else ())
             T0 = np.array(json.loads((DATA / 'basket' / 'slot_01_in_basket.json').read_text())['T_base_basket_at_teach'])
             basket_delta, basket_T = Tb @ np.linalg.inv(T0), Tb
+            if args.quadrant == 'auto':
+                args.quadrant = auto_quadrant(out, children, args.auto_quadrants)
+            elif watch:
+                (out / 'chosen_quadrant.txt').write_text(args.quadrant + '\n')
+            if watch and args.obstacles:                    # the bowls are in the way of the carry too
+                bowls = seen_bowls(out, children)
+                VISION_OBSTACLES.extend(bowls)
+                print(f'[장애물] bowl {len(bowls)}개를 충돌 모델에 넣음', flush=True)
+        if args.region in ('first', 'second'):              # (11/3 시연) the quadrant is known now
+            first = FIRST_REGION[args.quadrant]
+            args.region = first if args.region == 'first' else {'front': 'back', 'back': 'front'}[first]
+            print(f'[분면] {args.quadrant}: 그리퍼 쪽 규칙으로 이번 접시는 {args.region}', flush=True)
         if args.standing_grasp_check:
             print('[2/5] 세워진 접시 인식 중. FP 기울기 65~115 deg가 4회 안정되면 상단 테두리 IK를 계산합니다.',
                   flush=True)
@@ -1667,8 +1748,13 @@ def parse_args(argv=None):
     p.add_argument('--basket_source', choices=('markers', 'vision'), default=None,
                    help='(10/20, opt-in) basket pose: markers = the 4 ArUco markers (default, config basket.source); vision = no '
                         'markers, the fixed RGB-D + basket model (calibration/basket_vision.py)')
-    p.add_argument('--quadrant', choices=('Q1', 'Q2', 'Q3', 'Q4'), default=None,
-                   help='--insert quadrant: robot view, robot at the bottom: Q1 far-right, Q2 far-left, Q3 near-left, Q4 near-right')
+    p.add_argument('--quadrant', choices=('Q1', 'Q2', 'Q3', 'Q4', 'auto'), default=None,
+                   help='--insert quadrant: robot view, robot at the bottom: Q1 far-right, Q2 far-left, Q3 near-left, Q4 near-right; '
+                        '(10/23 11/3 시연, opt-in) auto = the first empty one of --auto_quadrants, bowls seen by the fixed camera '
+                        '(calibration/demo_watch.py; needs --basket_source vision)')
+    p.add_argument('--auto_quadrants', nargs='+', default=['Q3', 'Q4'], help='--quadrant auto: candidates in this order')
+    p.add_argument('--demo_view', action='store_true',
+                   help='(10/23 11/3 시연, opt-in) spectator window: the fixed camera with YOLOE boxes and the quadrants, until the end')
     p.add_argument('--yaw_trim', type=float, default=None, help='--insert quadrant: turn the plate face about the vertical at '
                    'the insert [deg], + = counter-clockwise seen from above (default config basket_quadrant_yaw_trim_deg)')
     p.add_argument('--tilt_trim', type=float, default=None, help='--insert quadrant: lean the plate along the pin rows at the '
@@ -1690,9 +1776,10 @@ def parse_args(argv=None):
                         'aimed at this --pin landed (e.g. 3.5 = between 3 and 4); their mean error is the policy\'s gap input')
     p.add_argument('--insert_policy', '--insert-policy', type=Path, default=None,
                    help='OPT-IN: apply the deterministic mean of a basket insert PPO checkpoint after lift, using canonical hand pose and unseen gap error; requires --task plate --place basket --insert quadrant --sim_q --execute')
-    p.add_argument('--region', choices=('front', 'back'), default=None,
+    p.add_argument('--region', choices=('front', 'back', 'first', 'second'), default=None,
                    help='(10/19 보스) --insert quadrant: instead of --pin, the first pin of this half of the quadrant that has a plan '
-                        '(10/23 보스: front = small pin numbers 1, 2, .. (far from the robot), back = large 8, 9, 10); see region_pins')
+                        '(10/23 보스: front = small pin numbers 1, 2, .. (far from the robot), back = large 8, 9, 10); see region_pins. '
+                        'first / second (11/3 시연, with --quadrant auto): the half the gripper side puts first (FIRST_REGION) / the other')
     p.add_argument('--chosen_pin_out', type=Path, default=None, help='with --region: write the chosen "Q:pin" here (demo4)')
     p.add_argument('--pin', type=int, default=5, help='--insert quadrant: pin-pair number in the quadrant, 1 = farthest from '
                    'the robot (wrist image top -> bottom); the plate goes into the gap just robot-side of that pair')

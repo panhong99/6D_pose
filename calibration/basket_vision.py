@@ -20,6 +20,7 @@ import numpy as np
 
 ROOT = Path(__file__).resolve().parent.parent
 PROMPTS = ['dish drying rack', 'plate']             # rack mask; plates standing in it are cut out
+CUT = []                                            # (10/23 11/3 시연, opt-in --cut bowl) more prompts cut out of the rack mask
 MIN_HANDLE, MIN_POINTS = 20, 6000                   # below: refuse (look again with the arm out of the view)
 # One-time offset of the rack structure (rl/assets/basket_full.obj walls/rails/handle) from the frame the slots are
 # defined in: median of 25 marker frames on 10/19 17:00-19:30 (experiments/basket_free model_v5): fit = marker + (-3.0, -24.4) mm.
@@ -31,7 +32,7 @@ class Detector:
     def __init__(self):
         from ultralytics import YOLOE
         self.m = YOLOE(str(ROOT / 'yoloe-v8l-seg.pt'))
-        self.m.set_classes(PROMPTS, self.m.get_text_pe(PROMPTS))
+        self.m.set_classes(PROMPTS + CUT, self.m.get_text_pe(PROMPTS + CUT))
 
     def masks(self, rgb, conf=0.05):             # (10/21: basket turned -12 deg at x 0.85 -> rack only 0.10; was 0.1)
         """(rack mask or None, plate mask union, rack confidence); self.plate_masks = [(mask, conf), ...] each plate."""
@@ -47,6 +48,8 @@ class Detector:
             elif int(k) == 1:
                 plates |= mk
                 self.plate_masks.append((mk, float(c)))
+            elif int(k) >= 2:                                   # (--cut) bowls etc.: not the rack, not an obstacle here
+                plates |= mk
         return rack, plates, best
 
 
@@ -406,7 +409,9 @@ def main():
     a.add_argument('--out', required=True)
     a.add_argument('--camera', help='fixed D455 serial, or "fixed" = config camera/calibration/home joints: open the camera here instead of --share (10/21 look4)')
     a.add_argument('--save', help='--camera: save the first frame here (npz)')
+    a.add_argument('--cut', nargs='+', default=[], help="(10/23, opt-in) more YOLOE prompts cut out of the rack mask, e.g. bowl")
     a = a.parse_args()
+    CUT[:] = a.cut
     if a.camera == 'fixed':                         # (look4) the config's camera, calibration, home joints, rim height
         import calib_core as cc
         import plate_plans as pp
