@@ -754,10 +754,27 @@ def basket_from_vision(Tbc, posj, out, children, n=5, cut=()):
            str(out / 'basket_vision_T_base_cam.json'), '--z_rim', str(C['basket']['fixed_z_m']), '--n', str(n),
            '--out', str(res_path)] + (['--posj', *map(str, posj)] if posj is not None else
                                       ['--posj', *map(str, HOME_JOINTS_DEG)]) + (['--cut', *cut] if cut else [])
-    subprocess.run(cmd, cwd=ROOT, check=True, timeout=180)
+    child, t_start = subprocess.Popen(cmd, cwd=ROOT), time.monotonic()   # (10/26) watch the perception meanwhile: a crash
+    while child.poll() is None:                                           # (CUDA OOM) is reported as itself, at once
+        try:
+            children.check()
+        except RuntimeError:
+            child.terminate()
+            child.wait()
+            raise
+        if time.monotonic() - t_start > 180:
+            child.terminate()
+            child.wait()
+            raise RuntimeError('basket vision: no result in 180 s')
+        time.sleep(0.2)
+    if child.returncode:
+        raise RuntimeError(f'basket vision exited ({child.returncode})')
     r = json.loads(res_path.read_text())
     if not r.get('ok'):
-        raise RuntimeError(f'basket vision refused: {r.get("why")} (arm out of the view? basket in the camera view?)')
+        why = str(r.get('why'))
+        hint = (' (arm out of the view? basket in the camera view?)' if any(w in why for w in ('rack not found', 'occluded',
+                'handle', 'few points', 'disagree')) else '')
+        raise RuntimeError(f'basket vision refused: {why}{hint}')
     Tb = np.asarray(r['T'], float)
     VISION_OBSTACLES[:] = r.get('obstacles', [])            # (10/22 장애물 데모) plates seen outside the basket
     yaw = np.degrees(np.arctan2(Tb[1, 0], Tb[0, 0]))

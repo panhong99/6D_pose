@@ -332,7 +332,7 @@ def estimate(det, rgb, depth, K, Tbc, z_rim, posj=None, M=None):
                 obstacles=obstacle_boxes(det, rack, depth, K, Tbc, posj))
 
 
-def live(share, Tbc, posj, z_rim, n=5, gap_s=0.6, timeout_s=40.0, max_spread_mm=6.0, max_spread_deg=1.5):
+def live(share, Tbc, posj, z_rim, n=5, gap_s=0.6, timeout_s=40.0, max_spread_mm=6.0, max_spread_deg=1.5, stale_s=5.0):
     """n fresh frames of the fixed camera share -> median pose; refused if any frame is refused or they disagree."""
     det, M = Detector(), model_points()
     t0, last, res = time.time(), 0.0, []                           # frames newer than the loaded models only
@@ -345,6 +345,9 @@ def live(share, Tbc, posj, z_rim, n=5, gap_s=0.6, timeout_s=40.0, max_spread_mm=
         except Exception:
             time.sleep(0.1)
             continue
+        if time.time() - t > stale_s:                               # (10/26: FP died of CUDA OOM, the share froze)
+            raise RuntimeError(f'fixed camera frames stopped {time.time() - t:.0f} s ago: the perception process '
+                               'is not sharing (stopped? see perception.log)')
         if t <= last or t < t0:
             time.sleep(0.1)
             continue
