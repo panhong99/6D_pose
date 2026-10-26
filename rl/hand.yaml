@@ -31,7 +31,7 @@ action:
   arm_box_m: 0.15                      # TCP stays within this of its start point
   arm_joint_deg_s: 15.0               # every arm joint at most this fast (pilot 4: 200 deg/s wrist flip)
   turn_step_deg: 0.5                   # wrist turn per step at |a| = 1 (15 deg/s)
-  turn_max_deg: 40.0                   # wrist turn cone around the start orientation (pilot 4)
+  turn_max_deg: 90.0                   # wrist turn cone (pilot 8: roll the palm to the rim; 40 in pilot 4)
   finger_alpha: 0.08                   # EMA of the finger targets (slow fingers, 보스: slowest)
 rewards:                               # name: weight (Isaac Lab multiplies by dt: points per second)
   reach: 1.0

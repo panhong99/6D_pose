@@ -5388,3 +5388,54 @@
 - ep02 교차 시야 기하 일관성은 259/260, whole row 20/20, strict 번호판정 7/10, ambiguous row 4였다. baseline run_v9 ep03은 258/260, whole row 19/20, strict 7/10, ambiguous row 3이므로 검출은 +1 개선됐지만 번호 모호성은 1행 늘었다. ep03 이후는 260/260이어도 strict 5/10·ambiguous 6으로 악화돼 단순 연장은 하지 않는다.
 - 결과: `outputs/slot_cnn_run_v10_cross_report/summary.json`, `checkpoint_summary.tsv`, `training_curves.png`, `checkpoint_comparison.png`, `activation_maps_Q3_Q4_normalized.jpg`, `tip_probability_maps_Q3_Q4.jpg`. 선택 모델 오버레이는 `outputs/slot_cnn_cross_view_run_v10_ep02/cross_view_contact_sheet.jpg`, 기존 라벨 전체 평가는 `calibration/data/slot_cnn/eval_run_v10_cross_ep02/`.
 - 한계: v4는 반복 평가한 라벨 4장뿐이고, 새 마커 없는 19장은 손 라벨이 없어 259/260을 독립 정확도로 주장할 수 없다. 다음 개선은 epoch 연장보다 Q4→Q3에서 남은 ambiguous 번호 규칙/끝단 hard negative를 별도 검증해야 한다.
+
+## 2026-10-27 아침 보고
+
+**요약**
+- 된 것: Tesollo DG-5F-S 왼손 실기 연결(ROS 2 개발자 모드, IP 고정), 손 명령 도구(`check / save / go`, 자세 `pregrasp / grasp`), DGManager 티칭 자세 저장, 손가락 1–3 P 게인 1.5 → 5, sim(M1013 + 왼손 + 평평한 접시)과 파지 RL 환경, SDK 힘 제어 파지 도구(`dg5fs_sdk.py`, 실기 미확인). look4는 마커 없이 고정 카메라 바구니 위치로 동작(Q1은 0.26 m 낮게), 70 deg/s·Enter.
+- 안 된 것: **평평한 접시 파지는 sim에서도 아직 실패.** RL 정책 하나가 86 %로 "들고 버팀"을 보였지만 sim 결함(손목 0.4 s에 90°, 손가락 관절 한계 관통)을 이용한 것이라 버림. 현실 제약을 넣은 뒤 RL·사람 설계 동작(격자 1,600개 이상) 모두 2초 유지 0.
+- 보스가 오늘 할 것: (1) 아래 SDK 힘 제어 파지 실기 시험(접시 없이 → 접시) (2) 접시 놓는 방법/손목 방향 결정(4절).
+
+### 1. 어제 보스가 시킨 일
+1) look4 손목 사진: 마커 없이, 70 deg/s, 이동마다 Enter 2) DEMO_VEL 100, ros2_nodes `start`, gripper.py 확인 질문 제거 커밋 3) Tesollo DG-5F-S 연결·튜토리얼, 기본 자세, 엄지·검지 파지, 쥐는 힘 4) 손 모델로 sim에서 **접시 파지 성공만** 목표로 학습(바구니 넣기 없음, 시작 = 실기 접시 근처 자세, 손등 위, open) 5) Codex 감시.
+
+### 2. 업무 설계
+- **손 실기**: 공식 `tesollo_ros2/dg5f_s_ros2`(Jazzy, `~/pan/tesollo_ws`), 개발자 모드(DIP ②). 사용자 모드(①)는 Modbus라 ROS 드라이버가 `Connect Failed`. 자세는 PC 파일(`tesollo/poses.yaml`)에 두고 JTC로 재생(가장 많이 움직이는 관절 ≤ 0.25 rad/s). `grasp` = **보스가 DGManager 티칭으로 만든 자세** + 엄지 J2·검지 J6 +7°(손으로 고른 값). 쥐는 힘 부족 원인 = 드라이버 위치 제어 P 1.5 N·m/rad(오차 7°에서 ~0.18 N·m) → 손가락 1–3만 P 5(설정 파일, 원본 `.orig_p1.5`).
+- **SDK 파지(새, 실기 미확인)**: `tesollo/dg5fs_sdk.py` — USB의 Tesollo Python SDK로 DGManager의 GRASP를 코드에서 호출. 단계마다 Enter: 준비 자세 → 힘 제어 파지(모드 `5F_2FINGER_1_AND_2`, 기본 3 N, 손가락 3–5는 위치 고정) → 놓기 → open. 관절·전류·최고 모터 온도 출력. SDK는 저장소 밖 `~/pan/tesollo_ws/dg_python-main`, conda base python(cffi) 사용. ROS 드라이버·DGManager는 꺼야 함(손이 클라이언트 1개만 받음).
+- **sim**: `rl/env_setup.py hand_urdf / hand_view`(공식 `dg5fs_left_w_mount.urdf`를 link_6에 +90°: 손바닥 아래, 보스가 GUI로 확인). 접시 029(0.25–0.45 kg 랜덤), 박스 15 cm·높이 8.5 cm, 위치 = 고정 카메라 실측 (1.027, −0.093).
+- **RL(학습)**: `rl/hand_env.py`, `rl/hand.yaml`, `train.py hand`, `eval.py hand`. 시작 = 실기 `closer` 자세. 행동 = 팔 끝 이동(≤ 4.5 cm/s, ±15 cm 상자, 손목 회전 0.5°/스텝 원뿔 40° → 8번째 90°) + 손가락 20개 목표(EMA). 손가락 강성 = 실기 P 5. 성공 = 손가락 2개 이상 접촉 + 접시 5 cm 이상 + 기울기 < 30° + 2초(기울기 30°는 제가 정한 값). 정책 512 env PPO, 처음부터 학습(시연 없음).
+- **사람이 설계한 동작(학습 아님)**: 티칭 자세·주먹·굴림 등 손 위치/손목/쥐는 자세 격자로 "내려가기 → 쥐기 → 8 cm 들기"를 sim에서 시험.
+
+### 3. 실험 결과
+| 일 | 완료 조건 | 결과 | 상태 |
+|---|---|---|---|
+| 손 실기 연결 | 관절 20개 읽기, 자세 재생 | ROS 드라이버 연결(펌웨어 v3.1, 0x5F14), `go open/pregrasp/grasp` 동작, IP 영구 설정 | 완료 |
+| 실기 파지(티칭 자세) | 접시 들기 | 위치 제어 힘 부족 + 테두리를 못 감싸 빠짐 | **미달** |
+| sim 티칭 자세 재생 | 2 s 유지 | 손 위치 126개: 최고 2.2 cm, 유지 0 | **미달** |
+| RL 시험 1–3 | 들기 | 버그 2개(리셋 시 옛 위치, 바닥으로 파고듦) 수정 후에도 들기 0 | 미달 |
+| RL 시험 4(손목 40°, 접촉 판정) | 2 s 유지 | 기울기 < 60° 기준 55/64(86 %) 유지, 중간값 8.2 s. **그러나 손목 J4 0.4 s에 −4.5 → 84°(≈200°/s), 약지 J14 211°(한계 127°) 관통 → sim 결함 이용, 버림** | 무효 |
+| RL 시험 5, 6(수평 보상 / 손가락 강성 20) | 30° 이내 유지 | 기울기 38–40°, 유지 줄어듦(14/64) | 미달 |
+| RL 시험 7(팔 관절 ≤ 15°/s, 손가락 한계 위반 = 종료) | 들기 | 들기 사라짐(접촉만) | 미달 |
+| 사람 설계 동작(숙이기·굴리기·박스 8 cm·강성 20, 1,620개) | 2 s 유지 | 0. 최고 3.7 cm(대부분 접시 윗면을 눌러 지렛대처럼 기운 것) | 미달 |
+| RL 시험 8(손목 90°, 처음부터) | 2 s 유지 | (아래에 추가) | 진행 |
+| Codex 교차 시야 CNN | 기존 기준 + 새 19장 일관성 | run_v10_cross ep02: tip 1.000 / 0.933, Q1 14/14, 번호 오답 0, 새 19장 기하 259/260, strict 7/10(독립 정확도 아님, 라벨 없음) | 완료 |
+
+그림·파일:
+- sim 결함 정책 장면(접시 40–50° 기울어 매달림): `outputs/hand_grasp_20261027/pilot4_exploit_sheet.jpg`
+- 티칭 자세 sim 재생: `outputs/hand_grasp_20261027/taught_pose_scripted.png`
+- 학습 로그·키프레임: `outputs/hand_grasp_20261027/`, 체크포인트 `~/IsaacLab/logs/rsl_rl/hand_grasp/`
+- Codex: `outputs/slot_cnn_run_v10_cross_report/`, `outputs/slot_cnn_cross_view_run_v10_ep02/cross_view_contact_sheet.jpg`
+
+보스가 바로 실행할 명령(실기, 보스 실행):
+- SDK 힘 제어 파지(ROS 손 드라이버·DGManager 끄고, 처음엔 접시 없이): `~/miniconda3/bin/python3 tesollo/dg5fs_sdk.py --force 3`
+  - 다른 모드: `--mode 5F_3FINGER` (엄지·검지·중지), `--fixed 4 5`
+- 위치 제어 자세(ROS 드라이버 켜고): `source /opt/ros/jazzy/setup.bash && python3 tesollo/dg5fs.py go pregrasp` → `go grasp` → `go open`
+- sim GUI: `cd rl && ~/isaacsim-5.1.0/python.sh eval.py hand --checkpoint <model.pt>` (conda 끄고)
+
+### 4. 개선/보완
+- **판단**: 손바닥이 아래를 향한 지금 방향으로 **평평하게 놓인 접시의 테두리**를 잡는 것은 실기·sim 모두 어렵다. 테두리 밑 공간(박스 밖 약 5 cm)에 손가락을 넣으려면 손을 크게 굴려야 하는데 그 동작을 아직 못 찾음.
+- **보스 결정 필요**: (a) 접시를 테두리가 더 많이 나오게(좁은 받침, 탁자 끝) 또는 살짝 기울게 둘지, (b) 접근 손목 방향을 바꿔도 되는지(손바닥이 테두리를 옆에서 보게), (c) 힘 제어(SDK)로 갈지.
+- **sim 한계**: 손가락–접시 접촉에서 관절 한계 관통이 잦음(격자의 10–34 %). 손 충돌 모양(링크별 볼록 껍질)과 접시 볼록 분해(16개)가 원인 후보 → 손가락 끝 충돌을 단순 모양으로 바꾸고 solver를 늘린 뒤 다시 시험.
+- **위험**: P 5와 힘 제어 파지는 오래 누르면 모터가 뜨거워짐(매뉴얼 경고). SDK 도구는 온도를 출력하니 시험 중 확인. 실기 SDK 연결은 아직 한 번도 안 해 봄.
+- 30° 기울기 성공 기준은 제가 정한 값. 파지만 보면 60°까지 허용할지 보스 결정.
+- Codex: 다음은 epoch 연장 대신 Q4→Q3 번호 모호성(ambiguous row 4)과 끝단 hard negative 검증.
