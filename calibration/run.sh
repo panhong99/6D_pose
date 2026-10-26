@@ -58,7 +58,7 @@ case "$mode" in
       *) echo "!!! DEMO_QUADRANT=Q3 또는 Q4"; exit 2 ;;
     esac
     common=(--task plate --plate_policy ik_bc --place basket --insert quadrant --quadrant "$q" --sim_q --auto
-            --basket_json "$basket" --markers_off --one_go --vel_deg_s "${DEMO_VEL:-60}" --keep_face --demo_view
+            --basket_json "$basket" --markers_off --one_go --vel_deg_s "${DEMO_VEL:-100}" --keep_face --demo_view
             --demo_full $full --no_wrist_view)
     echo "### 고정 시연: ${q} ${p1} -> ${p2}, 바구니 ${basket} (바구니를 옮기지 말 것)"
     echo "=== 1/2 빨간 접시: 오른쪽 받침 위에 올려 두고 Enter (끝내기: q) ==="; read -r ans; [ "$ans" = q ] && exit 0
@@ -160,9 +160,9 @@ case "$mode" in
       rm -f "$chosen"
     done ;;
   look4)      # (10/19 보스) plate-free wrist photo of each quadrant (Codex tine labels): per quadrant the basket is measured
-              # from the markers, a look pose is planned, then look leg -> photo -> home leg.  Human: empty gripper, no plate
-              # in the basket view; types the opening statement once and `go` per leg.  --execute to really move (else checks only).
-              # Quadrants: LOOK_QUADRANTS="Q1 Q2 Q3 Q4".  Speed: mover default (slowest).
+              # from the fixed camera (LOOK_BASKET), a look pose is planned, then look leg -> photo -> home leg.  Human: empty gripper, no plate
+              # in the basket view; types the opening statement once and Enter per leg.  --execute to really move (else checks only).
+              # Quadrants: LOOK_QUADRANTS="Q1 Q2 Q3 Q4".  Speed 70 deg/s, Enter per leg.
     cd "$DIR/.."
     exe=0; for a in "$@"; do [ "$a" = --execute ] && exe=1; done
     open=()
@@ -171,8 +171,8 @@ case "$mode" in
       [ "$ans" = "area clear, e-stop in hand" ] || { echo "중단"; exit 1; }
       open=(--opening_done)
     fi
-    # (10/21 보스 "7배 빨라도 돼", then "더 빨라도") look legs at 30 deg/s; a later --vel_deg_s in "$@" wins
-    mover() { ( ros /usr/bin/python3 -u "$DIR/ros2_nodes.py" mover --vel_deg_s 30 --acc_deg_s2 30 "$@" ); }
+    # (10/21 보스 "7배 빨라도 돼", then "더 빨라도"; 10/26 70 deg/s, Enter instead of go) a later --vel_deg_s in "$@" wins
+    mover() { ( ros /usr/bin/python3 -u "$DIR/ros2_nodes.py" mover --vel_deg_s 70 --acc_deg_s2 70 --go_enter "$@" ); }
     if [ "${LOOK_SHOW:-0}" = 1 ]; then  # (10/21 보스) live fixed-camera marker view first: check the basket, q closes it (frees the camera)
       echo "=== 고정 카메라 화면: 마커 4개(초록) 보이는지 확인 후 창에서 q ==="
       conda run --no-capture-output -n foundationpose python -u "$DIR/camera_tools.py" markers_live || true

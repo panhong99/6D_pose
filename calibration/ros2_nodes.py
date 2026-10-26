@@ -244,6 +244,7 @@ def mover_args(argv=None):
     p.add_argument('--smooth', action='store_true', help='execute the whole leg as ONE joint-spline motion (movesj through '
                    'all waypoints, no stop between them); start/finish checks as usual')
     p.add_argument('--auto', action='store_true', help='with --opening_done and --smooth: no go prompt (pipeline decides)')
+    p.add_argument('--go_enter', action='store_true', help='(10/26 보스, look4) an empty Enter counts as go (typed-ahead keys dropped)')
     p.add_argument('--go_per', choices=('waypoint', 'leg'), default='waypoint',
                    help='leg: one go starts the whole leg (moves still stop at each waypoint and every check still runs)')
     p.add_argument('--tool-force-limit-n', type=float, default=None,
@@ -402,9 +403,15 @@ def run_mover(argv=None):
             span = np.abs(np.diff(np.vstack([now, targets]), axis=0)).max(axis=1).sum()
             if not args.auto:
                 while True:
-                    answer = input(f'type "go" to run the whole leg ({len(targets)} waypoints, ~{span / args.vel_deg_s:.0f} s), '
-                                   '"q" to stop here: ').strip()
-                    if answer == 'go':
+                    if args.go_enter:
+                        try:                          # no typed-ahead Enter starts the leg
+                            import termios
+                            termios.tcflush(sys.stdin, termios.TCIFLUSH)
+                        except (ImportError, OSError, ValueError, termios.error):
+                            pass
+                    answer = input(f'type {"Enter" if args.go_enter else chr(34) + "go" + chr(34)} to run the whole leg '
+                                   f'({len(targets)} waypoints, ~{span / args.vel_deg_s:.0f} s), "q" to stop here: ').strip()
+                    if answer == 'go' or (args.go_enter and answer == ''):
                         break
                     if answer.lower() in ('q', 'quit', 'stop', 'abort', 'exit'):
                         sys.exit('aborted by user - robot left where it is')
@@ -481,9 +488,9 @@ def run_mover(argv=None):
                     termios.tcflush(sys.stdin, termios.TCIFLUSH)
                 except (ImportError, OSError, ValueError, termios.error):   # not a terminal (tests): nothing to flush
                     pass
-                answer = input('type "go" to move' + (' (runs the WHOLE leg)' if args.go_per == 'leg' else '') +
-                               ', "q" to stop here: ').strip()
-                if answer == 'go':
+                answer = input(('type Enter' if args.go_enter else 'type "go"') + ' to move' +
+                               (' (runs the WHOLE leg)' if args.go_per == 'leg' else '') + ', "q" to stop here: ').strip()
+                if answer == 'go' or (args.go_enter and answer == ''):
                     break
                 if answer.lower() in ('q', 'quit', 'stop', 'abort', 'exit'):
                     sys.exit('aborted by user - robot left where it is')
