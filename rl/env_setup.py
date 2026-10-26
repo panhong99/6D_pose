@@ -5,6 +5,7 @@
   $ISAAC -p rl/env_setup.py plate             # assets/plate029.usd (physics) + plate029_textured.usda (original texture)
   $ISAAC -p rl/env_setup.py sdf               # assets/cell_sdf.npz      shield distance fields (no Isaac app)
   $ISAAC -p rl/env_setup.py ready --headless  # assets/ready_joints.json  ready pose reached by the env's own diff-IK
+  $ISAAC -p rl/env_setup.py hand_view         # GUI: M1013 + Tesollo DG-5F-S left (assets/m1013_dg5fs_left.urdf), flat plate
 
 urdf  : Robotiq geometry/inertia from mujoco_menagerie robotiq_2f85 (open pose).  The 4-bar linkage is NOT simulated:
         two prismatic finger links (follower + pad meshes, pad-box collisions), 0 = open (85 mm), stroke = closed.
@@ -260,15 +261,79 @@ def build_ready(args, cfg):
     app.close()
 
 
+# ---------------------------------------------------------------- Tesollo DG-5F-S left hand (10/26 보스)
+
+HAND_DESC = '/home/pan/pan/tesollo_ws/src/tesollo_ros2/dg5f_s_ros2/dg5f_s_description'
+
+
+def build_hand_urdf(cfg):
+    """M1013 + Tesollo DG-5F-S left (20 DOF, official dg5fs_left_w_mount.urdf) on link_6: mount flat on the flange,
+    turned +90 deg about the flange z so the palm (hand +x) is flange +y = down at home, back of the hand up (보스 10/26)."""
+    share = rl_path(cfg["paths"]["m1013_share"])
+    hand = ET.parse(f'{HAND_DESC}/urdf/dg5fs_left_w_mount.urdf').getroot()
+    for m in hand.iter('mesh'):
+        m.set('filename', m.get('filename').replace('package://dg5f_s_description', HAND_DESC))
+    body = ''.join(ET.tostring(e, encoding='unicode') for e in hand if e.tag in ('link', 'joint'))
+    mount = ('<joint name="hand_mount" type="fixed"><parent link="link_6"/><child link="link_mount"/>'
+             '<origin xyz="0 0 0" rpy="0 0 1.5708"/></joint>')
+    base = (share / 'urdf' / 'm1013.urdf').read_text().replace('package://dsr_description2', share.as_posix())
+    out = rl_path('assets/m1013_dg5fs_left.urdf')
+    out.write_text(base.replace('</robot>', '\n  ' + body + '\n  ' + mount + '\n</robot>'))
+    print(f'wrote {out}', flush=True)
+    return out
+
+
+def view_hand(args, cfg):
+    """GUI: the arm at home, the hand open, the flat plate on a box where it is on the real table (fixed camera 10/26)."""
+    from isaaclab.app import AppLauncher
+    app = AppLauncher(args).app
+    import math
+    import isaaclab.sim as sim_utils
+    from isaaclab.actuators import ImplicitActuatorCfg
+    from isaaclab.assets import Articulation, ArticulationCfg
+    urdf = build_hand_urdf(cfg)
+    sim = sim_utils.SimulationContext(sim_utils.SimulationCfg(dt=1 / 120))
+    sim.set_camera_view([1.6, -1.0, 1.0], [0.85, -0.05, 0.25])
+    sim_utils.GroundPlaneCfg().func('/World/ground', sim_utils.GroundPlaneCfg(), translation=(0, 0, -0.02))
+    sim_utils.DomeLightCfg(intensity=2500.0).func('/World/light', sim_utils.DomeLightCfg(intensity=2500.0))
+    plate_xy, box_h = (1.027, -0.093), 0.06
+    box = sim_utils.CuboidCfg(size=(0.15, 0.15, box_h), collision_props=sim_utils.CollisionPropertiesCfg(),
+                              visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.9, 0.9, 0.9)))
+    box.func('/World/box', box, translation=(*plate_xy, -0.02 + box_h / 2))
+    plate = sim_utils.UsdFileCfg(usd_path=str(rl_path(cfg["paths"]["plate_usd"])))
+    plate.func('/World/plate', plate, translation=(*plate_xy, -0.02 + box_h + 0.005))
+    home = [-5.98, -14.75, 117.74, -3.92, 7.46, -85.07]
+    robot = Articulation(ArticulationCfg(
+        prim_path='/World/Robot',
+        spawn=sim_utils.UrdfFileCfg(asset_path=str(urdf), fix_base=True, merge_fixed_joints=False, make_instanceable=False,
+                                    joint_drive=sim_utils.UrdfConverterCfg.JointDriveCfg(
+                                        drive_type="force", target_type="position",
+                                        gains=sim_utils.UrdfConverterCfg.JointDriveCfg.PDGainsCfg(stiffness=0.0, damping=0.0)),
+                                    rigid_props=sim_utils.RigidBodyPropertiesCfg(disable_gravity=True)),
+        init_state=ArticulationCfg.InitialStateCfg(joint_pos={f"joint_{i + 1}": math.radians(q) for i, q in enumerate(home)}
+                                                   | {"joint_[1-5]_[1-4]": 0.0}),
+        actuators={"arm": ImplicitActuatorCfg(joint_names_expr=["joint_[1-6]"], stiffness=4000.0, damping=200.0),
+                   "hand": ImplicitActuatorCfg(joint_names_expr=["joint_[1-5]_[1-4]"], stiffness=5.0, damping=0.1)}))
+    sim.reset()
+    print(f'hand joints: {[n for n in robot.joint_names if n.count("_") == 2]}', flush=True)
+    while app.is_running():
+        robot.set_joint_position_target(robot.data.default_joint_pos)
+        robot.write_data_to_sim()
+        sim.step()
+        robot.update(sim.get_physics_dt())
+    app.close()
+
+
 # ---------------------------------------------------------------- main
 
 if __name__ == "__main__":
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("what", choices=("urdf", "plate", "sdf", "ready"))
-    if "ready" in sys.argv:
+    p.add_argument("what", choices=("urdf", "plate", "sdf", "ready", "hand_urdf", "hand_view"))
+    if "ready" in sys.argv or "hand_view" in sys.argv:
         from isaaclab.app import AppLauncher
         AppLauncher.add_app_launcher_args(p)
     args = p.parse_args()
     cfg = load_config()
     {"urdf": lambda: build_urdf(cfg), "plate": lambda: build_plate(cfg), "sdf": lambda: build_sdf(cfg),
-     "ready": lambda: build_ready(args, cfg)}[args.what]()
+     "ready": lambda: build_ready(args, cfg), "hand_urdf": lambda: build_hand_urdf(cfg),
+     "hand_view": lambda: view_hand(args, cfg)}[args.what]()
