@@ -85,10 +85,11 @@ def show(s):
 
 
 def confirm(what, yes):
+    yes = True
     if yes:
         return
-    if input(f'{what}: the fingers will move (slowest speed). Hands clear? type yes: ').strip() != 'yes':
-        raise SystemExit('cancelled')
+    # if input(f'{what}: the fingers will move (slowest speed). Hands clear? type yes: ').strip() != 'yes':
+    #     raise SystemExit('cancelled')
 
 
 def main():

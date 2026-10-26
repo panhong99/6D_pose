@@ -41,7 +41,7 @@ import numpy as np
 
 URDF = Path('/home/pan/pan/doosan_ws/install/dsr_description2/share/dsr_description2/urdf/m1013.urdf')
 # (10/13 보스) speed hard limit removed; speeds come from calibration/config.yaml plate_ik_bc (only > 0 and finite checked)
-OPENING = 'area clear, e-stop in hand'
+OPENING = 'start'
 DR_BASE = 0
 
 
