@@ -173,20 +173,27 @@ case "$mode" in
     fi
     # (10/21 보스 "7배 빨라도 돼", then "더 빨라도") look legs at 30 deg/s; a later --vel_deg_s in "$@" wins
     mover() { ( ros /usr/bin/python3 -u "$DIR/ros2_nodes.py" mover --vel_deg_s 30 --acc_deg_s2 30 "$@" ); }
-    if [ "${LOOK_SHOW:-1}" = 1 ]; then  # (10/21 보스) live fixed-camera marker view first: check the basket, q closes it (frees the camera)
+    if [ "${LOOK_SHOW:-0}" = 1 ]; then  # (10/21 보스) live fixed-camera marker view first: check the basket, q closes it (frees the camera)
       echo "=== 고정 카메라 화면: 마커 4개(초록) 보이는지 확인 후 창에서 q ==="
       conda run --no-capture-output -n foundationpose python -u "$DIR/camera_tools.py" markers_live || true
     fi
-    if [ "${LOOK_VISION:-1}" = 1 ]; then  # (10/21 보스) marker-free basket pose (YOLOE + depth) from the fixed D455, robot at home
+    # (10/26 보스, markers gone) the look poses come from the marker-free basket pose: LOOK_BASKET=vision (default) measures it
+    # now (YOLOE + depth, robot at home), LOOK_BASKET=<json> reuses a saved one, LOOK_BASKET=markers is the old marker fit
+    lbasket="${LOOK_BASKET:-vision}"; measure=(--measure)
+    if [ "$lbasket" = vision ]; then
       stamp=$(date +%Y%m%d_%H%M%S); vdir="$DIR/data/basket/wrist_look"
       conda run --no-capture-output -n foundationpose python -u "$DIR/basket_vision.py" --camera fixed \
-        --out "$vdir/basket_vision_${stamp}.json" --save "$vdir/basket_vision_${stamp}.npz" || echo "!!! 마커 없는 바구니 위치 실패 (촬영은 계속)"
+        --out "$vdir/basket_vision_${stamp}.json" --save "$vdir/basket_vision_${stamp}.npz" \
+        || { echo "!!! 마커 없는 바구니 위치 실패 - 멈춤 (저장된 값: LOOK_BASKET=$DIR/data/basket/demo_basket_fixed.json)"; exit 1; }
+      measure=(--basket_json "$vdir/basket_vision_${stamp}.json")
+    elif [ "$lbasket" != markers ]; then
+      measure=(--basket_json "$lbasket")
     fi
     for qd in ${LOOK_QUADRANTS:-Q1 Q2 Q3 Q4}; do
       echo; echo "=== ${qd}: 손목 사진. 그리퍼 빈손, 바구니에 접시 없는지 확인 후 Enter (건너뛰기: s, 끝내기: q) ==="
       read -r ans; [ "$ans" = q ] && break; [ "$ans" = s ] && continue
       log="$DIR/data/basket/wrist_look/look4_$(date +%Y%m%d_%H%M%S)_${qd}.log"
-      conda run --no-capture-output -n foundationpose python -u "$DIR/plate_plans.py" look_plans --measure --quadrants "$qd" 2>&1 | tee "$log" || true
+      conda run --no-capture-output -n foundationpose python -u "$DIR/plate_plans.py" look_plans "${measure[@]}" --quadrants "$qd" 2>&1 | tee "$log" || true
       plan=$(sed -n 's/^plan: //p' "$log" | tail -1) || true
       req=$(grep -o "[^ ]*_${qd}\.req\.json" "$log" | tail -1) || true
       if [ -z "$plan" ] || [ -z "$req" ]; then echo "!!! ${qd}: 계획 없음 (위 로그) - 다음 분면"; continue; fi

@@ -1726,9 +1726,10 @@ def pin_gap(Tbb, model_qd, pin):
     return n - pin if away else pin - 1
 
 
-def look_pose(Tbb, model_qd, Tbc, q, cam_h=(0.42, 0.36, 0.48), seed=None):
+def look_pose(Tbb, model_qd, Tbc, q, cam_h=(0.42, 0.36, 0.48, 0.30, 0.26), seed=None):
     """Joints for a wrist photo straight down on one quadrant: camera centred over its gaps `cam_h` above the basket
     frame, image top = the pin rows' end away from the robot (pin pairs stacked top -> bottom); turned 180 / +-90 deg if out of reach.
+    (10/26) 0.30 / 0.26 m only when nothing higher reaches (far basket: Q1 at x 1.15 m).
     -> (joints deg, image turn deg, camera height) or None."""
     import ros2_nodes
     from calib_core import load_json, newest_wrist_result
@@ -1765,7 +1766,13 @@ def look_plans(a):
     quadrant for `camera_tools.py pre_photo --req` (photo + model pins) and `pins --req` (pair numbers)."""
     Tbc = np.array(__import__('calib_core').load_json(__import__('calib_core').latest_t_base_cam())['T_base_cam'])
     q = C['plate_ik_bc']
-    if a.measure:
+    if a.basket_json is not None:                              # (10/26) markers gone: a basket_vision.py result
+        r_ = json.loads(Path(a.basket_json).read_text())
+        if not r_.get('ok', True):
+            raise SystemExit(f'basket json not ok: {r_.get("why")}')
+        Tbb = np.array(r_['T'], float)
+        print(f'basket from {a.basket_json}', flush=True)
+    elif a.measure:
         Tbb, res, seen = measured_basket()
         print(f'basket from markers {seen}: fit {res * 1000:.1f} mm', flush=True)
     else:
@@ -2144,6 +2151,7 @@ if __name__ == '__main__':
     p.add_argument('--yaw_range', type=float, default=15.0, help='random_plans: basket yaw uniform in +-this [deg]')
     p.add_argument('--seed', type=int, default=0)
     p.add_argument('--measure', action='store_true', help='look_plans: basket from the fixed camera markers (read-only)')
+    p.add_argument('--basket_json', default=None, help='look_plans: basket pose from a basket_vision.py json (no markers)')
     p.add_argument('--run', default=None, help='real run folder for the in-hand plate (default: newest with realplan_req)')
     p.add_argument('--markers_off', action='store_true', help='(10/22) the marker blocks are off the rim: not in the collision model')
     p.add_argument('--frac', type=float, default=0.65, help='obstacle_demo: obstacle under this fraction of the carry')
