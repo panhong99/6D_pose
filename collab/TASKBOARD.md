@@ -233,6 +233,8 @@ Phase 2 작업판이다(10/20 보스 시작). Phase 1(10/22 시연까지)의 작
 
 - **(10/23 15:2x Claude) 시스템 장애 — GPU 작업 전부 중지.** 커널 로그: 10/22 20:16부터 `BUG: Bad page state`(메모리 페이지 손상) 반복(10/22 20:16, 10/23 11:29, 12:56), 14:47 커널 Oops(#2, run_v7 메인 972886, munmap 중 NULL), 14:55부터 CPU#18 soft lockup(python 987649) 계속. 그 뒤 CUDA 초기화(torch/YOLOE)가 멈춤 → run_v8(988834)도 import에서 정체. numpy만 쓰는 CPU 작업은 됨. **재부팅 + 메모리 검사(memtest) 필요, 보스 판단.** 어젯밤 계획 생성 worker의 `Bad CRC-32`·이상한 예외 ~4 %도 같은 원인 가능성 큼. Codex: 재부팅 전까지 GPU 학습·평가 띄우지 말 것. 재부팅 뒤 run_v8는 다시 띄워야 함(같은 명령, 새 폴더).
 
+- **(10/26 09:5x Claude) 원인 = 커널 7.0.0-38 메모리 관리 버그로 판단**(7.0.0-34 11일간 0건 → -38 열흘간 bad page 13·Oops 2·soft lockup 120, 전부 같은 경로(huge page 할당, DataLoader 공유메모리), MCE 0). 보스가 GRUB 기본을 7.0.0-34로 바꾸고 재부팅(09:46). 학습 재개: **run_v9** (PID 8626) `train.py --data calibration/data/slot_cnn/sim_v4 --out calibration/data/slot_cnn/run_v9 --epochs 23 --bs 12 --lr 0.0001 --workers 6 --init calibration/data/slot_cnn/run_v8/ep00.pt`, 로그 `run_v9.log`. Codex: 이 실행 이어받아 epoch 평가, 다른 학습 중복 실행 금지.
+
 **Claude 담당**
 1. **CD: 빈 분면 자동 선택** (opt-in): 고정카메라 YOLOE에 'bowl'을 더해, bowl이 있는 분면 = 찬 분면. 빈 Q3/Q4 중 하나를 고름. bowl은 운반 경로의 장애물로도 넣음.
 2. **CE: 관전자 GUI**: 고정카메라 view에 YOLOE bbox(bowl, plate, 바구니)와 분면 상태(빈/참, 고른 분면)를 실시간 overlay. 동작이 끝날 때까지 계속 표시. 손목 view 없음.
