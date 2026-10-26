@@ -54,6 +54,7 @@ def parse_args():
     p.add_argument("--plate_x", type=float, default=None, help="export: real plate root x [m] (camera_tools.py locate)")
     p.add_argument("--plate_y", type=float, default=None, help="export: real plate root y [m]")
     p.add_argument("--plate_yaw_deg", type=float, default=0.0, help="export: real plate yaw [deg]")
+    p.add_argument("--hand_export", default=None, help="hand: keyframes of one nominal rollout -> this JSON (real replay)")
     p.add_argument("--wp_deg", type=float, default=1.5, help="export: keep a waypoint every this many joint degrees")
     p.add_argument("--bias_z", type=float, default=0.0, help="trace: extra +z action in seconds 2-3")
     p.add_argument("--no_shield", action="store_true", help="scripted: accept every IK target")
@@ -408,7 +409,12 @@ def run_watch(args, cfg, app):
 
 def run_hand(args, cfg, app):
     """Tesollo DG-5F-S plate grasp (hand_env.py): headless = every env one deterministic episode -> success rate and
-    termination counts; with the GUI (no --headless) = replay the checkpoint (default: newest hand_grasp run)."""
+    termination counts; with the GUI (no --headless) = replay the checkpoint (default: newest hand_grasp run).
+    --hand_export PATH: one env at the nominal (real) plate pose, keyframes -> JSON for the real replay: `pre` (arm +
+    fingers 10 steps before >= 2 fingers touch), `grasp` (fingers when the plate is 2 cm up), `lift` (arm at the peak)."""
+    import math
+    from pathlib import Path
+
     import torch
     from isaaclab.envs import ManagerBasedRLEnv
     from isaaclab_rl.rsl_rl import RslRlVecEnvWrapper
@@ -418,20 +424,28 @@ def run_hand(args, cfg, app):
     hcfg = dict(hand_env.H, curriculum={"chunk": 1})
     hcfg["paths"] = dict(hcfg["paths"], log_root=cfg["paths"]["log_root"])
     ck = args.checkpoint or latest_checkpoint(max(runs_root(hcfg).glob("*_stage1"), key=lambda d: d.stat().st_mtime))
-    n = args.num_envs or DEFAULT_ENVS["hand"]
-    env = ManagerBasedRLEnv(hand_env.make_env_cfg(n, viewer=not args.headless))
+    n = 1 if args.hand_export else args.num_envs or DEFAULT_ENVS["hand"]
+    env_cfg = hand_env.make_env_cfg(n, viewer=not args.headless)
+    if args.hand_export:
+        env_cfg.events.reset_plate = None                   # the plate where the camera saw it (hand.yaml plate_xy)
+    env = ManagerBasedRLEnv(env_cfg)
     venv = RslRlVecEnvWrapper(env)
     runner = OnPolicyRunner(venv, ppo_runner_cfg(hcfg, 1).to_dict(), log_dir=None, device=env.device)
     runner.load(str(ck))
     policy, obs = runner.get_inference_policy(device=env.device), venv.get_observations()
     print(f"[hand] {ck}, {n} envs", flush=True)
     done = torch.zeros(n, dtype=torch.bool, device=env.device)
-    ends = {k: 0 for k in ("success", "collision", "plate_lost", "tcp_out", "time_out")}
+    ends = {k: 0 for k in ("success", "collision", "plate_lost", "tcp_out", "glitch", "time_out")}
     best_lift = torch.zeros(n, device=env.device)
+    robot, trace = env.scene["robot"], []
     while app.is_running() and (not args.headless or not done.all()):
         with torch.inference_mode():
             obs, _, _, _ = venv.step(policy(obs))
-        best_lift = torch.maximum(best_lift, hand_env._state(env)["lift"])
+        st = hand_env._state(env)
+        best_lift = torch.maximum(best_lift, st["lift"])
+        if args.hand_export and not done[0]:
+            q = dict(zip(robot.joint_names, robot.data.joint_pos[0].tolist()))
+            trace.append(dict(q=q, touch=int(st["n_touch"][0]), lift=float(st["lift"][0])))
         for k in ends:
             hit = env.termination_manager.get_term(k) & ~done
             ends[k] += int(hit.sum())
@@ -439,6 +453,22 @@ def run_hand(args, cfg, app):
                 print(f"[hand] env {hit.nonzero().flatten().tolist()} ended: {k}", flush=True)
             if args.headless:
                 done |= hit
+    if args.hand_export:
+        t_touch = next((i for i, r in enumerate(trace) if r["touch"] >= 2), None)
+        t_up = next((i for i, r in enumerate(trace) if r["lift"] > 0.02), None)
+        if t_touch is None or t_up is None:
+            raise SystemExit(f"hand_export: no grasp in this rollout (touch {t_touch}, lift {t_up})")
+        t_peak = max(range(t_up, len(trace)), key=lambda i: trace[i]["lift"])
+        arm = lambda i: [math.degrees(trace[i]["q"][f"joint_{j}"]) for j in range(1, 7)]           # noqa: E731
+        fing = lambda i: [trace[i]["q"][f"joint_{f}_{k}"] for f in range(1, 6) for k in range(1, 5)]  # noqa: E731
+        pre = max(0, t_touch - 10)
+        out = dict(checkpoint=str(ck), plate_xy=hand_env.G["plate_xy"], steps=dict(pre=pre, touch=t_touch, up=t_up, peak=t_peak),
+                   start_arm_deg=arm(0), pre_arm_deg=arm(pre), pre_fingers_rad=fing(pre), grasp_arm_deg=arm(t_up),
+                   grasp_fingers_rad=fing(t_up), lift_arm_deg=arm(t_peak), lift_fingers_rad=fing(t_peak),
+                   peak_lift_m=trace[t_peak]["lift"])
+        Path(args.hand_export).write_text(json.dumps(out, indent=1))
+        print(f"HAND_EXPORT {args.hand_export}: touch at {t_touch / 30:.1f} s, up at {t_up / 30:.1f} s, "
+              f"peak {trace[t_peak]['lift'] * 100:.1f} cm at {t_peak / 30:.1f} s", flush=True)
     if args.headless:
         print(f"HAND_RESULT success {ends['success']}/{n} = {ends['success'] / n:.3f}  ends {ends}  "
               f"best lift median {best_lift.median().item() * 100:.1f} cm", flush=True)

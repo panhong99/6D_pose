@@ -139,7 +139,11 @@ def _state(env):
     env._plate_start[fresh], env._tcp_start[fresh], env._q_start[fresh] = p[fresh], tcp[fresh], tcp_q[fresh]
     env._hold_count = torch.where(lifted, env._hold_count + 1, torch.zeros_like(env._hold_count))
     moved = torch.norm(p[:, :2] - env._plate_start[:, :2], dim=1)
-    st = dict(p=p, up=up, tips=tips, tcp=tcp, rim=rim, dt_rim=dt_rim, opposite=opposite, near=near, held=held,
+    # physics glitch: a finger joint 0.1 rad past its limit (pilot 4 jammed fingers through their limits and flicked the plate)
+    fid = robot.find_joints(FINGERS)[0]
+    qf, lim = robot.data.joint_pos[:, fid], robot.data.soft_joint_pos_limits[:, fid]
+    glitch = ((qf < lim[..., 0] - 0.1) | (qf > lim[..., 1] + 0.1)).any(dim=1)
+    st = dict(p=p, up=up, tips=tips, tcp=tcp, rim=rim, dt_rim=dt_rim, opposite=opposite, near=near, held=held, glitch=glitch,
               n_touch=n_touch, tcp_q=tcp_q, turn=quat_error_magnitude(tcp_q, env._q_start),
               lift=lift, lifted=lifted, success=env._hold_count >= T["hold_steps"],
               knocked=(moved > T["knocked_m"]) & (lift < 0.02),
@@ -221,6 +225,13 @@ class BoxedDiffIKAction(DifferentialInverseKinematicsAction):
             actions = a
         super().process_actions(actions)
 
+    def apply_actions(self):        # every physics step: no arm joint moves faster than arm_joint_deg_s (pilot 4 flipped
+        ee_pos, ee_quat = self._compute_frame_pose()            # the wrist ~90 deg in 0.4 s through the IK)
+        q = self._asset.data.joint_pos[:, self._joint_ids]
+        q_des = self._ik_controller.compute(ee_pos, ee_quat, self._compute_frame_jacobian(), q)
+        step = math.radians(A["arm_joint_deg_s"]) * self._env.physics_dt
+        self._asset.set_joint_position_target(q + (q_des - q).clamp(-step, step), self._joint_ids)
+
 
 @configclass
 class BoxedDiffIKActionCfg(mdp.DifferentialInverseKinematicsActionCfg):
@@ -281,7 +292,7 @@ def r_collision(env):
 
 def r_ended_early(env):             # leaving the box or losing the plate ends the episode: never a way out of penalties
     st = _state(env)
-    return (st["tcp_out"] | (st["p"][:, 2] < REST_Z - 0.03)).float()
+    return (st["tcp_out"] | st["glitch"] | (st["p"][:, 2] < REST_Z - 0.03)).float()
 
 
 REWARD_FUNCS = {"reach": r_reach, "pinch": r_pinch, "touch": r_touch, "level": r_level, "lift": r_lift, "hold": r_hold, "success": r_success,
@@ -308,6 +319,10 @@ def t_plate_lost(env):              # fell off the box or left the hand far belo
     return _state(env)["p"][:, 2] < REST_Z - 0.03
 
 
+def t_glitch(env):
+    return _state(env)["glitch"]
+
+
 def t_tcp_out(env):                 # hand wandered away from its start box
     return _state(env)["tcp_out"]
 
@@ -319,6 +334,7 @@ class TerminationsCfg:
     collision = DoneTerm(func=t_collision)
     plate_lost = DoneTerm(func=t_plate_lost)
     tcp_out = DoneTerm(func=t_tcp_out)
+    glitch = DoneTerm(func=t_glitch)
 
 
 def _friction(asset_cfg):

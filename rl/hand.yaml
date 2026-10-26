@@ -29,6 +29,7 @@ task:
 action:
   arm_step_m: 0.0015                   # TCP translation per policy step at |a| = 1 (4.5 cm/s; orientation fixed)
   arm_box_m: 0.15                      # TCP stays within this of its start point
+  arm_joint_deg_s: 15.0               # every arm joint at most this fast (pilot 4: 200 deg/s wrist flip)
   turn_step_deg: 0.5                   # wrist turn per step at |a| = 1 (15 deg/s)
   turn_max_deg: 40.0                   # wrist turn cone around the start orientation (pilot 4)
   finger_alpha: 0.08                   # EMA of the finger targets (slow fingers, 보스: slowest)
