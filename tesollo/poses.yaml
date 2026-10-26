@@ -50,7 +50,33 @@ grasp_tips_old:
   side: left
   source: 'computed (USB DG_5F_S20_LEFT FK): thumb-index pinch, fingers 3-5 half tucked;
     not yet checked on the hand, tips 6 mm apart (10/26: slipped, tips only)'
-grasp:
+taught_1:
+  joints_rad:
+  - -0.0349
+  - 1.4469
+  - -1.2427
+  - 0.3683
+  - -0.1623
+  - 1.5132
+  - -0.2321
+  - 0.6981
+  - -0.1885
+  - 1.4992
+  - 1.3945
+  - 1.5778
+  - -0.0576
+  - 1.2427
+  - 1.5394
+  - 1.5638
+  - -0.1361
+  - -0.0454
+  - 1.4853
+  - 1.5499
+  saved: '2026-10-26 19:24:39'
+  side: left
+  source: "\uBCF4\uC2A4 teaching mode in DGManager 19:2x, REALTIME DATA screenshot\
+    \ (deg)"
+grasp_calc_pad:
   joints_rad:
   - -0.6544
   - 0.8548
@@ -76,3 +102,29 @@ grasp:
   side: left
   source: 'computed (USB FK): distal pads of thumb and index facing (-0.93), ~3 mm
     apart, near the OK pregrasp'
+grasp:
+  joints_rad:
+  - -0.0349
+  - 1.4818
+  - -1.2427
+  - 0.3683
+  - -0.1623
+  - 1.5481
+  - -0.2321
+  - 0.6981
+  - -0.1885
+  - 1.4992
+  - 1.3945
+  - 1.5778
+  - -0.0576
+  - 1.2427
+  - 1.5394
+  - 1.5638
+  - -0.1361
+  - -0.0454
+  - 1.4853
+  - 1.5499
+  saved: '2026-10-26 19:25:40'
+  side: left
+  source: "taught_1 (\uBCF4\uC2A4 teaching mode) + 2 deg on thumb J2 and index J6\
+    \ to squeeze"
