@@ -90,7 +90,8 @@ def main():
     started = False
     try:
         check('option', g.set_gripper_option(GripperSetting.create(
-            model=DGModel.DG_5F_S_LEFT, joint_count=JOINTS, finger_count=5,
+            # (10/27 real) joint/finger count 20/5 -> SystemStart NOT_FOUND_MODEL; DGManager sends 0/0 and starts fine
+            model=DGModel.DG_5F_S_LEFT, joint_count=0, finger_count=0,
             received_data_type=[ReceivedDataType.JOINT, ReceivedDataType.CURRENT, ReceivedDataType.TEMPERATURE, 0, 0, 0, 0])))
         check('start', g.system_start())
         started = True
