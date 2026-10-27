@@ -5,6 +5,7 @@
     DGManager recipes (보스 builds them in DGManager, Developer mode; read from its config.json, not from the hand):
     ~/miniconda3/bin/python3 tesollo/dg5fs_sdk.py --object plate    # pose plate_pre9 + 5F_5FINGER_PARALLEL, spread joints held, 7 N
     ~/miniconda3/bin/python3 tesollo/dg5fs_sdk.py --object bowl     # pose bowl_grasp30 + 5F_5FINGER, 7 N
+    ~/miniconda3/bin/python3 tesollo/dg5fs_sdk.py --object auto     # fixed camera + YOLOE pick plate/bowl and its shift
     (both copied into poses.yaml / OBJECT_GRASP: DGManager pose recipes 20/30 vanished from its config.json on 10/27 14:31)
     (보스 10/27: start = pose 0 (all 0), then branch on the YOLOE class: plate -> pose 20, else bowl -> pose 30)
     Order (tesollo/arm_poses.yaml): plate = arm down to the grasp pose with the hand OPEN (pose 0), then step 1 goes
@@ -46,11 +47,24 @@ OBJECT_GRASP = {'plate': ('plate_pre9', '5F_5FINGER_PARALLEL', [1, 5, 9, 13, 17]
                 'bowl': ('bowl_grasp30', '5F_5FINGER', [], 7.0)}
 
 
+def perceive():
+    """tesollo/perceive.py (fixed D455 + YOLOE): -> (object, dx, dy) of the object nearest the grasp spot, or exit."""
+    out = subprocess.run([str(PLAN_PY), str(REPO / 'tesollo/perceive.py')], capture_output=True, text=True)
+    print('\n'.join(l for l in out.stdout.splitlines() if not l.startswith('RESULT')), flush=True)
+    m = re.search(r'^RESULT (plate|bowl) (\S+) (\S+)$', out.stdout, re.M)
+    if out.returncode or not m:
+        sys.exit(f'perception refused:\n{out.stderr[-800:]}')
+    return m.group(1), float(m.group(2)), float(m.group(3))
+
+
+SHIFT = [0.0, 0.0]          # object shift from the taught spot (perceive), applied to every arm plan of this run
+
+
 def arm_legs(obj, legs):
     """Fresh arm plan for the taught grasp pose (arm_plan.py), then the mover for these legs; True if all ran.
     The mover refuses a leg if the arm is not at its start, and asks for Enter before each leg."""
-    out = subprocess.run([str(PLAN_PY), str(REPO / 'tesollo/arm_plan.py'), 'plate' if obj == 'plate' else 'bowl'],
-                         capture_output=True, text=True)
+    out = subprocess.run([str(PLAN_PY), str(REPO / 'tesollo/arm_plan.py'), 'plate' if obj == 'plate' else 'bowl',
+                          '--dx', str(SHIFT[0]), '--dy', str(SHIFT[1])], capture_output=True, text=True)
     m = re.search(r'^plan: (\S+)', out.stdout, re.M)
     if out.returncode or not m:
         print(f'   arm plan failed:\n{out.stdout[-800:]}{out.stderr[-800:]}', flush=True)
@@ -102,13 +116,19 @@ def main():
     p.add_argument('--force', type=float, default=3.0, help='grasp force [N] (start low; DGManager range 0-20 N)')
     p.add_argument('--pre', default='pregrasp', help='pose before the grasp (poses.yaml name or open)')
     p.add_argument('--fixed', type=int, nargs='*', default=[3, 4, 5], help='fingers kept in position mode during the grasp')
-    p.add_argument('--object', help='YOLOE class: plate -> pose 9 + 5 finger parallel, else bowl (pose 30, 5 finger), '
+    p.add_argument('--object', help='auto = see it first (perceive.py: class + shift of the taught arm pose); '
+                                    'YOLOE class: plate -> pose 9 + 5 finger parallel, else bowl (pose 30, 5 finger), '
                                     '7 N (overrides --pre, --mode, --force, --grasp_recipe)')
     p.add_argument('--grasp_recipe', type=int, help='DGManager grasp recipe: mode, position mode, smooth (not its force)')
     p.add_argument('--lock', action='store_true', help='after the grasp, hold the grasping fingers in position mode')
     p.add_argument('--motion_ms', type=int, default=3000, help='time per pose move [ms] (slow)')
     a = p.parse_args()
     held = None
+    if a.object == 'auto':
+        a.object, SHIFT[0], SHIFT[1] = perceive()
+        if input(f'\nseen: {a.object}, {SHIFT[0] * 1000:+.0f} / {SHIFT[1] * 1000:+.0f} mm from the taught spot.  '
+                 'Enter = go on, q = stop: ').strip().lower() == 'q':
+            return
     if a.object:
         a.pre, a.mode, held, a.force = object_grasp(a.object)
         a.grasp_recipe = None
