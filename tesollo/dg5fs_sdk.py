@@ -282,6 +282,10 @@ def main():
                     basket(w[1].upper() if len(w) > 1 else 'Q3', int(w[2]) if len(w) > 2 else 6)
                 elif cmd == 'descend' and BASKET:
                     mover(BASKET['plan'], 'descend', 10)
+                elif cmd:                                       # (10/27) 'basket' with a bowl printed joints silently
+                    print(f'   "{cmd}" does nothing here (object {a.object}): "home", "release"'
+                          + (', "basket Q3 6", "descend"' if a.object == 'plate' else '') + '; Enter = joints', flush=True)
+                    continue
                 show()
             except KeyboardInterrupt:
                 print('\n   still holding (Ctrl+C does not release); type "release" to let go', flush=True)
