@@ -5,8 +5,12 @@
     plate_plans.hand_plate, with the hand's own length / radius for the collision model
   - basket pose = a basket_vision.json (default: the 11/3 fixed basket; a live run's measurement with --basket)
 Legs (one plan.json, dry run): to_above (carry), descend (straight down, plate upright), ascend, to_home, abort_home.
+Bowl (--object bowl): kept upright as grasped and set down in the middle of a quadrant (default Q1), its bottom
+BOWL_DROP_M above the basket rim; carry = joint line from the lift to 12 cm above that, checked for the bowl bottom
+>= 5 cm over the rim and <= 15 deg tilt; legs lift, to_above, descend, ascend, to_home.
 Read-only (no robot command).
     ~/miniconda3/envs/foundationpose/bin/python tesollo/basket_plan.py --quadrant Q3 --pin 6 [--dx M --dy M]
+    ~/miniconda3/envs/foundationpose/bin/python tesollo/basket_plan.py --object bowl --quadrant Q1 [--dx M --dy M]
 """
 import argparse
 import json
@@ -26,6 +30,12 @@ import plate_plans as pp
 # hand axis is horizontal and the plate centre sits 16 cm along it, 8 cm off it: a 20 cm cylinder runs through the held
 # plate itself (every insert refused, 10/27), so only the palm (12 cm) is modelled; the fingers hold the top rim.
 HAND_LENGTH_M, HAND_RADIUS_M = 0.12, 0.06
+BOWL_HEIGHT_M = 0.07        # perceive gives the bowl rim top (10/27 ref 0.072 m on the table): bottom = top - this
+BOWL_DROP_M = 0.03          # bowl bottom above the basket rim when it is let go
+BOWL_RISE_M = 0.22          # lift (and above-basket height): the bowl bottom must clear the rim (0.144 m) + 5 cm on the carry
+# basket frame quadrant extents (calibration/demo_watch.py HALF / SPLIT): x near (-0.265, 0.035) / far (0.035, 0.265),
+# y left (0.0095, 0.26) / right (-0.26, 0.0095)
+QUAD_XY = {'Q1': (0.15, -0.125), 'Q2': (0.15, 0.135), 'Q3': (-0.115, 0.135), 'Q4': (-0.115, -0.125)}
 
 
 def shifted_grasp(k, grasp, dx, dy):
@@ -66,9 +76,92 @@ def hand_plate(k, grasp_deg, centre, tool):
     return np.linalg.inv(T_tcp) @ T_pl
 
 
+def rz(t):
+    c, s = np.cos(t), np.sin(t)
+    R = np.eye(4)
+    R[:2, :2] = [[c, -s], [s, c]]
+    return R
+
+
+def cart_line(k, q0, p1, yaw=0.0, n=40):
+    """Flange from FK(q0) turned `yaw` about the base z axis (with joint 1: the bowl is round, so its yaw is free and
+    the wrist stays put; a fixed hand yaw swung J4/J6 by > 100 deg, 10/27) and moved straight to position p1, IK seeded
+    step by step."""
+    T0 = k.fk(np.radians(q0))
+    out, q = [np.asarray(q0, float)], np.radians(q0)
+    for s in np.linspace(0, 1, n)[1:]:
+        T = rz(s * yaw) @ T0
+        T[:3, 3] = (1 - s) * T0[:3, 3] + s * np.asarray(p1)
+        q = k.ik(T, q)
+        assert q is not None and np.abs(k.fk(q)[:3, 3] - T[:3, 3]).max() < 1e-3, 'IK failed on the carry line'
+        out.append(np.degrees(q))
+    step = np.abs(np.diff(np.array(out), axis=0)).max()
+    assert step < 10, f'IK jump {step:.1f} deg on the carry line'
+    return out
+
+
+def bowl_plan(a, k, Tbb, Tbc):
+    """Bowl upright from the grasp into a quadrant (see the module doc) -> plan path."""
+    import ros2_nodes
+    A = yaml.safe_load((HERE / 'arm_poses.yaml').read_text())['bowl']
+    if 'obj_centre' not in A:
+        sys.exit('no bowl reference: tesollo/perceive.py --object bowl --save_ref first')
+    grasp = shifted_grasp(k, A['posj_deg'], a.dx, a.dy)
+    lift = lift_line(k, grasp, a.rise)
+    home = np.array(pp.C['robot']['home_joints_deg'], float)
+    Tg = k.fk(np.radians(grasp))
+    bottom = np.array([A['obj_centre'][0] + a.dx, A['obj_centre'][1] + a.dy, A['obj_centre'][2] - BOWL_HEIGHT_M])
+    p_b = np.linalg.inv(Tg) @ np.r_[bottom, 1.0]                 # bowl bottom in the flange frame (held)
+    model_qd = pp.robot_quadrants(Tbb)[a.quadrant]
+    target = (Tbb @ np.r_[QUAD_XY[model_qd], 0.0, 1.0])[:3] + [0.0, 0.0, BOWL_DROP_M]
+    yaw = np.arctan2(target[1], target[0]) - np.arctan2(bottom[1], bottom[0])      # turn with joint 1
+    Tp = rz(yaw) @ Tg                                             # the grasp turned about base z: where the bowl bottom goes
+    above_xyz = Tp[:3, 3] + (target - (Tp @ p_b)[:3]) + [0.0, 0.0, a.rise]
+    # (10/27) the lift pose is near the wrist singularity (J5 ~ -9 deg): a Cartesian line swaps J4/J6 in > 10 deg steps.
+    # IK from the lift pose with only joint 1 turned, then a joint-space line (tilt / height checked below)
+    T_above = Tp.copy()
+    T_above[:3, 3] = above_xyz
+    seed = np.radians(lift[-1]) + np.radians([np.degrees(yaw), 0, 0, 0, 0, 0])
+    q_above = k.ik(T_above, seed)
+    assert q_above is not None and np.abs(k.fk(q_above)[:3, 3] - above_xyz).max() < 1e-3, 'IK failed above the basket'
+    above = np.degrees(q_above)
+    carry = [lift[-1] + s * (above - lift[-1]) for s in np.linspace(0, 1, 25)]
+    # descend: the place IK seeded from above, a joint-space line (a Cartesian line flipped J4/J6 by > 100 deg near the
+    # wrist singularity, 10/27), checked below to stay within 1.5 cm of the vertical and level (Q2-Q4: 10-11 mm)
+    T_place = k.fk(np.radians(above))
+    T_place[2, 3] -= a.rise
+    q_place = k.ik(T_place, np.radians(above))
+    assert q_place is not None and np.abs(k.fk(q_place)[:3, 3] - T_place[:3, 3]).max() < 1e-3, 'IK failed at the basket'
+    down = [above + s * (np.degrees(q_place) - above) for s in np.linspace(0, 1, 13)]
+    Ta = k.fk(np.radians(above))
+    for q in down:
+        T = k.fk(np.radians(q))
+        off = np.hypot(*(T[:2, 3] - Ta[:2, 3]))
+        tilt_d = np.degrees(np.arccos(np.clip((T[:3, :3] @ Ta[:3, :3].T @ [0, 0, 1.0])[2], -1, 1)))
+        assert off <= 0.015 and tilt_d <= 5, f'descend leaves the vertical: {off * 1000:.0f} mm, {tilt_d:.1f} deg'
+    step = max(np.abs(np.diff(np.array(down), axis=0)).max(), np.abs(np.diff(np.array(carry), axis=0)).max())
+    assert np.abs(np.array(down[-1]) - above).max() < 60, 'descend turns a joint > 60 deg'
+
+    lo, hi = np.array(ros2_nodes.joint_limits_deg()).T
+    rim = Tbb[2, 3]
+    for q in carry:
+        T = k.fk(np.radians(q))
+        assert (T @ p_b)[2] >= rim + 0.05, f'bowl bottom {(T @ p_b)[2]:.3f} m < rim + 5 cm on the carry'
+        tilt = np.degrees(np.arccos(np.clip((T[:3, :3] @ Tg[:3, :3].T @ [0, 0, 1.0])[2], -1, 1)))
+        assert tilt <= 15, f'bowl tilts {tilt:.0f} deg on the carry'
+    for q in list(lift) + list(down) + carry + [home]:
+        assert ((q > lo + 3) & (q < hi - 3)).all(), f'joint limit {np.round(q, 1)}'
+    legs = {'lift': lift, 'to_above': carry, 'descend': down, 'ascend': down[::-1], 'to_home': [above, home]}
+    print(f'basket {Tbb[:3, 3].round(3).tolist()}; bowl into {a.quadrant} (model {model_qd}) at {target.round(3).tolist()} '
+          f'(bottom {BOWL_DROP_M * 100:.0f} cm over the rim)', flush=True)
+    return pp.taught_plan({n: [list(map(float, w)) for w in v] for n, v in legs.items()}, Tbc, pp.C['plate_ik_bc'],
+                          f'tesollo bowl to basket {a.quadrant} dx {a.dx:+.3f} dy {a.dy:+.3f}')
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument('--quadrant', default='Q3', choices=('Q1', 'Q2', 'Q3', 'Q4'))
+    p.add_argument('--object', default='plate', choices=('plate', 'bowl'))
+    p.add_argument('--quadrant', choices=('Q1', 'Q2', 'Q3', 'Q4'), help='default Q3 (plate), Q1 (bowl)')
     p.add_argument('--pin', type=int, default=6, help='pin pair (1 = farthest from the robot), as the demo')
     p.add_argument('--dx', type=float, default=0.0)
     p.add_argument('--dy', type=float, default=0.0)
@@ -76,6 +169,19 @@ def main():
     p.add_argument('--rise', type=float, default=0.12, help='lift before the carry (arm_plan.py lift)')
     p.add_argument('--basket', default=str(HERE.parent / 'calibration/data/basket/demo_basket_fixed.json'))
     a = p.parse_args()
+    a.quadrant = a.quadrant or ('Q3' if a.object == 'plate' else 'Q1')
+    if a.object == 'bowl' and a.rise == 0.12:
+        a.rise = BOWL_RISE_M
+    if a.object == 'bowl':
+        k = pp.Kinematics()
+        path = bowl_plan(a, k, np.array(json.loads(Path(a.basket).read_text())['T']),
+                         np.array(cc.load_json(cc.latest_t_base_cam())['T_base_cam']))
+        plan = json.loads(Path(path).read_text())
+        print('OK: bowl')
+        for leg, v in plan['legs'].items():
+            print(f'  {leg}: {len(v["waypoints_deg"])} waypoints, end {[round(x, 1) for x in v["waypoints_deg"][-1]]}')
+        print('plan:', path)
+        return
     A = yaml.safe_load((HERE / 'arm_poses.yaml').read_text())['plate']
     if a.plate is None:
         if 'obj_centre' not in A:
