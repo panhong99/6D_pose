@@ -40,7 +40,7 @@ ARM_APPROACH = ('above', 'down')
 ARM_HOME = ('lift', 'home')
 VEL = [80.0]                # arm deg/s = deg/s^2 for every leg (보스 10/27: 80 unless told otherwise; --vel)
 APPROACH_HAND = {'plate': 'open', 'bowl': 'bowl_grasp30'}
-BASKET_LEGS = ('lift', 'to_above', 'descend')     # (보스 10/27: release came before the separate 'descend') all the way down
+BASKET_LEGS = ('lift', 'to_above', 'descend')     # fallback when lift + to_above cannot be merged into one spline
 DGM_CONFIG = Path.home() / '.config/DGManager/config.json'
 JOINTS = 20
 # YOLOE object class -> (poses.yaml pre-pose, grasp mode, position-mode joints 1-based, force N), 보스 10/27:
@@ -79,7 +79,7 @@ def basket(obj, quadrant, pin):
     the descend has run, so 'release' knows the object is in the basket."""
     out = subprocess.run([str(PLAN_PY), str(REPO / 'tesollo/basket_plan.py'), '--object', obj, '--quadrant', quadrant,
                           '--pin', str(pin), '--dx', str(SHIFT[0]), '--dy', str(SHIFT[1])], capture_output=True, text=True)
-    print('\n'.join(l for l in out.stdout.splitlines() if l.startswith(('basket', 'OK', '  '))), flush=True)
+    print('\n'.join(l for l in out.stdout.splitlines() if l.startswith(('basket', 'OK', '  ', 'merged'))), flush=True)
     m = re.search(r'^plan: (\S+)', out.stdout, re.M)
     if out.returncode or not m:
         print(f'   basket plan failed:\n{out.stdout[-600:]}{out.stderr[-600:]}', flush=True)
@@ -87,8 +87,11 @@ def basket(obj, quadrant, pin):
     BASKET['plan'] = m.group(1)
     print(f'   basket plan {m.group(1)} (after the release: ascend, to_home with run.sh mover)', flush=True)
     BASKET['down'] = False
-    for leg in BASKET_LEGS:
-        if not mover(m.group(1), leg, VEL[0]):
+    mg = re.search(r'^merged: (\S+plan\.json)', out.stdout, re.M)
+    # (보스 10/27, as the 2F-85 pipeline) grasp -> above the basket in ONE spline (lift + to_above), then the descent
+    legs = [(mg.group(1), 'lift_carry'), (m.group(1), 'descend')] if mg else [(m.group(1), lg) for lg in BASKET_LEGS]
+    for plan, leg in legs:
+        if not mover(plan, leg, VEL[0]):
             return
     BASKET['down'] = True
     print('   in the basket: type "release"', flush=True)

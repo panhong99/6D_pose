@@ -158,6 +158,12 @@ def bowl_plan(a, k, Tbb, Tbc):
                           f'tesollo bowl to basket {a.quadrant} dx {a.dx:+.3f} dy {a.dy:+.3f}')
 
 
+def merge_lift_carry(path):
+    """(as the gripper pipeline: 'lift + carry를 한 spline으로') lift + to_above as the single leg lift_carry."""
+    mp = pp.merged_plan([(path, 'lift'), (path, 'to_above')], 'lift_carry')
+    print('merged:', mp if mp is not None else 'none (too many waypoints: lift, to_above one after another)')
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument('--object', default='plate', choices=('plate', 'bowl'))
@@ -180,6 +186,7 @@ def main():
         print('OK: bowl')
         for leg, v in plan['legs'].items():
             print(f'  {leg}: {len(v["waypoints_deg"])} waypoints, end {[round(x, 1) for x in v["waypoints_deg"][-1]]}')
+        merge_lift_carry(path)
         print('plan:', path)
         return
     A = yaml.safe_load((HERE / 'arm_poses.yaml').read_text())['plate']
@@ -216,6 +223,7 @@ def main():
     for leg, v in plan['legs'].items():
         w = v['waypoints_deg']
         print(f'  {leg}: {len(w)} waypoints, end {[round(x, 1) for x in w[-1]]}')
+    merge_lift_carry(path)
     print('plan:', path)
 
 
