@@ -15,17 +15,23 @@ Steps, one Enter each (q = stop, the hand keeps its pose; release + stop always 
        --grasp_recipe N takes the mode, per-joint position mode and smooth flag from DGManager grasp recipe N instead
     2b. (--lock) hold the grasping fingers at their current angles (position mode): stops the force loop's back-and-forth
         correction (the visible tremble); the squeezed silicone tips keep the grip.  UNTESTED: try without the plate first
-    3. HOLD until 보스 types 'release' (move the arm meanwhile: lift, home), then 4. open
+    3. HOLD until 보스 types 'release'; typing 'home' (with --object) plans and runs the arm legs lift + home, then 4. open
 Joints [deg], currents [mA] and the hottest motor are printed after each step (watch the temperature: stall heats up).
 Needs the vendor Python SDK outside this repo (USB 2.Software/.../SampleProgram/dg_python-main.zip, unzipped to
 --sdk) and cffi (conda base python has it; the ROS / foundationpose pythons do not).
 """
 import argparse
+import re
+import subprocess
 import sys
 import time
 from pathlib import Path
 
 POSES = Path(__file__).with_name('poses.yaml')
+REPO = Path(__file__).resolve().parents[1]
+PLAN_PY = Path.home() / 'miniconda3/envs/foundationpose/bin/python'
+# arm legs run by 'home' while holding (tesollo/arm_plan.py): (leg suffix, deg/s = deg/s^2); slow next to the object
+ARM_HOME = (('lift', 20), ('home', 70))
 DGM_CONFIG = Path.home() / '.config/DGManager/config.json'
 JOINTS = 20
 # YOLOE object class -> (poses.yaml pre-pose, grasp mode, position-mode joints 1-based, force N), 보스 10/27:
@@ -33,6 +39,25 @@ JOINTS = 20
 # bowl: pose 30 + grasp recipe 1 (5 finger to the centre), 7 N
 OBJECT_GRASP = {'plate': ('plate_pre9', '5F_5FINGER_PARALLEL', [1, 5, 9, 13, 17], 7.0),
                 'bowl': ('bowl_grasp30', '5F_5FINGER', [], 7.0)}
+
+
+def arm_home(obj):
+    """While the hand holds: plan from the taught grasp pose (arm_plan.py) and run the mover for lift and home.
+    The mover refuses a leg if the arm is not at its start, and asks for Enter before each leg."""
+    out = subprocess.run([str(PLAN_PY), str(REPO / 'tesollo/arm_plan.py'), 'plate' if obj == 'plate' else 'bowl'],
+                         capture_output=True, text=True)
+    m = re.search(r'^plan: (\S+)', out.stdout, re.M)
+    if out.returncode or not m:
+        print(f'   arm plan failed (hand still holding):\n{out.stdout[-800:]}{out.stderr[-800:]}', flush=True)
+        return
+    for leg, v in ARM_HOME:
+        name = f'{"plate" if obj == "plate" else "bowl"}_{leg}'
+        r = subprocess.run(['bash', str(REPO / 'calibration/run.sh'), 'mover', '--plan', m.group(1), '--leg', name,
+                            '--smooth', '--go_per', 'leg', '--vel_deg_s', str(v), '--acc_deg_s2', str(v),
+                            '--execute', '--go_enter'])
+        if r.returncode:
+            print(f'   mover stopped at {name} (exit {r.returncode}); hand still holding', flush=True)
+            return
 
 
 def object_grasp(obj):
@@ -179,12 +204,15 @@ def main():
                 show()
         # (보스 10/27) keep the grasp while the arm lifts and goes home in the other terminal: only the typed word
         # 'release' opens the hand; Enter shows joints / currents / temperature, Ctrl+C and q do NOT let go here
-        print('\n3. HOLDING.  Move the arm now in the other terminal (lift, home).  Enter = show joints / temperature, '
-              'type "release" to let go.', flush=True)
+        print('\n3. HOLDING.  Type "home" = fresh arm plan, then lift (20 deg/s) and home (70 deg/s), one Enter per leg; '
+              'Enter = show joints / temperature; type "release" to let go.', flush=True)
         while True:
             try:
-                if input('   holding> ').strip().lower() == 'release':
+                cmd = input('   holding> ').strip().lower()
+                if cmd == 'release':
                     break
+                if cmd == 'home' and a.object:
+                    arm_home(a.object)
                 show()
             except KeyboardInterrupt:
                 print('\n   still holding (Ctrl+C does not release); type "release" to let go', flush=True)
