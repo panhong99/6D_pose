@@ -74,8 +74,7 @@ taught_1:
   - 1.5499
   saved: '2026-10-26 19:24:39'
   side: left
-  source: "\uBCF4\uC2A4 teaching mode in DGManager 19:2x, REALTIME DATA screenshot\
-    \ (deg)"
+  source: 보스 teaching mode in DGManager 19:2x, REALTIME DATA screenshot (deg)
 grasp_calc_pad:
   joints_rad:
   - -0.6544
@@ -126,8 +125,8 @@ grasp:
   - 1.5499
   saved: '2026-10-26 19:32:08'
   side: left
-  source: "taught_1 (\uBCF4\uC2A4 teaching mode) + 7 deg on thumb J2 and index J6\
-    \ (\uBCF4\uC2A4: close more; +2 slipped)"
+  source: 'taught_1 (보스 teaching mode) + 7 deg on thumb J2 and index J6 (보스: close
+    more; +2 slipped)'
 taught_2:
   joints_rad:
   - -0.0052
@@ -152,57 +151,55 @@ taught_2:
   - 1.4696
   saved: '2026-10-27 11:22:32'
   side: left
-  source: "\uBCF4\uC2A4 teaching mode in DGManager 11:2x (pose0 base, thumb-index\
-    \ pinch), REALTIME DATA screenshot (deg)"
+  source: 보스 teaching mode in DGManager 11:2x (pose0 base, thumb-index pinch), REALTIME
+    DATA screenshot (deg)
 plate_pinch20:
   joints_rad:
-  - 0.1484
-  - 1.6616
-  - -0.473
-  - 0.0105
-  - 0.3019
-  - 0.9617
-  - -0.075
-  - -0.5341
-  - -0.0279
-  - 0.9058
-  - -0.1588
-  - -0.3979
-  - -0.014
-  - 0.0873
-  - 0.0262
-  - 0.014
+  - 0.1414
+  - 1.6633
+  - -0.4782
+  - -0.5253
+  - 0.3037
+  - 0.9669
+  - -0.0628
+  - -0.5253
+  - -0.0192
+  - 0.9076
+  - -0.1571
+  - -0.3927
+  - -0.0105
+  - 0.0942
+  - 0.0401
+  - 0.0192
   - -0.1012
-  - -0.0017
-  - 0.0611
-  - 0.0157
-  saved: 2026-10-27 14:2x
+  - -0.007
+  - 0.0716
+  - 0.0209
+  saved: '2026-10-27 14:40:26'
   side: left
-  source: '보스 DGManager pose recipe #20 (Developer), read from ~/.config/DGManager/config.json
-    14:2x; the recipe vanished from that file at 14:31'
+  source: '보스 DGManager pose recipe #20 (Developer), saved 14:39, read from ~/.config/DGManager/config.json'
 bowl_grasp30:
   joints_rad:
-  - -0.2251
-  - 1.6371
-  - 0.2042
-  - -0.6562
-  - 0.6248
-  - 0.7994
-  - 0.2723
-  - 0.7191
-  - 0.0052
-  - 0.4695
-  - 0.2845
-  - 0.6318
-  - -0.274
-  - 0.5533
-  - 0.3159
-  - 0.5829
-  - -0.5533
-  - -0.8535
-  - 0.2077
-  - 0.8116
-  saved: 2026-10-27 14:2x
+  - -0.2182
+  - 1.6389
+  - 0.178
+  - -0.6475
+  - 0.6126
+  - 0.8186
+  - 0.267
+  - 0.7103
+  - -0.0052
+  - 0.4904
+  - 0.2775
+  - 0.6301
+  - -0.267
+  - 0.5707
+  - 0.3211
+  - 0.576
+  - -0.5603
+  - -0.85
+  - 0.2094
+  - 0.8063
+  saved: '2026-10-27 14:40:26'
   side: left
-  source: '보스 DGManager pose recipe #30 (Developer), read from ~/.config/DGManager/config.json
-    14:2x; the recipe vanished from that file at 14:31'
+  source: '보스 DGManager pose recipe #30 (Developer), saved 14:39, read from ~/.config/DGManager/config.json'
