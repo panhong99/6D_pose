@@ -1,0 +1,16 @@
+# M1013 arm poses for the Tesollo DG-5F-S left hand grasps, taught by 보스 on the real robot (read-only get_current_posj /
+# get_current_tool_flange_posx, 2026-10-27), object at the old red-plate spot.
+# hand_approach = hand pose (tesollo/poses.yaml, 'open' = pose #0) while the arm moves there; hand_grasp = pose before the
+# SDK force grasp (dg5fs_sdk.py --object), then lift.
+plate:
+  posj_deg: [17.95, 38.85, 109.37, -3.79, -57.68, -85.04]
+  flange_posx: [752.3, 287.01, 158.95, 21.15, 90.59, -87.04]   # mm, deg (DR_BASE)
+  hand_approach: open          # pose #0 all the way down, THEN pose #20 (보스: closing it earlier does not work)
+  hand_grasp: plate_pinch20
+  read: '2026-10-27 16:0x'
+bowl:
+  posj_deg: [18.82, 40.4, 95.52, -3.79, -27.9, -85.04]
+  flange_posx: [844.94, 328.31, 185.57, 20.68, 108.06, -87.81]
+  hand_approach: bowl_grasp30  # pose #30 from the start is fine
+  hand_grasp: bowl_grasp30
+  read: '2026-10-27 15:4x'

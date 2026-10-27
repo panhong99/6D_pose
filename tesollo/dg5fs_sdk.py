@@ -7,6 +7,8 @@
     ~/miniconda3/bin/python3 tesollo/dg5fs_sdk.py --object bowl     # pose bowl_grasp30 + 5F_5FINGER, 7 N
     (both copied into poses.yaml / OBJECT_GRASP: DGManager pose recipes 20/30 vanished from its config.json on 10/27 14:31)
     (보스 10/27: start = pose 0 (all 0), then branch on the YOLOE class: plate -> pose 20, else bowl -> pose 30)
+    Order (tesollo/arm_poses.yaml): plate = arm down to the grasp pose with the hand OPEN (pose 0), then step 1 closes
+    to pose 20, step 2 grasps, then lift; bowl = the hand may already be in pose 30 on the way down.
 Steps, one Enter each (q = stop, the hand keeps its pose; release + stop always run at the end):
     1. move to --pre (tesollo/poses.yaml name, 'open', or dgm:N = DGManager pose recipe N) in --motion_ms
     2. grasp: the SDK force grasp with --mode / --force [N]; fingers in --fixed stay where they are (position mode);
