@@ -1,10 +1,12 @@
 """Tesollo DG-5F-S left: force-controlled grasp through the vendor DGSDK (the DGManager GRASP button, from code).
 
 (보스 runs it; Developer Mode DIP 2, ROS 2 hand driver and DGManager CLOSED: the hand takes one client.)
-    ~/miniconda3/bin/python3 tesollo/dg5fs_sdk.py [--mode 5F_2FINGER_1_AND_2] [--force 3] [--pre pregrasp] [--fixed 3 4 5]
+    ~/miniconda3/bin/python3 tesollo/dg5fs_sdk.py [--mode 5F_2FINGER_1_AND_2] [--force 3] [--pre pregrasp] [--fixed 3 4 5] [--lock]
 Steps, one Enter each (q = stop, the hand keeps its pose; release + stop always run at the end):
     1. move to --pre (tesollo/poses.yaml, or 'open') in --motion_ms
     2. grasp: the SDK force grasp with --mode / --force [N]; fingers in --fixed stay where they are (position mode)
+    2b. (--lock) hold the grasping fingers at their current angles (position mode): stops the force loop's back-and-forth
+        correction (the visible tremble); the squeezed silicone tips keep the grip.  UNTESTED: try without the plate first
     3. release, then 4. open
 Joints [deg], currents [mA] and the hottest motor are printed after each step (watch the temperature: stall heats up).
 Needs the vendor Python SDK outside this repo (USB 2.Software/.../SampleProgram/dg_python-main.zip, unzipped to
@@ -39,6 +41,7 @@ def main():
     p.add_argument('--force', type=float, default=3.0, help='grasp force [N] (start low; DGManager range 0-20 N)')
     p.add_argument('--pre', default='pregrasp', help='pose before the grasp (poses.yaml name or open)')
     p.add_argument('--fixed', type=int, nargs='*', default=[3, 4, 5], help='fingers kept in position mode during the grasp')
+    p.add_argument('--lock', action='store_true', help='after the grasp, hold the grasping fingers in position mode')
     p.add_argument('--motion_ms', type=int, default=3000, help='time per pose move [ms] (slow)')
     a = p.parse_args()
     # manual: Grasp Force 0-200 x 0.1 N; fingertip max 19.4 N, long stall near max torque heats the motors
@@ -108,6 +111,15 @@ def main():
         check('grasp', g.grasp(1))
         time.sleep(2.0)
         show()
+        if a.lock:
+            ask('2b. lock the grasping fingers at their current angles (position mode).')
+            # target = the measured angles first, so the switch to position mode has nothing to move to
+            check('hold target', g.move_joint_all(list(g.get_gripper_data().joint[:JOINTS])))
+            for f in range(1, 6):
+                check(f'position mode finger {f}', g.set_position_mode_finger([1] * 4, f))
+            for _ in range(3):
+                time.sleep(1.0)
+                show()
         ask('3. release.')
     except KeyboardInterrupt:
         print('\nstopped by 보스', flush=True)
