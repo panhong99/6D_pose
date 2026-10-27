@@ -15,7 +15,7 @@ Steps, one Enter each (q = stop, the hand keeps its pose; release + stop always 
        --grasp_recipe N takes the mode, per-joint position mode and smooth flag from DGManager grasp recipe N instead
     2b. (--lock) hold the grasping fingers at their current angles (position mode): stops the force loop's back-and-forth
         correction (the visible tremble); the squeezed silicone tips keep the grip.  UNTESTED: try without the plate first
-    3. release, then 4. open
+    3. HOLD until 보스 types 'release' (move the arm meanwhile: lift, home), then 4. open
 Joints [deg], currents [mA] and the hottest motor are printed after each step (watch the temperature: stall heats up).
 Needs the vendor Python SDK outside this repo (USB 2.Software/.../SampleProgram/dg_python-main.zip, unzipped to
 --sdk) and cffi (conda base python has it; the ROS / foundationpose pythons do not).
@@ -177,7 +177,19 @@ def main():
             for _ in range(3):
                 time.sleep(1.0)
                 show()
-        ask('3. release.')
+        # (보스 10/27) keep the grasp while the arm lifts and goes home in the other terminal: only the typed word
+        # 'release' opens the hand; Enter shows joints / currents / temperature, Ctrl+C and q do NOT let go here
+        print('\n3. HOLDING.  Move the arm now in the other terminal (lift, home).  Enter = show joints / temperature, '
+              'type "release" to let go.', flush=True)
+        while True:
+            try:
+                if input('   holding> ').strip().lower() == 'release':
+                    break
+                show()
+            except KeyboardInterrupt:
+                print('\n   still holding (Ctrl+C does not release); type "release" to let go', flush=True)
+            except EOFError:
+                time.sleep(1.0)
     except KeyboardInterrupt:
         print('\nstopped by 보스', flush=True)
     finally:
