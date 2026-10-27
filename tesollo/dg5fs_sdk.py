@@ -37,13 +37,14 @@ def main():
     p.add_argument('--ip', default='169.254.186.73')
     p.add_argument('--port', type=int, default=502)
     p.add_argument('--mode', default='5F_2FINGER_1_AND_2', help='DGGraspMode name without the leading _ (5F_3FINGER, ...)')
-    p.add_argument('--force', type=float, default=3.0, help='grasp force [N] (start low)')
+    p.add_argument('--force', type=float, default=3.0, help='grasp force [N] (start low; DGManager range 0-20 N)')
     p.add_argument('--pre', default='pregrasp', help='pose before the grasp (poses.yaml name or open)')
     p.add_argument('--fixed', type=int, nargs='*', default=[3, 4, 5], help='fingers kept in position mode during the grasp')
     p.add_argument('--motion_ms', type=int, default=3000, help='time per pose move [ms] (slow)')
     a = p.parse_args()
-    if not 0.5 <= a.force <= 10.0:
-        sys.exit('--force must be 0.5 .. 10 N')
+    # manual: Grasp Force 0-200 x 0.1 N; fingertip max 19.4 N, long stall near max torque heats the motors
+    if not 0.5 <= a.force <= 20.0:
+        sys.exit('--force must be 0.5 .. 20 N')
     if a.motion_ms < 1500:
         sys.exit('--motion_ms must be >= 1500')
     sys.path.insert(0, a.sdk)
