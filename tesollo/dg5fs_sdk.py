@@ -12,7 +12,6 @@ Needs the vendor Python SDK outside this repo (USB 2.Software/.../SampleProgram/
 """
 import argparse
 import sys
-import threading
 import time
 from pathlib import Path
 
@@ -49,18 +48,15 @@ def main():
         sys.exit('--motion_ms must be >= 1500')
     sys.path.insert(0, a.sdk)
     from dgsdk import (DGSDK, CommunicationMode, ControlMode, DGGraspMode, DGModel, DGResult, GripperSetting,
-                       GripperSystemSetting)
+                       GripperSystemSetting, ReceivedDataType)
     mode = getattr(DGGraspMode, '_' + a.mode, None)
     if mode is None:
         sys.exit(f'unknown --mode {a.mode}: {[m.name.lstrip("_") for m in DGGraspMode if m.name.startswith("_5F")]}')
     pre = load_pose(a.pre)
 
-    g, last, lock = DGSDK(), {}, threading.Lock()
-
-    def on_data(d):
-        with lock:
-            last.update(joint=list(d.joint[:JOINTS]), current=list(d.current[:JOINTS]), temp=list(d.temperature[:JOINTS]))
-    g.on_gripper_data(on_data)
+    # (10/27 real) ConnectToGripper segfaults unless the connected/disconnected callbacks are registered first (as the
+    # vendor examples do); data is polled with get_gripper_data, no struct-by-value data callback
+    g = DGSDK()
 
     def check(step, r):
         print(f'  {step}: {r.name}', flush=True)
@@ -69,16 +65,18 @@ def main():
 
     def show():
         time.sleep(0.3)
-        with lock:
-            if not last:
-                print('  (no data yet)')
-                return
-            for f in range(5):
-                s = slice(4 * f, 4 * f + 4)
-                print(f'  finger {f + 1}: ' + '  '.join(f'{v:+6.1f}' for v in last['joint'][s]) + '  deg | '
-                      + ' '.join(f'{c:5d}' for c in last['current'][s]) + ' mA')
-            t = max(last['temp'])
-            print(f'  hottest motor {t:.1f} C (J{last["temp"].index(t) + 1})', flush=True)
+        try:
+            d = g.get_gripper_data()
+        except RuntimeError as e:
+            print(f'  (no data: {e})')
+            return
+        joint, current, temp = list(d.joint[:JOINTS]), list(d.current[:JOINTS]), list(d.temperature[:JOINTS])
+        for f in range(5):
+            s = slice(4 * f, 4 * f + 4)
+            print(f'  finger {f + 1}: ' + '  '.join(f'{v:+6.1f}' for v in joint[s]) + '  deg | '
+                  + ' '.join(f'{c:6.0f}' for c in current[s]) + ' mA')
+        t = max(temp)
+        print(f'  hottest motor {t:.1f} C (J{temp.index(t) + 1})', flush=True)
 
     def ask(what):
         if input(f'\n{what}  Enter = go, q = stop: ').strip().lower() == 'q':
@@ -86,11 +84,14 @@ def main():
 
     check('system', g.set_gripper_system(GripperSystemSetting.create(
         ip=a.ip, port=a.port, control_mode=ControlMode.DEVELOPER, communication_mode=CommunicationMode.ETHERNET)))
+    g.on_connected(lambda: print('  -> connected', flush=True))
+    g.on_disconnected(lambda: print('  -> disconnected', flush=True))
     check('connect', g.connect_to_gripper())
     started = False
     try:
-        check('option', g.set_gripper_option(GripperSetting.create(model=DGModel.DG_5F_S_LEFT, joint_count=JOINTS,
-                                                                   finger_count=5)))
+        check('option', g.set_gripper_option(GripperSetting.create(
+            model=DGModel.DG_5F_S_LEFT, joint_count=JOINTS, finger_count=5,
+            received_data_type=[ReceivedDataType.JOINT, ReceivedDataType.CURRENT, ReceivedDataType.TEMPERATURE, 0, 0, 0, 0])))
         check('start', g.system_start())
         started = True
         check('motion time', g.set_motion_time_all_equal(a.motion_ms))
