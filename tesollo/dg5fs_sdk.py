@@ -147,6 +147,13 @@ def main():
         check('start', r)
         started = True
         check('motion time', g.set_motion_time_all_equal(a.motion_ms))
+        # (10/27 real) in Developer mode the hand has no gains until the PC sends them (DGManager does it on connect:
+        # initUpdateRecipe + LoadRecipeGainData); without them every move returned NONE but the currents stayed 0 mA
+        # and nothing moved.  Target = the measured angles first, so switching the gains on holds the hand still.
+        check('hold target', g.move_joint_all(list(g.get_gripper_data().joint[:JOINTS])))
+        check('PD mode', g.set_control_pid_mode(0))
+        check('gains (DGManager gain recipe 1: P 3, D 5)', g.set_joint_gain_pid_all([3.0] * JOINTS, [5.0] * JOINTS,
+                                                                                   [0.0] * JOINTS, [0.0] * JOINTS))
         show()
         ask(f'1. move to "{a.pre}" in {a.motion_ms} ms.')
         check('move', g.move_joint_all(pre))
