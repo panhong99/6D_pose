@@ -3,12 +3,12 @@
 (보스 runs it; Developer Mode DIP 2, ROS 2 hand driver and DGManager CLOSED: the hand takes one client.)
     ~/miniconda3/bin/python3 tesollo/dg5fs_sdk.py [--mode 5F_2FINGER_1_AND_2] [--force 3] [--pre pregrasp] [--fixed 3 4 5] [--lock]
     DGManager recipes (보스 builds them in DGManager, Developer mode; read from its config.json, not from the hand):
-    ~/miniconda3/bin/python3 tesollo/dg5fs_sdk.py --object plate    # pose plate_pinch20 + 5F_3FINGER_PARALLEL, J1/J5/J9 held, 7 N
+    ~/miniconda3/bin/python3 tesollo/dg5fs_sdk.py --object plate    # pose plate_pre9 + 5F_3FINGER_PARALLEL, J1/J5/J9 held, 7 N
     ~/miniconda3/bin/python3 tesollo/dg5fs_sdk.py --object bowl     # pose bowl_grasp30 + 5F_5FINGER, 7 N
     (both copied into poses.yaml / OBJECT_GRASP: DGManager pose recipes 20/30 vanished from its config.json on 10/27 14:31)
     (보스 10/27: start = pose 0 (all 0), then branch on the YOLOE class: plate -> pose 20, else bowl -> pose 30)
-    Order (tesollo/arm_poses.yaml): plate = arm down to the grasp pose with the hand OPEN (pose 0), then step 1 closes
-    to pose 20, step 2 grasps, then lift; bowl = the hand may already be in pose 30 on the way down.
+    Order (tesollo/arm_poses.yaml): plate = arm down to the grasp pose with the hand OPEN (pose 0), then step 1 goes
+    to pose 9 (grasp-ready), step 2 grasps, then lift; bowl = the hand may already be in pose 30 on the way down.
 Steps, one Enter each (q = stop, the hand keeps its pose; release + stop always run at the end):
     1. move to --pre (tesollo/poses.yaml name, 'open', or dgm:N = DGManager pose recipe N) in --motion_ms
     2. grasp: the SDK force grasp with --mode / --force [N]; fingers in --fixed stay where they are (position mode);
@@ -29,8 +29,9 @@ POSES = Path(__file__).with_name('poses.yaml')
 DGM_CONFIG = Path.home() / '.config/DGManager/config.json'
 JOINTS = 20
 # YOLOE object class -> (poses.yaml pre-pose, grasp mode, position-mode joints 1-based, force N), 보스 10/27:
-# DGManager pose 20 + grasp recipe 4 (3 finger parallel), pose 30 + grasp recipe 1 (5 finger to the centre), 7 N
-OBJECT_GRASP = {'plate': ('plate_pinch20', '5F_3FINGER_PARALLEL', [1, 5, 9], 7.0),
+# plate: pose 0 -> arm to the plate -> pose 9 (grasp-ready) -> grasp recipe 4 (3 finger parallel) 7 N (pose 20 dropped);
+# bowl: pose 30 + grasp recipe 1 (5 finger to the centre), 7 N
+OBJECT_GRASP = {'plate': ('plate_pre9', '5F_3FINGER_PARALLEL', [1, 5, 9], 7.0),
                 'bowl': ('bowl_grasp30', '5F_5FINGER', [], 7.0)}
 
 
@@ -70,7 +71,7 @@ def main():
     p.add_argument('--force', type=float, default=3.0, help='grasp force [N] (start low; DGManager range 0-20 N)')
     p.add_argument('--pre', default='pregrasp', help='pose before the grasp (poses.yaml name or open)')
     p.add_argument('--fixed', type=int, nargs='*', default=[3, 4, 5], help='fingers kept in position mode during the grasp')
-    p.add_argument('--object', help='YOLOE class: plate -> pinch (pose 20, 3 finger parallel), else bowl (pose 30, 5 finger), '
+    p.add_argument('--object', help='YOLOE class: plate -> pose 9 + 3 finger parallel, else bowl (pose 30, 5 finger), '
                                     '7 N (overrides --pre, --mode, --force, --grasp_recipe)')
     p.add_argument('--grasp_recipe', type=int, help='DGManager grasp recipe: mode, position mode, smooth (not its force)')
     p.add_argument('--lock', action='store_true', help='after the grasp, hold the grasping fingers in position mode')

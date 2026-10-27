@@ -5,8 +5,8 @@
 plate:
   posj_deg: [17.95, 38.85, 109.37, -3.79, -57.68, -85.04]
   flange_posx: [752.3, 287.01, 158.95, 21.15, 90.59, -87.04]   # mm, deg (DR_BASE)
-  hand_approach: open          # pose #0 all the way down, THEN pose #20 (보스: closing it earlier does not work)
-  hand_grasp: plate_pinch20
+  hand_approach: open          # pose #0 all the way down, THEN pose #9 grasp-ready, then the force grasp (보스 10/27)
+  hand_grasp: plate_pre9
   read: '2026-10-27 16:0x'
 bowl:
   posj_deg: [18.82, 40.4, 95.52, -3.79, -27.9, -85.04]

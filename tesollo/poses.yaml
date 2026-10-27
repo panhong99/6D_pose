@@ -203,3 +203,29 @@ bowl_grasp30:
   saved: '2026-10-27 14:40:26'
   side: left
   source: '보스 DGManager pose recipe #30 (Developer), saved 14:39, read from ~/.config/DGManager/config.json'
+plate_pre9:
+  joints_rad:
+  - -0.1745
+  - 1.7453
+  - -0.4363
+  - -0.5236
+  - -0.0873
+  - 0.6109
+  - 0.4363
+  - 0.5236
+  - -0.0873
+  - 0.6981
+  - 0.4363
+  - 0.5236
+  - -0.0873
+  - 0.6981
+  - 0.4363
+  - 0.5236
+  - 0.0
+  - -0.0873
+  - 0.6981
+  - 0.6109
+  saved: '2026-10-27 16:08:17'
+  side: left
+  source: '보스 DGManager pose recipe #9 (Developer): plate grasp-ready pose, read from
+    ~/.config/DGManager/config.json'
