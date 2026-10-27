@@ -138,7 +138,13 @@ def main():
             # (10/27 real) joint/finger count 20/5 -> SystemStart NOT_FOUND_MODEL; DGManager sends 0/0 and starts fine
             model=DGModel.DG_5F_S_LEFT, joint_count=0, finger_count=0,
             received_data_type=[ReceivedDataType.JOINT, ReceivedDataType.CURRENT, ReceivedDataType.TEMPERATURE, 0, 0, 0, 0])))
-        check('start', g.system_start())
+        # (10/27 real) start right after the option -> NOT_FOUND_MODEL; the hand needs a moment to report its model
+        for _ in range(20):
+            time.sleep(0.1)
+            r = g.system_start()
+            if r != DGResult.NOT_FOUND_MODEL:
+                break
+        check('start', r)
         started = True
         check('motion time', g.set_motion_time_all_equal(a.motion_ms))
         show()
