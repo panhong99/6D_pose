@@ -2,9 +2,13 @@
 
 (보스 runs it; Developer Mode DIP 2, ROS 2 hand driver and DGManager CLOSED: the hand takes one client.)
     ~/miniconda3/bin/python3 tesollo/dg5fs_sdk.py [--mode 5F_2FINGER_1_AND_2] [--force 3] [--pre pregrasp] [--fixed 3 4 5] [--lock]
+    DGManager recipes (보스 builds them in DGManager, Developer mode; read from its config.json, not from the hand):
+    ~/miniconda3/bin/python3 tesollo/dg5fs_sdk.py --pre dgm:20 --grasp_recipe 4 --force 7    # plate pinch, 3 finger parallel
+    ~/miniconda3/bin/python3 tesollo/dg5fs_sdk.py --pre dgm:30 --grasp_recipe 1 --force 7    # bowl, 5 finger to the centre
 Steps, one Enter each (q = stop, the hand keeps its pose; release + stop always run at the end):
-    1. move to --pre (tesollo/poses.yaml, or 'open') in --motion_ms
-    2. grasp: the SDK force grasp with --mode / --force [N]; fingers in --fixed stay where they are (position mode)
+    1. move to --pre (tesollo/poses.yaml name, 'open', or dgm:N = DGManager pose recipe N) in --motion_ms
+    2. grasp: the SDK force grasp with --mode / --force [N]; fingers in --fixed stay where they are (position mode);
+       --grasp_recipe N takes the mode, per-joint position mode and smooth flag from DGManager grasp recipe N instead
     2b. (--lock) hold the grasping fingers at their current angles (position mode): stops the force loop's back-and-forth
         correction (the visible tremble); the squeezed silicone tips keep the grip.  UNTESTED: try without the plate first
     3. release, then 4. open
@@ -18,7 +22,17 @@ import time
 from pathlib import Path
 
 POSES = Path(__file__).with_name('poses.yaml')
+DGM_CONFIG = Path.home() / '.config/DGManager/config.json'
 JOINTS = 20
+
+
+def dgm_recipe(kind, n):
+    """DGManager recipe (kind = 'poses' | 'grasps') saved for this hand in Developer mode."""
+    import json
+    recipes = json.loads(DGM_CONFIG.read_text())['DG-5F-S20-L']['Developer']['recipes'][kind]
+    if str(n) not in recipes:
+        sys.exit(f'no DGManager {kind} recipe {n} in {DGM_CONFIG}: {sorted(recipes, key=int)}')
+    return recipes[str(n)]
 
 
 def load_pose(name):
@@ -26,6 +40,8 @@ def load_pose(name):
     import yaml
     if name == 'open':
         return [0.0] * JOINTS
+    if name.startswith('dgm:'):
+        return [float(v) for v in dgm_recipe('poses', name[4:])['targetJoint'][:JOINTS]]
     saved = yaml.safe_load(POSES.read_text())
     if name not in saved:
         sys.exit(f'no pose "{name}" in {POSES}: {["open", *saved]}')
@@ -41,6 +57,7 @@ def main():
     p.add_argument('--force', type=float, default=3.0, help='grasp force [N] (start low; DGManager range 0-20 N)')
     p.add_argument('--pre', default='pregrasp', help='pose before the grasp (poses.yaml name or open)')
     p.add_argument('--fixed', type=int, nargs='*', default=[3, 4, 5], help='fingers kept in position mode during the grasp')
+    p.add_argument('--grasp_recipe', type=int, help='DGManager grasp recipe: mode, position mode, smooth (not its force)')
     p.add_argument('--lock', action='store_true', help='after the grasp, hold the grasping fingers in position mode')
     p.add_argument('--motion_ms', type=int, default=3000, help='time per pose move [ms] (slow)')
     a = p.parse_args()
@@ -53,6 +70,12 @@ def main():
     from dgsdk import (DGSDK, CommunicationMode, ControlMode, DGGraspMode, DGModel, DGResult, GripperSetting,
                        GripperSystemSetting, ReceivedDataType)
     mode = getattr(DGGraspMode, '_' + a.mode, None)
+    hold, smooth = [1 if f + 1 in a.fixed else 0 for f in range(5) for _ in range(4)], 1
+    if a.grasp_recipe is not None:
+        r = dgm_recipe('grasps', a.grasp_recipe)
+        mode, hold, smooth = DGGraspMode(r['graspMode']), [int(v) for v in r['positionMode'][:JOINTS]], r['smoothGrasping']
+        print(f'DGManager grasp recipe {a.grasp_recipe}: {mode.name.lstrip("_")}, position-mode joints '
+              f'{[j + 1 for j in range(JOINTS) if hold[j]]}, smooth {smooth}, force {a.force} N (from --force)')
     if mode is None:
         sys.exit(f'unknown --mode {a.mode}: {[m.name.lstrip("_") for m in DGGraspMode if m.name.startswith("_5F")]}')
     pre = load_pose(a.pre)
@@ -104,10 +127,9 @@ def main():
         check('move', g.move_joint_all(pre))
         time.sleep(a.motion_ms / 1000 + 0.5)
         show()
-        ask(f'2. grasp {a.mode} at {a.force} N (fingers {a.fixed} hold position).')
-        for f in range(1, 6):
-            check(f'position mode finger {f}', g.set_position_mode_finger([1 if f in a.fixed else 0] * 4, f))
-        check('grasp data', g.set_grasp_data(mode, a.force, 0, 1))
+        ask(f'2. grasp {mode.name.lstrip("_")} at {a.force} N (joints {[j + 1 for j in range(JOINTS) if hold[j]]} hold position).')
+        check('position mode', g.set_position_mode_all(hold))
+        check('grasp data', g.set_grasp_data(mode, a.force, 0, smooth))
         check('grasp', g.grasp(1))
         time.sleep(2.0)
         show()
