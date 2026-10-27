@@ -10,6 +10,8 @@
     Order (tesollo/arm_poses.yaml): plate = arm down to the grasp pose with the hand OPEN (pose 0), then step 1 goes
     to pose 9 (grasp-ready), step 2 grasps, then lift; bowl = the hand may already be in pose 30 on the way down.
 Steps, one Enter each (q = stop, the hand keeps its pose; release + stop always run at the end):
+    0. (--object) hand to its approach pose (plate open = pose 0, bowl pose 30), then the arm home -> above -> down
+       (tesollo/arm_plan.py + mover, Enter per leg; s skips when the arm is already there)
     1. move to --pre (tesollo/poses.yaml name, 'open', or dgm:N = DGManager pose recipe N) in --motion_ms
     2. grasp: the SDK force grasp with --mode / --force [N]; fingers in --fixed stay where they are (position mode);
        --grasp_recipe N takes the mode, per-joint position mode and smooth flag from DGManager grasp recipe N instead
@@ -30,8 +32,11 @@ from pathlib import Path
 POSES = Path(__file__).with_name('poses.yaml')
 REPO = Path(__file__).resolve().parents[1]
 PLAN_PY = Path.home() / 'miniconda3/envs/foundationpose/bin/python'
-# arm legs run by 'home' while holding (tesollo/arm_plan.py): (leg suffix, deg/s = deg/s^2); slow next to the object
+# arm legs (tesollo/arm_plan.py): (leg suffix, deg/s = deg/s^2), slow next to the object.  APPROACH runs before step 1
+# (hand in its approach pose: plate open = pose 0, bowl pose 30), HOME runs when 'home' is typed while holding
+ARM_APPROACH = (('above', 70), ('down', 20))
 ARM_HOME = (('lift', 20), ('home', 70))
+APPROACH_HAND = {'plate': 'open', 'bowl': 'bowl_grasp30'}
 DGM_CONFIG = Path.home() / '.config/DGManager/config.json'
 JOINTS = 20
 # YOLOE object class -> (poses.yaml pre-pose, grasp mode, position-mode joints 1-based, force N), 보스 10/27:
@@ -41,23 +46,24 @@ OBJECT_GRASP = {'plate': ('plate_pre9', '5F_5FINGER_PARALLEL', [1, 5, 9, 13, 17]
                 'bowl': ('bowl_grasp30', '5F_5FINGER', [], 7.0)}
 
 
-def arm_home(obj):
-    """While the hand holds: plan from the taught grasp pose (arm_plan.py) and run the mover for lift and home.
+def arm_legs(obj, legs):
+    """Fresh arm plan for the taught grasp pose (arm_plan.py), then the mover for these legs; True if all ran.
     The mover refuses a leg if the arm is not at its start, and asks for Enter before each leg."""
     out = subprocess.run([str(PLAN_PY), str(REPO / 'tesollo/arm_plan.py'), 'plate' if obj == 'plate' else 'bowl'],
                          capture_output=True, text=True)
     m = re.search(r'^plan: (\S+)', out.stdout, re.M)
     if out.returncode or not m:
-        print(f'   arm plan failed (hand still holding):\n{out.stdout[-800:]}{out.stderr[-800:]}', flush=True)
-        return
-    for leg, v in ARM_HOME:
+        print(f'   arm plan failed:\n{out.stdout[-800:]}{out.stderr[-800:]}', flush=True)
+        return False
+    for leg, v in legs:
         name = f'{"plate" if obj == "plate" else "bowl"}_{leg}'
         r = subprocess.run(['bash', str(REPO / 'calibration/run.sh'), 'mover', '--plan', m.group(1), '--leg', name,
                             '--smooth', '--go_per', 'leg', '--vel_deg_s', str(v), '--acc_deg_s2', str(v),
                             '--execute', '--go_enter'])
         if r.returncode:
-            print(f'   mover stopped at {name} (exit {r.returncode}); hand still holding', flush=True)
-            return
+            print(f'   mover stopped at {name} (exit {r.returncode})', flush=True)
+            return False
+    return True
 
 
 def object_grasp(obj):
@@ -183,6 +189,15 @@ def main():
         check('gains (DGManager gain recipe 1: P 3, D 5)', g.set_joint_gain_pid_all([3.0] * JOINTS, [5.0] * JOINTS,
                                                                                    [0.0] * JOINTS, [0.0] * JOINTS))
         show()
+        if a.object:
+            obj = 'plate' if a.object == 'plate' else 'bowl'
+            ask(f'0. hand to the approach pose "{APPROACH_HAND[obj]}" in {a.motion_ms} ms.')
+            check('move', g.move_joint_all(load_pose(APPROACH_HAND[obj])))
+            time.sleep(a.motion_ms / 1000 + 0.5)
+            show()
+            if input(f'\n0b. arm: home -> above -> down to the taught {obj} grasp pose?  Enter = go, s = skip (arm already '
+                     'there): ').strip().lower() != 's' and not arm_legs(a.object, ARM_APPROACH):
+                raise KeyboardInterrupt
         ask(f'1. move to "{a.pre}" in {a.motion_ms} ms.')
         check('move', g.move_joint_all(pre))
         time.sleep(a.motion_ms / 1000 + 0.5)
@@ -212,7 +227,7 @@ def main():
                 if cmd == 'release':
                     break
                 if cmd == 'home' and a.object:
-                    arm_home(a.object)
+                    arm_legs(a.object, ARM_HOME)
                 show()
             except KeyboardInterrupt:
                 print('\n   still holding (Ctrl+C does not release); type "release" to let go', flush=True)
