@@ -195,7 +195,10 @@ def main():
     tool[2, 3] = HAND_LENGTH_M
     centre = np.array(a.plate) - [0.0, 0.0, 0.015]            # perceive gives the rim top: the plate middle ~1.5 cm lower
     H = hand_plate(k, grasp, centre, tool)
-    q = dict(pp.C['plate_ik_bc'], tool_length_m=HAND_LENGTH_M, tool_radius_m=HAND_RADIUS_M)
+    # the gripper pipeline's default carry (pipeline.configure_carry_planner 'direct'): rise / across / drop by rule, no
+    # saved prior, no RRT (10/27 보스: the RRT carry from the config's basket_carry_mode looked wrong on the real arm)
+    q = dict(pp.C['plate_ik_bc'], tool_length_m=HAND_LENGTH_M, tool_radius_m=HAND_RADIUS_M,
+             basket_carry_mode='rule', basket_carry_rrt_fallback=False)
     Tbb = np.array(json.loads(Path(a.basket).read_text())['T'])
     model_qd = pp.robot_quadrants(Tbb)[a.quadrant] if hasattr(pp, 'robot_quadrants') else a.quadrant
     gap = pp.pin_gap(Tbb, model_qd, a.pin)

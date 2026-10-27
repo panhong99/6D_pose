@@ -36,10 +36,11 @@ REPO = Path(__file__).resolve().parents[1]
 PLAN_PY = Path.home() / 'miniconda3/envs/foundationpose/bin/python'
 # arm legs (tesollo/arm_plan.py): (leg suffix, deg/s = deg/s^2), slow next to the object.  APPROACH runs before step 1
 # (hand in its approach pose: plate open = pose 0, bowl pose 30), HOME runs when 'home' is typed while holding
-ARM_APPROACH = (('above', 70), ('down', 20))
-ARM_HOME = (('lift', 20), ('home', 70))
+ARM_APPROACH = ('above', 'down')
+ARM_HOME = ('lift', 'home')
+VEL = [80.0]                # arm deg/s = deg/s^2 for every leg (보스 10/27: 80 unless told otherwise; --vel)
 APPROACH_HAND = {'plate': 'open', 'bowl': 'bowl_grasp30'}
-BASKET_LEGS = (('lift', 20), ('to_above', 20))             # carry with the plate: slow
+BASKET_LEGS = ('lift', 'to_above')
 DGM_CONFIG = Path.home() / '.config/DGManager/config.json'
 JOINTS = 20
 # YOLOE object class -> (poses.yaml pre-pose, grasp mode, position-mode joints 1-based, force N), 보스 10/27:
@@ -84,8 +85,8 @@ def basket(obj, quadrant, pin):
         return
     BASKET['plan'] = m.group(1)
     print(f'   basket plan {m.group(1)} (after the release: ascend, to_home with run.sh mover)', flush=True)
-    for leg, v in BASKET_LEGS:
-        if not mover(m.group(1), leg, v):
+    for leg in BASKET_LEGS:
+        if not mover(m.group(1), leg, VEL[0]):
             return
 
 
@@ -98,7 +99,8 @@ def arm_legs(obj, legs):
     if out.returncode or not m:
         print(f'   arm plan failed:\n{out.stdout[-800:]}{out.stderr[-800:]}', flush=True)
         return False
-    for leg, v in legs:
+    for leg in legs:
+        v = VEL[0]
         name = f'{"plate" if obj == "plate" else "bowl"}_{leg}'
         r = subprocess.run(['bash', str(REPO / 'calibration/run.sh'), 'mover', '--plan', m.group(1), '--leg', name,
                             '--smooth', '--go_per', 'leg', '--vel_deg_s', str(v), '--acc_deg_s2', str(v),
@@ -150,8 +152,10 @@ def main():
                                     '7 N (overrides --pre, --mode, --force, --grasp_recipe)')
     p.add_argument('--grasp_recipe', type=int, help='DGManager grasp recipe: mode, position mode, smooth (not its force)')
     p.add_argument('--lock', action='store_true', help='after the grasp, hold the grasping fingers in position mode')
+    p.add_argument('--vel', type=float, default=80.0, help='arm speed deg/s (= deg/s^2) for every arm leg (default 80)')
     p.add_argument('--motion_ms', type=int, default=3000, help='time per pose move [ms] (slow)')
     a = p.parse_args()
+    VEL[0] = a.vel
     held = None
     if a.object == 'auto':
         a.object, SHIFT[0], SHIFT[1] = perceive()
@@ -283,7 +287,7 @@ def main():
                     basket(obj, w[1].upper() if len(w) > 1 else ('Q3' if obj == 'plate' else 'Q1'),
                            int(w[2]) if len(w) > 2 else 6)
                 elif cmd == 'descend' and BASKET:
-                    mover(BASKET['plan'], 'descend', 10)
+                    mover(BASKET['plan'], 'descend', VEL[0])
                 elif cmd:                                       # (10/27) 'basket' with a bowl printed joints silently
                     print(f'   "{cmd}" does nothing here (object {a.object}): "home", "release", '
                           + ('"basket Q3 6"' if a.object == 'plate' else '"basket Q1"') + ', "descend"; Enter = joints',
@@ -309,7 +313,7 @@ def main():
                 pass
             try:                                                 # after a basket drop: back up and home with that plan
                 if BASKET and input('\n5. arm: ascend + home with the basket plan?  Enter = go, n = no: ').strip().lower() != 'n':
-                    mover(BASKET['plan'], 'ascend', 20) and mover(BASKET['plan'], 'to_home', 70)
+                    mover(BASKET['plan'], 'ascend', VEL[0]) and mover(BASKET['plan'], 'to_home', VEL[0])
             except EOFError:
                 pass
             g.system_stop()
