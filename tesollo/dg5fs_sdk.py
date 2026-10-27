@@ -40,7 +40,7 @@ ARM_APPROACH = ('above', 'down')
 ARM_HOME = ('lift', 'home')
 VEL = [80.0]                # arm deg/s = deg/s^2 for every leg (보스 10/27: 80 unless told otherwise; --vel)
 APPROACH_HAND = {'plate': 'open', 'bowl': 'bowl_grasp30'}
-BASKET_LEGS = ('lift', 'to_above')
+BASKET_LEGS = ('lift', 'to_above', 'descend')     # (보스 10/27: release came before the separate 'descend') all the way down
 DGM_CONFIG = Path.home() / '.config/DGManager/config.json'
 JOINTS = 20
 # YOLOE object class -> (poses.yaml pre-pose, grasp mode, position-mode joints 1-based, force N), 보스 10/27:
@@ -75,7 +75,8 @@ def mover(plan, leg, v):
 
 def basket(obj, quadrant, pin):
     """While the object is held: basket_plan.py (plate: plate_plans' basket planner with the Tesollo grasp, into the pins;
-    bowl: upright into the middle of a quadrant), then lift and to_above (stops above: 'descend' goes down)."""
+    bowl: upright into the middle of a quadrant), then lift, to_above and descend (Enter per leg); BASKET['down'] once
+    the descend has run, so 'release' knows the object is in the basket."""
     out = subprocess.run([str(PLAN_PY), str(REPO / 'tesollo/basket_plan.py'), '--object', obj, '--quadrant', quadrant,
                           '--pin', str(pin), '--dx', str(SHIFT[0]), '--dy', str(SHIFT[1])], capture_output=True, text=True)
     print('\n'.join(l for l in out.stdout.splitlines() if l.startswith(('basket', 'OK', '  '))), flush=True)
@@ -85,9 +86,12 @@ def basket(obj, quadrant, pin):
         return
     BASKET['plan'] = m.group(1)
     print(f'   basket plan {m.group(1)} (after the release: ascend, to_home with run.sh mover)', flush=True)
+    BASKET['down'] = False
     for leg in BASKET_LEGS:
         if not mover(m.group(1), leg, VEL[0]):
             return
+    BASKET['down'] = True
+    print('   in the basket: type "release"', flush=True)
 
 
 def arm_legs(obj, legs):
@@ -273,12 +277,15 @@ def main():
         # (보스 10/27) keep the grasp while the arm lifts and goes home in the other terminal: only the typed word
         # 'release' opens the hand; Enter shows joints / currents / temperature, Ctrl+C and q do NOT let go here
         print('\n3. HOLDING.  "home" = lift + home;  "basket Q3 6" (plate, quadrant / pin) or "basket Q1" (bowl) = lift + '
-              'carry above it, then "descend";  Enter = joints / temperature;  "release" = let go (then ascend + home).',
-              flush=True)
+              'carry + down into the basket (Enter per leg);  then "release" = let go -> hand open -> ascend + home.  '
+              'Enter = joints / temperature.', flush=True)
         while True:
             try:
                 cmd = input('   holding> ').strip().lower()
                 if cmd == 'release':
+                    if BASKET and not BASKET.get('down') and input('   not lowered into the basket yet (descend did not '
+                                                                   'run): release anyway?  yes / Enter = no: ').strip().lower() != 'yes':
+                        continue
                     break
                 if cmd == 'home' and a.object:
                     arm_legs(a.object, ARM_HOME)
@@ -286,8 +293,8 @@ def main():
                     w, obj = cmd.split(), 'plate' if a.object == 'plate' else 'bowl'
                     basket(obj, w[1].upper() if len(w) > 1 else ('Q3' if obj == 'plate' else 'Q1'),
                            int(w[2]) if len(w) > 2 else 6)
-                elif cmd == 'descend' and BASKET:
-                    mover(BASKET['plan'], 'descend', VEL[0])
+                elif cmd == 'descend' and BASKET:                          # only after a stopped basket run
+                    BASKET['down'] = mover(BASKET['plan'], 'descend', VEL[0])
                 elif cmd:                                       # (10/27) 'basket' with a bowl printed joints silently
                     print(f'   "{cmd}" does nothing here (object {a.object}): "home", "release", '
                           + ('"basket Q3 6"' if a.object == 'plate' else '"basket Q1"') + ', "descend"; Enter = joints',
