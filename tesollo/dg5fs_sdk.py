@@ -18,7 +18,8 @@ Steps, one Enter each (q = stop, the hand keeps its pose; release + stop always 
        --grasp_recipe N takes the mode, per-joint position mode and smooth flag from DGManager grasp recipe N instead
     2b. (--lock) hold the grasping fingers at their current angles (position mode): stops the force loop's back-and-forth
         correction (the visible tremble); the squeezed silicone tips keep the grip.  UNTESTED: try without the plate first
-    3. HOLD until 보스 types 'release'; typing 'home' (with --object) plans and runs the arm legs lift + home, then 4. open
+    3. HOLD until 보스 types 'release'; 'home' runs lift + home; (plate) 'basket Q3 6' plans (basket_plan.py) and runs
+       lift + to_above, 'descend' goes down into the pins; then 4. open
 Joints [deg], currents [mA] and the hottest motor are printed after each step (watch the temperature: stall heats up).
 Needs the vendor Python SDK outside this repo (USB 2.Software/.../SampleProgram/dg_python-main.zip, unzipped to
 --sdk) and cffi (conda base python has it; the ROS / foundationpose pythons do not).
@@ -38,6 +39,7 @@ PLAN_PY = Path.home() / 'miniconda3/envs/foundationpose/bin/python'
 ARM_APPROACH = (('above', 70), ('down', 20))
 ARM_HOME = (('lift', 20), ('home', 70))
 APPROACH_HAND = {'plate': 'open', 'bowl': 'bowl_grasp30'}
+BASKET_LEGS = (('lift', 20), ('to_above', 20))             # carry with the plate: slow
 DGM_CONFIG = Path.home() / '.config/DGManager/config.json'
 JOINTS = 20
 # YOLOE object class -> (poses.yaml pre-pose, grasp mode, position-mode joints 1-based, force N), 보스 10/27:
@@ -58,6 +60,33 @@ def perceive():
 
 
 SHIFT = [0.0, 0.0]          # object shift from the taught spot (perceive), applied to every arm plan of this run
+BASKET = {}                 # the last basket plan of this run (basket_plan.py): its path, for 'descend'
+
+
+def mover(plan, leg, v):
+    """One mover leg (Enter to go); True if it ran."""
+    r = subprocess.run(['bash', str(REPO / 'calibration/run.sh'), 'mover', '--plan', plan, '--leg', leg, '--smooth',
+                        '--go_per', 'leg', '--vel_deg_s', str(v), '--acc_deg_s2', str(v), '--execute', '--go_enter'])
+    if r.returncode:
+        print(f'   mover stopped at {leg} (exit {r.returncode})', flush=True)
+    return r.returncode == 0
+
+
+def basket(quadrant, pin):
+    """While the plate is held: plate_plans' basket planner with the Tesollo grasp (basket_plan.py), then lift and
+    to_above (stops above the pins: 'descend' goes down)."""
+    out = subprocess.run([str(PLAN_PY), str(REPO / 'tesollo/basket_plan.py'), '--quadrant', quadrant, '--pin', str(pin),
+                          '--dx', str(SHIFT[0]), '--dy', str(SHIFT[1])], capture_output=True, text=True)
+    print('\n'.join(l for l in out.stdout.splitlines() if l.startswith(('basket', 'OK', '  '))), flush=True)
+    m = re.search(r'^plan: (\S+)', out.stdout, re.M)
+    if out.returncode or not m:
+        print(f'   basket plan failed:\n{out.stdout[-600:]}{out.stderr[-600:]}', flush=True)
+        return
+    BASKET['plan'] = m.group(1)
+    print(f'   basket plan {m.group(1)} (after the release: ascend, to_home with run.sh mover)', flush=True)
+    for leg, v in BASKET_LEGS:
+        if not mover(m.group(1), leg, v):
+            return
 
 
 def arm_legs(obj, legs):
@@ -239,8 +268,8 @@ def main():
                 show()
         # (보스 10/27) keep the grasp while the arm lifts and goes home in the other terminal: only the typed word
         # 'release' opens the hand; Enter shows joints / currents / temperature, Ctrl+C and q do NOT let go here
-        print('\n3. HOLDING.  Type "home" = fresh arm plan, then lift (20 deg/s) and home (70 deg/s), one Enter per leg; '
-              'Enter = show joints / temperature; type "release" to let go.', flush=True)
+        print('\n3. HOLDING.  "home" = lift + home;  "basket Q3 6" (plate) = lift + carry above that quadrant / pin, then '
+              '"descend" = down into the pins;  Enter = joints / temperature;  "release" = let go.', flush=True)
         while True:
             try:
                 cmd = input('   holding> ').strip().lower()
@@ -248,6 +277,11 @@ def main():
                     break
                 if cmd == 'home' and a.object:
                     arm_legs(a.object, ARM_HOME)
+                elif cmd.startswith('basket') and a.object == 'plate':      # basket Q3 6
+                    w = cmd.split()
+                    basket(w[1].upper() if len(w) > 1 else 'Q3', int(w[2]) if len(w) > 2 else 6)
+                elif cmd == 'descend' and BASKET:
+                    mover(BASKET['plan'], 'descend', 10)
                 show()
             except KeyboardInterrupt:
                 print('\n   still holding (Ctrl+C does not release); type "release" to let go', flush=True)
