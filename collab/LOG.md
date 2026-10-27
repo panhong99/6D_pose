@@ -5442,3 +5442,9 @@
 - **위험**: P 5와 힘 제어 파지는 오래 누르면 모터가 뜨거워짐(매뉴얼 경고). SDK 도구는 온도를 출력하니 시험 중 확인. 실기 SDK 연결은 아직 한 번도 안 해 봄.
 - 30° 기울기 성공 기준은 제가 정한 값. 파지만 보면 60°까지 허용할지 보스 결정.
 - Codex: 다음은 epoch 연장 대신 Q4→Q3 번호 모호성(ambiguous row 4)과 끝단 hard negative 검증.
+
+### 2026-10-27 20:00 Codex — 실사진 끝단 hard negative 라벨·미세학습
+- Q4 시야→Q3 판정에서 거부된 3장(`160016`, `160252`, `160722`)을 검토해 수평 프레임을 tip으로 본 끝단 오검출 4점을 라벨했다. 데이터: `calibration/data/slot_cnn/cross_view_endpoint_labels_20261027.json`(git 제외).
+- `sim_v6_cross_realhn`: sim_v5_cross 3,000장 + 실사진 3장 teacher pseudo-positive/수동 negative 100회 반복. `run_v11_realhn`: ep02 초기화, 4 epoch, lr 1e-5. 모든 epoch가 기존 tip 84/84, 영역 안 precision 0.933, Q1 14/14, 번호 오답 0을 유지했다. 최저 끝단 오검출 평균은 ep01의 0.537(기존 0.640)이지만 교차 strict 6/10·ambiguous 5로 기존 7/10·4보다 악화했다. th 0.5는 strict 7/10이나 tip 79/84, Q1 9/14라 폐기했다.
+- 출력 보존 distillation(`run_v12_hardneg_distill`)도 시험했다. tip 83/84, precision 0.954, Q1 13/14, 번호 오답 0이나 교차 strict 6/10, 255/260이라 미채택했다.
+- 결론: 실사진 3장/negative 4점은 끝단 반응을 낮추지만 정상 tip까지 약화한다. 선택 모델은 `run_v10_cross/ep02.pt` 그대로 유지한다. 새 촬영은 요구하지 않았고, 다음 학습은 서로 다른 거리·각도의 독립 끝단 라벨을 더 확보한 뒤 한다. 코드 `113a33b`, 비교 `outputs/slot_cnn_real_hardneg_20261027/{summary.json,comparison.tsv,comparison.png}`.
